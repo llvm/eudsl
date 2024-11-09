@@ -1,0 +1,118 @@
+name: CI - manylinux x86_64 clang LLVM
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/ci_manylinux_x86_64_clang_llvm.yml"
+      - "third_party/llvm-project"
+
+concurrency:
+  # A PR number if a pull request and otherwise the commit hash. This cancels
+  # queued and in-progress runs for the same PR (presubmit) or commit
+  # (postsubmit). The workflow name is prepended to avoid conflicts between
+  # different workflows.
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  manylinux_x64_clang_llvm:
+    name: Build LLVM and MLIR
+
+    runs-on: ubuntu-22.04
+
+    env:
+      CACHE_DIR: /.container-cache
+      # either the PR number or `branch-N` where N always increments
+      CACHE_KEY: manylinux_x64_clang_llvm_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+
+    container:
+      image: quay.io/pypa/manylinux_2_28_x86_64
+
+    steps:
+
+      - name: "Set unified TZ"
+        uses: szenius/set-timezone@v2.0
+        with:
+          # this is an arbitrary choice
+          timezoneLinux: "Asia/Singapore"
+          timezoneMacos: "Asia/Singapore"
+          timezoneWindows: "Singapore Standard Time"
+
+      - name: Restore cache
+        uses: actions/cache/restore@v3
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key:  ${{ env.CACHE_KEY }}
+          restore-keys: manylinux_x64_clang_llvm_
+
+      - name: "Check out repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: true
+
+      - name: "Install OS deps"
+        run: |
+          dnf install -y epel-release 
+          dnf install -y sudo ncurses-compat-libs tmate python3-pip
+
+      - name: "Setup compiler/toolchain"
+        uses: aminya/setup-cpp@v1
+        with:
+          compiler: llvm-18
+          cmake: true
+          ninja: true
+          ccache: true
+
+      - name: "Python deps"
+        run: |
+          python3.12 -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
+
+      - name: "Build LLVM and MLIR"
+        run: |
+          export CCACHE_DIR="${{ env.CACHE_DIR }}"
+          export CCACHE_MAXSIZE=700M
+          export CCACHE_COMPILERCHECK="string:$(clang --version)"
+          export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros
+          
+          export CMAKE_C_COMPILER_LAUNCHER=ccache
+          export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          export CMAKE_C_COMPILER=clang 
+          export CMAKE_CXX_COMPILER=clang++
+          export CMAKE_EXE_LINKER_FLAGS_INIT="-fuse-ld=lld"
+          export CMAKE_SHARED_LINKER_FLAGS_INIT="-fuse-ld=lld"
+          export CMAKE_MODULE_LINKER_FLAGS_INIT="-fuse-ld=lld"
+          export Python3_EXECUTABLE="$(which python3.12)"
+          
+          export LLVM_SOURCE_DIR="$PWD/third_party/llvm-project"
+          export LLVM_BUILD_DIR="$PWD/llvm-build"
+          export LLVM_INSTALL_DIR="$PWD/llvm-install"
+          
+          pushd $LLVM_SOURCE_DIR && llvm_sha_short=$(git rev-parse --short HEAD) && popd
+          build_tools/cmake/build_llvm.sh
+          
+          rm -rf $LLVM_BUILD_DIR $LLVM_SOURCE_DIR
+          tar cf llvm-dist-linux-$llvm_sha_short.tar $LLVM_INSTALL_DIR
+          rm -rf $LLVM_INSTALL_DIR
+
+      - name: "Upload dist"
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux_x86_64_llvm_packages
+          path: llvm-dist-*.tar
+          if-no-files-found: error
+
+      - name: "Save cache"
+        uses: actions/cache/save@v3
+        # if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
+        if: ${{ !cancelled() }}
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: ${{ env.CACHE_KEY }}
+
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3.18
+        with:
+          limit-access-to-actor: true
+          install-dependencies: false
