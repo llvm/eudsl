@@ -1,10 +1,10 @@
-name: CI - manylinux x86_64 clang LLVM
+name: "Build LLVM and MLIR"
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
-      - ".github/workflows/ci_manylinux_x86_64_clang_llvm.yml"
+      - ".github/workflows/build_llvm.yml"
       - "third_party/llvm-project"
 
 concurrency:
@@ -16,18 +16,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  manylinux_x64_clang_llvm:
-    name: Build LLVM and MLIR
+  build:
 
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "manylinux_x86_64"
+            runs-on: "ubuntu-22.04"
+            container: "quay.io/pypa/manylinux_2_28_x86_64"
+          - name: "windows_x86_64"
+            runs-on: "windows-2019"
+          - name: "macos_arm64"
+            runs-on: "macos-latest"
+#          - name: "macos_x86_64"
+#            os: "macos-13"
+
+    runs-on: ${{ matrix.runs-on }}
+
+    name: ${{ matrix.name }}
+
+    defaults:
+      run:
+        shell: bash
 
     env:
       CACHE_DIR: /.container-cache
       # either the PR number or `branch-N` where N always increments
-      CACHE_KEY: manylinux_x64_clang_llvm_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+      CACHE_KEY: ${{ matrix.name }}_x64_clang_llvm_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
 
     container:
-      image: quay.io/pypa/manylinux_2_28_x86_64
+      image: ${{ matrix.container }}
 
     steps:
 
@@ -39,12 +58,12 @@ jobs:
           timezoneMacos: "Asia/Singapore"
           timezoneWindows: "Singapore Standard Time"
 
-      - name: Restore cache
+      - name: "Restore cache"
         uses: actions/cache/restore@v3
         with:
           path: ${{ env.CACHE_DIR }}
           key:  ${{ env.CACHE_KEY }}
-          restore-keys: manylinux_x64_clang_llvm_
+          restore-keys: ${{ matrix.name }}_x64_clang_llvm
 
       - name: "Check out repository"
         uses: actions/checkout@v4.2.2
@@ -52,21 +71,49 @@ jobs:
           submodules: true
 
       - name: "Install OS deps"
+        if: ${{ matrix.name == 'manylinux_x86_64' }}
         run: |
           dnf install -y epel-release 
           dnf install -y sudo ncurses-compat-libs tmate python3-pip
 
+      - name: "Install OS deps"
+        if: ${{ startsWith(matrix.runs-on, 'macos') }}
+        run: |
+          brew install ccache ninja
+
+      - name: "Install Python"
+        uses: actions/setup-python@v4
+        if: ${{ startsWith(matrix.runs-on, 'macos') || startsWith(matrix.runs-on, 'windows') }}
+        with:
+          python-version: '3.12'
+
       - name: "Setup compiler/toolchain"
         uses: aminya/setup-cpp@v1
+        if: ${{ startsWith(matrix.runs-on, 'ubuntu') || startsWith(matrix.runs-on, 'windows') }}
         with:
           compiler: llvm-18
           cmake: true
           ninja: true
           ccache: true
+          vcvarsall: ${{ startsWith(matrix.runs-on, 'windows') }}
+
+      - name: "Fix CC/CXX on Windows"
+        if: ${{ startsWith(matrix.runs-on, 'windows') }}
+        run: |
+          echo "CC=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
+          echo "CXX=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
 
       - name: "Python deps"
         run: |
-          python3.12 -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
+          python3_command=""
+          if (command -v python3.12 &> /dev/null); then
+            python3_command="python3.12"
+          elif (command -v python3 &> /dev/null); then
+            python3_command="python3"
+          elif (command -v python &> /dev/null); then
+            python3_command="python"
+          fi 
+          $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
 
       - name: "Build LLVM and MLIR"
         run: |
@@ -77,8 +124,6 @@ jobs:
           
           export CMAKE_C_COMPILER_LAUNCHER=ccache
           export CMAKE_CXX_COMPILER_LAUNCHER=ccache
-          export CMAKE_C_COMPILER=clang 
-          export CMAKE_CXX_COMPILER=clang++
           export CMAKE_EXE_LINKER_FLAGS_INIT="-fuse-ld=lld"
           export CMAKE_SHARED_LINKER_FLAGS_INIT="-fuse-ld=lld"
           export CMAKE_MODULE_LINKER_FLAGS_INIT="-fuse-ld=lld"
@@ -92,13 +137,13 @@ jobs:
           build_tools/cmake/build_llvm.sh
           
           rm -rf $LLVM_BUILD_DIR $LLVM_SOURCE_DIR
-          tar cf llvm-dist-linux-$llvm_sha_short.tar $LLVM_INSTALL_DIR
+          tar cf llvm-dist-${{ matrix.name }}-$llvm_sha_short.tar $LLVM_INSTALL_DIR
           rm -rf $LLVM_INSTALL_DIR
 
       - name: "Upload dist"
         uses: actions/upload-artifact@v4
         with:
-          name: linux_x86_64_llvm_packages
+          name: ${{ matrix.name }}_x86_64_llvm_packages
           path: llvm-dist-*.tar
           if-no-files-found: error
 
@@ -110,9 +155,9 @@ jobs:
           path: ${{ env.CACHE_DIR }}
           key: ${{ env.CACHE_KEY }}
 
-      - name: Setup tmate session
+      - name: "Setup tmate session"
         if: ${{ failure() }}
         uses: mxschmitt/action-tmate@v3.18
         with:
           limit-access-to-actor: true
-          install-dependencies: false
+          install-dependencies: ${{ startsWith(matrix.runs-on, 'macos') || startsWith(matrix.runs-on, 'windows') }}
