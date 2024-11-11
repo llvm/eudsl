@@ -42,7 +42,8 @@ jobs:
 
     env:
       # either the PR number or `branch-N` where N always increments
-      CACHE_KEY: ${{ matrix.name }}_x64_clang_llvm_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+      CACHE_KEY: ${{ matrix.name }}_clang_llvm_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+      CACHE_DIR: ${{ github.workspace }}/.container-cache
 
     container:
       image: ${{ matrix.container }}
@@ -60,15 +61,9 @@ jobs:
       - name: "Restore cache"
         uses: actions/cache/restore@v3
         with:
+          path: ${{ env.CACHE_DIR }}
           key:  ${{ env.CACHE_KEY }}
-          restore-keys: ${{ matrix.name }}_x64_clang_llvm
-          path:
-            ~/.cache/ccache
-            ~/.ccache
-            ~/.config/ccache
-            ~/Library/Caches/ccache
-            ${{ env.LOCALAPPDATA }}/ccache
-            ${{ env.XDG_CACHE_HOME }}/ccache
+          restore-keys: ${{ matrix.name }}_clang_llvm
 
       - name: "Check out repository"
         uses: actions/checkout@v4.2.2
@@ -76,7 +71,6 @@ jobs:
           submodules: true
 
       - name: "Install OS deps"
-        if: ${{ matrix.name == 'manylinux_x86_64' }}
         run: |
           if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
             dnf install -y epel-release 
@@ -129,6 +123,7 @@ jobs:
 
       - name: "Build LLVM and MLIR"
         run: |
+          export CCACHE_DIR="${{ env.CACHE_DIR }}"
           export CCACHE_MAXSIZE=700M
           export CCACHE_COMPILERCHECK="string:$($CC --version)"
           export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros
@@ -154,7 +149,7 @@ jobs:
       - name: "Upload dist"
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}_x86_64_llvm_packages
+          name: ${{ matrix.name }}_llvm_packages
           path: llvm-dist-*.tar
           if-no-files-found: error
 
@@ -163,14 +158,8 @@ jobs:
         # if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
         if: ${{ !cancelled() }}
         with:
+          path: ${{ env.CACHE_DIR }}
           key: ${{ env.CACHE_KEY }}
-          path:
-            ~/.cache/ccache
-            ~/.ccache
-            ~/.config/ccache
-            ~/Library/Caches/ccache
-            ${{ env.LOCALAPPDATA }}/ccache
-            ${{ env.XDG_CACHE_HOME }}/ccache
 
       - name: "Setup tmate session"
         if: ${{ failure() }}

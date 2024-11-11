@@ -52,6 +52,4 @@ echo "CMake Options: ${cmake_options[*]}"
 
 cmake "${cmake_options[@]}"
 cmake --build "${LLVM_BUILD_DIR}" \
-  --target install-toolchain-distribution \
-  --target install-development-distribution \
   --target install-mlirdevelopment-distribution
