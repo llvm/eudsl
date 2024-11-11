@@ -41,7 +41,6 @@ jobs:
         shell: bash
 
     env:
-      CACHE_DIR: /.container-cache
       # either the PR number or `branch-N` where N always increments
       CACHE_KEY: ${{ matrix.name }}_x64_clang_llvm_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
 
@@ -61,9 +60,15 @@ jobs:
       - name: "Restore cache"
         uses: actions/cache/restore@v3
         with:
-          path: ${{ env.CACHE_DIR }}
           key:  ${{ env.CACHE_KEY }}
           restore-keys: ${{ matrix.name }}_x64_clang_llvm
+          path:
+            ~/.cache/ccache
+            ~/.ccache
+            ~/.config/ccache
+            ~/Library/Caches/ccache
+            ${{ env.LOCALAPPDATA }}/ccache
+            ${{ env.XDG_CACHE_HOME }}/ccache
 
       - name: "Check out repository"
         uses: actions/checkout@v4.2.2
@@ -73,13 +78,12 @@ jobs:
       - name: "Install OS deps"
         if: ${{ matrix.name == 'manylinux_x86_64' }}
         run: |
-          dnf install -y epel-release 
-          dnf install -y sudo ncurses-compat-libs tmate python3-pip
-
-      - name: "Install OS deps"
-        if: ${{ startsWith(matrix.runs-on, 'macos') }}
-        run: |
-          brew install ccache ninja
+          if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
+            dnf install -y epel-release 
+            dnf install -y sudo ncurses-compat-libs tmate python3-pip
+          elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
+            brew install ccache ninja
+          fi
 
       - name: "Install Python"
         uses: actions/setup-python@v4
@@ -97,11 +101,18 @@ jobs:
           ccache: true
           vcvarsall: ${{ startsWith(matrix.runs-on, 'windows') }}
 
-      - name: "Fix CC/CXX on Windows"
-        if: ${{ startsWith(matrix.runs-on, 'windows') }}
+      - name: "Set CC/CXX"
         run: |
-          echo "CC=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
-          echo "CXX=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
+          if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
+            echo "CC=/github/home/llvm/bin/clang" >> $GITHUB_ENV
+            echo "CXX=/github/home/llvm/bin/clang++" >> $GITHUB_ENV
+          elif [[ "${{ matrix.runs-on }}" == windows* ]]; then
+            echo "CC=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
+            echo "CXX=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
+          elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
+            echo "CC=/usr/bin/clang" >> $GITHUB_ENV
+            echo "CXX=/usr/bin/clang++" >> $GITHUB_ENV
+          fi
 
       - name: "Python deps"
         run: |
@@ -114,12 +125,12 @@ jobs:
             python3_command="python"
           fi 
           $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
+          echo "Python3_EXECUTABLE=$(which $python3_command)" >> $GITHUB_ENV
 
       - name: "Build LLVM and MLIR"
         run: |
-          export CCACHE_DIR="${{ env.CACHE_DIR }}"
           export CCACHE_MAXSIZE=700M
-          export CCACHE_COMPILERCHECK="string:$(clang --version)"
+          export CCACHE_COMPILERCHECK="string:$($CC --version)"
           export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros
           
           export CMAKE_C_COMPILER_LAUNCHER=ccache
@@ -127,7 +138,7 @@ jobs:
           export CMAKE_EXE_LINKER_FLAGS_INIT="-fuse-ld=lld"
           export CMAKE_SHARED_LINKER_FLAGS_INIT="-fuse-ld=lld"
           export CMAKE_MODULE_LINKER_FLAGS_INIT="-fuse-ld=lld"
-          export Python3_EXECUTABLE="$(which python3.12)"
+          export Python3_EXECUTABLE="$Python3_EXECUTABLE"
           
           export LLVM_SOURCE_DIR="$PWD/third_party/llvm-project"
           export LLVM_BUILD_DIR="$PWD/llvm-build"
@@ -152,8 +163,14 @@ jobs:
         # if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
         if: ${{ !cancelled() }}
         with:
-          path: ${{ env.CACHE_DIR }}
           key: ${{ env.CACHE_KEY }}
+          path:
+            ~/.cache/ccache
+            ~/.ccache
+            ~/.config/ccache
+            ~/Library/Caches/ccache
+            ${{ env.LOCALAPPDATA }}/ccache
+            ${{ env.XDG_CACHE_HOME }}/ccache
 
       - name: "Setup tmate session"
         if: ${{ failure() }}

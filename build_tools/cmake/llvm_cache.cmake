@@ -50,36 +50,15 @@ set(MLIR_INCLUDE_TESTS ${RUN_TESTS} CACHE BOOL "")
 ### Distributions ###
 
 set(LLVM_INSTALL_TOOLCHAIN_ONLY OFF CACHE BOOL "")
+# set(LLVM_BUILD_UTILS ON CACHE BOOL "")
+# set(LLVM_INSTALL_UTILS ON CACHE BOOL "")
+
 set(LLVM_DISTRIBUTIONS
       Development
       MlirDevelopment
       Toolchain
     CACHE STRING "")
 
-set(LLVM_TOOLCHAIN_TOOLS
-  llvm-addr2line
-  llvm-ar
-  llvm-cxxfilt
-  llvm-dis
-  llvm-dwarfdump
-  llvm-lib
-  llvm-link
-  llvm-mc
-  llvm-nm
-  llvm-objcopy
-  llvm-objdump
-  llvm-ranlib
-  llvm-rc
-  llvm-readelf
-  llvm-readobj
-  llvm-size
-  llvm-strip
-  llvm-symbolizer
-  llvm-xray
-  CACHE STRING "")
-
-set(LLVM_BUILD_UTILS ON CACHE BOOL "")
-set(LLVM_INSTALL_UTILS ON CACHE BOOL "")
 set(LLVM_TOOLCHAIN_UTILITIES
     FileCheck
     count
@@ -87,9 +66,8 @@ set(LLVM_TOOLCHAIN_UTILITIES
     CACHE STRING "")
 
 set(LLVM_Toolchain_DISTRIBUTION_COMPONENTS
-      LLVM
-      LTO
-      ${LLVM_TOOLCHAIN_TOOLS}
+      # LLVM
+      # LTO
       ${LLVM_TOOLCHAIN_UTILITIES}
     CACHE STRING "")
 
@@ -97,7 +75,7 @@ set(LLVM_Development_DISTRIBUTION_COMPONENTS
       Remarks
       cmake-exports
       development-cmake-exports
-      llc
+      # llc
       llvm-config
       llvm-headers
       llvm-libraries
