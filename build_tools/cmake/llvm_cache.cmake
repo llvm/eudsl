@@ -8,8 +8,11 @@ set(LLVM_INCLUDE_TOOLS ON CACHE BOOL "")
 set(LLVM_INSTALL_UTILS ON CACHE BOOL "")
 
 # All the tools will use libllvm shared library
-set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
-set(LLVM_LINK_LLVM_DYLIB ON CACHE BOOL "")
+# doesn't work on windows
+if (NOT WIN32)
+  set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
+  set(LLVM_LINK_LLVM_DYLIB ON CACHE BOOL "")
+endif()
 
 # useful things
 set(LLVM_ENABLE_ASSERTIONS ON CACHE BOOL "")
@@ -56,25 +59,26 @@ set(LLVM_INSTALL_TOOLCHAIN_ONLY OFF CACHE BOOL "")
 
 set(LLVM_DISTRIBUTIONS MlirDevelopment CACHE STRING "")
 set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
-      Remarks
-      cmake-exports
-      llvm-config
-      llvm-headers
-      llvm-libraries
-      opt
-      FileCheck
-      count
-      not
-      mlir-opt
-      mlir-reduce
+      # these are needed basically for execution engine
+      # check LINK_COMPONENTS there
+      # llvm-config
+      # llvm-headers
+      # llvm-libraries
+      # cmake-exports
+      # FileCheck
+      # not
+      # MLIRPythonModules
+      # MLIRPythonModules
+      # mlir-cmake-exports
+      # mlir-headers
+      # mlir-libraries
+      # mlir-opt
+      # mlir-python-sources
+      # mlir-reduce
       mlir-tblgen
-      mlir-translate
-      MLIRPythonModules
-      mlir-python-sources
-      MLIRPythonModules
-      mlir-cmake-exports
-      mlir-headers
-      mlir-libraries
-      ${LLVM_MLIR_TOOLS}
-      ${LLVM_MLIR_Python_COMPONENTS}
+      # mlir-translate
     CACHE STRING "")
+
+if (NOT WIN32)
+  list(APPEND LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS LLVM)
+endif()

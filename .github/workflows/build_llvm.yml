@@ -2,10 +2,24 @@ name: "Build LLVM and MLIR"
 
 on:
   workflow_dispatch:
+    inputs:
+      force_debug_with_tmate:
+        type: boolean
+        description: 'Run the build with tmate session'
+        required: false
+        default: false
+      debug_with_tmate:
+        type: boolean
+        description: 'Run the build with a tmate session ONLY in case of failure'
+        required: false
+        default: false
   pull_request:
     paths:
       - ".github/workflows/build_llvm.yml"
       - "third_party/llvm-project"
+  push:
+    branches:
+      - main
 
 concurrency:
   # A PR number if a pull request and otherwise the commit hash. This cancels
@@ -28,9 +42,9 @@ jobs:
           - name: "windows_x86_64"
             runs-on: "windows-2019"
           - name: "macos_arm64"
-            runs-on: "macos-latest"
-#          - name: "macos_x86_64"
-#            os: "macos-13"
+            runs-on: "macos-14"
+          - name: "macos_x86_64"
+            runs-on: "macos-13"
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -40,10 +54,13 @@ jobs:
       run:
         shell: bash
 
+    permissions:
+      id-token: write
+      contents: write
+
     env:
       # either the PR number or `branch-N` where N always increments
-      CACHE_KEY: ${{ matrix.name }}_clang_llvm_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
-      CACHE_DIR: ${{ github.workspace }}/.container-cache
+      CACHE_KEY: mlir_${{ matrix.name }}_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
 
     container:
       image: ${{ matrix.container }}
@@ -58,12 +75,31 @@ jobs:
           timezoneMacos: "Asia/Singapore"
           timezoneWindows: "Singapore Standard Time"
 
+      # notes for next time i bash my head against this:
+      # 1. github.workspace and $GITHUB_WORKSPACE are different between container actions and non-container actions
+      # 2. action/save-restore claims it expands ~ but that's a lie
+      # 3. macos root (/) is read only
+      # 4. you have to use windows style paths on windows even though we set shell: bash because
+      #    `with: path: ....` is not executed in our chosen shell (and so findind the dir will fail)
+      # 5. action/save-restore will tell you there's no cache matching the key when the paths differ
+      #    (even if the cache key does exist)
+      - name: "Canonicalize cache dir"
+        id: canonicalize-cache-dir
+        run: |
+          if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
+            echo "CACHE_DIR=/tmp/.container-cache" >> $GITHUB_OUTPUT
+          elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
+            echo "CACHE_DIR=/tmp/.container-cache" >> $GITHUB_OUTPUT
+          elif [[ "${{ matrix.runs-on }}" == windows* ]]; then
+            echo "CACHE_DIR=D:\a\.container-cache" >> $GITHUB_OUTPUT
+          fi
+
       - name: "Restore cache"
         uses: actions/cache/restore@v3
         with:
-          path: ${{ env.CACHE_DIR }}
+          path: ${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}
           key:  ${{ env.CACHE_KEY }}
-          restore-keys: ${{ matrix.name }}_clang_llvm
+          restore-keys: mlir_${{ matrix.name }}_clang
 
       - name: "Check out repository"
         uses: actions/checkout@v4.2.2
@@ -122,11 +158,14 @@ jobs:
           echo "Python3_EXECUTABLE=$(which $python3_command)" >> $GITHUB_ENV
 
       - name: "Build LLVM and MLIR"
+        id: build
         run: |
-          export CCACHE_DIR="${{ env.CACHE_DIR }}"
-          export CCACHE_MAXSIZE=700M
+          export CCACHE_DIR="${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}/ccache"
           export CCACHE_COMPILERCHECK="string:$($CC --version)"
+          export CCACHE_MAXSIZE=700M
           export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros
+          export CCACHE_CPP2=true
+          export CCACHE_UMASK=002
           
           export CMAKE_C_COMPILER_LAUNCHER=ccache
           export CMAKE_CXX_COMPILER_LAUNCHER=ccache
@@ -139,30 +178,36 @@ jobs:
           export LLVM_BUILD_DIR="$PWD/llvm-build"
           export LLVM_INSTALL_DIR="$PWD/llvm-install"
           
-          pushd $LLVM_SOURCE_DIR && llvm_sha_short=$(git rev-parse --short HEAD) && popd
+          ccache -z
           build_tools/cmake/build_llvm.sh
+          ccache -s
           
-          rm -rf $LLVM_BUILD_DIR $LLVM_SOURCE_DIR
-          tar cf llvm-dist-${{ matrix.name }}-$llvm_sha_short.tar $LLVM_INSTALL_DIR
-          rm -rf $LLVM_INSTALL_DIR
+          pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT=$(git rev-parse --short HEAD) && popd
+          tar -czf mlir_${{ matrix.name }}_$LLVM_SHA_SHORT.tar.gz "$LLVM_INSTALL_DIR"
+          rm -rf "$LLVM_BUILD_DIR" "$LLVM_SOURCE_DIR"
 
-      - name: "Upload dist"
-        uses: actions/upload-artifact@v4
+      - name: Release current commit
+        uses: ncipollo/release-action@v1.12.0
         with:
-          name: ${{ matrix.name }}_llvm_packages
-          path: llvm-dist-*.tar
-          if-no-files-found: error
+          artifacts: "*.tar.gz"
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          tag: "latest"
+          name: "latest"
+          removeArtifacts: false
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
 
       - name: "Save cache"
         uses: actions/cache/save@v3
         # if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
         if: ${{ !cancelled() }}
         with:
-          path: ${{ env.CACHE_DIR }}
+          path: ${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}
           key: ${{ env.CACHE_KEY }}
 
       - name: "Setup tmate session"
-        if: ${{ failure() }}
+        if: ${{ (failure() && inputs.debug_with_tmate) || inputs.force_debug_with_tmate }}
         uses: mxschmitt/action-tmate@v3.18
         with:
           limit-access-to-actor: true
