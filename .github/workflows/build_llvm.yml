@@ -16,12 +16,14 @@ on:
   pull_request:
     paths:
       - ".github/workflows/build_llvm.yml"
+      - "build_tools/cmake/llvm_cache.cmake"
       - "third_party/llvm-project"
   push:
     branches:
       main
     paths:
       - ".github/workflows/build_llvm.yml"
+      - "build_tools/cmake/llvm_cache.cmake"
       - "third_party/llvm-project"
 
 concurrency:

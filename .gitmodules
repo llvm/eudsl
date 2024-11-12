@@ -3,3 +3,4 @@
 	url = https://github.com/llvm/llvm-project.git
 	ignore = dirty
 	shallow = true
+	branch = main
