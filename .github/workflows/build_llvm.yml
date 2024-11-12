@@ -1,0 +1,230 @@
+name: "Build LLVM and MLIR"
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_debug_with_tmate:
+        type: boolean
+        description: 'Run the build with tmate session'
+        required: false
+        default: false
+      debug_with_tmate:
+        type: boolean
+        description: 'Run the build with a tmate session ONLY in case of failure'
+        required: false
+        default: false
+  pull_request:
+    paths:
+      - ".github/workflows/build_llvm.yml"
+      - "third_party/llvm-project"
+  push:
+    branches:
+      main
+    paths:
+      - ".github/workflows/build_llvm.yml"
+      - "third_party/llvm-project"
+
+concurrency:
+  # A PR number if a pull request and otherwise the commit hash. This cancels
+  # queued and in-progress runs for the same PR (presubmit) or commit
+  # (postsubmit). The workflow name is prepended to avoid conflicts between
+  # different workflows.
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "manylinux_x86_64"
+            runs-on: "ubuntu-22.04"
+            container: "quay.io/pypa/manylinux_2_28_x86_64"
+          - name: "windows_x86_64"
+            runs-on: "windows-2019"
+          - name: "macos_arm64"
+            runs-on: "macos-14"
+          - name: "macos_x86_64"
+            runs-on: "macos-13"
+
+    runs-on: ${{ matrix.runs-on }}
+
+    name: ${{ matrix.name }}
+
+    defaults:
+      run:
+        shell: bash
+
+    permissions:
+      id-token: write
+      contents: write
+
+    env:
+      # either the PR number or `branch-N` where N always increments
+      CACHE_KEY: mlir_${{ matrix.name }}_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+
+    container:
+      image: ${{ matrix.container }}
+
+    steps:
+
+      - name: "Set unified TZ"
+        uses: szenius/set-timezone@v2.0
+        with:
+          # this is an arbitrary choice
+          timezoneLinux: "Asia/Singapore"
+          timezoneMacos: "Asia/Singapore"
+          timezoneWindows: "Singapore Standard Time"
+
+      # notes for next time i bash my head against this:
+      # 1. github.workspace and $GITHUB_WORKSPACE are different between container actions and non-container actions
+      # 2. action/save-restore claims it expands ~ but that's a lie
+      # 3. macos root (/) is read only
+      # 4. you have to use windows style paths on windows even though we set shell: bash because
+      #    `with: path: ....` is not executed in our chosen shell (and so findind the dir will fail)
+      # 5. action/save-restore will tell you there's no cache matching the key when the paths differ
+      #    (even if the cache key does exist)
+      - name: "Canonicalize cache dir"
+        id: canonicalize-cache-dir
+        run: |
+          if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
+            echo "CACHE_DIR=/tmp/.container-cache" >> $GITHUB_OUTPUT
+          elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
+            echo "CACHE_DIR=/tmp/.container-cache" >> $GITHUB_OUTPUT
+          elif [[ "${{ matrix.runs-on }}" == windows* ]]; then
+            echo "CACHE_DIR=D:\a\.container-cache" >> $GITHUB_OUTPUT
+          fi
+
+      - name: "Restore cache"
+        uses: actions/cache/restore@v3
+        with:
+          path: ${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}
+          key:  ${{ env.CACHE_KEY }}
+          restore-keys: mlir_${{ matrix.name }}_clang
+
+      - name: "Check out repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: true
+
+      - name: "Install OS deps"
+        run: |
+          if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
+            dnf install -y epel-release 
+            dnf install -y sudo ncurses-compat-libs tmate python3-pip
+          elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
+            brew install ccache ninja
+          fi
+
+      - name: "Install Python"
+        uses: actions/setup-python@v4
+        if: ${{ startsWith(matrix.runs-on, 'macos') || startsWith(matrix.runs-on, 'windows') }}
+        with:
+          python-version: '3.12'
+
+      - name: "Setup compiler/toolchain"
+        uses: aminya/setup-cpp@v1
+        if: ${{ startsWith(matrix.runs-on, 'ubuntu') || startsWith(matrix.runs-on, 'windows') }}
+        with:
+          compiler: llvm-18
+          cmake: true
+          ninja: true
+          ccache: true
+          vcvarsall: ${{ startsWith(matrix.runs-on, 'windows') }}
+
+      - name: "Set CC/CXX"
+        run: |
+          if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
+            echo "CC=/github/home/llvm/bin/clang" >> $GITHUB_ENV
+            echo "CXX=/github/home/llvm/bin/clang++" >> $GITHUB_ENV
+          elif [[ "${{ matrix.runs-on }}" == windows* ]]; then
+            echo "CC=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
+            echo "CXX=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
+          elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
+            echo "CC=/usr/bin/clang" >> $GITHUB_ENV
+            echo "CXX=/usr/bin/clang++" >> $GITHUB_ENV
+          fi
+
+      - name: "Python deps"
+        run: |
+          python3_command=""
+          if (command -v python3.12 &> /dev/null); then
+            python3_command="python3.12"
+          elif (command -v python3 &> /dev/null); then
+            python3_command="python3"
+          elif (command -v python &> /dev/null); then
+            python3_command="python"
+          fi 
+          $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
+          echo "Python3_EXECUTABLE=$(which $python3_command)" >> $GITHUB_ENV
+
+      - name: "Build LLVM and MLIR"
+        id: build
+        run: |
+          export CCACHE_DIR="${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}/ccache"
+          export CCACHE_COMPILERCHECK="string:$($CC --version)"
+          export CCACHE_MAXSIZE=700M
+          export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros
+          export CCACHE_CPP2=true
+          export CCACHE_UMASK=002
+          
+          export CMAKE_C_COMPILER_LAUNCHER=ccache
+          export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          export CMAKE_EXE_LINKER_FLAGS_INIT="-fuse-ld=lld"
+          export CMAKE_SHARED_LINKER_FLAGS_INIT="-fuse-ld=lld"
+          export CMAKE_MODULE_LINKER_FLAGS_INIT="-fuse-ld=lld"
+          export Python3_EXECUTABLE="$Python3_EXECUTABLE"
+          
+          export LLVM_SOURCE_DIR="$PWD/third_party/llvm-project"
+          export LLVM_BUILD_DIR="$PWD/llvm-build"
+          # double nested so that upload artifacts uploads a folder 
+          export LLVM_INSTALL_DIR="$PWD/llvm-install/llvm-install"
+          
+          ccache -z
+          build_tools/cmake/build_llvm.sh
+          ccache -s
+          
+          echo "*********************** SMOKE TEST *********************************"
+          "$LLVM_INSTALL_DIR/bin/mlir-tblgen" --version
+          echo "*********************** SMOKE TEST *********************************"
+          
+          pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT=$(git rev-parse --short HEAD) && popd
+          tar -czf mlir_${{ matrix.name }}_$LLVM_SHA_SHORT.tar.gz "$LLVM_INSTALL_DIR"
+          rm -rf "$LLVM_BUILD_DIR" "$LLVM_SOURCE_DIR"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: mlir_${{ matrix.name }}_artifact
+          path: llvm-install
+          if-no-files-found: warn
+
+      - name: Release current commit
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
+        uses: ncipollo/release-action@v1.12.0
+        with:
+          artifacts: "*.tar.gz"
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          tag: "latest"
+          name: "latest"
+          removeArtifacts: false
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
+
+      - name: "Save cache"
+        uses: actions/cache/save@v3
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
+        with:
+          path: ${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}
+          key: ${{ env.CACHE_KEY }}
+
+      - name: "Setup tmate session"
+        if: ${{ (failure() && inputs.debug_with_tmate) || inputs.force_debug_with_tmate }}
+        uses: mxschmitt/action-tmate@v3.18
+        with:
+          limit-access-to-actor: true
+          install-dependencies: ${{ startsWith(matrix.runs-on, 'macos') || startsWith(matrix.runs-on, 'windows') }}
