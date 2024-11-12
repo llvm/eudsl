@@ -182,11 +182,16 @@ jobs:
           build_tools/cmake/build_llvm.sh
           ccache -s
           
+          echo "*********************** SMOKE TEST *********************************"
+          "$LLVM_INSTALL_DIR/bin/mlir-tblgen" --version
+          echo "*********************** SMOKE TEST *********************************"
+          
           pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT=$(git rev-parse --short HEAD) && popd
           tar -czf mlir_${{ matrix.name }}_$LLVM_SHA_SHORT.tar.gz "$LLVM_INSTALL_DIR"
           rm -rf "$LLVM_BUILD_DIR" "$LLVM_SOURCE_DIR"
 
       - name: Release current commit
+        # if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "*.tar.gz"
