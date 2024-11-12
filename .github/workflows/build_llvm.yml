@@ -19,7 +19,10 @@ on:
       - "third_party/llvm-project"
   push:
     branches:
-      - main
+      main
+    paths:
+      - ".github/workflows/build_llvm.yml"
+      - "third_party/llvm-project"
 
 concurrency:
   # A PR number if a pull request and otherwise the commit hash. This cancels
@@ -176,7 +179,8 @@ jobs:
           
           export LLVM_SOURCE_DIR="$PWD/third_party/llvm-project"
           export LLVM_BUILD_DIR="$PWD/llvm-build"
-          export LLVM_INSTALL_DIR="$PWD/llvm-install"
+          # double nested so that upload artifacts uploads a folder 
+          export LLVM_INSTALL_DIR="$PWD/llvm-install/llvm-install"
           
           ccache -z
           build_tools/cmake/build_llvm.sh
@@ -190,8 +194,16 @@ jobs:
           tar -czf mlir_${{ matrix.name }}_$LLVM_SHA_SHORT.tar.gz "$LLVM_INSTALL_DIR"
           rm -rf "$LLVM_BUILD_DIR" "$LLVM_SOURCE_DIR"
 
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: mlir_${{ matrix.name }}_artifact
+          path: llvm-install
+          if-no-files-found: warn
+
       - name: Release current commit
-        # if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "*.tar.gz"
@@ -205,8 +217,7 @@ jobs:
 
       - name: "Save cache"
         uses: actions/cache/save@v3
-        # if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
         with:
           path: ${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}
           key: ${{ env.CACHE_KEY }}
