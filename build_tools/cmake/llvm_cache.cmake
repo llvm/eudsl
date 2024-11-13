@@ -69,6 +69,11 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
       not
       MLIRPythonModules
       MLIRPythonModules
+      # triggers LLVMMlirDevelopmentExports.cmake
+      mlirdevelopment-cmake-exports
+      # triggers MLIRMlirDevelopmentTargets.cmake
+      mlir-mlirdevelopment-cmake-exports
+      # triggers MLIRConfig.cmake and etc
       mlir-cmake-exports
       mlir-headers
       mlir-libraries
