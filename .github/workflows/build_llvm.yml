@@ -116,6 +116,9 @@ jobs:
           if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
             dnf install -y epel-release 
             dnf install -y sudo ncurses-compat-libs tmate python3-pip
+            curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz
+            tar -xf ccache-4.10.2-linux-x86_64.tar.xz
+            pushd ccache-4.10.2-linux-x86_64 && make install && popd
           elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
             brew install ccache ninja
           fi
@@ -133,7 +136,7 @@ jobs:
           compiler: llvm-18
           cmake: true
           ninja: true
-          ccache: true
+          ccache: ${{ startsWith(matrix.runs-on, 'windows') }}
           vcvarsall: ${{ startsWith(matrix.runs-on, 'windows') }}
 
       - name: "Set CC/CXX"
