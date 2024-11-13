@@ -37,6 +37,7 @@ runs:
     # 5. action/save-restore will tell you there's no cache matching the key when the paths differ
     #    (even if the cache key does exist)
     # 6. on almalinux8, ccache distribution is very old
+    # 7. action/save-restore needs a subdir in the cached dir (that's why CCACHE_DIR=.container-cache/ccache)
     - name: "Canonicalize cache dir"
       id: canonicalize-cache-dir
       shell: bash
