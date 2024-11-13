@@ -1,4 +1,4 @@
-name: "Build LLVM and MLIR"
+name: "Test"
 
 on:
   workflow_dispatch:
@@ -14,28 +14,17 @@ on:
         required: false
         default: false
   pull_request:
-    paths:
-      - ".github/workflows/build_llvm.yml"
-      - "build_tools/cmake/llvm_cache.cmake"
-      - "third_party/llvm-project"
+  merge_group:
   push:
     branches:
-      main
-    paths:
-      - ".github/workflows/build_llvm.yml"
-      - "build_tools/cmake/llvm_cache.cmake"
-      - "third_party/llvm-project"
+      - main
 
 concurrency:
-  # A PR number if a pull request and otherwise the commit hash. This cancels
-  # queued and in-progress runs for the same PR (presubmit) or commit
-  # (postsubmit). The workflow name is prepended to avoid conflicts between
-  # different workflows.
   group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  test-eudsl-tblgen:
 
     strategy:
       fail-fast: false
@@ -43,7 +32,6 @@ jobs:
         include:
           - name: "manylinux_x86_64"
             runs-on: "ubuntu-22.04"
-            container: "quay.io/pypa/manylinux_2_28_x86_64"
           - name: "windows_x86_64"
             runs-on: "windows-2019"
           - name: "macos_arm64"
@@ -65,10 +53,8 @@ jobs:
 
     env:
       # either the PR number or `branch-N` where N always increments
-      CACHE_KEY: mlir_${{ matrix.name }}_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
-
-    container:
-      image: ${{ matrix.container }}
+      CACHE_KEY: test_${{ matrix.name }}_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+      CACHE_DIR: ${{ github.workspace }}/.container-cache
 
     steps:
 
@@ -80,44 +66,22 @@ jobs:
           timezoneMacos: "Asia/Singapore"
           timezoneWindows: "Singapore Standard Time"
 
-      # notes for next time i bash my head against this:
-      # 1. github.workspace and $GITHUB_WORKSPACE are different between container actions and non-container actions
-      # 2. action/save-restore claims it expands ~ but that's a lie
-      # 3. macos root (/) is read only
-      # 4. you have to use windows style paths on windows even though we set shell: bash because
-      #    `with: path: ....` is not executed in our chosen shell (and so findind the dir will fail)
-      # 5. action/save-restore will tell you there's no cache matching the key when the paths differ
-      #    (even if the cache key does exist)
-      - name: "Canonicalize cache dir"
-        id: canonicalize-cache-dir
-        run: |
-          if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
-            echo "CACHE_DIR=/tmp/.container-cache" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
-            echo "CACHE_DIR=/tmp/.container-cache" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.runs-on }}" == windows* ]]; then
-            echo "CACHE_DIR=D:\a\.container-cache" >> $GITHUB_OUTPUT
-          fi
-
       - name: "Restore cache"
         uses: actions/cache/restore@v3
         with:
-          path: ${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}
+          path: ${{ env.CACHE_DIR }}
           key:  ${{ env.CACHE_KEY }}
-          restore-keys: mlir_${{ matrix.name }}_clang
+          restore-keys: test_${{ matrix.name }}_clang
 
       - name: "Check out repository"
         uses: actions/checkout@v4.2.2
         with:
-          submodules: true
+          submodules: false
 
       - name: "Install OS deps"
         run: |
-          if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
-            dnf install -y epel-release 
-            dnf install -y sudo ncurses-compat-libs tmate python3-pip
-          elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
-            brew install ccache ninja
+          if [[ "${{ matrix.runs-on }}" == macos* ]]; then
+            brew install ccache ninja curl
           fi
 
       - name: "Install Python"
@@ -139,8 +103,8 @@ jobs:
       - name: "Set CC/CXX"
         run: |
           if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
-            echo "CC=/github/home/llvm/bin/clang" >> $GITHUB_ENV
-            echo "CXX=/github/home/llvm/bin/clang++" >> $GITHUB_ENV
+            echo "CC=/usr/lib/llvm-18/bin/clang" >> $GITHUB_ENV
+            echo "CXX=/usr/lib/llvm-18/bin/clang++" >> $GITHUB_ENV
           elif [[ "${{ matrix.runs-on }}" == windows* ]]; then
             echo "CC=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
             echo "CXX=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
@@ -159,49 +123,63 @@ jobs:
           elif (command -v python &> /dev/null); then
             python3_command="python"
           fi 
-          $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
           echo "Python3_EXECUTABLE=$(which $python3_command)" >> $GITHUB_ENV
 
-      - name: "Build LLVM and MLIR"
+      - name: "Download MLIR"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export RELEASE_PREFIX="mlir_${{ matrix.name }}"
+          RELEASE_URL=$(gh release view latest --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains(env.RELEASE_PREFIX))) | .[-1] | .url')
+          curl -sLO $RELEASE_URL
+          tar xf $RELEASE_PREFIX*.tar.gz
+
+      - name: "Build eudsl-tblgen"
         id: build
         run: |
-          export CCACHE_DIR="${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}/ccache"
+          export CCACHE_DIR="${{ env.CACHE_DIR }}/ccache"
           export CCACHE_COMPILERCHECK="string:$($CC --version | head -n 1)"
           echo $CCACHE_COMPILERCHECK
           export CCACHE_MAXSIZE=700M
           export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros
           export CCACHE_CPP2=true
           export CCACHE_UMASK=002
-          
+
           export CMAKE_C_COMPILER_LAUNCHER=ccache
           export CMAKE_CXX_COMPILER_LAUNCHER=ccache
           export CMAKE_EXE_LINKER_FLAGS_INIT="-fuse-ld=lld"
           export CMAKE_SHARED_LINKER_FLAGS_INIT="-fuse-ld=lld"
           export CMAKE_MODULE_LINKER_FLAGS_INIT="-fuse-ld=lld"
           export Python3_EXECUTABLE="$Python3_EXECUTABLE"
+
+          export CMAKE_PREFIX_PATH="$PWD/llvm-install"
           
-          export LLVM_SOURCE_DIR="$PWD/third_party/llvm-project"
-          export LLVM_BUILD_DIR="$PWD/llvm-build"
-          # double nested so that upload artifacts uploads a folder 
-          export LLVM_INSTALL_DIR="$PWD/llvm-install/llvm-install"
-          
+          export EUDSL_SRC_DIR="$PWD/projects/eudsl"
+          export EUDSL_BUILD_DIR="$PWD/eudsl-build"
+          export EUDSL_INSTALL_DIR="$PWD/eudsl-install"
+
           ccache -z
-          build_tools/cmake/build_llvm.sh
+          cmake -GNinja \
+                -S "$EUDSL_SRC_DIR" \
+                -B "$EUDSL_BUILD_DIR" \
+                -DCMAKE_BUILD_TYPE=Release \
+                "-DCMAKE_PREFIX_PATH=$PWD/__w/eudsl/eudsl/llvm-install/llvm-install" \
+                "-DCMAKE_INSTALL_PREFIX=$EUDSL_INSTALL_DIR"
+          cmake --build "$EUDSL_BUILD_DIR" --target install
           ccache -s
-          
+
           echo "*********************** SMOKE TEST *********************************"
-          "$LLVM_INSTALL_DIR/bin/mlir-tblgen" --version
+          "$EUDSL_INSTALL_DIR/bin/eudsl-tblgen" --help
           echo "*********************** SMOKE TEST *********************************"
-          
-          pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT=$(git rev-parse --short HEAD) && popd
-          tar -czf mlir_${{ matrix.name }}_$(date +'%Y%m%d')_$LLVM_SHA_SHORT.tar.gz -C "$LLVM_INSTALL_DIR/.." llvm-install
-          rm -rf "$LLVM_BUILD_DIR" "$LLVM_SOURCE_DIR"
+
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          tar -czf eudsl_tblgen_${{ matrix.name }}_$(date +'%Y%m%d')_$SHA_SHORT.tar.gz -C "$EUDSL_INSTALL_DIR" bin
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mlir_${{ matrix.name }}_artifact
-          path: llvm-install
+          name: eudsl_${{ matrix.name }}_artifact
+          path: eudsl-install/bin
           if-no-files-found: warn
 
       - name: Release current commit
@@ -221,7 +199,7 @@ jobs:
         uses: actions/cache/save@v3
         if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
         with:
-          path: ${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}
+          path: ${{ env.CACHE_DIR }}
           key: ${{ env.CACHE_KEY }}
 
       - name: "Setup tmate session"
