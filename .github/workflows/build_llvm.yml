@@ -16,14 +16,13 @@ on:
   pull_request:
     paths:
       - ".github/workflows/build_llvm.yml"
+      - ".github/actions/setup_base"
       - "build_tools/cmake/llvm_cache.cmake"
       - "third_party/llvm-project"
   push:
     branches:
-      main
+      - main
     paths:
-      - ".github/workflows/build_llvm.yml"
-      - "build_tools/cmake/llvm_cache.cmake"
       - "third_party/llvm-project"
 
 concurrency:
@@ -44,12 +43,16 @@ jobs:
           - name: "manylinux_x86_64"
             runs-on: "ubuntu-22.04"
             container: "quay.io/pypa/manylinux_2_28_x86_64"
+            os: "almalinux"
           - name: "windows_x86_64"
             runs-on: "windows-2019"
+            os: "windows"
           - name: "macos_arm64"
             runs-on: "macos-14"
+            os: "macos"
           - name: "macos_x86_64"
             runs-on: "macos-13"
+            os: "macos"
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -65,130 +68,35 @@ jobs:
 
     env:
       # either the PR number or `branch-N` where N always increments
-      CACHE_KEY: mlir_${{ matrix.name }}_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+      cache-key: "mlir_${{ matrix.name }}_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}"
 
     container:
       image: ${{ matrix.container }}
 
     steps:
-
-      - name: "Set unified TZ"
-        uses: szenius/set-timezone@v2.0
-        with:
-          # this is an arbitrary choice
-          timezoneLinux: "Asia/Singapore"
-          timezoneMacos: "Asia/Singapore"
-          timezoneWindows: "Singapore Standard Time"
-
-      # notes for next time i bash my head against this:
-      # 1. github.workspace and $GITHUB_WORKSPACE are different between container actions and non-container actions
-      # 2. action/save-restore claims it expands ~ but that's a lie
-      # 3. macos root (/) is read only
-      # 4. you have to use windows style paths on windows even though we set shell: bash because
-      #    `with: path: ....` is not executed in our chosen shell (and so findind the dir will fail)
-      # 5. action/save-restore will tell you there's no cache matching the key when the paths differ
-      #    (even if the cache key does exist)
-      - name: "Canonicalize cache dir"
-        id: canonicalize-cache-dir
-        run: |
-          if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
-            echo "CACHE_DIR=/tmp/.container-cache" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
-            echo "CACHE_DIR=/tmp/.container-cache" >> $GITHUB_OUTPUT
-          elif [[ "${{ matrix.runs-on }}" == windows* ]]; then
-            echo "CACHE_DIR=D:\a\.container-cache" >> $GITHUB_OUTPUT
-          fi
-
-      - name: "Restore cache"
-        uses: actions/cache/restore@v3
-        with:
-          path: ${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}
-          key:  ${{ env.CACHE_KEY }}
-          restore-keys: mlir_${{ matrix.name }}_clang
-
       - name: "Check out repository"
         uses: actions/checkout@v4.2.2
         with:
           submodules: true
 
-      - name: "Install OS deps"
-        run: |
-          if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
-            dnf install -y epel-release 
-            dnf install -y sudo ncurses-compat-libs tmate python3-pip
-            curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz
-            tar -xf ccache-4.10.2-linux-x86_64.tar.xz
-            pushd ccache-4.10.2-linux-x86_64 && make install && popd
-          elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
-            brew install ccache ninja
-          fi
-
-      - name: "Install Python"
-        uses: actions/setup-python@v4
-        if: ${{ startsWith(matrix.runs-on, 'macos') || startsWith(matrix.runs-on, 'windows') }}
+      - name: "Setup base"
+        uses: ./.github/actions/setup_base
+        id: setup_base
         with:
-          python-version: '3.12'
-
-      - name: "Setup compiler/toolchain"
-        uses: aminya/setup-cpp@v1
-        if: ${{ startsWith(matrix.runs-on, 'ubuntu') || startsWith(matrix.runs-on, 'windows') }}
-        with:
-          compiler: llvm-18
-          cmake: true
-          ninja: true
-          ccache: ${{ startsWith(matrix.runs-on, 'windows') }}
-          vcvarsall: ${{ startsWith(matrix.runs-on, 'windows') }}
-
-      - name: "Set CC/CXX"
-        run: |
-          if [[ "${{ matrix.runs-on }}" == ubuntu* ]]; then
-            echo "CC=/github/home/llvm/bin/clang" >> $GITHUB_ENV
-            echo "CXX=/github/home/llvm/bin/clang++" >> $GITHUB_ENV
-          elif [[ "${{ matrix.runs-on }}" == windows* ]]; then
-            echo "CC=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
-            echo "CXX=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
-          elif [[ "${{ matrix.runs-on }}" == macos* ]]; then
-            echo "CC=/usr/bin/clang" >> $GITHUB_ENV
-            echo "CXX=/usr/bin/clang++" >> $GITHUB_ENV
-          fi
-
-      - name: "Python deps"
-        run: |
-          python3_command=""
-          if (command -v python3.12 &> /dev/null); then
-            python3_command="python3.12"
-          elif (command -v python3 &> /dev/null); then
-            python3_command="python3"
-          elif (command -v python &> /dev/null); then
-            python3_command="python"
-          fi 
-          $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
-          echo "Python3_EXECUTABLE=$(which $python3_command)" >> $GITHUB_ENV
+          cache-key: ${{ env.cache-key }}
+          restore-key: "mlir_${{ matrix.name }}_clang"
+          os: ${{ matrix.os }}
 
       - name: "Build LLVM and MLIR"
         id: build
         run: |
-          export CCACHE_DIR="${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}/ccache"
-          export CCACHE_COMPILERCHECK="string:$($CC --version | head -n 1)"
-          echo $CCACHE_COMPILERCHECK
-          export CCACHE_MAXSIZE=700M
-          export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros
-          export CCACHE_CPP2=true
-          export CCACHE_UMASK=002
-          
-          export CMAKE_C_COMPILER_LAUNCHER=ccache
-          export CMAKE_CXX_COMPILER_LAUNCHER=ccache
-          export CMAKE_EXE_LINKER_FLAGS_INIT="-fuse-ld=lld"
-          export CMAKE_SHARED_LINKER_FLAGS_INIT="-fuse-ld=lld"
-          export CMAKE_MODULE_LINKER_FLAGS_INIT="-fuse-ld=lld"
-          export Python3_EXECUTABLE="$Python3_EXECUTABLE"
-          
           export LLVM_SOURCE_DIR="$PWD/third_party/llvm-project"
           export LLVM_BUILD_DIR="$PWD/llvm-build"
           # double nested so that upload artifacts uploads a folder 
           export LLVM_INSTALL_DIR="$PWD/llvm-install/llvm-install"
           
           ccache -z
+          $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
           build_tools/cmake/build_llvm.sh
           ccache -s
           
@@ -224,8 +132,8 @@ jobs:
         uses: actions/cache/save@v3
         if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
         with:
-          path: ${{ steps.canonicalize-cache-dir.outputs.CACHE_DIR }}
-          key: ${{ env.CACHE_KEY }}
+          path: ${{ steps.setup_base.outputs.cache-dir }}
+          key: ${{ env.cache-key }}
 
       - name: "Setup tmate session"
         if: ${{ (failure() && inputs.debug_with_tmate) || inputs.force_debug_with_tmate }}
