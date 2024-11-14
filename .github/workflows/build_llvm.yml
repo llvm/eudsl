@@ -44,15 +44,24 @@ jobs:
             runs-on: "ubuntu-22.04"
             container: "quay.io/pypa/manylinux_2_28_x86_64"
             os: "almalinux"
+            arch: x86_64
+          - name: "wasm_wasi"
+            runs-on: "ubuntu-22.04"
+            container: "quay.io/pypa/manylinux_2_28_x86_64"
+            os: "almalinux"
+            arch: "wasm32-wasi"
           - name: "windows_x86_64"
             runs-on: "windows-2019"
             os: "windows"
+            arch: x86_64
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
+            arch: arm64
           - name: "macos_x86_64"
             runs-on: "macos-13"
             os: "macos"
+            arch: x86_64
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -86,6 +95,7 @@ jobs:
           cache-key: ${{ env.cache-key }}
           restore-key: "mlir_${{ matrix.name }}_clang"
           os: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
 
       - name: "Build LLVM and MLIR"
         id: build
@@ -97,12 +107,16 @@ jobs:
           
           ccache -z
           $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
-          build_tools/cmake/build_llvm.sh
-          ccache -s
           
-          echo "*********************** SMOKE TEST *********************************"
-          "$LLVM_INSTALL_DIR/bin/mlir-tblgen" --version
-          echo "*********************** SMOKE TEST *********************************"
+          if [[ "${{ matrix.arch }}" == "wasm32-wasi" ]]; then
+            build_tools/build_llvm_wasi.sh
+          else
+            build_tools/build_llvm.sh
+            echo "*********************** SMOKE TEST *********************************"
+            "$LLVM_INSTALL_DIR/bin/mlir-tblgen" --version
+            echo "*********************** SMOKE TEST *********************************"
+          fi
+          ccache -s
           
           pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT=$(git rev-parse --short HEAD) && popd
           tar -czf mlir_${{ matrix.name }}_$(date +'%Y%m%d')_$LLVM_SHA_SHORT.tar.gz -C "$LLVM_INSTALL_DIR/.." llvm-install

@@ -27,6 +27,9 @@ set(MLIR_ENABLE_SPIRV_CPU_RUNNER ON CACHE BOOL "")
 
 # space savings
 
+set(LLVM_BUILD_DOCS OFF CACHE BOOL "")
+set(LLVM_ENABLE_OCAMLDOC OFF CACHE BOOL "")
+set(LLVM_ENABLE_BINDINGS OFF CACHE BOOL "")
 set(LLVM_BUILD_BENCHMARKS OFF CACHE BOOL "")
 set(LLVM_BUILD_EXAMPLES OFF CACHE BOOL "")
 set(LLVM_ENABLE_LIBCXX OFF CACHE BOOL "")
@@ -37,6 +40,7 @@ set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 set(LLVM_ENABLE_TERMINFO OFF CACHE BOOL "")
 # When exceptions are disabled, unwind tables are large and useless
 set(LLVM_ENABLE_UNWIND_TABLES OFF CACHE BOOL "")
+set(LLVM_ENABLE_CRASH_OVERRIDES OFF CACHE BOOL "")
 set(LLVM_ENABLE_Z3_SOLVER OFF CACHE BOOL "")
 set(LLVM_ENABLE_ZLIB OFF CACHE BOOL "")
 set(LLVM_ENABLE_ZSTD OFF CACHE BOOL "")
@@ -59,15 +63,12 @@ set(LLVM_INSTALL_TOOLCHAIN_ONLY OFF CACHE BOOL "")
 
 set(LLVM_DISTRIBUTIONS MlirDevelopment CACHE STRING "")
 set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
-      # these are needed basically for execution engine
-      # check LINK_COMPONENTS there
       llvm-config
       llvm-headers
       llvm-libraries
       cmake-exports
       FileCheck
       not
-      MLIRPythonModules
       MLIRPythonModules
       # triggers LLVMMlirDevelopmentExports.cmake
       mlirdevelopment-cmake-exports

@@ -5,6 +5,9 @@ inputs:
   os:
     required: true
     description: ''
+  arch:
+    required: true
+    description: ''
   cache-key:
     required: true
     description: ''
@@ -119,20 +122,29 @@ runs:
         fi 
         echo "python3_command=$python3_command" >> $GITHUB_ENV
 
+    - name: Setup Emscripten
+      if: contains(inputs.arch, 'wasm')
+      uses: mymindstorm/setup-emsdk@v14
+      with:
+        version: 3.1.71
+
     - name: "Set CMake/ccache env vars"
       shell: bash
       run: |
-          echo "CCACHE_DIR=${{ steps.canonicalize-cache-dir.outputs.cache-dir }}/ccache" >> $GITHUB_ENV
-          echo "CCACHE_COMPILERCHECK=string:$($CC --version | head -n 1)" >> $GITHUB_ENV
-          echo $CCACHE_COMPILERCHECK
-          echo "CCACHE_MAXSIZE=700M" >> $GITHUB_ENV
-          echo "CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros" >> $GITHUB_ENV
-          echo "CCACHE_CPP2=true" >> $GITHUB_ENV
-          echo "CCACHE_UMASK=002" >> $GITHUB_ENV
+        echo "CCACHE_DIR=${{ steps.canonicalize-cache-dir.outputs.cache-dir }}/ccache" >> $GITHUB_ENV
+        echo "CCACHE_COMPILERCHECK=string:$($CC --version | head -n 1)" >> $GITHUB_ENV
+        echo $CCACHE_COMPILERCHECK
+        echo "CCACHE_MAXSIZE=700M" >> $GITHUB_ENV
+        echo "CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros" >> $GITHUB_ENV
+        echo "CCACHE_CPP2=true" >> $GITHUB_ENV
+        echo "CCACHE_UMASK=002" >> $GITHUB_ENV
 
-          echo "CMAKE_C_COMPILER_LAUNCHER=ccache" >> $GITHUB_ENV
-          echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> $GITHUB_ENV
+        echo "CMAKE_C_COMPILER_LAUNCHER=ccache" >> $GITHUB_ENV
+        echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> $GITHUB_ENV
+        echo "Python3_EXECUTABLE=$(which $python3_command)" >> $GITHUB_ENV
+        
+        if [[ "${{ inputs.arch }}" != "wasm32-wasi" ]]; then
           echo "CMAKE_EXE_LINKER_FLAGS_INIT=-fuse-ld=lld" >> $GITHUB_ENV
           echo "CMAKE_SHARED_LINKER_FLAGS_INIT=-fuse-ld=lld" >> $GITHUB_ENV
           echo "CMAKE_MODULE_LINKER_FLAGS_INIT=-fuse-ld=lld" >> $GITHUB_ENV
-          echo "Python3_EXECUTABLE=$(which $python3_command)" >> $GITHUB_ENV
+        fi
