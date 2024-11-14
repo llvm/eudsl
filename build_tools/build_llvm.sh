@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 TD="$(cd $(dirname $0) && pwd)"
-REPO_ROOT="$(cd $TD/../.. && pwd)"
+REPO_ROOT="$(cd $TD/.. && pwd)"
 
 LLVM_SOURCE_DIR="${LLVM_SOURCE_DIR:-${REPO_ROOT}/third_party/llvm-project}"
 LLVM_BUILD_DIR="${LLVM_BUILD_DIR:-${REPO_ROOT}/llvm-build}"
@@ -18,9 +18,6 @@ echo "Paths canonicalized as:"
 echo "LLVM_SOURCE_DIR=${LLVM_SOURCE_DIR}"
 echo "LLVM_BUILD_DIR=${LLVM_BUILD_DIR}"
 echo "LLVM_INSTALL_DIR=${LLVM_INSTALL_DIR}"
-
-command="$1"
-shift
 
 python3_command=""
 if (command -v python3 &> /dev/null); then
@@ -42,7 +39,7 @@ cmake_options=(
   -DLLVM_TARGETS_TO_BUILD="${LLVM_TARGETS_TO_BUILD:-host}"
   -DCMAKE_BUILD_TYPE=Release
   -DPython3_EXECUTABLE="$Python3_EXECUTABLE"
-  -C "$TD/llvm_cache.cmake"
+  -C "$TD/cmake/llvm_cache.cmake"
   -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}"
 )
 
