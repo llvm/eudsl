@@ -14,10 +14,18 @@ on:
         required: false
         default: false
   pull_request:
+    paths:
+      - ".github/workflows/build_eudsl.yml"
+      - "projects/eudsl"
+      - "third_party/llvm-project"
   merge_group:
   push:
     branches:
       - main
+    paths:
+      - ".github/workflows/build_eudsl.yml"
+      - "projects/eudsl"
+      - "third_party/llvm-project"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
