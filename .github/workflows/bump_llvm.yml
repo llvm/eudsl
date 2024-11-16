@@ -1,0 +1,51 @@
+name: Auto bump LLVM
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/bump_llvm.yml"
+  schedule:
+    # At minute 0 past hour 1. (see https://crontab.guru)
+    - cron: '00 01 * * *'
+jobs:
+  update-dep:
+
+    name: "Bump LLVM and send PR"
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: true
+
+      - name: "Sync third-party/llvm-project"
+        id: sync-llvm-project
+        run: |
+          pushd third_party/llvm-project
+          git checkout main && git pull
+          echo "LLVM_SHA_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          popd
+
+      - uses: actions/create-github-app-token@v1
+        id: generate-token
+        with:
+          app-id: ${{ secrets.BUMP_LLVM_CREATE_PR_APP_ID }}
+          private-key: ${{ secrets.BUMP_LLVM_CREATE_PR_APP_PRIVATE_KEY }}
+
+      - name: "Create Pull Request"
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ steps.generate-token.outputs.token }}
+          commit-message: "[LLVM] Bump to ${{ steps.sync-llvm-project.outputs.LLVM_SHA_SHORT }}"
+          title: "[LLVM] Bump to ${{ steps.sync-llvm-project.outputs.LLVM_SHA_SHORT }}"
+          body: "Bump LLVM to https://github.com/llvm/llvm-project/commit/${{ steps.sync-llvm-project.outputs.LLVM_SHA_SHORT }}"
+          base: main
+          branch: update-llvm
+          delete-branch: true
+          assignees: makslevental
+          reviewers: makslevental
