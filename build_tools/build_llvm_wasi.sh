@@ -40,7 +40,7 @@ cmake_options=(
   -DCMAKE_C_FLAGS="-Os"
   -DCMAKE_CXX_FLAGS="-Os"
   -DCMAKE_BUILD_TYPE=Release
-  -DCMAKE_EXE_LINKER_FLAGS="-sSTANDALONE_WASM=1 -sWASM=1 -sWASM_BIGINT=1 -sEXPORT_ALL=0 -sEXPORTED_RUNTIME_METHODS=cwrap,ccall,getValue,setValue,writeAsciiToMemory,wasmTable -lembind"
+  -DCMAKE_EXE_LINKER_FLAGS="--emit-symbol-map -sSTANDALONE_WASM=1 -sWASM=1 -sWASM_BIGINT=1 -sEXPORT_ALL=0 -sEXPORTED_RUNTIME_METHODS=cwrap,ccall,getValue,setValue,writeAsciiToMemory,wasmTable -lembind"
   -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}"
   -DCMAKE_SYSTEM_NAME=Emscripten
   -DCMAKE_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"

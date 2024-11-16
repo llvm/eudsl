@@ -15,14 +15,21 @@ on:
         default: false
   pull_request:
     paths:
-      - ".github/workflows/build_llvm.yml"
       - ".github/actions/setup_base"
+      - ".github/workflows/build_llvm.yml"
       - "build_tools/cmake/llvm_cache.cmake"
+      - "build_tools/cmake/llvm_wasm_cache.cmake"
+      - "build_tools/build_llvm.sh"
+      - "build_tools/build_llvm_wasi.sh"
       - "third_party/llvm-project"
   push:
     branches:
       - main
     paths:
+      - "build_tools/cmake/llvm_cache.cmake"
+      - "build_tools/cmake/llvm_wasm_cache.cmake"
+      - "build_tools/build_llvm.sh"
+      - "build_tools/build_llvm_wasi.sh"
       - "third_party/llvm-project"
 
 concurrency:
