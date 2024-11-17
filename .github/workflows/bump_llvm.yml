@@ -44,6 +44,7 @@ jobs:
           commit-message: "[LLVM] Bump to ${{ steps.sync-llvm-project.outputs.LLVM_SHA_SHORT }}"
           title: "[LLVM] Bump to ${{ steps.sync-llvm-project.outputs.LLVM_SHA_SHORT }}"
           body: "Bump LLVM to https://github.com/llvm/llvm-project/commit/${{ steps.sync-llvm-project.outputs.LLVM_SHA_SHORT }}"
+          author: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
           base: main
           branch: update-llvm
           delete-branch: true
