@@ -14,11 +14,11 @@ set(LLVM_ENABLE_LIBPFM OFF CACHE BOOL "")
 set(LLVM_ENABLE_LIBXML2 OFF CACHE BOOL "")
 set(LLVM_ENABLE_OCAMLDOC OFF CACHE BOOL "")
 
-set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
-set(MLIR_BUILD_MLIR_C_DYLIB ON CACHE BOOL "")
+set(LLVM_BUILD_LLVM_DYLIB OFF CACHE BOOL "")
+set(MLIR_BUILD_MLIR_C_DYLIB OFF CACHE BOOL "")
 # when building libLLVM
 # relocation R_WASM_MEMORY_ADDR_SLEB cannot be used against symbol
-set(LLVM_ENABLE_PIC ON CACHE BOOL "")
+set(LLVM_ENABLE_PIC OFF CACHE BOOL "")
 set(MLIR_ENABLE_SPIRV_CPU_RUNNER OFF)
 set(MLIR_ENABLE_EXECUTION_ENGINE OFF)
 
@@ -41,7 +41,7 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
   llvm-headers
   llvm-libraries
   cmake-exports
-  opt
+  # opt
   # triggers LLVMMlirDevelopmentExports.cmake
   mlirdevelopment-cmake-exports
   # triggers MLIRMlirDevelopmentTargets.cmake
@@ -51,7 +51,7 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
   mlir-headers
   mlir-libraries
   mlir-opt
-  mlir-reduce
-  mlir-tblgen
-  mlir-translate
+  # mlir-reduce
+  # mlir-tblgen
+  # mlir-translate
   CACHE STRING "")
