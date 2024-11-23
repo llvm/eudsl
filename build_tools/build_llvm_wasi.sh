@@ -41,7 +41,7 @@ cmake_options=(
   -S "${LLVM_SOURCE_DIR}/llvm"
   -B "${LLVM_BUILD_DIR}"
   -DCMAKE_BUILD_TYPE=Release
-  -DCMAKE_EXE_LINKER_FLAGS="--emit-symbol-map -sSTANDALONE_WASM=1 -sWASM=1 -sWASM_BIGINT=1 -sLINKABLE=1 -sEXPORT_ALL=1 -sEXPORTED_RUNTIME_METHODS=cwrap,ccall,getValue,setValue,writeAsciiToMemory,wasmTable --minify 0 -lembind"
+  -DCMAKE_EXE_LINKER_FLAGS="--demangle --emit-symbol-map -sSTANDALONE_WASM=1 -sWASM=1 -sWASM_BIGINT=1 -sLINKABLE=1 -sEXPORT_ALL=1 -sEXPORTED_RUNTIME_METHODS=cwrap,ccall,getValue,setValue,writeAsciiToMemory,wasmTable --minify 0 -lembind"
   -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}"
   -DCMAKE_SYSTEM_NAME=Emscripten
   -DCMAKE_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
