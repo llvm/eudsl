@@ -1,0 +1,25 @@
+cmake_minimum_required(VERSION 3.29)
+project(eudsl_tblgen CXX C)
+set (CMAKE_CXX_STANDARD 17)
+
+find_package(LLVM REQUIRED CONFIG)
+message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+include_directories(${LLVM_INCLUDE_DIRS})
+
+find_package(Python 3.8
+  REQUIRED COMPONENTS Interpreter Development.Module
+  OPTIONAL_COMPONENTS Development.SABIModule)
+
+execute_process(
+  COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_DIR)
+find_package(nanobind CONFIG REQUIRED)
+
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+nanobind_add_module(eudsl_tblgen_ext NB_STATIC eudsl_tblgen_ext.cpp TGParser.cpp TGLexer.cpp)
+target_link_libraries(eudsl_tblgen_ext PRIVATE LLVMTableGenCommon LLVMTableGen)
+
+install(TARGETS eudsl_tblgen_ext LIBRARY DESTINATION eudsl_tblgen)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/eudsl_tblgen DESTINATION ${CMAKE_INSTALL_PREFIX})
