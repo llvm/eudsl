@@ -99,85 +99,85 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("RecordRecTyKind", RecTy::RecTyKind::RecordRecTyKind)
       .export_values();
 
-  recty.def_prop_ro("RecTyKind", &RecTy::getRecTyKind)
-      .def_prop_ro("RecordKeeper", &RecTy::getRecordKeeper)
-      .def_prop_ro("AsString", &RecTy::getAsString)
+  recty.def_prop_ro("rec_ty_kind", &RecTy::getRecTyKind)
+      .def_prop_ro("record_keeper", &RecTy::getRecordKeeper)
+      .def_prop_ro("as_string", &RecTy::getAsString)
       .def("__str__", &RecTy::getAsString)
-      .def("typeIsA", &RecTy::typeIsA)
-      .def("typeIsConvertibleTo", &RecTy::typeIsConvertibleTo);
+      .def("type_is_a", &RecTy::typeIsA)
+      .def("type_is_convertible_to", &RecTy::typeIsConvertibleTo);
 
   nb::class_<RecordRecTy, RecTy>(m, "RecordRecTy")
       .def_prop_ro(
-          "Classes",
+          "classes",
           coerceReturn<std::vector<const Record *>, ArrayRef<const Record *>>(
               &RecordRecTy::getClasses, nb::const_))
-      .def("isSubClassOf", &RecordRecTy::isSubClassOf);
+      .def("is_sub_class_of", &RecordRecTy::isSubClassOf);
 
   nb::class_<RecordVal>(m, "RecordVal")
       .def("dump", &RecordVal::dump)
-      .def_prop_ro("Name", &RecordVal::getName)
-      .def_prop_ro("NameInitAsString", &RecordVal::getNameInitAsString)
-      .def_prop_ro("PrintType", &RecordVal::getPrintType)
-      .def_prop_ro("RecordKeeper", &RecordVal::getRecordKeeper)
-      .def_prop_ro("Type", &RecordVal::getType)
-      .def_prop_ro("isNonconcreteOK", &RecordVal::isNonconcreteOK)
-      .def_prop_ro("isTemplateArg", &RecordVal::isTemplateArg)
-      .def_prop_ro("isUsed", &RecordVal::isUsed);
-  // .def_prop_ro("Loc", &RecordVal::getLoc)
-  // .def_prop_ro("NameInit", &RecordVal::getNameInit)
-  // .def_prop_ro("ReferenceLocs", &RecordVal::getReferenceLocs)
-  //  .def_prop_ro("Value", &RecordVal::getValue)
+      .def_prop_ro("name", &RecordVal::getName)
+      .def_prop_ro("name_init_as_string", &RecordVal::getNameInitAsString)
+      .def_prop_ro("print_type", &RecordVal::getPrintType)
+      .def_prop_ro("record_keeper", &RecordVal::getRecordKeeper)
+      .def_prop_ro("type", &RecordVal::getType)
+      .def_prop_ro("is_nonconcrete_ok", &RecordVal::isNonconcreteOK)
+      .def_prop_ro("is_template_arg", &RecordVal::isTemplateArg)
+      .def_prop_ro("is_used", &RecordVal::isUsed);
+  // .def_prop_ro("loc", &RecordVal::getLoc)
+  // .def_prop_ro("name_init", &RecordVal::getNameInit)
+  // .def_prop_ro("reference_locs", &RecordVal::getReferenceLocs)
+  //  .def_prop_ro("value", &RecordVal::getValue)
 
   nb::class_<Record>(m, "Record")
-      .def_prop_ro("DirectSuperClasses",
+      .def_prop_ro("direct_super_classes",
                    [](const Record &self) -> std::vector<const Record *> {
                      SmallVector<const Record *> Classes;
                      self.getDirectSuperClasses(Classes);
                      return {Classes.begin(), Classes.end()};
                    })
-      .def_prop_ro("ID", &Record::getID)
-      .def_prop_ro("Name", &Record::getName)
-      .def_prop_ro("NameInitAsString", &Record::getNameInitAsString)
-      .def_prop_ro("Records", &Record::getRecords)
-      .def_prop_ro("Type", &Record::getType)
-      .def("getValue", nb::overload_cast<StringRef>(&Record::getValue))
-      .def("getValueAsBit", &Record::getValueAsBit)
-      .def("getValueAsDef", &Record::getValueAsDef)
-      .def("getValueAsInt", &Record::getValueAsInt)
-      .def("getValueAsListOfDefs", &Record::getValueAsListOfDefs)
-      .def("getValueAsListOfInts", &Record::getValueAsListOfInts)
-      .def("getValueAsListOfStrings", &Record::getValueAsListOfStrings)
-      .def("getValueAsOptionalDef", &Record::getValueAsOptionalDef)
-      .def("getValueAsOptionalString", &Record::getValueAsOptionalString)
-      .def("getValueAsString", &Record::getValueAsString)
-      .def_prop_ro("Values", coerceReturn<std::vector<RecordVal>>(
+      .def_prop_ro("id", &Record::getID)
+      .def_prop_ro("name", &Record::getName)
+      .def_prop_ro("name_init_as_string", &Record::getNameInitAsString)
+      .def_prop_ro("records", &Record::getRecords)
+      .def_prop_ro("type", &Record::getType)
+      .def("get_value", nb::overload_cast<StringRef>(&Record::getValue))
+      .def("get_value_as_bit", &Record::getValueAsBit)
+      .def("get_value_as_def", &Record::getValueAsDef)
+      .def("get_value_as_int", &Record::getValueAsInt)
+      .def("get_value_as_list_of_defs", &Record::getValueAsListOfDefs)
+      .def("get_value_as_list_of_ints", &Record::getValueAsListOfInts)
+      .def("get_value_as_list_of_strings", &Record::getValueAsListOfStrings)
+      .def("get_value_as_optional_def", &Record::getValueAsOptionalDef)
+      .def("get_value_as_optional_string", &Record::getValueAsOptionalString)
+      .def("get_value_as_string", &Record::getValueAsString)
+      .def_prop_ro("values", coerceReturn<std::vector<RecordVal>>(
                                  &Record::getValues, nb::const_))
-      .def("hasDirectSuperClass", &Record::hasDirectSuperClass)
-      .def_prop_ro("isAnonymous", &Record::isAnonymous)
-      .def_prop_ro("isClass", &Record::isClass)
-      .def_prop_ro("isMultiClass", &Record::isMultiClass)
-      .def("isSubClassOf",
+      .def("has_direct_super_class", &Record::hasDirectSuperClass)
+      .def_prop_ro("is_anonymous", &Record::isAnonymous)
+      .def_prop_ro("is_class", &Record::isClass)
+      .def_prop_ro("is_multi_class", &Record::isMultiClass)
+      .def("is_sub_class_of",
            nb::overload_cast<const Record *>(&Record::isSubClassOf, nb::const_))
-      .def("isSubClassOf",
+      .def("is_sub_class_of",
            nb::overload_cast<StringRef>(&Record::isSubClassOf, nb::const_))
-      .def("isValueUnset", &Record::isValueUnset);
-  // .def_prop_ro("Assertions", &Record::getAssertions)
-  // .def_prop_ro("DefInit", &Record::getDefInit)
-  // .def_prop_ro("Dumps", &Record::getDumps)
-  // .def_prop_ro("FieldLoc", &Record::getFieldLoc)
-  // .def_prop_ro("ForwardDeclarationLocs", &Record::getForwardDeclarationLocs)
-  // .def_prop_ro("Loc", &Record::getLoc)
-  // .def_prop_ro("NameInit", &Record::getNameInit)
-  // .def_prop_ro("NewUID", &Record::getNewUID)
-  // .def_prop_ro("ReferenceLocs", &Record::getReferenceLocs)
-  // .def_prop_ro("SuperClasses", &Record::getSuperClasses)
-  // .def_prop_ro("TemplateArgs", &Record::getTemplateArgs)
-  // .def_prop_ro("ValueAsBitOrUnset", &Record::getValueAsBitOrUnset)
-  // .def_prop_ro("ValueAsBitsInit", &Record::getValueAsBitsInit)
-  // .def_prop_ro("ValueAsDag", &Record::getValueAsDag)
-  // .def_prop_ro("ValueAsListInit", &Record::getValueAsListInit)
-  // .def_prop_ro("ValueInit", &Record::getValueInit)
-  // .def_prop_ro("isTemplateArg", &Record::isTemplateArg)
+      .def("is_value_unset", &Record::isValueUnset);
+  // .def_prop_ro("assertions", &Record::getAssertions)
+  // .def_prop_ro("def_init", &Record::getDefInit)
+  // .def_prop_ro("dumps", &Record::getDumps)
+  // .def_prop_ro("field_loc", &Record::getFieldLoc)
+  // .def_prop_ro("forward_declaration_locs",
+  // &Record::getForwardDeclarationLocs) .def_prop_ro("loc", &Record::getLoc)
+  // .def_prop_ro("name_init", &Record::getNameInit)
+  // .def_prop_ro("new_uid", &Record::getNewUID)
+  // .def_prop_ro("reference_locs", &Record::getReferenceLocs)
+  // .def_prop_ro("super_classes", &Record::getSuperClasses)
+  // .def_prop_ro("template_args", &Record::getTemplateArgs)
+  // .def_prop_ro("value_as_bit_or_unset", &Record::getValueAsBitOrUnset)
+  // .def_prop_ro("value_as_bits_init", &Record::getValueAsBitsInit)
+  // .def_prop_ro("value_as_dag", &Record::getValueAsDag)
+  // .def_prop_ro("value_as_list_init", &Record::getValueAsListInit)
+  // .def_prop_ro("value_init", &Record::getValueInit)
+  // .def_prop_ro("is_template_arg", &Record::isTemplateArg)
 
   using RecordMap = std::map<std::string, std::unique_ptr<Record>, std::less<>>;
 
@@ -222,11 +222,11 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("parse_td", &parseTD, "input_filename"_a, "include_dirs"_a,
            "macro_names"_a = nb::list(),
            "no_warn_on_unused_template_args"_a = true)
-      .def_prop_ro("InputFilename", &RecordKeeper::getInputFilename)
-      .def_prop_ro("Classes", &RecordKeeper::getClasses)
-      .def_prop_ro("Defs", &RecordKeeper::getDefs)
-      .def_prop_ro("Globals", &RecordKeeper::getGlobals)
-      .def("getAllDerivedDefinitions",
+      .def_prop_ro("input_filename", &RecordKeeper::getInputFilename)
+      .def_prop_ro("classes", &RecordKeeper::getClasses)
+      .def_prop_ro("defs", &RecordKeeper::getDefs)
+      .def_prop_ro("globals", &RecordKeeper::getGlobals)
+      .def("get_all_derived_definitions",
            coerceReturn<std::vector<const Record *>, ArrayRef<const Record *>>(
                &RecordKeeper::getAllDerivedDefinitions, nb::const_));
 }
