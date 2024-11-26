@@ -14,6 +14,10 @@ inputs:
   restore-key:
     required: true
     description: ''
+  python-version:
+    required: false
+    description: ''
+    default: '3.12'
 
 outputs:
   cache-dir:
@@ -83,7 +87,7 @@ runs:
       uses: actions/setup-python@v4
       if: ${{ startsWith(inputs.os, 'macos') || startsWith(inputs.os, 'windows') }}
       with:
-        python-version: '3.12'
+        python-version: ${{ inputs.python-version }}
 
     - name: "Setup compiler/toolchain"
       uses: aminya/setup-cpp@v1
@@ -113,8 +117,8 @@ runs:
       shell: bash
       run: |
         python3_command=""
-        if (command -v python3.12 &> /dev/null); then
-          python3_command="python3.12"
+        if (command -v python${{ inputs.python-version }} &> /dev/null); then
+          python3_command="python${{ inputs.python-version }}"
         elif (command -v python3 &> /dev/null); then
           python3_command="python3"
         elif (command -v python &> /dev/null); then
@@ -139,6 +143,7 @@ runs:
         echo "CCACHE_CPP2=true" >> $GITHUB_ENV
         echo "CCACHE_UMASK=002" >> $GITHUB_ENV
 
+        echo "CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
         echo "CMAKE_C_COMPILER_LAUNCHER=ccache" >> $GITHUB_ENV
         echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> $GITHUB_ENV
         echo "Python3_EXECUTABLE=$(which $python3_command)" >> $GITHUB_ENV

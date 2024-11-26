@@ -14,24 +14,6 @@ using namespace llvm;
 namespace nb = nanobind;
 using namespace nb::literals;
 
-void parseTD(RecordKeeper &Records, const std::string &InputFilename,
-             const std::vector<std::string> &IncludeDirs,
-             const std::vector<std::string> &MacroNames,
-             bool NoWarnOnUnusedTemplateArgs) {
-  ErrorOr<std::unique_ptr<MemoryBuffer>> FileOrErr =
-      MemoryBuffer::getFileOrSTDIN(InputFilename, /*IsText=*/true);
-  if (std::error_code EC = FileOrErr.getError())
-    throw std::runtime_error("Could not open input file '" + InputFilename +
-                             "': " + EC.message() + "\n");
-  Records.saveInputFilename(InputFilename);
-  SourceMgr SrcMgr;
-  SrcMgr.AddNewSourceBuffer(std::move(*FileOrErr), SMLoc());
-  SrcMgr.setIncludeDirs(IncludeDirs);
-  TGParser Parser(SrcMgr, MacroNames, Records, NoWarnOnUnusedTemplateArgs);
-  if (Parser.ParseFile())
-    throw std::runtime_error("Could not parse file '" + InputFilename);
-}
-
 template <typename NewReturn, typename Return, typename... Args>
 constexpr auto coerceReturn(Return (*pf)(Args...)) noexcept {
   return [&pf](Args &&...args) -> NewReturn {
@@ -96,8 +78,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("StringRecTyKind", RecTy::RecTyKind::StringRecTyKind)
       .value("ListRecTyKind", RecTy::RecTyKind::ListRecTyKind)
       .value("DagRecTyKind", RecTy::RecTyKind::DagRecTyKind)
-      .value("RecordRecTyKind", RecTy::RecTyKind::RecordRecTyKind)
-      .export_values();
+      .value("RecordRecTyKind", RecTy::RecTyKind::RecordRecTyKind);
 
   recty.def_prop_ro("rec_ty_kind", &RecTy::getRecTyKind)
       .def_prop_ro("record_keeper", &RecTy::getRecordKeeper)
@@ -110,8 +91,15 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_prop_ro(
           "classes",
           coerceReturn<std::vector<const Record *>, ArrayRef<const Record *>>(
-              &RecordRecTy::getClasses, nb::const_))
+              &RecordRecTy::getClasses, nb::const_),
+          nb::rv_policy::reference_internal)
       .def("is_sub_class_of", &RecordRecTy::isSubClassOf);
+
+  nb::class_<Init>(m, "Init")
+      .def_prop_ro("as_string", &Init::getAsUnquotedString)
+      .def("__str__", &Init::getAsUnquotedString)
+      .def("is_complete", &Init::isComplete)
+      .def("is_concrete", &Init::isConcrete);
 
   nb::class_<RecordVal>(m, "RecordVal")
       .def("dump", &RecordVal::dump)
@@ -122,34 +110,46 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_prop_ro("type", &RecordVal::getType)
       .def_prop_ro("is_nonconcrete_ok", &RecordVal::isNonconcreteOK)
       .def_prop_ro("is_template_arg", &RecordVal::isTemplateArg)
+      .def_prop_ro("value", &RecordVal::getValue,
+                   nb::rv_policy::reference_internal)
       .def_prop_ro("is_used", &RecordVal::isUsed);
-  // .def_prop_ro("loc", &RecordVal::getLoc)
-  // .def_prop_ro("name_init", &RecordVal::getNameInit)
-  // .def_prop_ro("reference_locs", &RecordVal::getReferenceLocs)
-  //  .def_prop_ro("value", &RecordVal::getValue)
 
   nb::class_<Record>(m, "Record")
-      .def_prop_ro("direct_super_classes",
-                   [](const Record &self) -> std::vector<const Record *> {
-                     SmallVector<const Record *> Classes;
-                     self.getDirectSuperClasses(Classes);
-                     return {Classes.begin(), Classes.end()};
-                   })
+      .def_prop_ro(
+          "direct_super_classes",
+          [](const Record &self) -> std::vector<const Record *> {
+            SmallVector<const Record *> Classes;
+            self.getDirectSuperClasses(Classes);
+            return {Classes.begin(), Classes.end()};
+          },
+          nb::rv_policy::reference_internal)
       .def_prop_ro("id", &Record::getID)
       .def_prop_ro("name", &Record::getName)
       .def_prop_ro("name_init_as_string", &Record::getNameInitAsString)
       .def_prop_ro("records", &Record::getRecords)
       .def_prop_ro("type", &Record::getType)
-      .def("get_value", nb::overload_cast<StringRef>(&Record::getValue))
+      .def("get_value", nb::overload_cast<StringRef>(&Record::getValue),
+           nb::rv_policy::reference_internal)
       .def("get_value_as_bit", &Record::getValueAsBit)
       .def("get_value_as_def", &Record::getValueAsDef)
       .def("get_value_as_int", &Record::getValueAsInt)
-      .def("get_value_as_list_of_defs", &Record::getValueAsListOfDefs)
+      .def("get_value_as_list_of_defs", &Record::getValueAsListOfDefs,
+           nb::rv_policy::reference_internal)
       .def("get_value_as_list_of_ints", &Record::getValueAsListOfInts)
       .def("get_value_as_list_of_strings", &Record::getValueAsListOfStrings)
-      .def("get_value_as_optional_def", &Record::getValueAsOptionalDef)
+      .def("get_value_as_optional_def", &Record::getValueAsOptionalDef,
+           nb::rv_policy::reference_internal)
       .def("get_value_as_optional_string", &Record::getValueAsOptionalString)
       .def("get_value_as_string", &Record::getValueAsString)
+      .def("get_value_as_bit_or_unset", &Record::getValueAsBitOrUnset)
+      .def("get_value_as_bits_init", &Record::getValueAsBitsInit,
+           nb::rv_policy::reference_internal)
+      .def("get_value_as_dag", &Record::getValueAsDag,
+           nb::rv_policy::reference_internal)
+      .def("get_value_as_list_init", &Record::getValueAsListInit,
+           nb::rv_policy::reference_internal)
+      .def("get_value_init", &Record::getValueInit,
+           nb::rv_policy::reference_internal)
       .def_prop_ro("values", coerceReturn<std::vector<RecordVal>>(
                                  &Record::getValues, nb::const_))
       .def("has_direct_super_class", &Record::hasDirectSuperClass)
@@ -160,26 +160,28 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            nb::overload_cast<const Record *>(&Record::isSubClassOf, nb::const_))
       .def("is_sub_class_of",
            nb::overload_cast<StringRef>(&Record::isSubClassOf, nb::const_))
-      .def("is_value_unset", &Record::isValueUnset);
+      .def("is_value_unset", &Record::isValueUnset)
+      .def_prop_ro("def_init", &Record::getDefInit)
+      .def_prop_ro("name_init", &Record::getNameInit)
+      .def_prop_ro(
+          "template_args",
+          coerceReturn<std::vector<const Init *>, ArrayRef<const Init *>>(
+              &Record::getTemplateArgs, nb::const_),
+          nb::rv_policy::reference_internal)
+      .def("is_template_arg", &Record::isTemplateArg);
   // .def_prop_ro("assertions", &Record::getAssertions)
-  // .def_prop_ro("def_init", &Record::getDefInit)
   // .def_prop_ro("dumps", &Record::getDumps)
   // .def_prop_ro("field_loc", &Record::getFieldLoc)
   // .def_prop_ro("forward_declaration_locs",
-  // &Record::getForwardDeclarationLocs) .def_prop_ro("loc", &Record::getLoc)
-  // .def_prop_ro("name_init", &Record::getNameInit)
+  //              &Record::getForwardDeclarationLocs)
+  // .def_prop_ro("loc", &Record::getLoc)
   // .def_prop_ro("new_uid", &Record::getNewUID)
   // .def_prop_ro("reference_locs", &Record::getReferenceLocs)
   // .def_prop_ro("super_classes", &Record::getSuperClasses)
-  // .def_prop_ro("template_args", &Record::getTemplateArgs)
-  // .def_prop_ro("value_as_bit_or_unset", &Record::getValueAsBitOrUnset)
-  // .def_prop_ro("value_as_bits_init", &Record::getValueAsBitsInit)
-  // .def_prop_ro("value_as_dag", &Record::getValueAsDag)
-  // .def_prop_ro("value_as_list_init", &Record::getValueAsListInit)
-  // .def_prop_ro("value_init", &Record::getValueInit)
-  // .def_prop_ro("is_template_arg", &Record::isTemplateArg)
 
   using RecordMap = std::map<std::string, std::unique_ptr<Record>, std::less<>>;
+  using GlobalMap = std::map<std::string, const Init *, std::less<>>;
+  nb::bind_map<GlobalMap, nb::rv_policy::reference_internal>(m, "GlobalMap");
 
   nb::class_<RecordMap>(m, "RecordMap")
       .def("__len__", [](const RecordMap &m) { return m.size(); })
@@ -211,22 +213,44 @@ NB_MODULE(eudsl_tblgen_ext, m) {
               throw nb::key_error();
             // hack because by default (i.e, when using bind_map)
             // the unique_ptr is moved out of the map
-            Record *r = m[k].release();
-            m[k] = std::make_unique<Record>(*r);
-            return r;
+            return m[k].get();
           },
           nb::rv_policy::reference_internal);
 
   nb::class_<RecordKeeper>(m, "RecordKeeper")
       .def(nb::init<>())
-      .def("parse_td", &parseTD, "input_filename"_a, "include_dirs"_a,
-           "macro_names"_a = nb::list(),
-           "no_warn_on_unused_template_args"_a = true)
+      .def(
+          "parse_td",
+          [](RecordKeeper &self, const std::string &inputFilename,
+             const std::vector<std::string> &includeDirs,
+             const std::vector<std::string> &macroNames,
+             bool noWarnOnUnusedTemplateArgs) {
+            ErrorOr<std::unique_ptr<MemoryBuffer>> fileOrErr =
+                MemoryBuffer::getFileOrSTDIN(inputFilename, /*IsText=*/true);
+            if (std::error_code EC = fileOrErr.getError())
+              throw std::runtime_error("Could not open input file '" +
+                                       inputFilename + "': " + EC.message() +
+                                       "\n");
+            self.saveInputFilename(inputFilename);
+            SourceMgr srcMgr;
+            srcMgr.AddNewSourceBuffer(std::move(*fileOrErr), SMLoc());
+            srcMgr.setIncludeDirs(includeDirs);
+            TGParser tgParser(srcMgr, macroNames, self,
+                              noWarnOnUnusedTemplateArgs);
+            if (tgParser.ParseFile())
+              throw std::runtime_error("Could not parse file '" +
+                                       inputFilename);
+            return &self;
+          },
+          "input_filename"_a, "include_dirs"_a = nb::list(),
+          "macro_names"_a = nb::list(),
+          "no_warn_on_unused_template_args"_a = true)
       .def_prop_ro("input_filename", &RecordKeeper::getInputFilename)
       .def_prop_ro("classes", &RecordKeeper::getClasses)
       .def_prop_ro("defs", &RecordKeeper::getDefs)
       .def_prop_ro("globals", &RecordKeeper::getGlobals)
       .def("get_all_derived_definitions",
            coerceReturn<std::vector<const Record *>, ArrayRef<const Record *>>(
-               &RecordKeeper::getAllDerivedDefinitions, nb::const_));
+               &RecordKeeper::getAllDerivedDefinitions, nb::const_),
+           nb::rv_policy::reference_internal);
 }

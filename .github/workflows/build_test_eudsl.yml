@@ -1,4 +1,4 @@
-name: "Build EUDSL"
+name: "Build and test EUDSL"
 
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-eudsl-tblgen:
 
     strategy:
       fail-fast: false
@@ -54,7 +54,7 @@ jobs:
 
     runs-on: ${{ matrix.runs-on }}
 
-    name: ${{ matrix.name }}
+    name: "Build eudsl-tblgen ${{ matrix.name }}"
 
     defaults:
       run:
@@ -84,6 +84,7 @@ jobs:
           cache-key: ${{ env.cache-key }}
           restore-key: "eudsl_${{ matrix.name }}_clang"
           os: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
 
       - name: "Download MLIR"
         env:
@@ -93,51 +94,22 @@ jobs:
           RELEASE_URL=$(gh release view latest --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains(env.RELEASE_PREFIX))) | .[-1] | .url')
           curl -sLO $RELEASE_URL
           tar xf $RELEASE_PREFIX*.tar.gz
+          echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
 
       - name: "Build eudsl-tblgen"
         id: build
         run: |
-          export CMAKE_PREFIX_PATH="$PWD/llvm-install"
           export EUDSL_SRC_DIR="$PWD/projects/eudsl"
-          export EUDSL_BUILD_DIR="$PWD/eudsl-build"
-          export EUDSL_INSTALL_DIR="$PWD/eudsl-install"
-
           ccache -z
-          cmake -GNinja \
-                -S "$EUDSL_SRC_DIR" \
-                -B "$EUDSL_BUILD_DIR" \
-                -DCMAKE_BUILD_TYPE=Release \
-                "-DCMAKE_PREFIX_PATH=$PWD/__w/eudsl/eudsl/llvm-install/llvm-install" \
-                "-DCMAKE_INSTALL_PREFIX=$EUDSL_INSTALL_DIR"
-          cmake --build "$EUDSL_BUILD_DIR" --target install
+          $python3_command -m pip wheel "$EUDSL_SRC_DIR/eudsl-tblgen" -w wheelhouse
           ccache -s
-
-          echo "*********************** SMOKE TEST *********************************"
-          "$EUDSL_INSTALL_DIR/bin/eudsl-tblgen" --help
-          echo "*********************** SMOKE TEST *********************************"
-
-          SHA_SHORT=$(git rev-parse --short HEAD)
-          tar -czf eudsl_tblgen_${{ matrix.name }}_$(date +'%Y%m%d')_$SHA_SHORT.tar.gz -C "$EUDSL_INSTALL_DIR" bin
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: eudsl_${{ matrix.name }}_artifact
-          path: eudsl-install/bin
+          name: eudsl_tblgen_${{ matrix.name }}_artifact
+          path: wheelhouse/*.whl
           if-no-files-found: warn
-
-      - name: Release current commit
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
-        uses: ncipollo/release-action@v1.12.0
-        with:
-          artifacts: "*.tar.gz"
-          token: "${{ secrets.GITHUB_TOKEN }}"
-          tag: "latest"
-          name: "latest"
-          removeArtifacts: false
-          allowUpdates: true
-          replacesArtifacts: true
-          makeLatest: true
 
       - name: "Save cache"
         uses: actions/cache/save@v3
@@ -152,3 +124,67 @@ jobs:
         with:
           limit-access-to-actor: true
           install-dependencies: ${{ startsWith(matrix.runs-on, 'macos') || startsWith(matrix.runs-on, 'windows') }}
+
+  test-eudsl-tblgen:
+
+    needs: [build-eudsl-tblgen]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "manylinux_x86_64"
+            runs-on: "ubuntu-22.04"
+            container: "quay.io/pypa/manylinux_2_28_x86_64"
+            os: "almalinux"
+          - name: "windows_x86_64"
+            runs-on: "windows-2019"
+            os: "windows"
+          - name: "macos_arm64"
+            runs-on: "macos-14"
+            os: "macos"
+          - name: "macos_x86_64"
+            runs-on: "macos-13"
+            os: "macos"
+
+    runs-on: ${{ matrix.runs-on }}
+
+    name: "Test eudsl-tblgen ${{ matrix.name }}"
+
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ${{ matrix.container }}
+
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: false
+
+      - name: "Setup base"
+        uses: ./.github/actions/setup_base
+        id: setup_base
+        with:
+          os: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: eudsl_tblgen_${{ matrix.name }}_artifact
+          path: wheelhouse
+
+      - name: "Install eudsl-tblgen"
+        run: |
+          $python3_command -m pip install wheelhouse/eudsl_tblgen*.whl
+          $python3_command -m pip install pytest
+
+      - name: "Test eudsl-tblgen"
+        run: |
+          if [ ${{ matrix.os }} == 'windows' ]; then
+            $python3_command -m pytest -s projects/eudsl/eudsl-tblgen/tests
+          else
+            $python3_command -m pytest --capture=tee-sys projects/eudsl/eudsl-tblgen/tests
+          fi

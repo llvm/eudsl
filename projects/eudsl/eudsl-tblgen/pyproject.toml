@@ -1,0 +1,30 @@
+[build-system]
+requires = ["scikit-build-core >=0.4.3", "nanobind >=1.3.2"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "eudsl-tblgen"
+version = "0.0.1"
+requires-python = ">=3.8"
+
+[project.urls]
+Homepage = "https://github.com/llvm/eudsl"
+
+[tool.scikit-build]
+minimum-version = "0.4"
+build-dir = "build/{wheel_tag}"
+wheel.py-api = "cp312"
+cmake.source-dir = "src"
+
+[tool.scikit-build.cmake.define]
+LLVM_DIR = {env="LLVM_DIR", default="EMPTY"}
+CMAKE_CXX_VISIBILITY_PRESET = "hidden"
+
+[tool.cibuildwheel]
+build-verbosity = 1
+test-command = "pytest {project}/tests"
+test-requires = "pytest"
+test-skip="cp38-macosx_*:arm64"
+
+[tool.cibuildwheel.macos.environment]
+MACOSX_DEPLOYMENT_TARGET = "10.14"
