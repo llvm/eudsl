@@ -15,7 +15,7 @@ on:
         default: false
   pull_request:
     paths:
-      - ".github/workflows/build_test_eudsl.yml"
+      - ".github/workflows/build_test_release_eudsl.yml"
       - "projects/eudsl"
       - "third_party/llvm-project"
   merge_group:
@@ -23,7 +23,7 @@ on:
     branches:
       - main
     paths:
-      - ".github/workflows/build_eudsl.yml"
+      - ".github/workflows/build_test_release_eudsl.yml"
       - "projects/eudsl"
       - "third_party/llvm-project"
 
@@ -73,8 +73,6 @@ jobs:
     steps:
       - name: "Check out repository"
         uses: actions/checkout@v4.2.2
-        with:
-          submodules: true
 
       - name: "Setup base"
         uses: ./.github/actions/setup_base
@@ -105,7 +103,9 @@ jobs:
         run: |
           pip install cibuildwheel
           export EUDSL_SRC_DIR="$PWD/projects/eudsl"
-          export LLVM_DIR="/host/$LLVM_DIR"
+          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            export LLVM_DIR="/host/$LLVM_DIR"
+          fi
           $python3_command -m cibuildwheel "$EUDSL_SRC_DIR/eudsl-tblgen" --output-dir wheelhouse
 
       - name: Upload artifacts
@@ -129,19 +129,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: "ubuntu_x86_64"
-            runs-on: "ubuntu-22.04"
-            os: "ubuntu"
-          - name: "windows_x86_64"
-            runs-on: "windows-2019"
-            os: "windows"
-          - name: "macos_arm64"
-            runs-on: "macos-14"
-            os: "macos"
-          - name: "macos_x86_64"
-            runs-on: "macos-13"
-            os: "macos"
+        runs-on: ["ubuntu-22.04", "macos-14", "macos-13"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        include: [
+          {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
+          {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
+          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"},
+        ]
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -151,21 +145,16 @@ jobs:
       run:
         shell: bash
 
-    container:
-      image: ${{ matrix.container }}
-
     steps:
       - name: "Check out repository"
         uses: actions/checkout@v4.2.2
         with:
           submodules: false
 
-      - name: "Setup base"
-        uses: ./.github/actions/setup_base
-        id: setup_base
+      - name: "Install Python"
+        uses: actions/setup-python@v4
         with:
-          os: ${{ matrix.os }}
-          arch: ${{ matrix.arch }}
+          python-version: "${{ matrix.python-version }}"
 
       - uses: actions/download-artifact@v4
         with:
@@ -174,18 +163,19 @@ jobs:
 
       - name: "Install eudsl-tblgen"
         run: |
-          $python3_command -m pip install wheelhouse/eudsl_tblgen*.whl
-          $python3_command -m pip install pytest
+          python -m pip install pytest
+          python -m pip install eudsl-tblgen -f wheelhouse
 
       - name: "Test eudsl-tblgen"
         run: |
           if [ ${{ matrix.os }} == 'windows' ]; then
-            $python3_command -m pytest -s projects/eudsl/eudsl-tblgen/tests
+            python -m pytest -s projects/eudsl/eudsl-tblgen/tests
           else
-            $python3_command -m pytest --capture=tee-sys projects/eudsl/eudsl-tblgen/tests
+            python -m pytest --capture=tee-sys projects/eudsl/eudsl-tblgen/tests
           fi
 
   release-eudsl-tblgen:
+
     if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: [test-eudsl-tblgen]
     runs-on: "ubuntu-22.04"
