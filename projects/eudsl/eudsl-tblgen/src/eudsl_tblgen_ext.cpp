@@ -68,6 +68,11 @@ struct nb::detail::type_caster<StringRef> {
   }
 };
 
+// hack to expose protected Init::InitKind
+struct HackInit : public Init {
+  using InitKind = Init::InitKind;
+};
+
 NB_MODULE(eudsl_tblgen_ext, m) {
 
   auto recty = nb::class_<RecTy>(m, "RecTy");
@@ -92,6 +97,33 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_prop_ro("classes", coerceReturn<std::vector<const Record *>>(
                                   &RecordRecTy::getClasses, nb::const_))
       .def("is_sub_class_of", &RecordRecTy::isSubClassOf);
+
+  nb::enum_<HackInit::InitKind>(m, "InitKind")
+      .value("IK_FirstTypedInit", HackInit::InitKind::IK_FirstTypedInit)
+      .value("IK_BitInit", HackInit::InitKind::IK_BitInit)
+      .value("IK_BitsInit", HackInit::InitKind::IK_BitsInit)
+      .value("IK_DagInit", HackInit::InitKind::IK_DagInit)
+      .value("IK_DefInit", HackInit::InitKind::IK_DefInit)
+      .value("IK_FieldInit", HackInit::InitKind::IK_FieldInit)
+      .value("IK_IntInit", HackInit::InitKind::IK_IntInit)
+      .value("IK_ListInit", HackInit::InitKind::IK_ListInit)
+      .value("IK_FirstOpInit", HackInit::InitKind::IK_FirstOpInit)
+      .value("IK_BinOpInit", HackInit::InitKind::IK_BinOpInit)
+      .value("IK_TernOpInit", HackInit::InitKind::IK_TernOpInit)
+      .value("IK_UnOpInit", HackInit::InitKind::IK_UnOpInit)
+      .value("IK_LastOpInit", HackInit::InitKind::IK_LastOpInit)
+      .value("IK_CondOpInit", HackInit::InitKind::IK_CondOpInit)
+      .value("IK_FoldOpInit", HackInit::InitKind::IK_FoldOpInit)
+      .value("IK_IsAOpInit", HackInit::InitKind::IK_IsAOpInit)
+      .value("IK_ExistsOpInit", HackInit::InitKind::IK_ExistsOpInit)
+      .value("IK_AnonymousNameInit", HackInit::InitKind::IK_AnonymousNameInit)
+      .value("IK_StringInit", HackInit::InitKind::IK_StringInit)
+      .value("IK_VarInit", HackInit::InitKind::IK_VarInit)
+      .value("IK_VarBitInit", HackInit::InitKind::IK_VarBitInit)
+      .value("IK_VarDefInit", HackInit::InitKind::IK_VarDefInit)
+      .value("IK_LastTypedInit", HackInit::InitKind::IK_LastTypedInit)
+      .value("IK_UnsetInit", HackInit::InitKind::IK_UnsetInit)
+      .value("IK_ArgumentInit", HackInit::InitKind::IK_ArgumentInit);
 
   nb::class_<Init>(m, "Init")
       .def_prop_ro("kind", &Init::getKind)
@@ -143,10 +175,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
   nb::class_<ListInit, TypedInit>(m, "ListInit")
       .def("__len__", [](const ListInit &v) { return v.size(); })
       .def("__bool__", [](const ListInit &v) { return !v.empty(); })
-      .def("__repr__",
-           [](nb::handle_t<ListInit> h) {
-             return nb::steal<nb::str>(nb::detail::repr_list(h.ptr()));
-           })
       .def(
           "__iter__",
           [](ListInit &v) {
@@ -157,7 +185,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def(
           "__getitem__",
           [](ListInit &v, Py_ssize_t i) {
-            v.getElement(nb::detail::wrap(i, v.size()));
+            return v.getElement(nb::detail::wrap(i, v.size()));
           },
           nb::rv_policy::reference_internal)
       .def_prop_ro("element_type", &ListInit::getElementType)
@@ -251,7 +279,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_prop_ro("bit_num", &VarBitInit::getBitNum);
 
   nb::class_<DefInit, TypedInit>(m, "DefInit")
-      .def_prop_ro("def", &DefInit::getDef);
+      .def_prop_ro("def_", &DefInit::getDef);
 
   nb::class_<VarDefInit, TypedInit>(m, "VarDefInit")
       .def("get_arg", &VarDefInit::getArg, nb::rv_policy::reference_internal)
@@ -259,10 +287,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                                &VarDefInit::args, nb::const_))
       .def("__len__", [](const VarDefInit &v) { return v.args_size(); })
       .def("__bool__", [](const VarDefInit &v) { return !v.args_empty(); })
-      .def("__repr__",
-           [](nb::handle_t<VarDefInit> h) {
-             return nb::steal<nb::str>(nb::detail::repr_list(h.ptr()));
-           })
       .def(
           "__iter__",
           [](VarDefInit &v) {
@@ -274,7 +298,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def(
           "__getitem__",
           [](VarDefInit &v, Py_ssize_t i) {
-            v.getArg(nb::detail::wrap(i, v.args_size()));
+            return v.getArg(nb::detail::wrap(i, v.args_size()));
           },
           nb::rv_policy::reference_internal);
 
@@ -302,10 +326,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            nb::rv_policy::reference_internal)
       .def("__len__", [](const DagInit &v) { return v.arg_size(); })
       .def("__bool__", [](const DagInit &v) { return !v.arg_empty(); })
-      .def("__repr__",
-           [](nb::handle_t<DagInit> h) {
-             return nb::steal<nb::str>(nb::detail::repr_list(h.ptr()));
-           })
       .def(
           "__iter__",
           [](DagInit &v) {
@@ -316,7 +336,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def(
           "__getitem__",
           [](DagInit &v, Py_ssize_t i) {
-            v.getArg(nb::detail::wrap(i, v.arg_size()));
+            return v.getArg(nb::detail::wrap(i, v.arg_size()));
           },
           nb::rv_policy::reference_internal);
 
@@ -436,8 +456,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                                        "\n");
             self.saveInputFilename(inputFilename);
             SourceMgr srcMgr;
-            srcMgr.AddNewSourceBuffer(std::move(*fileOrErr), SMLoc());
             srcMgr.setIncludeDirs(includeDirs);
+            srcMgr.AddNewSourceBuffer(std::move(*fileOrErr), SMLoc());
             TGParser tgParser(srcMgr, macroNames, self,
                               noWarnOnUnusedTemplateArgs);
             if (tgParser.ParseFile())

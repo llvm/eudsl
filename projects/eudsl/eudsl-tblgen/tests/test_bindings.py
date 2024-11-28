@@ -6,11 +6,13 @@ from eudsl_tblgen import RecordKeeper
 
 @pytest.fixture(scope="function")
 def json_record_keeper():
-    return RecordKeeper().parse_td(str(Path(__file__).parent / "JSON.td"))
+    return RecordKeeper().parse_td(str(Path(__file__).parent / "td" / "JSON.td"))
 
 
 def test_json_record_keeper(json_record_keeper):
-    assert json_record_keeper.input_filename == str(Path(__file__).parent / "JSON.td")
+    assert json_record_keeper.input_filename == str(
+        Path(__file__).parent / "td" / "JSON.td"
+    )
 
     assert set(json_record_keeper.classes) == {
         "Base",
@@ -129,14 +131,77 @@ def test_record_rec_ty(json_record_keeper):
     assert deriv_cl.type.is_sub_class_of(interm_cl)
 
 
-# @pytest.fixture(scope="function")
-# def constraints_record_keeper():
-#     return RecordKeeper().parse_td(
-#         str(Path(__file__).parent / "CommonTypeConstraints.td")
-#     )
-#
-#
-# def test_init_complex(constraints_record_keeper):
-#     print(list(constraints_record_keeper.classes.keys()))
-#     print(list(constraints_record_keeper.defs.keys()))
-#     print(list(constraints_record_keeper.globals.keys()))
+@pytest.fixture(scope="function")
+def record_keeper_test_dialect():
+    here = Path(__file__).parent
+    return RecordKeeper().parse_td(
+        str(here / "td" / "TestDialect.td"), [str(here / "td")]
+    )
+
+
+def test_init_complex(record_keeper_test_dialect):
+    op = record_keeper_test_dialect.defs["Test_TypesOp"]
+    assert str(op.get_value("opName").value) == "types"
+    assert str(op.get_value("cppNamespace").value) == "test"
+    assert str(op.get_value("opDocGroup").value) == "?"
+    assert str(op.get_value("results").value) == "(outs)"
+    assert str(op.get_value("regions").value) == "(region)"
+    assert str(op.get_value("successors").value) == "(successor)"
+    assert str(op.get_value("builders").value) == "?"
+    assert op.get_value("skipDefaultBuilders").value.value is False
+    assert str(op.get_value("assemblyFormat").value) == "?"
+    assert op.get_value("hasCustomAssemblyFormat").value.value is False
+    assert op.get_value("hasVerifier").value.value is False
+    assert op.get_value("hasRegionVerifier").value.value is False
+    assert op.get_value("hasCanonicalizer").value.value is False
+    assert op.get_value("hasCanonicalizeMethod").value.value is False
+    assert op.get_value("hasFolder").value.value is False
+    assert op.get_value("useCustomPropertiesEncoding").value.value is False
+    assert len(op.get_value("traits").value) == 0
+    assert str(op.get_value("extraClassDeclaration").value) == "?"
+    assert str(op.get_value("extraClassDefinition").value) == "?"
+
+    arguments = op.get_value("arguments")
+    assert arguments.value.get_arg_name_str(0) == "a"
+    assert arguments.value.get_arg_name_str(1) == "b"
+    assert arguments.value.get_arg_name_str(2) == "c"
+    assert arguments.value.get_arg_name_str(3) == "d"
+    assert arguments.value.get_arg_name_str(4) == "e"
+    assert arguments.value.get_arg_name_str(5) == "f"
+
+    assert str(arguments.value[0]) == "I32"
+    assert str(arguments.value[1]) == "SI64"
+    assert str(arguments.value[2]) == "UI8"
+    assert str(arguments.value[3]) == "Index"
+    assert str(arguments.value[4]) == "F32"
+    assert str(arguments.value[5]) == "NoneType"
+
+    attr = record_keeper_test_dialect.defs["Test_TestAttr"]
+    assert str(attr.get_value("predicate").value) == "anonymous_334"
+    assert str(attr.get_value("storageType").value) == "test::TestAttr"
+    assert str(attr.get_value("returnType").value) == "test::TestAttr"
+    assert str(attr.get_value("convertFromStorage").value) == "::llvm::cast<test::TestAttr>($_self)"
+    assert str(attr.get_value("constBuilderCall").value) == "?"
+    assert str(attr.get_value("defaultValue").value) == "?"
+    assert str(attr.get_value("valueType").value) == "?"
+    assert attr.get_value("isOptional").value.value is False
+    assert str(attr.get_value("baseAttr").value) == "?"
+    assert str(attr.get_value("cppNamespace").value) == "test"
+    assert str(attr.get_value("dialect").value) == "Test_Dialect"
+    assert str(attr.get_value("cppBaseClassName").value) == "::mlir::Attribute"
+    assert str(attr.get_value("storageClass").value) == "TestAttrStorage"
+    assert str(attr.get_value("storageNamespace").value) == "detail"
+    assert attr.get_value("genStorageClass").value.value is True
+    assert attr.get_value("hasStorageCustomConstructor").value.value is False
+    assert str(attr.get_value("parameters").value) == "(ins)"
+    assert str(attr.get_value("builders").value) == "?"
+    assert len(attr.get_value("traits").value) == 0
+    assert str(attr.get_value("mnemonic").value) == "test"
+    assert str(attr.get_value("assemblyFormat").value) == "?"
+    assert attr.get_value("hasCustomAssemblyFormat").value.value is False
+    assert attr.get_value("genAccessors").value.value is True
+    assert attr.get_value("skipDefaultBuilders").value.value is False
+    assert attr.get_value("genVerifyDecl").value.value is False
+    assert str(attr.get_value("cppClassName").value) == "TestAttr"
+    assert str(attr.get_value("cppType").value) == "test::TestAttr"
+    assert str(attr.get_value("attrName").value) == "test.test"
