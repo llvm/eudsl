@@ -361,34 +361,25 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            })
       .def_prop_ro("is_used", &RecordVal::isUsed);
 
-  nb::class_<ArrayRef<RecordVal>>(m, "ArrayRefofRecordVal");
   struct RecordValues {};
-  auto valuesCl =
-      nb::class_<RecordValues>(m, "RecordValues", nb::dynamic_attr())
-          .def("__init__",
-               [](nb::object &self, ArrayRef<RecordVal> values) {
-                 for (const RecordVal &recordVal : values) {
-                   nb::setattr(self, recordVal.getName().str().c_str(),
-                               nb::borrow(nb::cast(recordVal)));
-                 }
-               })
-          .def("__repr__", [](const nb::object &self) {
-            nb::str s{"RecordValues("};
-            auto dic = nb::cast<nb::dict>(nb::getattr(self, "__dict__"));
-            int i = 0;
-            for (auto [key, value] : dic) {
-              s += key + nb::str("=") +
-                   nb::str(nb::cast<RecordVal>(value)
-                               .getValue()
-                               ->getAsUnquotedString()
-                               .c_str());
-              if (i < dic.size() - 1)
-                s += nb::str(", ");
-              ++i;
-            }
-            s += nb::str(")");
-            return s;
-          });
+  nb::class_<RecordValues>(m, "RecordValues", nb::dynamic_attr())
+      .def("__repr__", [](const nb::object &self) {
+        nb::str s{"RecordValues("};
+        auto dic = nb::cast<nb::dict>(nb::getattr(self, "__dict__"));
+        int i = 0;
+        for (auto [key, value] : dic) {
+          s += key + nb::str("=") +
+               nb::str(nb::cast<RecordVal>(value)
+                           .getValue()
+                           ->getAsUnquotedString()
+                           .c_str());
+          if (i < dic.size() - 1)
+            s += nb::str(", ");
+          ++i;
+        }
+        s += nb::str(")");
+        return s;
+      });
 
   nb::class_<Record>(m, "Record")
       .def_prop_ro("direct_super_classes",
@@ -429,11 +420,25 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            "field_name"_a, nb::rv_policy::reference_internal)
       .def("get_value_init", &Record::getValueInit, "field_name"_a,
            nb::rv_policy::reference_internal)
-      .def_prop_ro("values",
-                   [&valuesCl](Record &self) {
-                     ArrayRef<RecordVal> values = self.getValues();
-                     return valuesCl(values);
-                   })
+      .def_prop_ro(
+          "values",
+          [](Record &self) {
+            // you can't just call the class_->operator()
+            nb::handle recordValsInstTy = nb::type<RecordValues>();
+            assert(recordValsInstTy.is_valid() &&
+                   nb::type_check(recordValsInstTy));
+            nb::object recordValsInst = nb::inst_alloc(recordValsInstTy);
+            assert(nb::inst_check(recordValsInst) &&
+                   recordValsInst.type().is(recordValsInstTy) &&
+                   !nb::inst_ready(recordValsInst));
+
+            std::vector<RecordVal> values = self.getValues();
+            for (const RecordVal &recordVal : values) {
+              nb::setattr(recordValsInst, recordVal.getName().str().c_str(),
+                          nb::borrow(nb::cast(recordVal)));
+            }
+            return recordValsInst;
+          })
       .def("has_direct_super_class", &Record::hasDirectSuperClass,
            "super_class"_a)
       .def_prop_ro("is_anonymous", &Record::isAnonymous)

@@ -1,4 +1,4 @@
-name: "Build and test EUDSL"
+name: "Build and test and release EUDSL"
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ on:
         default: false
   pull_request:
     paths:
-      - ".github/workflows/build_eudsl.yml"
+      - ".github/workflows/build_test_eudsl.yml"
       - "projects/eudsl"
       - "third_party/llvm-project"
   merge_group:
@@ -38,10 +38,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: "manylinux_x86_64"
+          - name: "ubuntu_x86_64"
             runs-on: "ubuntu-22.04"
-            container: "quay.io/pypa/manylinux_2_28_x86_64"
-            os: "almalinux"
+            os: "ubuntu"
           - name: "windows_x86_64"
             runs-on: "windows-2019"
             os: "windows"
@@ -90,7 +89,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          export RELEASE_PREFIX="mlir_${{ matrix.name }}"
+          
+          if [[ "${{ matrix.os }}" == "almalinux" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            export RELEASE_PREFIX="mlir_manylinux_x86_64"
+          else
+            export RELEASE_PREFIX="mlir_${{ matrix.name }}"
+          fi
           RELEASE_URL=$(gh release view latest --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains(env.RELEASE_PREFIX))) | .[-1] | .url')
           curl -sLO $RELEASE_URL
           tar xf $RELEASE_PREFIX*.tar.gz
@@ -99,10 +103,10 @@ jobs:
       - name: "Build eudsl-tblgen"
         id: build
         run: |
+          pip install cibuildwheel
           export EUDSL_SRC_DIR="$PWD/projects/eudsl"
-          ccache -z
-          $python3_command -m pip wheel "$EUDSL_SRC_DIR/eudsl-tblgen" -w wheelhouse
-          ccache -s
+          export LLVM_DIR="/host/$LLVM_DIR"
+          $python3_command -m cibuildwheel "$EUDSL_SRC_DIR/eudsl-tblgen" --output-dir wheelhouse
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -111,19 +115,12 @@ jobs:
           path: wheelhouse/*.whl
           if-no-files-found: warn
 
-      - name: "Save cache"
-        uses: actions/cache/save@v3
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
-        with:
-          path: ${{ steps.setup_base.outputs.cache-dir }}
-          key: ${{ env.cache-key }}
-
       - name: "Setup tmate session"
         if: ${{ (failure() && inputs.debug_with_tmate) || inputs.force_debug_with_tmate }}
         uses: mxschmitt/action-tmate@v3.18
         with:
           limit-access-to-actor: true
-          install-dependencies: ${{ startsWith(matrix.runs-on, 'macos') || startsWith(matrix.runs-on, 'windows') }}
+          install-dependencies: ${{ startsWith(matrix.os, 'macos') || startsWith(matrix.os, 'windows') || startsWith(matrix.os, 'ubuntu') }}
 
   test-eudsl-tblgen:
 
@@ -133,10 +130,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: "manylinux_x86_64"
+          - name: "ubuntu_x86_64"
             runs-on: "ubuntu-22.04"
-            container: "quay.io/pypa/manylinux_2_28_x86_64"
-            os: "almalinux"
+            os: "ubuntu"
           - name: "windows_x86_64"
             runs-on: "windows-2019"
             os: "windows"
@@ -188,3 +184,32 @@ jobs:
           else
             $python3_command -m pytest --capture=tee-sys projects/eudsl/eudsl-tblgen/tests
           fi
+
+  release-eudsl-tblgen:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    needs: [test-eudsl-tblgen]
+    runs-on: "ubuntu-22.04"
+    name: "Release eudsl-tblgen"
+
+    permissions:
+      id-token: write
+      contents: write
+
+    steps:
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: wheelhouse
+
+      - name: Release current commit
+        uses: ncipollo/release-action@v1.12.0
+        with:
+          artifacts: "wheelhouse/eudsl_tblgen*.whl"
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          tag: "latest"
+          name: "latest"
+          removeArtifacts: false
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
+          omitBody: true

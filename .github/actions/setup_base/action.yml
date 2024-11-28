@@ -49,7 +49,7 @@ runs:
       id: canonicalize-cache-dir
       shell: bash
       run: |
-        if [[ "${{ inputs.os }}" == "almalinux" ]]; then
+        if [[ "${{ inputs.os }}" == "almalinux" ]] || [[ "${{ inputs.os }}" == "ubuntu" ]]; then
           echo "cache-dir=/tmp/.container-cache" >> $GITHUB_OUTPUT
         elif [[ "${{ inputs.os }}" == "macos" ]]; then
           echo "cache-dir=/tmp/.container-cache" >> $GITHUB_OUTPUT
@@ -85,18 +85,18 @@ runs:
 
     - name: "Install Python"
       uses: actions/setup-python@v4
-      if: ${{ startsWith(inputs.os, 'macos') || startsWith(inputs.os, 'windows') }}
+      if: ${{ startsWith(inputs.os, 'macos') || startsWith(inputs.os, 'windows') || startsWith(inputs.os, 'ubuntu') }}
       with:
         python-version: ${{ inputs.python-version }}
 
     - name: "Setup compiler/toolchain"
       uses: aminya/setup-cpp@v1
-      if: ${{ startsWith(inputs.os, 'almalinux') || startsWith(inputs.os, 'windows') }}
+      if: ${{ startsWith(inputs.os, 'almalinux') || startsWith(inputs.os, 'ubuntu') || startsWith(inputs.os, 'windows') }}
       with:
         compiler: llvm-18
         cmake: true
         ninja: true
-        ccache: ${{ startsWith(inputs.os, 'windows') }}
+        ccache: ${{ startsWith(inputs.os, 'windows') || startsWith(inputs.os, 'ubuntu') }}
         vcvarsall: ${{ startsWith(inputs.os, 'windows') }}
 
     - name: "Set CC/CXX"
@@ -105,6 +105,9 @@ runs:
         if [[ "${{ inputs.os }}" == "almalinux" ]]; then
           echo "CC=/github/home/llvm/bin/clang" >> $GITHUB_ENV
           echo "CXX=/github/home/llvm/bin/clang++" >> $GITHUB_ENV
+        elif [[ "${{ inputs.os }}" == "ubuntu" ]]; then
+          echo "CC=/usr/lib/llvm-18/bin/clang" >> $GITHUB_ENV
+          echo "CXX=/usr/lib/llvm-18/bin/clang++" >> $GITHUB_ENV
         elif [[ "${{ inputs.os }}" == "windows" ]]; then
           echo "CC=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
           echo "CXX=/C/Users/runneradmin/llvm/bin/clang-cl.exe" >> $GITHUB_ENV
