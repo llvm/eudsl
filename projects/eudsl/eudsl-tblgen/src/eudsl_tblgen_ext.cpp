@@ -5,6 +5,7 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_map.h>
+#include <nanobind/stl/bind_vector.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/unique_ptr.h>
 #include <nanobind/stl/vector.h>
@@ -88,18 +89,236 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("type_is_convertible_to", &RecTy::typeIsConvertibleTo);
 
   nb::class_<RecordRecTy, RecTy>(m, "RecordRecTy")
-      .def_prop_ro(
-          "classes",
-          coerceReturn<std::vector<const Record *>, ArrayRef<const Record *>>(
-              &RecordRecTy::getClasses, nb::const_),
-          nb::rv_policy::reference_internal)
+      .def_prop_ro("classes", coerceReturn<std::vector<const Record *>>(
+                                  &RecordRecTy::getClasses, nb::const_))
       .def("is_sub_class_of", &RecordRecTy::isSubClassOf);
 
   nb::class_<Init>(m, "Init")
+      .def_prop_ro("kind", &Init::getKind)
       .def_prop_ro("as_string", &Init::getAsUnquotedString)
       .def("__str__", &Init::getAsUnquotedString)
       .def("is_complete", &Init::isComplete)
-      .def("is_concrete", &Init::isConcrete);
+      .def("is_concrete", &Init::isConcrete)
+      .def("get_field_type", &Init::getFieldType,
+           nb::rv_policy::reference_internal)
+      .def("get_bit", &Init::getBit, nb::rv_policy::reference_internal);
+
+  nb::class_<TypedInit, Init>(m, "TypedInit")
+      .def_prop_ro("record_keeper", &TypedInit::getRecordKeeper)
+      .def_prop_ro("type", &TypedInit::getType);
+
+  nb::class_<UnsetInit, Init>(m, "UnsetInit");
+
+  nb::class_<ArgumentInit, Init>(m, "ArgumentInit")
+      .def("is_positional", &ArgumentInit::isPositional)
+      .def("is_named", &ArgumentInit::isNamed)
+      .def_prop_ro("value", &ArgumentInit::getValue)
+      .def_prop_ro("index", &ArgumentInit::getIndex)
+      .def_prop_ro("name", &ArgumentInit::getName);
+
+  nb::class_<BitInit, TypedInit>(m, "BitInit")
+      .def_prop_ro("value", &BitInit::getValue);
+
+  nb::class_<BitsInit, TypedInit>(m, "BitsInit")
+      .def_prop_ro("num_bits", &BitsInit::getNumBits)
+      .def("all_incomplete", &BitsInit::allInComplete);
+
+  nb::class_<IntInit, TypedInit>(m, "IntInit")
+      .def_prop_ro("value", &IntInit::getValue);
+
+  nb::class_<AnonymousNameInit, TypedInit>(m, "AnonymousNameInit")
+      .def_prop_ro("value", &AnonymousNameInit::getValue)
+      .def_prop_ro("name_init", &AnonymousNameInit::getNameInit);
+
+  auto stringInit = nb::class_<StringInit, TypedInit>(m, "StringInit");
+
+  nb::enum_<StringInit::StringFormat>(m, "StringFormat")
+      .value("SF_String", StringInit::StringFormat::SF_String)
+      .value("SF_Code", StringInit::StringFormat::SF_Code);
+
+  stringInit.def_prop_ro("value", &StringInit::getValue)
+      .def_prop_ro("format", &StringInit::getFormat)
+      .def("has_code_format", &StringInit::hasCodeFormat);
+
+  nb::class_<ListInit, TypedInit>(m, "ListInit")
+      .def("__len__", [](const ListInit &v) { return v.size(); })
+      .def("__bool__", [](const ListInit &v) { return !v.empty(); })
+      .def("__repr__",
+           [](nb::handle_t<ListInit> h) {
+             return nb::steal<nb::str>(nb::detail::repr_list(h.ptr()));
+           })
+      .def(
+          "__iter__",
+          [](ListInit &v) {
+            return nb::make_iterator<nb::rv_policy::reference_internal>(
+                nb::type<ListInit>(), "Iterator", v.begin(), v.end());
+          },
+          nb::keep_alive<0, 1>())
+      .def(
+          "__getitem__",
+          [](ListInit &v, Py_ssize_t i) {
+            v.getElement(nb::detail::wrap(i, v.size()));
+          },
+          nb::rv_policy::reference_internal)
+      .def_prop_ro("element_type", &ListInit::getElementType)
+      .def("get_element_as_record", &ListInit::getElementAsRecord)
+      .def_prop_ro("values", coerceReturn<std::vector<const Init *>>(
+                                 &ListInit::getValues, nb::const_));
+
+  nb::class_<OpInit, TypedInit>(m, "OpInit")
+      .def_prop_ro("num_operands", &OpInit::getNumOperands)
+      .def("operand", &OpInit::getOperand, nb::rv_policy::reference_internal);
+
+  auto unaryOpInit = nb::class_<UnOpInit, OpInit>(m, "UnOpInit");
+  nb::enum_<UnOpInit::UnaryOp>(m, "UnaryOp")
+      .value("TOLOWER", UnOpInit::UnaryOp::TOLOWER)
+      .value("TOUPPER", UnOpInit::UnaryOp::TOUPPER)
+      .value("CAST", UnOpInit::UnaryOp::CAST)
+      .value("NOT", UnOpInit::UnaryOp::NOT)
+      .value("HEAD", UnOpInit::UnaryOp::HEAD)
+      .value("TAIL", UnOpInit::UnaryOp::TAIL)
+      .value("SIZE", UnOpInit::UnaryOp::SIZE)
+      .value("EMPTY", UnOpInit::UnaryOp::EMPTY)
+      .value("GETDAGOP", UnOpInit::UnaryOp::GETDAGOP)
+      .value("LOG2", UnOpInit::UnaryOp::LOG2)
+      .value("REPR", UnOpInit::UnaryOp::REPR)
+      .value("LISTFLATTEN", UnOpInit::UnaryOp::LISTFLATTEN);
+  unaryOpInit.def_prop_ro("opcode", &UnOpInit::getOpcode);
+
+  auto binaryOpInit = nb::class_<BinOpInit, OpInit>(m, "BinOpInit");
+  nb::enum_<BinOpInit::BinaryOp>(m, "BinaryOp")
+      .value("ADD", BinOpInit::BinaryOp::ADD)
+      .value("SUB", BinOpInit::BinaryOp::SUB)
+      .value("MUL", BinOpInit::BinaryOp::MUL)
+      .value("DIV", BinOpInit::BinaryOp::DIV)
+      .value("AND", BinOpInit::BinaryOp::AND)
+      .value("OR", BinOpInit::BinaryOp::OR)
+      .value("XOR", BinOpInit::BinaryOp::XOR)
+      .value("SHL", BinOpInit::BinaryOp::SHL)
+      .value("SRA", BinOpInit::BinaryOp::SRA)
+      .value("SRL", BinOpInit::BinaryOp::SRL)
+      .value("LISTCONCAT", BinOpInit::BinaryOp::LISTCONCAT)
+      .value("LISTSPLAT", BinOpInit::BinaryOp::LISTSPLAT)
+      .value("LISTREMOVE", BinOpInit::BinaryOp::LISTREMOVE)
+      .value("LISTELEM", BinOpInit::BinaryOp::LISTELEM)
+      .value("LISTSLICE", BinOpInit::BinaryOp::LISTSLICE)
+      .value("RANGEC", BinOpInit::BinaryOp::RANGEC)
+      .value("STRCONCAT", BinOpInit::BinaryOp::STRCONCAT)
+      .value("INTERLEAVE", BinOpInit::BinaryOp::INTERLEAVE)
+      .value("CONCAT", BinOpInit::BinaryOp::CONCAT)
+      .value("EQ", BinOpInit::BinaryOp::EQ)
+      .value("NE", BinOpInit::BinaryOp::NE)
+      .value("LE", BinOpInit::BinaryOp::LE)
+      .value("LT", BinOpInit::BinaryOp::LT)
+      .value("GE", BinOpInit::BinaryOp::GE)
+      .value("GT", BinOpInit::BinaryOp::GT)
+      .value("GETDAGARG", BinOpInit::BinaryOp::GETDAGARG)
+      .value("GETDAGNAME", BinOpInit::BinaryOp::GETDAGNAME)
+      .value("SETDAGOP", BinOpInit::BinaryOp::SETDAGOP);
+  binaryOpInit.def_prop_ro("opcode", &BinOpInit::getOpcode)
+      .def_prop_ro("lhs", &BinOpInit::getLHS)
+      .def_prop_ro("rhs", &BinOpInit::getRHS);
+
+  auto ternaryOpInit = nb::class_<TernOpInit, OpInit>(m, "TernOpInit");
+  nb::enum_<TernOpInit::TernaryOp>(m, "TernaryOp")
+      .value("SUBST", TernOpInit::TernaryOp::SUBST)
+      .value("FOREACH", TernOpInit::TernaryOp::FOREACH)
+      .value("FILTER", TernOpInit::TernaryOp::FILTER)
+      .value("IF", TernOpInit::TernaryOp::IF)
+      .value("DAG", TernOpInit::TernaryOp::DAG)
+      .value("RANGE", TernOpInit::TernaryOp::RANGE)
+      .value("SUBSTR", TernOpInit::TernaryOp::SUBSTR)
+      .value("FIND", TernOpInit::TernaryOp::FIND)
+      .value("SETDAGARG", TernOpInit::TernaryOp::SETDAGARG)
+      .value("SETDAGNAME", TernOpInit::TernaryOp::SETDAGNAME);
+  ternaryOpInit.def_prop_ro("opcode", &TernOpInit::getOpcode)
+      .def_prop_ro("lhs", &TernOpInit::getLHS)
+      .def_prop_ro("mhs", &TernOpInit::getMHS)
+      .def_prop_ro("rhs", &TernOpInit::getRHS);
+
+  nb::class_<CondOpInit, TypedInit>(m, "CondOpInit");
+  nb::class_<FoldOpInit, TypedInit>(m, "FoldOpInit");
+  nb::class_<IsAOpInit, TypedInit>(m, "IsAOpInit");
+  nb::class_<ExistsOpInit, TypedInit>(m, "ExistsOpInit");
+
+  nb::class_<VarInit, TypedInit>(m, "VarInit")
+      .def_prop_ro("name", &VarInit::getName)
+      .def_prop_ro("name_init", &VarInit::getNameInit)
+      .def_prop_ro("name_init_as_string", &VarInit::getNameInitAsString);
+
+  nb::class_<VarBitInit, TypedInit>(m, "VarBitInit")
+      .def_prop_ro("bit_var", &VarBitInit::getBitVar)
+      .def_prop_ro("bit_num", &VarBitInit::getBitNum);
+
+  nb::class_<DefInit, TypedInit>(m, "DefInit")
+      .def_prop_ro("def", &DefInit::getDef);
+
+  nb::class_<VarDefInit, TypedInit>(m, "VarDefInit")
+      .def("get_arg", &VarDefInit::getArg, nb::rv_policy::reference_internal)
+      .def_prop_ro("args", coerceReturn<std::vector<const ArgumentInit *>>(
+                               &VarDefInit::args, nb::const_))
+      .def("__len__", [](const VarDefInit &v) { return v.args_size(); })
+      .def("__bool__", [](const VarDefInit &v) { return !v.args_empty(); })
+      .def("__repr__",
+           [](nb::handle_t<VarDefInit> h) {
+             return nb::steal<nb::str>(nb::detail::repr_list(h.ptr()));
+           })
+      .def(
+          "__iter__",
+          [](VarDefInit &v) {
+            return nb::make_iterator<nb::rv_policy::reference_internal>(
+                nb::type<VarDefInit>(), "Iterator", v.args_begin(),
+                v.args_end());
+          },
+          nb::keep_alive<0, 1>())
+      .def(
+          "__getitem__",
+          [](VarDefInit &v, Py_ssize_t i) {
+            v.getArg(nb::detail::wrap(i, v.args_size()));
+          },
+          nb::rv_policy::reference_internal);
+
+  nb::class_<FieldInit, TypedInit>(m, "FieldInit")
+      .def_prop_ro("record", &FieldInit::getRecord)
+      .def_prop_ro("field_name", &FieldInit::getFieldName);
+
+  nb::class_<DagInit, TypedInit>(m, "DagInit")
+      .def_prop_ro("operator", &DagInit::getOperator)
+      .def_prop_ro("name_init", &DagInit::getName)
+      .def_prop_ro("name_str", &DagInit::getNameStr)
+      .def_prop_ro("num_args", &DagInit::getNumArgs)
+      .def("get_arg", &DagInit::getArg, nb::rv_policy::reference_internal)
+      .def("get_arg_no", &DagInit::getArgNo)
+      .def("get_arg_name_init", &DagInit::getArgName,
+           nb::rv_policy::reference_internal)
+      .def("get_arg_name_str", &DagInit::getArgNameStr)
+      .def("get_arg_name_inits",
+           coerceReturn<std::vector<const StringInit *>>(&DagInit::getArgNames,
+                                                         nb::const_),
+           nb::rv_policy::reference_internal)
+      .def("get_args",
+           coerceReturn<std::vector<const Init *>>(&DagInit::getArgs,
+                                                   nb::const_),
+           nb::rv_policy::reference_internal)
+      .def("__len__", [](const DagInit &v) { return v.arg_size(); })
+      .def("__bool__", [](const DagInit &v) { return !v.arg_empty(); })
+      .def("__repr__",
+           [](nb::handle_t<DagInit> h) {
+             return nb::steal<nb::str>(nb::detail::repr_list(h.ptr()));
+           })
+      .def(
+          "__iter__",
+          [](DagInit &v) {
+            return nb::make_iterator<nb::rv_policy::reference_internal>(
+                nb::type<DagInit>(), "Iterator", v.arg_begin(), v.arg_end());
+          },
+          nb::keep_alive<0, 1>())
+      .def(
+          "__getitem__",
+          [](DagInit &v, Py_ssize_t i) {
+            v.getArg(nb::detail::wrap(i, v.arg_size()));
+          },
+          nb::rv_policy::reference_internal);
 
   nb::class_<RecordVal>(m, "RecordVal")
       .def("dump", &RecordVal::dump)
@@ -110,19 +329,16 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_prop_ro("type", &RecordVal::getType)
       .def_prop_ro("is_nonconcrete_ok", &RecordVal::isNonconcreteOK)
       .def_prop_ro("is_template_arg", &RecordVal::isTemplateArg)
-      .def_prop_ro("value", &RecordVal::getValue,
-                   nb::rv_policy::reference_internal)
+      .def_prop_ro("value", &RecordVal::getValue)
       .def_prop_ro("is_used", &RecordVal::isUsed);
 
   nb::class_<Record>(m, "Record")
-      .def_prop_ro(
-          "direct_super_classes",
-          [](const Record &self) -> std::vector<const Record *> {
-            SmallVector<const Record *> Classes;
-            self.getDirectSuperClasses(Classes);
-            return {Classes.begin(), Classes.end()};
-          },
-          nb::rv_policy::reference_internal)
+      .def_prop_ro("direct_super_classes",
+                   [](const Record &self) -> std::vector<const Record *> {
+                     SmallVector<const Record *> Classes;
+                     self.getDirectSuperClasses(Classes);
+                     return {Classes.begin(), Classes.end()};
+                   })
       .def_prop_ro("id", &Record::getID)
       .def_prop_ro("name", &Record::getName)
       .def_prop_ro("name_init_as_string", &Record::getNameInitAsString)
@@ -163,21 +379,9 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("is_value_unset", &Record::isValueUnset)
       .def_prop_ro("def_init", &Record::getDefInit)
       .def_prop_ro("name_init", &Record::getNameInit)
-      .def_prop_ro(
-          "template_args",
-          coerceReturn<std::vector<const Init *>, ArrayRef<const Init *>>(
-              &Record::getTemplateArgs, nb::const_),
-          nb::rv_policy::reference_internal)
+      .def_prop_ro("template_args", coerceReturn<std::vector<const Init *>>(
+                                        &Record::getTemplateArgs, nb::const_))
       .def("is_template_arg", &Record::isTemplateArg);
-  // .def_prop_ro("assertions", &Record::getAssertions)
-  // .def_prop_ro("dumps", &Record::getDumps)
-  // .def_prop_ro("field_loc", &Record::getFieldLoc)
-  // .def_prop_ro("forward_declaration_locs",
-  //              &Record::getForwardDeclarationLocs)
-  // .def_prop_ro("loc", &Record::getLoc)
-  // .def_prop_ro("new_uid", &Record::getNewUID)
-  // .def_prop_ro("reference_locs", &Record::getReferenceLocs)
-  // .def_prop_ro("super_classes", &Record::getSuperClasses)
 
   using RecordMap = std::map<std::string, std::unique_ptr<Record>, std::less<>>;
   using GlobalMap = std::map<std::string, const Init *, std::less<>>;
@@ -190,7 +394,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            [](const RecordMap &m, const std::string &k) {
              return m.find(k) != m.end();
            })
-      // fallback for incompatible types
       .def("__contains__", [](const RecordMap &, nb::handle) { return false; })
       .def(
           "__iter__",

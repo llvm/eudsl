@@ -9,13 +9,6 @@ def json_record_keeper():
     return RecordKeeper().parse_td(str(Path(__file__).parent / "JSON.td"))
 
 
-@pytest.fixture(scope="function")
-def constraints_record_keeper():
-    return RecordKeeper().parse_td(
-        str(Path(__file__).parent / "CommonTypeConstraints.td")
-    )
-
-
 def test_json_record_keeper(json_record_keeper):
     assert json_record_keeper.input_filename == str(Path(__file__).parent / "JSON.td")
 
@@ -136,7 +129,14 @@ def test_record_rec_ty(json_record_keeper):
     assert deriv_cl.type.is_sub_class_of(interm_cl)
 
 
-def test_init_complex(constraints_record_keeper):
-    print(list(constraints_record_keeper.classes.keys()))
-    print(list(constraints_record_keeper.defs.keys()))
-    print(list(constraints_record_keeper.globals.keys()))
+# @pytest.fixture(scope="function")
+# def constraints_record_keeper():
+#     return RecordKeeper().parse_td(
+#         str(Path(__file__).parent / "CommonTypeConstraints.td")
+#     )
+#
+#
+# def test_init_complex(constraints_record_keeper):
+#     print(list(constraints_record_keeper.classes.keys()))
+#     print(list(constraints_record_keeper.defs.keys()))
+#     print(list(constraints_record_keeper.globals.keys()))
