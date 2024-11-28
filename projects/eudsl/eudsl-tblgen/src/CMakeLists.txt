@@ -5,7 +5,10 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 include_directories(${LLVM_INCLUDE_DIRS})
-include(HandleLLVMOptions)
+
+# technically we need this but our LLVM is compiled without exception handling
+# and that breaks windows
+#include(HandleLLVMOptions)
 
 find_package(Python 3.8
   REQUIRED COMPONENTS Interpreter Development.Module
@@ -26,6 +29,7 @@ target_compile_options(eudsl_tblgen_ext
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Darwin>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>)
+
 nanobind_add_stub(
   eudsl_tblgen_ext_stub
   MODULE eudsl_tblgen_ext

@@ -1,4 +1,4 @@
-name: "Build and test and release EUDSL"
+name: "Build, test, release EUDSL"
 
 on:
   workflow_dispatch:
@@ -106,6 +106,13 @@ jobs:
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             export LLVM_DIR="/host/$LLVM_DIR"
           fi
+          # these have to match the deployment targets of the LLVM build runners
+          # ld: warning: object file (libLLVMTableGen.a[3](Error.cpp.o)) was built for newer 'macOS' version (13.7) than being linked (10.13)
+          if [[ "${{ matrix.runs-on }}" == "macos-14" ]]; then
+            export MACOSX_DEPLOYMENT_TARGET=14.0
+          elif [[ "${{ matrix.runs-on }}" == "macos-13" ]]; then
+            export MACOSX_DEPLOYMENT_TARGET=13.7
+          fi
           $python3_command -m cibuildwheel "$EUDSL_SRC_DIR/eudsl-tblgen" --output-dir wheelhouse
 
       - name: Upload artifacts
@@ -129,10 +136,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: ["ubuntu-22.04", "macos-14", "macos-13"]
+        runs-on: ["ubuntu-22.04", "macos-14", "macos-13", "windows-2019"]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
+          {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
           {runs-on: "macos-13", name: "macos_x86_64", os: "macos"},
         ]
@@ -168,10 +176,11 @@ jobs:
 
       - name: "Test eudsl-tblgen"
         run: |
+          export TESTS_DIR="$PWD/projects/eudsl/eudsl-tblgen/tests"
           if [ ${{ matrix.os }} == 'windows' ]; then
-            python -m pytest -s projects/eudsl/eudsl-tblgen/tests
+            python -m pytest -s -rA $TESTS_DIR
           else
-            python -m pytest --capture=tee-sys projects/eudsl/eudsl-tblgen/tests
+            python -m pytest -rA --capture=tee-sys $TESTS_DIR
           fi
 
   release-eudsl-tblgen:

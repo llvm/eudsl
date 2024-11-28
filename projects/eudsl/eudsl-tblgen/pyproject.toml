@@ -22,12 +22,10 @@ CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 
 [tool.cibuildwheel]
 build-verbosity = 1
-skip = ["*-manylinux_i686", "*-musllinux*", "*-pypy*"]
+skip = ["*-manylinux_i686", "*-musllinux*", "pp*", "*-win32"]
+archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
 environment-pass = [
     "LLVM_DIR",
     "CMAKE_GENERATOR"
 ]
-
-[tool.cibuildwheel.macos.environment]
-MACOSX_DEPLOYMENT_TARGET = "10.14"
