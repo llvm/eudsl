@@ -19,7 +19,6 @@ cmake.source-dir = "src"
 [tool.scikit-build.cmake.define]
 LLVM_DIR = {env="LLVM_DIR", default="EMPTY"}
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
-LLVM_ENABLE_EH = "ON"
 
 [tool.cibuildwheel]
 build-verbosity = 1
