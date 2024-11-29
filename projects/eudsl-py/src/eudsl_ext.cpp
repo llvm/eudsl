@@ -2,12 +2,15 @@
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/IRMapping.h"
+#include "mlir/IR/IntegerSet.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Support/InterfaceSupport.h"
+#include "llvm/ADT/APSInt.h"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_map.h>
@@ -47,6 +50,8 @@ struct DialectRegistry_ : DialectRegistry {
 
 NB_MODULE(eudsl_ext, m) {
   nb::class_<TypeID>(m, "TypeID");
+  nb::class_<LogicalResult>(m, "LogicalResult");
+
   nb::class_<AbstractAttribute>(m, "AbstractAttribute")
       .def_static("lookup", nb::overload_cast<TypeID, MLIRContext *>(
                                 &AbstractAttribute::lookup))
@@ -201,14 +206,106 @@ NB_MODULE(eudsl_ext, m) {
       //      .def("get_as_opaque_pointer", &AffineMap::getAsOpaquePointer)
       .def_static("get_from_opaque_pointer", &AffineMap::getFromOpaquePointer);
 
-  nb::class_<AffineMapAttr>(m, "AffineMapAttr")
+  nb::class_<AffineMapAttr, Attribute>(m, "AffineMapAttr")
       .def_prop_ro("affine_map", &AffineMapAttr::getAffineMap)
       .def_ro_static("name", &AffineMapAttr::name)
       .def_ro_static("dialect_name", &AffineMapAttr::dialectName)
       .def_static("get", &AffineMapAttr::get)
       .def_prop_ro("value", &AffineMapAttr::getValue);
 
-  nb::class_<StringAttr>(m, "StringAttr");
+  nb::class_<ArrayAttr, Attribute>(m, "ArrayAttr")
+      .def("__getitem__", &ArrayAttr::operator[])
+      .def("begin", &ArrayAttr::begin)
+      .def("end", &ArrayAttr::end)
+      .def("size", &ArrayAttr::size)
+      .def("empty", &ArrayAttr::empty)
+      //      .def("get_as_range", &ArrayAttr::getAsRange)
+      //      .def("get_as_value_range", &ArrayAttr::getAsValueRange)
+      .def("get", &ArrayAttr::get)
+      .def("get_value", &ArrayAttr::getValue);
+
+  nb::class_<DenseElementsAttr, Attribute>(m, "DenseElementsAttr");
+
+  nb::class_<DenseArrayAttr, Attribute>(m, "DenseArrayAttr")
+      .def("size", &DenseArrayAttr::size)
+      .def("empty", &DenseArrayAttr::empty)
+      .def_ro_static("name", &DenseArrayAttr::name)
+      .def_ro_static("dialect_name", &DenseArrayAttr::dialectName)
+      .def_static("get",
+                  nb::overload_cast<mlir::MLIRContext *, Type, int64_t,
+                                    llvm::ArrayRef<char>>(&DenseArrayAttr::get))
+      .def_static("get", nb::overload_cast<Type, unsigned, ArrayRef<char>>(
+                             &DenseArrayAttr::get))
+      .def_static("verify", &DenseArrayAttr::verify)
+      .def_static("verify_invariants", &DenseArrayAttr::verifyInvariants)
+      .def("get_element_type", &DenseArrayAttr::getElementType)
+      .def("get_size", &DenseArrayAttr::getSize)
+      .def("get_raw_data", &DenseArrayAttr::getRawData);
+
+  nb::class_<DenseIntOrFPElementsAttr, DenseElementsAttr>(
+      m, "DenseIntOrFPElementsAttr")
+      .def_ro_static("name", &DenseIntOrFPElementsAttr::name)
+      .def_ro_static("dialect_name", &DenseIntOrFPElementsAttr::dialectName)
+      .def("empty", &DenseIntOrFPElementsAttr::empty)
+      .def("get_num_elements", &DenseIntOrFPElementsAttr::getNumElements)
+      .def("get_element_type", &DenseIntOrFPElementsAttr::getElementType)
+      //      .def("get_values", &DenseIntOrFPElementsAttr::getValues)
+      .def("is_splat", &DenseIntOrFPElementsAttr::isSplat)
+      .def("size", &DenseIntOrFPElementsAttr::size)
+      //      .def("value_begin", &DenseIntOrFPElementsAttr::value_begin)
+      //      .def("try_value_begin_impl",
+      //           &DenseIntOrFPElementsAttr::try_value_begin_impl)
+      .def_static(
+          "convert_endian_of_array_ref_for_b_emachine",
+          &DenseIntOrFPElementsAttr::convertEndianOfArrayRefForBEmachine);
+  //      .def_static("convert_endian_of_char_for_b_emachine",
+  //                  &DenseIntOrFPElementsAttr::convertEndianOfCharForBEmachine);
+
+  nb::class_<DenseStringElementsAttr>(m, "DenseStringElementsAttr")
+      .def("empty", &DenseStringElementsAttr::empty)
+      .def("get_num_elements", &DenseStringElementsAttr::getNumElements)
+      .def("get_element_type", &DenseStringElementsAttr::getElementType)
+      //      .def("get_values", &DenseStringElementsAttr::getValues)
+      .def("is_splat", &DenseStringElementsAttr::isSplat)
+      .def("size", &DenseStringElementsAttr::size)
+      //      .def("value_begin", &DenseStringElementsAttr::value_begin)
+      //      .def("try_value_begin_impl",
+      //           &DenseStringElementsAttr::try_value_begin_impl)
+      .def("get", &DenseStringElementsAttr::get);
+
+  nb::class_<DenseResourceElementsAttr, Attribute>(m,
+                                                   "DenseResourceElementsAttr")
+      .def_static("get",
+                  nb::overload_cast<ShapedType, DenseResourceElementsHandle>(
+                      &DenseResourceElementsAttr::get))
+      //      .def_static("get",
+      //                  nb::overload_cast<ShapedType, StringRef,
+      //                  AsmResourceBlob>(
+      //                      &DenseResourceElementsAttr::get))
+      .def("get_type", &DenseResourceElementsAttr::getType)
+      .def("get_raw_handle", &DenseResourceElementsAttr::getRawHandle);
+
+  nb::class_<StringAttr, Attribute>(m, "StringAttr")
+      .def_ro_static("name", &StringAttr::name)
+      .def_ro_static("dialect_name", &StringAttr::dialectName)
+      .def("get_referenced_dialect", &StringAttr::getReferencedDialect)
+      .def("operator string_ref", &StringAttr::operator StringRef)
+      .def("strref", &StringAttr::strref)
+      .def("str", &StringAttr::str)
+      //      .def("data", &StringAttr::data)
+      .def("size", &StringAttr::size)
+      .def("empty", &StringAttr::empty)
+      .def("begin", &StringAttr::begin)
+      .def("end", &StringAttr::end)
+      .def("compare", &StringAttr::compare)
+      .def_static("get",
+                  nb::overload_cast<const Twine &, Type>(&StringAttr::get))
+      .def_static("get", nb::overload_cast<mlir::MLIRContext *, const Twine &>(
+                             &StringAttr::get))
+      .def_static("get",
+                  nb::overload_cast<mlir::MLIRContext *>(&StringAttr::get))
+      .def("get_value", &StringAttr::getValue)
+      .def("get_type", &StringAttr::getType);
 
   nb::class_<NamedAttribute>(m, "NamedAttribute")
       .def(nb::init<StringAttr, Attribute>())
@@ -289,7 +386,8 @@ NB_MODULE(eudsl_ext, m) {
   //            .def("walk", &Type::walk)
   //            .def("replace", &Type::replace);
 
-  nb::class_<LocationAttr>(m, "LocationAttr").def("walk", &LocationAttr::walk);
+  nb::class_<LocationAttr, Attribute>(m, "LocationAttr")
+      .def("walk", &LocationAttr::walk);
 
   nb::class_<Location>(m, "Location")
       .def("get_context", &Location::getContext)
@@ -297,11 +395,340 @@ NB_MODULE(eudsl_ext, m) {
       .def(nb::self != nb::self)
       .def("dump", &Location::dump);
 
-  nb::class_<OpBuilder>(m, "OpBuilder");
+  nb::class_<Builder>(m, "Builder");
+  nb::class_<OpBuilder, Builder>(m, "OpBuilder");
+
   nb::class_<RewritePatternSet>(m, "RewritePatternSet");
+
   nb::class_<DialectAsmParser>(m, "DialectAsmParser");
 
-  nb::class_<DictionaryAttr>(m, "DictionaryAttr");
+  nb::class_<DictionaryAttr, Attribute>(m, "DictionaryAttr")
+      .def("get_named",
+           nb::overload_cast<StringRef>(&DictionaryAttr::getNamed, nb::const_))
+      .def("get_named",
+           nb::overload_cast<StringAttr>(&DictionaryAttr::getNamed, nb::const_))
+      .def("contains",
+           nb::overload_cast<StringRef>(&DictionaryAttr::contains, nb::const_))
+      .def("contains",
+           nb::overload_cast<StringAttr>(&DictionaryAttr::contains, nb::const_))
+      .def("begin", &DictionaryAttr::begin)
+      .def("end", &DictionaryAttr::end)
+      .def("empty", &DictionaryAttr::empty)
+      .def("size", &DictionaryAttr::size)
+      .def_static("sort", &DictionaryAttr::sort)
+      .def_static("sort_in_place", &DictionaryAttr::sortInPlace)
+      .def_static("find_duplicate", &DictionaryAttr::findDuplicate)
+      //      .def("get_as", &DictionaryAttr::getAs)
+      .def("get_attr",
+           nb::overload_cast<StringRef>(&DictionaryAttr::get, nb::const_))
+      .def("get_attr",
+           nb::overload_cast<StringAttr>(&DictionaryAttr::get, nb::const_))
+      .def_static(
+          "get",
+          nb::overload_cast<mlir::MLIRContext *, ArrayRef<NamedAttribute>>(
+              &DictionaryAttr::get))
+      .def("get_value", &DictionaryAttr::getValue)
+      .def_ro_static("name", &DictionaryAttr::name)
+      .def_ro_static("dialect_name", &DictionaryAttr::dialectName);
+
+  nb::class_<FloatAttr, Attribute>(m, "FloatAttr")
+      .def_ro_static("name", &FloatAttr::name)
+      .def_ro_static("dialect_name", &FloatAttr::dialectName)
+      //      .def("get_value_as_double",
+      //           nb::overload_cast<>(&FloatAttr::getValueAsDouble))
+      .def_static("get_value_as_double", nb::overload_cast<llvm::APFloat>(
+                                             &FloatAttr::getValueAsDouble))
+      .def_static("get",
+                  nb::overload_cast<Type, const APFloat &>(&FloatAttr::get))
+      .def_static("get", nb::overload_cast<Type, double>(&FloatAttr::get))
+      .def_static("verify", &FloatAttr::verify)
+      .def_static("verify_invariants", &FloatAttr::verifyInvariants)
+      .def("get_type", &FloatAttr::getType)
+      .def("get_value", &FloatAttr::getValue);
+
+  nb::class_<IntegerAttr, Attribute>(m, "IntegerAttr")
+      .def_ro_static("name", &IntegerAttr::name)
+      .def_ro_static("dialect_name", &IntegerAttr::dialectName)
+      .def("get_int", &IntegerAttr::getInt)
+      .def("get_s_int", &IntegerAttr::getSInt)
+      .def("get_u_int", &IntegerAttr::getUInt)
+      .def("get_aps_int", &IntegerAttr::getAPSInt)
+      .def_static("get",
+                  nb::overload_cast<Type, const APInt &>(&IntegerAttr::get))
+      .def_static("get", nb::overload_cast<mlir::MLIRContext *, const APSInt &>(
+                             &IntegerAttr::get))
+      .def_static("get", nb::overload_cast<Type, int64_t>(&IntegerAttr::get))
+      .def_static("verify", &IntegerAttr::verify)
+      .def_static("verify_invariants", &IntegerAttr::verifyInvariants)
+      .def("get_type", &IntegerAttr::getType)
+      .def("get_value", &IntegerAttr::getValue);
+
+  nb::class_<IntegerSetAttr, Attribute>(m, "IntegerSetAttr")
+      .def_ro_static("name", &IntegerSetAttr::name)
+      .def_ro_static("dialect_name", &IntegerSetAttr::dialectName)
+      .def_static("get", &IntegerSetAttr::get)
+      .def("get_value", &IntegerSetAttr::getValue);
+
+  nb::class_<OpaqueAttr, Attribute>(m, "OpaqueAttr")
+      .def_ro_static("name", &OpaqueAttr::name)
+      .def_ro_static("dialect_name", &OpaqueAttr::dialectName)
+      .def_static("get", &OpaqueAttr::get)
+      .def_static("verify", &OpaqueAttr::verify)
+      .def_static("verify_invariants", &OpaqueAttr::verifyInvariants)
+      .def("get_dialect_namespace", &OpaqueAttr::getDialectNamespace)
+      .def("get_attr_data", &OpaqueAttr::getAttrData)
+      .def("get_type", &OpaqueAttr::getType);
+
+  nb::class_<SparseElementsAttr, Attribute>(m, "SparseElementsAttr")
+      .def_ro_static("name", &SparseElementsAttr::name)
+      .def_ro_static("dialect_name", &SparseElementsAttr::dialectName)
+      //      .def("value_begin", &SparseElementsAttr::value_begin)
+      //      .def("try_value_begin_impl",
+      //      &SparseElementsAttr::try_value_begin_impl)
+      //      .def("get_zero_value", &SparseElementsAttr::getZeroValue)
+      //      .def("get_zero_value", &SparseElementsAttr::getZeroValue)
+      //      .def("get_zero_value", &SparseElementsAttr::getZeroValue)
+      //      .def("get_zero_value", &SparseElementsAttr::getZeroValue)
+      //      .def("get_zero_value", &SparseElementsAttr::getZeroValue)
+      //      .def("get_zero_value", &SparseElementsAttr::getZeroValue)
+      .def_static("get", &SparseElementsAttr::get)
+      .def_static("verify", &SparseElementsAttr::verify)
+      .def_static("verify_invariants", &SparseElementsAttr::verifyInvariants)
+      .def("get_type", &SparseElementsAttr::getType)
+      .def("get_indices", &SparseElementsAttr::getIndices);
+
+  nb::class_<StridedLayoutAttr, Attribute>(m, "StridedLayoutAttr")
+      .def_ro_static("name", &StridedLayoutAttr::name)
+      .def_ro_static("dialect_name", &StridedLayoutAttr::dialectName)
+      .def("has_static_layout", &StridedLayoutAttr::hasStaticLayout)
+      .def_static("get", &StridedLayoutAttr::get)
+      .def_static("verify", &StridedLayoutAttr::verify)
+      .def_static("verify_invariants", &StridedLayoutAttr::verifyInvariants)
+      .def("get_offset", &StridedLayoutAttr::getOffset)
+      .def("get_strides", &StridedLayoutAttr::getStrides)
+      .def("get_affine_map", &StridedLayoutAttr::getAffineMap)
+      .def("verify_layout", &StridedLayoutAttr::verifyLayout);
+
+  nb::class_<SymbolRefAttr, Attribute>(m, "SymbolRefAttr")
+      .def_ro_static("name", &SymbolRefAttr::name)
+      .def_ro_static("dialect_name", &SymbolRefAttr::dialectName)
+      .def_static("get", nb::overload_cast<MLIRContext *, StringRef,
+                                           ArrayRef<FlatSymbolRefAttr>>(
+                             &SymbolRefAttr::get))
+      .def_static("get", nb::overload_cast<StringAttr>(&SymbolRefAttr::get))
+      .def_static("get", nb::overload_cast<MLIRContext *, StringRef>(
+                             &SymbolRefAttr::get))
+      .def_static("get", nb::overload_cast<Operation *>(&SymbolRefAttr::get))
+      .def("get_leaf_reference", &SymbolRefAttr::getLeafReference)
+      .def_static("get",
+                  nb::overload_cast<StringAttr, ArrayRef<FlatSymbolRefAttr>>(
+                      &SymbolRefAttr::get))
+      .def("get_root_reference", &SymbolRefAttr::getRootReference)
+      .def("get_nested_references", &SymbolRefAttr::getNestedReferences);
+
+  nb::class_<TypeAttr, Attribute>(m, "TypeAttr")
+      .def_ro_static("name", &TypeAttr::name)
+      .def_ro_static("dialect_name", &TypeAttr::dialectName)
+      .def_static("get", &TypeAttr::get)
+      .def("get_value", &TypeAttr::getValue);
+
+  nb::class_<UnitAttr, Attribute>(m, "UnitAttr")
+      .def_ro_static("name", &UnitAttr::name)
+      .def_ro_static("dialect_name", &UnitAttr::dialectName)
+      .def_static("get", &UnitAttr::get);
+
+  nb::class_<Region>(m, "Region")
+      .def(nb::init<>())
+      .def("get_context", &Region::getContext)
+      .def("get_loc", &Region::getLoc)
+      .def("get_blocks", &Region::getBlocks)
+      .def("emplace_block", &Region::emplaceBlock)
+      .def("begin", &Region::begin)
+      .def("end", &Region::end)
+      .def("rbegin", &Region::rbegin)
+      .def("rend", &Region::rend)
+      .def("empty", &Region::empty)
+      .def("push_back", &Region::push_back)
+      .def("push_front", &Region::push_front)
+      .def("back", &Region::back)
+      .def("front", &Region::front)
+      .def("has_one_block", &Region::hasOneBlock)
+      .def_static("get_sublist_access", &Region::getSublistAccess)
+      .def("get_arguments", &Region::getArguments)
+      .def("get_argument_types", &Region::getArgumentTypes)
+      .def("args_begin", &Region::args_begin)
+      .def("args_end", &Region::args_end)
+      .def("args_rbegin", &Region::args_rbegin)
+      .def("args_rend", &Region::args_rend)
+      .def("args_empty", &Region::args_empty)
+      .def("add_argument", &Region::addArgument)
+
+      .def("insert_argument",
+           nb::overload_cast<Region::args_iterator, Type, Location>(
+               &Region::insertArgument))
+      .def("insert_argument",
+           nb::overload_cast<unsigned, Type, Location>(&Region::insertArgument))
+      .def("add_arguments", &Region::addArguments)
+      .def("erase_argument", &Region::eraseArgument)
+      .def("get_num_arguments", &Region::getNumArguments)
+      .def("get_argument", &Region::getArgument)
+
+      //      .def("op_begin", &Region::op_begin)
+      //      .def("op_end", &Region::op_end)
+      //      .def("get_ops", &Region::getOps)
+
+      //      .def("op_begin", &Region::op_begin)
+      //      .def("op_end", &Region::op_end)
+      //      .def("get_ops", &Region::getOps)
+
+      .def("get_parent_region", &Region::getParentRegion)
+      .def("get_parent_op", &Region::getParentOp)
+      //      .def("get_parent_of_type", &Region::getParentOfType)
+      .def("get_region_number", &Region::getRegionNumber)
+      .def("is_proper_ancestor", &Region::isProperAncestor)
+      .def("is_ancestor", &Region::isAncestor)
+      .def("clone_into",
+           nb::overload_cast<Region *, IRMapping &>(&Region::cloneInto))
+      .def("clone_into",
+           nb::overload_cast<Region *, Region::iterator, IRMapping &>(
+               &Region::cloneInto))
+      .def("take_body", &Region::takeBody)
+      .def("find_ancestor_block_in_region", &Region::findAncestorBlockInRegion)
+      .def("find_ancestor_op_in_region", &Region::findAncestorOpInRegion)
+      .def("drop_all_references", &Region::dropAllReferences)
+      //      .def("walk", &Region::walk)
+      //      .def("view_graph", &Region::viewGraph)
+      .def("view_graph", nb::overload_cast<const Twine &>(&Region::viewGraph));
+
+  nb::class_<Value>(m, "Value")
+      .def("__bool__", &Value::operator bool)
+      .def(nb::self == nb::self)
+      .def(nb::self != nb::self)
+      .def("get_type", &Value::getType)
+      .def("get_context", &Value::getContext)
+      .def("set_type", &Value::setType)
+      //      .def("get_defining_op", &Value::getDefiningOp)
+      //      .def("get_defining_op", &Value::getDefiningOp)
+      .def("get_loc", &Value::getLoc)
+      .def("set_loc", &Value::setLoc)
+      .def("get_parent_region", &Value::getParentRegion)
+      .def("get_parent_block", &Value::getParentBlock)
+      .def("drop_all_uses", &Value::dropAllUses)
+      .def("replace_all_uses_with", &Value::replaceAllUsesWith)
+      .def("replace_all_uses_except",
+           nb::overload_cast<Value, const SmallPtrSetImpl<Operation *> &>(
+               &Value::replaceAllUsesExcept))
+      .def("replace_all_uses_except",
+           nb::overload_cast<Value, Operation *>(&Value::replaceAllUsesExcept))
+      .def("replace_uses_with_if", &Value::replaceUsesWithIf)
+      .def("is_used_outside_of_block", &Value::isUsedOutsideOfBlock)
+      .def("shuffle_use_list", &Value::shuffleUseList)
+      .def("use_begin", &Value::use_begin)
+      .def("use_end", &Value::use_end)
+      .def("get_uses", &Value::getUses)
+      .def("has_one_use", &Value::hasOneUse)
+      .def("use_empty", &Value::use_empty)
+      .def("user_begin", &Value::user_begin)
+      .def("user_end", &Value::user_end)
+      .def("get_users", &Value::getUsers)
+      //            .def("print", &Value::print)
+      //      .def("print", &Value::print)
+      //      .def("print", &Value::print)
+      .def("dump", &Value::dump)
+      //      .def("print_as_operand", &Value::printAsOperand)
+      //      .def("print_as_operand", &Value::printAsOperand)
+      .def("get_as_opaque_pointer", &Value::getAsOpaquePointer)
+      .def("get_from_opaque_pointer", &Value::getFromOpaquePointer)
+      .def("get_impl", &Value::getImpl);
+
+  nb::class_<BlockArgument, Value>(m, "BlockArgument")
+      .def("get_owner", &BlockArgument::getOwner)
+      .def("get_arg_number", &BlockArgument::getArgNumber)
+      .def("get_loc", &BlockArgument::getLoc)
+      .def("set_loc", &BlockArgument::setLoc);
+
+  nb::class_<Block>(m, "Block")
+      .def(nb::init<>())
+      .def("clear", &Block::clear)
+      .def("get_parent", &Block::getParent)
+      .def("get_parent_op", &Block::getParentOp)
+      .def("is_entry_block", &Block::isEntryBlock)
+      .def("insert_before", &Block::insertBefore)
+      .def("insert_after", &Block::insertAfter)
+      .def("move_before", nb::overload_cast<Block *>(&Block::moveBefore))
+      //      .def("move_before", &Block::moveBefore)
+      .def("erase", &Block::erase)
+      .def("get_arguments", &Block::getArguments)
+      .def("get_argument_types", &Block::getArgumentTypes)
+      .def("args_begin", &Block::args_begin)
+      .def("args_end", &Block::args_end)
+      .def("args_rbegin", &Block::args_rbegin)
+      .def("args_rend", &Block::args_rend)
+      .def("args_empty", &Block::args_empty)
+      .def("add_argument", &Block::addArgument)
+      .def("insert_argument",
+           nb::overload_cast<Block::args_iterator, Type, Location>(
+               &Block::insertArgument))
+      .def("insert_argument",
+           nb::overload_cast<unsigned, Type, Location>(&Block::insertArgument))
+      .def("add_arguments", &Block::addArguments)
+      .def("erase_argument", &Block::eraseArgument)
+      .def("erase_arguments",
+           nb::overload_cast<unsigned, unsigned>(&Block::eraseArguments))
+      .def("erase_arguments",
+           nb::overload_cast<const BitVector &>(&Block::eraseArguments))
+      .def("erase_arguments",
+           nb::overload_cast<mlir::function_ref<bool(BlockArgument)>>(
+               &Block::eraseArguments))
+      .def("get_num_arguments", &Block::getNumArguments)
+      .def("get_argument", &Block::getArgument)
+      .def("get_operations", &Block::getOperations)
+      .def("begin", &Block::begin)
+      .def("end", &Block::end)
+      .def("rbegin", &Block::rbegin)
+      .def("rend", &Block::rend)
+      .def("empty", &Block::empty)
+      .def("push_back", &Block::push_back)
+      .def("push_front", &Block::push_front)
+      .def("back", &Block::back)
+      .def("front", &Block::front)
+      .def("find_ancestor_op_in_block", &Block::findAncestorOpInBlock)
+      .def("drop_all_references", &Block::dropAllReferences)
+      .def("drop_all_defined_value_uses", &Block::dropAllDefinedValueUses)
+      .def("is_op_order_valid", &Block::isOpOrderValid)
+      .def("invalidate_op_order", &Block::invalidateOpOrder)
+      .def("verify_op_order", &Block::verifyOpOrder)
+      .def("recompute_op_order", &Block::recomputeOpOrder)
+      //            .def("get_ops", &Block::getOps)
+      //            .def("op_begin", &Block::op_begin)
+      //      .def("op_end", &Block::op_end)
+      .def("without_terminator", &Block::without_terminator)
+      .def("get_terminator", &Block::getTerminator)
+      .def("might_have_terminator", &Block::mightHaveTerminator)
+      .def("pred_begin", &Block::pred_begin)
+      .def("pred_end", &Block::pred_end)
+      .def("get_predecessors", &Block::getPredecessors)
+      .def("has_no_predecessors", &Block::hasNoPredecessors)
+      .def("has_no_successors", &Block::hasNoSuccessors)
+      .def("get_single_predecessor", &Block::getSinglePredecessor)
+      .def("get_unique_predecessor", &Block::getUniquePredecessor)
+      .def("get_num_successors", &Block::getNumSuccessors)
+      .def("get_successor", &Block::getSuccessor)
+      .def("succ_begin", &Block::succ_begin)
+      .def("succ_end", &Block::succ_end)
+      .def("get_successors", &Block::getSuccessors)
+      .def("is_reachable", &Block::isReachable)
+      //            .def("walk", &Block::walk)
+      //            .def("walk", &Block::walk)
+      .def("split_block",
+           nb::overload_cast<Block::iterator>(&Block::splitBlock))
+      .def("split_block", nb::overload_cast<Operation *>(&Block::splitBlock))
+      .def("get_sublist_access", &Block::getSublistAccess)
+      //            .def("print", &Block::print)
+      //            .def("print", &Block::print)
+      .def("dump", &Block::dump);
+  //            .def("print_as_operand", &Block::printAsOperand)
+  //            .def("print_as_operand", &Block::printAsOperand)
 
   nb::class_<OpFoldResult>(m, "OpFoldResult");
 

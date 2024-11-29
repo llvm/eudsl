@@ -17,6 +17,7 @@ on:
     paths:
       - ".github/workflows/build_test_release_eudsl.yml"
       - "projects/eudsl-tblgen"
+      - "projects/eudsl-py"
       - "third_party/llvm-project"
   merge_group:
   push:
@@ -25,6 +26,7 @@ on:
     paths:
       - ".github/workflows/build_test_release_eudsl.yml"
       - "projects/eudsl-tblgen"
+      - "projects/eudsl-py"
       - "third_party/llvm-project"
 
 concurrency:
@@ -32,7 +34,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-eudsl-tblgen:
+  build-eudsl:
 
     strategy:
       fail-fast: false
@@ -53,7 +55,7 @@ jobs:
 
     runs-on: ${{ matrix.runs-on }}
 
-    name: "Build eudsl-tblgen ${{ matrix.name }}"
+    name: "Build eudsl ${{ matrix.name }}"
 
     defaults:
       run:
@@ -96,28 +98,37 @@ jobs:
           RELEASE_URL=$(gh release view latest --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains(env.RELEASE_PREFIX))) | .[-1] | .url')
           curl -sLO $RELEASE_URL
           tar xf $RELEASE_PREFIX*.tar.gz
-          echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
-
-      - name: "Build eudsl-tblgen"
-        id: build
-        run: |
-          pip install cibuildwheel
+          
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export LLVM_DIR="/host/$LLVM_DIR"
+            echo "LLVM_DIR=/host/$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
+            echo "MLIR_DIR=/host/$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
+          else
+            echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
+            echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
           fi
+          
           # these have to match the deployment targets of the LLVM build runners
           # ld: warning: object file (libLLVMTableGen.a[3](Error.cpp.o)) was built for newer 'macOS' version (13.7) than being linked (10.13)
           if [[ "${{ matrix.runs-on }}" == "macos-14" ]]; then
-            export MACOSX_DEPLOYMENT_TARGET=14.0
+            echo MACOSX_DEPLOYMENT_TARGET=14.0 >> $GITHUB_ENV
           elif [[ "${{ matrix.runs-on }}" == "macos-13" ]]; then
-            export MACOSX_DEPLOYMENT_TARGET=13.7
+            echo MACOSX_DEPLOYMENT_TARGET=13.7 >> $GITHUB_ENV
           fi
+          
+          pip install cibuildwheel
+
+      - name: "Build eudsl-tblgen"
+        run: |
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
+
+      - name: "Build eudsl-py"
+        run: |
+          $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: eudsl_tblgen_${{ matrix.name }}_artifact
+          name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse/*.whl
           if-no-files-found: warn
 
@@ -128,9 +139,9 @@ jobs:
           limit-access-to-actor: true
           install-dependencies: ${{ startsWith(matrix.os, 'macos') || startsWith(matrix.os, 'windows') || startsWith(matrix.os, 'ubuntu') }}
 
-  test-eudsl-tblgen:
+  test-eudsl:
 
-    needs: [build-eudsl-tblgen]
+    needs: [build-eudsl]
 
     strategy:
       fail-fast: false
@@ -146,7 +157,7 @@ jobs:
 
     runs-on: ${{ matrix.runs-on }}
 
-    name: "Test eudsl-tblgen ${{ matrix.name }}"
+    name: "Test eudsl ${{ matrix.name }}"
 
     defaults:
       run:
@@ -165,7 +176,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: eudsl_tblgen_${{ matrix.name }}_artifact
+          name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse
 
       - name: "Install eudsl-tblgen"
@@ -185,13 +196,13 @@ jobs:
   release-eudsl-tblgen:
 
     if: ${{ github.event_name == 'workflow_dispatch' }}
-    needs: [test-eudsl-tblgen]
+    needs: [test-eudsl]
 
     strategy:
       fail-fast: false
       matrix:
         name: [ubuntu_x86_64, windows_x86_64, macos_arm64, macos_x86_64]
-    
+
     runs-on: "ubuntu-22.04"
     name: "Release eudsl-tblgen"
 
@@ -369,12 +380,12 @@ jobs:
             python -m pytest -rA --capture=tee-sys $TESTS_DIR
           fi
 
-  release-eudsl-py:
+  release-eudsl:
 
     if: ${{ github.event_name == 'workflow_dispatch' }}
-    needs: [test-eudsl-py]
+    needs: [test-eudsl]
     runs-on: "ubuntu-22.04"
-    name: "Release eudsl-py"
+    name: "Release eudsl"
 
     permissions:
       id-token: write
@@ -389,7 +400,7 @@ jobs:
       - name: Release current commit
         uses: ncipollo/release-action@v1.12.0
         with:
-          artifacts: "wheelhouse/eudsl_py*.whl"
+          artifacts: "wheelhouse/eudsl_tblgen*.whl"
           token: "${{ secrets.GITHUB_TOKEN }}"
           tag: "latest"
           name: "latest"
