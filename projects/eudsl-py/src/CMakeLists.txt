@@ -14,12 +14,18 @@ if(NOT WIN32)
   include(HandleLLVMOptions)
 endif()
 
+if(NOT TARGET LLVMSupport)
+  message(FATAL_ERROR "LLVMSupport not found")
+endif()
+
 # no clue why but with LLVM_LINK_LLVM_DYLIB even static libs depend on LLVM
 get_property(MLIR_ALL_LIBS GLOBAL PROPERTY MLIR_ALL_LIBS)
 foreach(_lib ${MLIR_ALL_LIBS})
   get_target_property(_interface_link_libraries ${_lib} INTERFACE_LINK_LIBRARIES)
   list(REMOVE_DUPLICATES _interface_link_libraries)
   list(REMOVE_ITEM _interface_link_libraries LLVM)
+  # for some reason, explicitly adding below as a link library doesn't work - missing symbols...
+  list(APPEND _interface_link_libraries LLVMSupport)
   set_target_properties(${_lib} PROPERTIES INTERFACE_LINK_LIBRARIES "${_interface_link_libraries}")
 endforeach()
 
@@ -36,7 +42,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/eudsl)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 nanobind_add_module(eudsl_ext NB_STATIC STABLE_ABI eudsl_ext.cpp)
-target_link_libraries(eudsl_ext PRIVATE MLIRIR LLVMSupport MLIRSupport)
+target_link_libraries(eudsl_ext PRIVATE MLIRIR LLVMSupport MLIRTransforms)
 target_compile_options(eudsl_ext
   PRIVATE
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>
