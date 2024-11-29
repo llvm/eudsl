@@ -7,6 +7,7 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/InterfaceSupport.h"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_map.h>
@@ -46,14 +47,38 @@ struct DialectRegistry_ : DialectRegistry {
 
 NB_MODULE(eudsl_ext, m) {
   nb::class_<TypeID>(m, "TypeID");
+  nb::class_<AbstractAttribute>(m, "AbstractAttribute")
+      .def_static("lookup", nb::overload_cast<TypeID, MLIRContext *>(
+                                &AbstractAttribute::lookup))
+      .def_static("lookup", nb::overload_cast<StringRef, MLIRContext *>(
+                                &AbstractAttribute::lookup))
+      //      .def("get",
+      //           nb::overload_cast<Dialect &, mlir::detail::InterfaceMap &&,
+      //                             AbstractAttribute::HasTraitFn &&,
+      //                             AbstractAttribute::WalkImmediateSubElementsFn,
+      //                             AbstractAttribute::ReplaceImmediateSubElementsFn,
+      //                             TypeID,
+      //                             StringRef>(&AbstractAttribute::get))
+      .def_prop_ro("dialect", &AbstractAttribute::getDialect)
+      //      .def("get_interface", &AbstractAttribute::getInterface)
+      .def("has_interface", &AbstractAttribute::hasInterface)
+      //      .def("has_trait",
+      //      nb::overload_cast<TypeID>(&AbstractAttribute::hasTrait))
+      .def("walk_immediate_sub_elements",
+           &AbstractAttribute::walkImmediateSubElements)
+      .def("replace_immediate_sub_elements",
+           &AbstractAttribute::replaceImmediateSubElements)
+      .def_prop_ro("type_id", &AbstractAttribute::getTypeID)
+      .def("name", &AbstractAttribute::getName);
+
   nb::class_<Attribute>(m, "Attribute")
       //      .def("operator=", &Attribute::operator=)
       .def(nb::self == nb::self)
       .def(nb::self != nb::self)
       .def("__bool__", &Attribute::operator bool)
-      .def("get_type_id", &Attribute::getTypeID)
-      .def("get_context", &Attribute::getContext)
-      .def("get_dialect", &Attribute::getDialect)
+      .def_prop_ro("type_id", &Attribute::getTypeID)
+      .def_prop_ro("context", &Attribute::getContext)
+      .def_prop_ro("dialect", &Attribute::getDialect)
       //      .def("print", &Attribute::print)
       //      .def("print", &Attribute::print)
       .def("dump", &Attribute::dump)
@@ -65,13 +90,123 @@ NB_MODULE(eudsl_ext, m) {
       //      .def("has_promise_or_implements_interface",
       //           &Attribute::hasPromiseOrImplementsInterface)
       //      .def("has_trait", &Attribute::hasTrait)
-      .def("get_abstract_attribute", &Attribute::getAbstractAttribute)
+      .def_prop_ro("abstract_attribute", &Attribute::getAbstractAttribute)
       .def("walk_immediate_sub_elements", &Attribute::walkImmediateSubElements)
       .def("replace_immediate_sub_elements",
            &Attribute::replaceImmediateSubElements)
       //      .def("walk", &Attribute::walk)
       //      .def("replace", &Attribute::replace)
       .def("get_impl", &Attribute::getImpl);
+
+  nb::class_<AffineExpr>(m, "AffineExpr");
+
+  nb::class_<AffineMap>(m, "AffineMap")
+      .def(nb::init<>())
+      .def_static("get", nb::overload_cast<MLIRContext *>(&AffineMap::get))
+      .def_static("get", nb::overload_cast<unsigned, unsigned, MLIRContext *>(
+                             &AffineMap::get))
+      .def_static("get", nb::overload_cast<unsigned, unsigned, AffineExpr>(
+                             &AffineMap::get))
+      .def_static("get",
+                  nb::overload_cast<unsigned, unsigned, ArrayRef<AffineExpr>,
+                                    MLIRContext *>(&AffineMap::get))
+      .def_static("get_constant_map", &AffineMap::getConstantMap)
+      .def_static("get_multi_dim_identity_map",
+                  &AffineMap::getMultiDimIdentityMap)
+      .def_static("get_minor_identity_map", &AffineMap::getMinorIdentityMap)
+      .def_static("get_filtered_identity_map",
+                  &AffineMap::getFilteredIdentityMap)
+      .def_static("get_permutation_map",
+                  nb::overload_cast<ArrayRef<unsigned>, MLIRContext *>(
+                      &AffineMap::getPermutationMap))
+      .def_static("get_permutation_map",
+                  nb::overload_cast<ArrayRef<int64_t>, MLIRContext *>(
+                      &AffineMap::getPermutationMap))
+      .def_static("get_multi_dim_map_with_targets",
+                  &AffineMap::getMultiDimMapWithTargets)
+      .def_static(
+          "infer_from_expr_list",
+          nb::overload_cast<ArrayRef<ArrayRef<AffineExpr>>, MLIRContext *>(
+              &AffineMap::inferFromExprList))
+      .def_static(
+          "infer_from_expr_list",
+          nb::overload_cast<ArrayRef<SmallVector<AffineExpr, 4>>,
+                            MLIRContext *>(&AffineMap::inferFromExprList))
+      .def("get_context", &AffineMap::getContext)
+      .def("operator bool", &AffineMap::operator bool)
+      .def("operator==", &AffineMap::operator==)
+      .def("operator!=", &AffineMap::operator!=)
+      .def("is_identity", &AffineMap::isIdentity)
+      .def("is_symbol_identity", &AffineMap::isSymbolIdentity)
+      .def("is_minor_identity", &AffineMap::isMinorIdentity)
+      .def("get_broadcast_dims", &AffineMap::getBroadcastDims)
+      .def("is_minor_identity_with_broadcasting",
+           &AffineMap::isMinorIdentityWithBroadcasting)
+      .def("is_permutation_of_minor_identity_with_broadcasting",
+           &AffineMap::isPermutationOfMinorIdentityWithBroadcasting)
+      .def("is_empty", &AffineMap::isEmpty)
+      .def("is_single_constant", &AffineMap::isSingleConstant)
+      .def("is_constant", &AffineMap::isConstant)
+      .def("get_single_constant_result", &AffineMap::getSingleConstantResult)
+      .def("get_constant_results", &AffineMap::getConstantResults)
+      .def("print", &AffineMap::print)
+      .def("dump", &AffineMap::dump)
+      .def("get_num_dims", &AffineMap::getNumDims)
+      .def("get_num_symbols", &AffineMap::getNumSymbols)
+      .def("get_num_results", &AffineMap::getNumResults)
+      .def("get_num_inputs", &AffineMap::getNumInputs)
+      .def("get_results", &AffineMap::getResults)
+      .def("get_result", &AffineMap::getResult)
+      .def("get_dim_position", &AffineMap::getDimPosition)
+      .def("get_result_position", &AffineMap::getResultPosition)
+      .def("is_function_of_dim", &AffineMap::isFunctionOfDim)
+      .def("is_function_of_symbol", &AffineMap::isFunctionOfSymbol)
+      .def("walk_exprs", &AffineMap::walkExprs)
+      .def("replace_dims_and_symbols", &AffineMap::replaceDimsAndSymbols)
+      .def("replace",
+           nb::overload_cast<AffineExpr, AffineExpr, unsigned, unsigned>(
+               &AffineMap::replace, nb::const_))
+      .def("replace",
+           nb::overload_cast<const llvm::DenseMap<AffineExpr, AffineExpr> &>(
+               &AffineMap::replace, nb::const_))
+      .def("replace",
+           nb::overload_cast<const llvm::DenseMap<AffineExpr, AffineExpr> &,
+                             unsigned, unsigned>(&AffineMap::replace,
+                                                 nb::const_))
+      .def("shift_dims", &AffineMap::shiftDims)
+      .def("shift_symbols", &AffineMap::shiftSymbols)
+      .def("drop_result", &AffineMap::dropResult)
+      .def("drop_results", nb::overload_cast<ArrayRef<int64_t>>(
+                               &AffineMap::dropResults, nb::const_))
+      .def("drop_results", nb::overload_cast<const llvm::SmallBitVector &>(
+                               &AffineMap::dropResults, nb::const_))
+      .def("insert_result", &AffineMap::insertResult)
+      .def("constant_fold", &AffineMap::constantFold)
+      .def("partial_constant_fold", &AffineMap::partialConstantFold)
+      .def("compose",
+           nb::overload_cast<AffineMap>(&AffineMap::compose, nb::const_))
+      .def("compose", nb::overload_cast<ArrayRef<int64_t>>(&AffineMap::compose,
+                                                           nb::const_))
+      .def("get_num_of_zero_results", &AffineMap::getNumOfZeroResults)
+      .def("drop_zero_results", &AffineMap::dropZeroResults)
+      .def("is_projected_permutation", &AffineMap::isProjectedPermutation)
+      .def("is_permutation", &AffineMap::isPermutation)
+      .def("get_sub_map", &AffineMap::getSubMap)
+      .def("get_slice_map", &AffineMap::getSliceMap)
+      .def("get_major_sub_map", &AffineMap::getMajorSubMap)
+      .def("get_minor_sub_map", &AffineMap::getMinorSubMap)
+      .def("get_largest_known_divisor_of_map_exprs",
+           &AffineMap::getLargestKnownDivisorOfMapExprs)
+      //      .def("hash_value", &AffineMap::hash_value)
+      //      .def("get_as_opaque_pointer", &AffineMap::getAsOpaquePointer)
+      .def_static("get_from_opaque_pointer", &AffineMap::getFromOpaquePointer);
+
+  nb::class_<AffineMapAttr>(m, "AffineMapAttr")
+      .def_prop_ro("affine_map", &AffineMapAttr::getAffineMap)
+      .def_ro_static("name", &AffineMapAttr::name)
+      .def_ro_static("dialect_name", &AffineMapAttr::dialectName)
+      .def_static("get", &AffineMapAttr::get)
+      .def_prop_ro("value", &AffineMapAttr::getValue);
 
   nb::class_<StringAttr>(m, "StringAttr");
 
