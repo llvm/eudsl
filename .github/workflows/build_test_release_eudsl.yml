@@ -16,7 +16,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/build_test_release_eudsl.yml"
-      - "projects/eudsl"
+      - "projects/eudsl-tblgen"
       - "third_party/llvm-project"
   merge_group:
   push:
@@ -24,7 +24,7 @@ on:
       - main
     paths:
       - ".github/workflows/build_test_release_eudsl.yml"
-      - "projects/eudsl"
+      - "projects/eudsl-tblgen"
       - "third_party/llvm-project"
 
 concurrency:
@@ -102,7 +102,6 @@ jobs:
         id: build
         run: |
           pip install cibuildwheel
-          export EUDSL_SRC_DIR="$PWD/projects/eudsl"
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             export LLVM_DIR="/host/$LLVM_DIR"
           fi
@@ -113,7 +112,7 @@ jobs:
           elif [[ "${{ matrix.runs-on }}" == "macos-13" ]]; then
             export MACOSX_DEPLOYMENT_TARGET=13.7
           fi
-          $python3_command -m cibuildwheel "$EUDSL_SRC_DIR/eudsl-tblgen" --output-dir wheelhouse
+          $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -176,7 +175,7 @@ jobs:
 
       - name: "Test eudsl-tblgen"
         run: |
-          export TESTS_DIR="$PWD/projects/eudsl/eudsl-tblgen/tests"
+          export TESTS_DIR="$PWD/projects/eudsl-tblgen/tests"
           if [ ${{ matrix.os }} == 'windows' ]; then
             python -m pytest -s -rA $TESTS_DIR
           else
