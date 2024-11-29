@@ -36,7 +36,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/eudsl)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 nanobind_add_module(eudsl_ext NB_STATIC STABLE_ABI eudsl_ext.cpp)
-target_link_libraries(eudsl_ext PRIVATE MLIRIR LLVMSupport)
+target_link_libraries(eudsl_ext PRIVATE MLIRIR LLVMSupport MLIRSupport)
 target_compile_options(eudsl_ext
   PRIVATE
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>
