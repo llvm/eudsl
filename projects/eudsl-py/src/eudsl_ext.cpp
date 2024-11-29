@@ -14,7 +14,10 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_map.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/unique_ptr.h>
+
+#include "bind_array_ref.h"
 
 using namespace llvm;
 using namespace mlir;
@@ -42,6 +45,30 @@ struct nb::detail::type_caster<StringRef> {
   }
 };
 
+template <>
+struct nb::detail::type_caster<llvm::StringLiteral> {
+  NB_TYPE_CASTER(llvm::StringLiteral, const_name("str"))
+  static handle from_cpp(llvm::StringLiteral value, rv_policy,
+                         cleanup_list *) noexcept {
+    return PyUnicode_FromStringAndSize(value.data(), value.size());
+  }
+};
+
+template <>
+struct nb::detail::type_caster<llvm::Twine> {
+  NB_TYPE_CASTER(llvm::Twine, const_name("str"))
+
+  bool from_python(handle src, uint8_t, cleanup_list *) noexcept {
+    throw std::runtime_error("constructing Twine from Python not supported");
+  }
+
+  static handle from_cpp(llvm::Twine value, rv_policy,
+                         cleanup_list *) noexcept {
+    StringRef s = value.getSingleStringRef();
+    return PyUnicode_FromStringAndSize(s.data(), s.size());
+  }
+};
+
 // hack to prevent nanobind from trying to detail::wrap_copy<T>
 struct DialectRegistry_ : DialectRegistry {
   DialectRegistry_(const DialectRegistry_ &) = delete;
@@ -51,6 +78,25 @@ struct DialectRegistry_ : DialectRegistry {
 NB_MODULE(eudsl_ext, m) {
   nb::class_<TypeID>(m, "TypeID");
   nb::class_<LogicalResult>(m, "LogicalResult");
+
+  nb::bind_array_ref<ArrayRef<Attribute>>(m, "ArrayRefOfAttribute");
+  nb::bind_array_ref<ArrayRef<AffineExpr>>(m, "ArrayRefOfAffineExpr");
+  nb::bind_array_ref<ArrayRef<unsigned>>(m, "ArrayRefOfUnsigned");
+  nb::bind_array_ref<ArrayRef<int64_t>>(m, "ArrayRefOfInt64");
+  nb::bind_array_ref<ArrayRef<char>>(m, "ArrayRefOfChar");
+  nb::bind_array_ref<ArrayRef<NamedAttribute>>(m, "ArrayRefOfNamedAttribute");
+  nb::bind_array_ref<ArrayRef<FlatSymbolRefAttr>>(
+      m, "ArrayRefOfFlatSymbolRefAttr");
+  nb::bind_array_ref<ArrayRef<BlockArgument>>(m, "ArrayRefOfBlockArgument");
+  nb::bind_array_ref<ArrayRef<Type>>(m, "ArrayRefOfType");
+  nb::bind_array_ref<ArrayRef<Location>>(m, "ArrayRefOfLocation");
+  nb::bind_array_ref<ArrayRef<StringRef>>(m, "ArrayRefOfStringRef");
+  nb::bind_array_ref<MutableArrayRef<BlockArgument>>(
+      m, "MutableArrayRefOfBlockArgument");
+  nb::bind_array_ref<MutableArrayRef<char>>(m, "MutableArrayRefOfChar");
+  //  nb::bind_array_ref<MutableArrayRef<OpOperand>>(m,
+  //                                                 "MutableArrayRefOfOpOperand");
+  //  nb::bind_array_ref<MutableArrayRef<Region>>(m, "MutableArrayRefOfRegion");
 
   nb::class_<AbstractAttribute>(m, "AbstractAttribute")
       .def_static("lookup", nb::overload_cast<TypeID, MLIRContext *>(
@@ -732,6 +778,10 @@ NB_MODULE(eudsl_ext, m) {
   //            .def("print_as_operand", &Block::printAsOperand)
 
   nb::class_<OpFoldResult>(m, "OpFoldResult");
+
+  nb::class_<OpOperand>(m, "OpOperand");
+  nb::class_<BlockOperand>(m, "BlockOperand");
+  nb::class_<OpResult>(m, "OpResult");
 
   nb::class_<Operation>(m, "Operation")
       .def_static(
