@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.29)
 project(eudslpy CXX C)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(LLVM REQUIRED CONFIG)
 find_package(MLIR REQUIRED CONFIG)
@@ -41,28 +42,24 @@ find_package(nanobind CONFIG REQUIRED)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/eudsl)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-nanobind_add_module(eudsl_ext NB_STATIC STABLE_ABI eudsl_ext.cpp)
-target_link_libraries(eudsl_ext PRIVATE MLIRIR LLVMSupport MLIRTransforms)
+add_compile_options(-Wno-cast-qual -Wno-deprecated-literal-operator)
+nanobind_add_module(eudsl_ext NB_STATIC STABLE_ABI eudsl_ext.cpp ir.cpp arith.cpp)
+target_link_libraries(eudsl_ext PRIVATE MLIRIR LLVMSupport MLIRTransforms MLIRArithDialect)
 target_compile_options(eudsl_ext
   PRIVATE
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Darwin>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>)
 
-nanobind_add_stub(
-  eudsl_ext_stub
-  MODULE eudsl_ext
-  OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/eudsl/eudsl_ext.pyi
-  PYTHON_PATH $<TARGET_FILE_DIR:eudsl_ext>
+set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen" -m eudsl -r)
+set(NB_STUBGEN_OUTPUTS ${CMAKE_CURRENT_SOURCE_DIR}/eudsl/__init__.pyi)
+add_custom_command(
+  OUTPUT ${NB_STUBGEN_OUTPUTS}
+  COMMAND ${NB_STUBGEN_CMD}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   DEPENDS eudsl_ext
 )
-nanobind_add_stub(
-  eudsl_stub
-  MODULE eudsl
-  OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/eudsl/__init__.pyi
-  PYTHON_PATH ${CMAKE_CURRENT_SOURCE_DIR}
-  DEPENDS eudsl_ext
-)
+add_custom_target(eudsl_ext_stub ALL DEPENDS ${NB_STUBGEN_OUTPUTS})
 
 install(TARGETS eudsl_ext LIBRARY DESTINATION eudsl)
 install(
