@@ -1,11 +1,12 @@
+
 #include "ir.h"
 namespace nb = nanobind;
 using namespace nb::literals;
-
 void populateArithModule(nanobind::module_ & m) {
 using namespace mlir;
 using namespace mlir::detail;
 using namespace mlir::arith;
+
 auto mlir_arith_ArithDialect = nb::class_<mlir::arith::ArithDialect, mlir::Dialect>(m, "ArithDialect")
 .def_static("dialect_namespace", &mlir::arith::ArithDialect::getDialectNamespace)
 .def("parse_attribute", &mlir::arith::ArithDialect::parseAttribute, "parser"_a, "type"_a)
@@ -15,7 +16,8 @@ auto mlir_arith_ArithDialect = nb::class_<mlir::arith::ArithDialect, mlir::Diale
 .def_static("load_into_context", [](mlir::MLIRContext &context) { return context.getOrLoadDialect<mlir::arith::ArithDialect>(); })
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_ArithDialect__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::ArithDialect>>(m, "TypeIDResolver[arith::ArithDialect]")
+auto mlir_detail_TypeIDResolver___mlir_arith_ArithDialect__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::ArithDialect>>(m, "TypeIDResolver[arith::ArithDialect]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::ArithDialect>::resolveTypeID)
 ;
 
 nb::enum_<mlir::arith::CmpFPredicate>(m, "CmpFPredicate")
@@ -43,7 +45,7 @@ auto mlir_arith_CmpFPredicateAttr = nb::class_<mlir::arith::CmpFPredicateAttr, m
 .def_prop_ro("value", &mlir::arith::CmpFPredicateAttr::getValue)
 ;
 
-auto mlir_FieldParser___mlir_arith_CmpFPredicate_____mlir_arith_CmpFPredicate__ = nb::class_<mlir::FieldParser<::mlir::arith::CmpFPredicate,::mlir::arith::CmpFPredicate>>(m, "FieldParser[arith::CmpFPredicate,arith::CmpFPredicate]")
+auto mlir_FieldParser___mlir_arith_CmpFPredicate_____mlir_arith_CmpFPredicate__ = nb::class_<mlir::FieldParser< ::mlir::arith::CmpFPredicate, ::mlir::arith::CmpFPredicate>>(m, "FieldParser[arith::CmpFPredicate,arith::CmpFPredicate]")
 ;
 
 nb::enum_<mlir::arith::CmpIPredicate>(m, "CmpIPredicate")
@@ -65,16 +67,7 @@ auto mlir_arith_CmpIPredicateAttr = nb::class_<mlir::arith::CmpIPredicateAttr, m
 .def_prop_ro("value", &mlir::arith::CmpIPredicateAttr::getValue)
 ;
 
-auto mlir_FieldParser___mlir_arith_CmpIPredicate_____mlir_arith_CmpIPredicate__ = nb::class_<mlir::FieldParser<::mlir::arith::CmpIPredicate,::mlir::arith::CmpIPredicate>>(m, "FieldParser[arith::CmpIPredicate,arith::CmpIPredicate]")
-;
-
-nb::enum_<mlir::arith::DenormalMode>(m, "DenormalMode")
-.value("ieee", mlir::arith::DenormalMode::ieee)
-.value("preserve_sign", mlir::arith::DenormalMode::preserve_sign)
-.value("positive_zero", mlir::arith::DenormalMode::positive_zero)
-;
-
-auto mlir_FieldParser___mlir_arith_DenormalMode_____mlir_arith_DenormalMode__ = nb::class_<mlir::FieldParser<::mlir::arith::DenormalMode,::mlir::arith::DenormalMode>>(m, "FieldParser[arith::DenormalMode,arith::DenormalMode]")
+auto mlir_FieldParser___mlir_arith_CmpIPredicate_____mlir_arith_CmpIPredicate__ = nb::class_<mlir::FieldParser< ::mlir::arith::CmpIPredicate, ::mlir::arith::CmpIPredicate>>(m, "FieldParser[arith::CmpIPredicate,arith::CmpIPredicate]")
 ;
 
 nb::enum_<mlir::arith::IntegerOverflowFlags>(m, "IntegerOverflowFlags")
@@ -83,7 +76,7 @@ nb::enum_<mlir::arith::IntegerOverflowFlags>(m, "IntegerOverflowFlags")
 .value("nuw", mlir::arith::IntegerOverflowFlags::nuw)
 ;
 
-auto mlir_FieldParser___mlir_arith_IntegerOverflowFlags_____mlir_arith_IntegerOverflowFlags__ = nb::class_<mlir::FieldParser<::mlir::arith::IntegerOverflowFlags,::mlir::arith::IntegerOverflowFlags>>(m, "FieldParser[arith::IntegerOverflowFlags,arith::IntegerOverflowFlags]")
+auto mlir_FieldParser___mlir_arith_IntegerOverflowFlags_____mlir_arith_IntegerOverflowFlags__ = nb::class_<mlir::FieldParser< ::mlir::arith::IntegerOverflowFlags, ::mlir::arith::IntegerOverflowFlags>>(m, "FieldParser[arith::IntegerOverflowFlags,arith::IntegerOverflowFlags]")
 ;
 
 nb::enum_<mlir::arith::RoundingMode>(m, "RoundingMode")
@@ -100,7 +93,7 @@ auto mlir_arith_RoundingModeAttr = nb::class_<mlir::arith::RoundingModeAttr, mli
 .def_prop_ro("value", &mlir::arith::RoundingModeAttr::getValue)
 ;
 
-auto mlir_FieldParser___mlir_arith_RoundingMode_____mlir_arith_RoundingMode__ = nb::class_<mlir::FieldParser<::mlir::arith::RoundingMode,::mlir::arith::RoundingMode>>(m, "FieldParser[arith::RoundingMode,arith::RoundingMode]")
+auto mlir_FieldParser___mlir_arith_RoundingMode_____mlir_arith_RoundingMode__ = nb::class_<mlir::FieldParser< ::mlir::arith::RoundingMode, ::mlir::arith::RoundingMode>>(m, "FieldParser[arith::RoundingMode,arith::RoundingMode]")
 ;
 
 nb::enum_<mlir::arith::AtomicRMWKind>(m, "AtomicRMWKind")
@@ -127,7 +120,7 @@ auto mlir_arith_AtomicRMWKindAttr = nb::class_<mlir::arith::AtomicRMWKindAttr, m
 .def_prop_ro("value", &mlir::arith::AtomicRMWKindAttr::getValue)
 ;
 
-auto mlir_FieldParser___mlir_arith_AtomicRMWKind_____mlir_arith_AtomicRMWKind__ = nb::class_<mlir::FieldParser<::mlir::arith::AtomicRMWKind,::mlir::arith::AtomicRMWKind>>(m, "FieldParser[arith::AtomicRMWKind,arith::AtomicRMWKind]")
+auto mlir_FieldParser___mlir_arith_AtomicRMWKind_____mlir_arith_AtomicRMWKind__ = nb::class_<mlir::FieldParser< ::mlir::arith::AtomicRMWKind, ::mlir::arith::AtomicRMWKind>>(m, "FieldParser[arith::AtomicRMWKind,arith::AtomicRMWKind]")
 ;
 
 nb::enum_<mlir::arith::FastMathFlags>(m, "FastMathFlags")
@@ -142,10 +135,10 @@ nb::enum_<mlir::arith::FastMathFlags>(m, "FastMathFlags")
 .value("fast", mlir::arith::FastMathFlags::fast)
 ;
 
-auto mlir_FieldParser___mlir_arith_FastMathFlags_____mlir_arith_FastMathFlags__ = nb::class_<mlir::FieldParser<::mlir::arith::FastMathFlags,::mlir::arith::FastMathFlags>>(m, "FieldParser[arith::FastMathFlags,arith::FastMathFlags]")
+auto mlir_FieldParser___mlir_arith_FastMathFlags_____mlir_arith_FastMathFlags__ = nb::class_<mlir::FieldParser< ::mlir::arith::FastMathFlags, ::mlir::arith::FastMathFlags>>(m, "FieldParser[arith::FastMathFlags,arith::FastMathFlags]")
 ;
 
-auto mlir_arith_FastMathFlagsAttr = nb::class_<mlir::arith::FastMathFlagsAttr, mlir::Attribute>(m, "FastMathFlagsAttr")
+auto mlir_arith_FastMathFlagsAttr = nb::class_<mlir::arith::FastMathFlagsAttr,  mlir::Attribute>(m, "FastMathFlagsAttr")
 .def_static("get", &mlir::arith::FastMathFlagsAttr::get, "context"_a, "value"_a)
 .def_static("mnemonic", &mlir::arith::FastMathFlagsAttr::getMnemonic)
 .def_static("parse", &mlir::arith::FastMathFlagsAttr::parse, "ods_parser"_a, "ods_type"_a)
@@ -153,7 +146,7 @@ auto mlir_arith_FastMathFlagsAttr = nb::class_<mlir::arith::FastMathFlagsAttr, m
 .def_prop_ro("value", &mlir::arith::FastMathFlagsAttr::getValue)
 ;
 
-auto mlir_arith_IntegerOverflowFlagsAttr = nb::class_<mlir::arith::IntegerOverflowFlagsAttr, mlir::Attribute>(m, "IntegerOverflowFlagsAttr")
+auto mlir_arith_IntegerOverflowFlagsAttr = nb::class_<mlir::arith::IntegerOverflowFlagsAttr,  mlir::Attribute>(m, "IntegerOverflowFlagsAttr")
 .def_static("get", &mlir::arith::IntegerOverflowFlagsAttr::get, "context"_a, "value"_a)
 .def_static("mnemonic", &mlir::arith::IntegerOverflowFlagsAttr::getMnemonic)
 .def_static("parse", &mlir::arith::IntegerOverflowFlagsAttr::parse, "ods_parser"_a, "ods_type"_a)
@@ -161,21 +154,12 @@ auto mlir_arith_IntegerOverflowFlagsAttr = nb::class_<mlir::arith::IntegerOverfl
 .def_prop_ro("value", &mlir::arith::IntegerOverflowFlagsAttr::getValue)
 ;
 
-auto mlir_arith_DenormalModeAttr = nb::class_<mlir::arith::DenormalModeAttr, mlir::Attribute>(m, "DenormalModeAttr")
-.def_static("get", &mlir::arith::DenormalModeAttr::get, "context"_a, "value"_a)
-.def_static("mnemonic", &mlir::arith::DenormalModeAttr::getMnemonic)
-.def_static("parse", &mlir::arith::DenormalModeAttr::parse, "ods_parser"_a, "ods_type"_a)
-.def("print", &mlir::arith::DenormalModeAttr::print, "ods_printer"_a)
-.def_prop_ro("value", &mlir::arith::DenormalModeAttr::getValue)
+auto mlir_detail_TypeIDResolver___mlir_arith_FastMathFlagsAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::FastMathFlagsAttr>>(m, "TypeIDResolver[arith::FastMathFlagsAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::FastMathFlagsAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_FastMathFlagsAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::FastMathFlagsAttr>>(m, "TypeIDResolver[arith::FastMathFlagsAttr]")
-;
-
-auto mlir_detail_TypeIDResolver___mlir_arith_IntegerOverflowFlagsAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::IntegerOverflowFlagsAttr>>(m, "TypeIDResolver[arith::IntegerOverflowFlagsAttr]")
-;
-
-auto mlir_detail_TypeIDResolver___mlir_arith_DenormalModeAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::DenormalModeAttr>>(m, "TypeIDResolver[arith::DenormalModeAttr]")
+auto mlir_detail_TypeIDResolver___mlir_arith_IntegerOverflowFlagsAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::IntegerOverflowFlagsAttr>>(m, "TypeIDResolver[arith::IntegerOverflowFlagsAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::IntegerOverflowFlagsAttr>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_ArithFastMathInterfaceInterfaceTraits = nb::class_<mlir::arith::detail::ArithFastMathInterfaceInterfaceTraits>(m, "ArithFastMathInterfaceInterfaceTraits")
@@ -213,17 +197,6 @@ auto mlir_arith_ArithRoundingModeInterface = nb::class_<mlir::arith::ArithRoundi
 .def_prop_ro("rounding_mode_attr_name", &mlir::arith::ArithRoundingModeInterface::getRoundingModeAttrName)
 ;
 
-auto mlir_arith_detail_ArithDenormalModeInterfaceInterfaceTraits = nb::class_<mlir::arith::detail::ArithDenormalModeInterfaceInterfaceTraits>(m, "ArithDenormalModeInterfaceInterfaceTraits")
-;
-
-auto mlir_arith_detail_ArithDenormalModeInterfaceInterfaceTraits_Concept = nb::class_<mlir::arith::detail::ArithDenormalModeInterfaceInterfaceTraits::Concept>(mlir_arith_detail_ArithDenormalModeInterfaceInterfaceTraits, "Concept")
-;
-
-auto mlir_arith_ArithDenormalModeInterface = nb::class_<mlir::arith::ArithDenormalModeInterface>(m, "ArithDenormalModeInterface")
-.def_prop_ro("denormal_mode_attr", &mlir::arith::ArithDenormalModeInterface::getDenormalModeAttr)
-.def_prop_ro("denormal_mode_attr_name", &mlir::arith::ArithDenormalModeInterface::getDenormalModeAttrName)
-;
-
 auto mlir_arith_detail_AddFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::AddFOpGenericAdaptorBase>(m, "AddFOpGenericAdaptorBase")
 .def(nb::init<mlir::DictionaryAttr, const mlir::arith::detail::AddFOpGenericAdaptorBase::Properties &, mlir::RegionRange>(), "attrs"_a, "properties"_a, "regions"_a)
 .def(nb::init<mlir::arith::AddFOp>(), "op"_a)
@@ -232,13 +205,9 @@ auto mlir_arith_detail_AddFOpGenericAdaptorBase = nb::class_<mlir::arith::detail
 .def_prop_ro("attributes", &mlir::arith::detail::AddFOpGenericAdaptorBase::getAttributes)
 .def_prop_ro("fastmath_attr", &mlir::arith::detail::AddFOpGenericAdaptorBase::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::detail::AddFOpGenericAdaptorBase::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::detail::AddFOpGenericAdaptorBase::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::detail::AddFOpGenericAdaptorBase::getDenormal)
 ;
 
 auto mlir_arith_detail_AddFOpGenericAdaptorBase_Properties = nb::class_<mlir::arith::detail::AddFOpGenericAdaptorBase::Properties>(mlir_arith_detail_AddFOpGenericAdaptorBase, "Properties")
-.def_prop_ro("denormal", &mlir::arith::detail::AddFOpGenericAdaptorBase::Properties::getDenormal)
-.def("set_denormal", &mlir::arith::detail::AddFOpGenericAdaptorBase::Properties::setDenormal, "prop_value"_a)
 .def_prop_ro("fastmath", &mlir::arith::detail::AddFOpGenericAdaptorBase::Properties::getFastmath)
 .def("set_fastmath", &mlir::arith::detail::AddFOpGenericAdaptorBase::Properties::setFastmath, "prop_value"_a)
 .def("__eq__", &mlir::arith::detail::AddFOpGenericAdaptorBase::Properties::operator==, "rhs"_a)
@@ -252,8 +221,6 @@ auto mlir_arith_AddFOpAdaptor = nb::class_<mlir::arith::AddFOpAdaptor>(m, "AddFO
 
 auto mlir_arith_AddFOp = nb::class_<mlir::arith::AddFOp,  mlir::OpState>(m, "AddFOp")
 .def_static("attribute_names", &mlir::arith::AddFOp::getAttributeNames)
-.def_prop_ro("denormal_attr_name", [](mlir::arith::AddFOp& self){ return self.getDenormalAttrName(); })
-.def_static("get_denormal_attr_name", [](mlir::OperationName name){ return mlir::arith::AddFOp::getDenormalAttrName(name); }, "name"_a)
 .def_prop_ro("fastmath_attr_name", [](mlir::arith::AddFOp& self){ return self.getFastmathAttrName(); })
 .def_static("get_fastmath_attr_name", [](mlir::OperationName name){ return mlir::arith::AddFOp::getFastmathAttrName(name); }, "name"_a)
 .def_static("operation_name", &mlir::arith::AddFOp::getOperationName)
@@ -277,18 +244,14 @@ auto mlir_arith_AddFOp = nb::class_<mlir::arith::AddFOp,  mlir::OpState>(m, "Add
 .def("write_properties", &mlir::arith::AddFOp::writeProperties, "writer"_a)
 .def_prop_ro("fastmath_attr", &mlir::arith::AddFOp::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::AddFOp::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::AddFOp::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::AddFOp::getDenormal)
 .def("set_fastmath_attr", &mlir::arith::AddFOp::setFastmathAttr, "attr"_a)
 .def("set_fastmath", &mlir::arith::AddFOp::setFastmath, "attr_value"_a)
-.def("set_denormal_attr", &mlir::arith::AddFOp::setDenormalAttr, "attr"_a)
-.def("set_denormal", &mlir::arith::AddFOp::setDenormal, "attr_value"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::AddFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::AddFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::AddFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::AddFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::AddFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::AddFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::AddFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::AddFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::AddFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::AddFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::AddFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::AddFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
 .def_static("build", [](mlir::OpBuilder & _, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::AddFOp::build(_, odsState, resultTypes, operands, attributes); }, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
 .def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::AddFOp::build(odsBuilder, odsState, operands, attributes); }, "ods_builder"_a, "ods_state"_a, "operands"_a, "attributes"_a)
 .def_static("populate_default_properties", &mlir::arith::AddFOp::populateDefaultProperties, "op_name"_a, "properties"_a)
@@ -300,7 +263,8 @@ auto mlir_arith_AddFOp = nb::class_<mlir::arith::AddFOp,  mlir::OpState>(m, "Add
 .def("get_effects", &mlir::arith::AddFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_AddFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::AddFOp>>(m, "TypeIDResolver[arith::AddFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_AddFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::AddFOp>>(m, "TypeIDResolver[arith::AddFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::AddFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_AddIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::AddIOpGenericAdaptorBase>(m, "AddIOpGenericAdaptorBase")
@@ -371,7 +335,8 @@ auto mlir_arith_AddIOp = nb::class_<mlir::arith::AddIOp,  mlir::OpState>(m, "Add
 .def("get_effects", &mlir::arith::AddIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_AddIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::AddIOp>>(m, "TypeIDResolver[arith::AddIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_AddIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::AddIOp>>(m, "TypeIDResolver[arith::AddIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::AddIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_AddUIExtendedOpGenericAdaptorBase = nb::class_<mlir::arith::detail::AddUIExtendedOpGenericAdaptorBase>(m, "AddUIExtendedOpGenericAdaptorBase")
@@ -413,7 +378,8 @@ auto mlir_arith_AddUIExtendedOp = nb::class_<mlir::arith::AddUIExtendedOp,  mlir
 .def_prop_ro("shape_for_unroll", &mlir::arith::AddUIExtendedOp::getShapeForUnroll)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_AddUIExtendedOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::AddUIExtendedOp>>(m, "TypeIDResolver[arith::AddUIExtendedOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_AddUIExtendedOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::AddUIExtendedOp>>(m, "TypeIDResolver[arith::AddUIExtendedOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::AddUIExtendedOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_AndIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::AndIOpGenericAdaptorBase>(m, "AndIOpGenericAdaptorBase")
@@ -455,7 +421,8 @@ auto mlir_arith_AndIOp = nb::class_<mlir::arith::AndIOp,  mlir::OpState>(m, "And
 .def("get_effects", &mlir::arith::AndIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_AndIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::AndIOp>>(m, "TypeIDResolver[arith::AndIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_AndIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::AndIOp>>(m, "TypeIDResolver[arith::AndIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::AndIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_BitcastOpGenericAdaptorBase = nb::class_<mlir::arith::detail::BitcastOpGenericAdaptorBase>(m, "BitcastOpGenericAdaptorBase")
@@ -492,7 +459,8 @@ auto mlir_arith_BitcastOp = nb::class_<mlir::arith::BitcastOp,  mlir::OpState>(m
 .def("get_effects", &mlir::arith::BitcastOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_BitcastOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::BitcastOp>>(m, "TypeIDResolver[arith::BitcastOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_BitcastOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::BitcastOp>>(m, "TypeIDResolver[arith::BitcastOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::BitcastOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_CeilDivSIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::CeilDivSIOpGenericAdaptorBase>(m, "CeilDivSIOpGenericAdaptorBase")
@@ -534,7 +502,8 @@ auto mlir_arith_CeilDivSIOp = nb::class_<mlir::arith::CeilDivSIOp,  mlir::OpStat
 .def_prop_ro("speculatability", &mlir::arith::CeilDivSIOp::getSpeculatability)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_CeilDivSIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::CeilDivSIOp>>(m, "TypeIDResolver[arith::CeilDivSIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_CeilDivSIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::CeilDivSIOp>>(m, "TypeIDResolver[arith::CeilDivSIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::CeilDivSIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_CeilDivUIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::CeilDivUIOpGenericAdaptorBase>(m, "CeilDivUIOpGenericAdaptorBase")
@@ -576,7 +545,8 @@ auto mlir_arith_CeilDivUIOp = nb::class_<mlir::arith::CeilDivUIOp,  mlir::OpStat
 .def_prop_ro("speculatability", &mlir::arith::CeilDivUIOp::getSpeculatability)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_CeilDivUIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::CeilDivUIOp>>(m, "TypeIDResolver[arith::CeilDivUIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_CeilDivUIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::CeilDivUIOp>>(m, "TypeIDResolver[arith::CeilDivUIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::CeilDivUIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_CmpFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::CmpFOpGenericAdaptorBase>(m, "CmpFOpGenericAdaptorBase")
@@ -657,7 +627,8 @@ auto mlir_arith_CmpFOp = nb::class_<mlir::arith::CmpFOp,  mlir::OpState>(m, "Cmp
 .def("get_effects", &mlir::arith::CmpFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_CmpFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::CmpFOp>>(m, "TypeIDResolver[arith::CmpFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_CmpFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::CmpFOp>>(m, "TypeIDResolver[arith::CmpFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::CmpFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_CmpIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::CmpIOpGenericAdaptorBase>(m, "CmpIOpGenericAdaptorBase")
@@ -727,7 +698,8 @@ auto mlir_arith_CmpIOp = nb::class_<mlir::arith::CmpIOp,  mlir::OpState>(m, "Cmp
 .def("get_effects", &mlir::arith::CmpIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_CmpIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::CmpIOp>>(m, "TypeIDResolver[arith::CmpIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_CmpIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::CmpIOp>>(m, "TypeIDResolver[arith::CmpIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::CmpIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_ConstantOpGenericAdaptorBase = nb::class_<mlir::arith::detail::ConstantOpGenericAdaptorBase>(m, "ConstantOpGenericAdaptorBase")
@@ -792,7 +764,8 @@ auto mlir_arith_ConstantOp = nb::class_<mlir::arith::ConstantOp,  mlir::OpState>
 .def_static("materialize", &mlir::arith::ConstantOp::materialize, "builder"_a, "value"_a, "type"_a, "loc"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_ConstantOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::ConstantOp>>(m, "TypeIDResolver[arith::ConstantOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_ConstantOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::ConstantOp>>(m, "TypeIDResolver[arith::ConstantOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::ConstantOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_DivFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::DivFOpGenericAdaptorBase>(m, "DivFOpGenericAdaptorBase")
@@ -803,13 +776,9 @@ auto mlir_arith_detail_DivFOpGenericAdaptorBase = nb::class_<mlir::arith::detail
 .def_prop_ro("attributes", &mlir::arith::detail::DivFOpGenericAdaptorBase::getAttributes)
 .def_prop_ro("fastmath_attr", &mlir::arith::detail::DivFOpGenericAdaptorBase::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::detail::DivFOpGenericAdaptorBase::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::detail::DivFOpGenericAdaptorBase::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::detail::DivFOpGenericAdaptorBase::getDenormal)
 ;
 
 auto mlir_arith_detail_DivFOpGenericAdaptorBase_Properties = nb::class_<mlir::arith::detail::DivFOpGenericAdaptorBase::Properties>(mlir_arith_detail_DivFOpGenericAdaptorBase, "Properties")
-.def_prop_ro("denormal", &mlir::arith::detail::DivFOpGenericAdaptorBase::Properties::getDenormal)
-.def("set_denormal", &mlir::arith::detail::DivFOpGenericAdaptorBase::Properties::setDenormal, "prop_value"_a)
 .def_prop_ro("fastmath", &mlir::arith::detail::DivFOpGenericAdaptorBase::Properties::getFastmath)
 .def("set_fastmath", &mlir::arith::detail::DivFOpGenericAdaptorBase::Properties::setFastmath, "prop_value"_a)
 .def("__eq__", &mlir::arith::detail::DivFOpGenericAdaptorBase::Properties::operator==, "rhs"_a)
@@ -823,8 +792,6 @@ auto mlir_arith_DivFOpAdaptor = nb::class_<mlir::arith::DivFOpAdaptor>(m, "DivFO
 
 auto mlir_arith_DivFOp = nb::class_<mlir::arith::DivFOp,  mlir::OpState>(m, "DivFOp")
 .def_static("attribute_names", &mlir::arith::DivFOp::getAttributeNames)
-.def_prop_ro("denormal_attr_name", [](mlir::arith::DivFOp& self){ return self.getDenormalAttrName(); })
-.def_static("get_denormal_attr_name", [](mlir::OperationName name){ return mlir::arith::DivFOp::getDenormalAttrName(name); }, "name"_a)
 .def_prop_ro("fastmath_attr_name", [](mlir::arith::DivFOp& self){ return self.getFastmathAttrName(); })
 .def_static("get_fastmath_attr_name", [](mlir::OperationName name){ return mlir::arith::DivFOp::getFastmathAttrName(name); }, "name"_a)
 .def_static("operation_name", &mlir::arith::DivFOp::getOperationName)
@@ -848,18 +815,14 @@ auto mlir_arith_DivFOp = nb::class_<mlir::arith::DivFOp,  mlir::OpState>(m, "Div
 .def("write_properties", &mlir::arith::DivFOp::writeProperties, "writer"_a)
 .def_prop_ro("fastmath_attr", &mlir::arith::DivFOp::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::DivFOp::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::DivFOp::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::DivFOp::getDenormal)
 .def("set_fastmath_attr", &mlir::arith::DivFOp::setFastmathAttr, "attr"_a)
 .def("set_fastmath", &mlir::arith::DivFOp::setFastmath, "attr_value"_a)
-.def("set_denormal_attr", &mlir::arith::DivFOp::setDenormalAttr, "attr"_a)
-.def("set_denormal", &mlir::arith::DivFOp::setDenormal, "attr_value"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::DivFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::DivFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::DivFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::DivFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::DivFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::DivFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::DivFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::DivFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::DivFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::DivFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::DivFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::DivFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
 .def_static("build", [](mlir::OpBuilder & _, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::DivFOp::build(_, odsState, resultTypes, operands, attributes); }, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
 .def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::DivFOp::build(odsBuilder, odsState, operands, attributes); }, "ods_builder"_a, "ods_state"_a, "operands"_a, "attributes"_a)
 .def_static("populate_default_properties", &mlir::arith::DivFOp::populateDefaultProperties, "op_name"_a, "properties"_a)
@@ -872,7 +835,8 @@ auto mlir_arith_DivFOp = nb::class_<mlir::arith::DivFOp,  mlir::OpState>(m, "Div
 .def("get_effects", &mlir::arith::DivFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_DivFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::DivFOp>>(m, "TypeIDResolver[arith::DivFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_DivFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::DivFOp>>(m, "TypeIDResolver[arith::DivFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::DivFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_DivSIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::DivSIOpGenericAdaptorBase>(m, "DivSIOpGenericAdaptorBase")
@@ -914,7 +878,8 @@ auto mlir_arith_DivSIOp = nb::class_<mlir::arith::DivSIOp,  mlir::OpState>(m, "D
 .def_prop_ro("speculatability", &mlir::arith::DivSIOp::getSpeculatability)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_DivSIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::DivSIOp>>(m, "TypeIDResolver[arith::DivSIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_DivSIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::DivSIOp>>(m, "TypeIDResolver[arith::DivSIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::DivSIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_DivUIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::DivUIOpGenericAdaptorBase>(m, "DivUIOpGenericAdaptorBase")
@@ -956,7 +921,8 @@ auto mlir_arith_DivUIOp = nb::class_<mlir::arith::DivUIOp,  mlir::OpState>(m, "D
 .def_prop_ro("speculatability", &mlir::arith::DivUIOp::getSpeculatability)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_DivUIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::DivUIOp>>(m, "TypeIDResolver[arith::DivUIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_DivUIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::DivUIOp>>(m, "TypeIDResolver[arith::DivUIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::DivUIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_ExtFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::ExtFOpGenericAdaptorBase>(m, "ExtFOpGenericAdaptorBase")
@@ -1019,7 +985,8 @@ auto mlir_arith_ExtFOp = nb::class_<mlir::arith::ExtFOp,  mlir::OpState>(m, "Ext
 .def("get_effects", &mlir::arith::ExtFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_ExtFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::ExtFOp>>(m, "TypeIDResolver[arith::ExtFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_ExtFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::ExtFOp>>(m, "TypeIDResolver[arith::ExtFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::ExtFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_ExtSIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::ExtSIOpGenericAdaptorBase>(m, "ExtSIOpGenericAdaptorBase")
@@ -1058,7 +1025,8 @@ auto mlir_arith_ExtSIOp = nb::class_<mlir::arith::ExtSIOp,  mlir::OpState>(m, "E
 .def("get_effects", &mlir::arith::ExtSIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_ExtSIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::ExtSIOp>>(m, "TypeIDResolver[arith::ExtSIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_ExtSIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::ExtSIOp>>(m, "TypeIDResolver[arith::ExtSIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::ExtSIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_ExtUIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::ExtUIOpGenericAdaptorBase>(m, "ExtUIOpGenericAdaptorBase")
@@ -1096,7 +1064,8 @@ auto mlir_arith_ExtUIOp = nb::class_<mlir::arith::ExtUIOp,  mlir::OpState>(m, "E
 .def("get_effects", &mlir::arith::ExtUIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_ExtUIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::ExtUIOp>>(m, "TypeIDResolver[arith::ExtUIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_ExtUIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::ExtUIOp>>(m, "TypeIDResolver[arith::ExtUIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::ExtUIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_FPToSIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::FPToSIOpGenericAdaptorBase>(m, "FPToSIOpGenericAdaptorBase")
@@ -1132,7 +1101,8 @@ auto mlir_arith_FPToSIOp = nb::class_<mlir::arith::FPToSIOp,  mlir::OpState>(m, 
 .def("get_effects", &mlir::arith::FPToSIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_FPToSIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::FPToSIOp>>(m, "TypeIDResolver[arith::FPToSIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_FPToSIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::FPToSIOp>>(m, "TypeIDResolver[arith::FPToSIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::FPToSIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_FPToUIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::FPToUIOpGenericAdaptorBase>(m, "FPToUIOpGenericAdaptorBase")
@@ -1168,7 +1138,8 @@ auto mlir_arith_FPToUIOp = nb::class_<mlir::arith::FPToUIOp,  mlir::OpState>(m, 
 .def("get_effects", &mlir::arith::FPToUIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_FPToUIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::FPToUIOp>>(m, "TypeIDResolver[arith::FPToUIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_FPToUIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::FPToUIOp>>(m, "TypeIDResolver[arith::FPToUIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::FPToUIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_FloorDivSIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::FloorDivSIOpGenericAdaptorBase>(m, "FloorDivSIOpGenericAdaptorBase")
@@ -1209,7 +1180,8 @@ auto mlir_arith_FloorDivSIOp = nb::class_<mlir::arith::FloorDivSIOp,  mlir::OpSt
 .def("get_effects", &mlir::arith::FloorDivSIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_FloorDivSIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::FloorDivSIOp>>(m, "TypeIDResolver[arith::FloorDivSIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_FloorDivSIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::FloorDivSIOp>>(m, "TypeIDResolver[arith::FloorDivSIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::FloorDivSIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_IndexCastOpGenericAdaptorBase = nb::class_<mlir::arith::detail::IndexCastOpGenericAdaptorBase>(m, "IndexCastOpGenericAdaptorBase")
@@ -1247,7 +1219,8 @@ auto mlir_arith_IndexCastOp = nb::class_<mlir::arith::IndexCastOp,  mlir::OpStat
 .def("get_effects", &mlir::arith::IndexCastOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_IndexCastOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::IndexCastOp>>(m, "TypeIDResolver[arith::IndexCastOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_IndexCastOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::IndexCastOp>>(m, "TypeIDResolver[arith::IndexCastOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::IndexCastOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_IndexCastUIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::IndexCastUIOpGenericAdaptorBase>(m, "IndexCastUIOpGenericAdaptorBase")
@@ -1285,7 +1258,8 @@ auto mlir_arith_IndexCastUIOp = nb::class_<mlir::arith::IndexCastUIOp,  mlir::Op
 .def("get_effects", &mlir::arith::IndexCastUIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_IndexCastUIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::IndexCastUIOp>>(m, "TypeIDResolver[arith::IndexCastUIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_IndexCastUIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::IndexCastUIOp>>(m, "TypeIDResolver[arith::IndexCastUIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::IndexCastUIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MaxNumFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MaxNumFOpGenericAdaptorBase>(m, "MaxNumFOpGenericAdaptorBase")
@@ -1296,13 +1270,9 @@ auto mlir_arith_detail_MaxNumFOpGenericAdaptorBase = nb::class_<mlir::arith::det
 .def_prop_ro("attributes", &mlir::arith::detail::MaxNumFOpGenericAdaptorBase::getAttributes)
 .def_prop_ro("fastmath_attr", &mlir::arith::detail::MaxNumFOpGenericAdaptorBase::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::detail::MaxNumFOpGenericAdaptorBase::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::detail::MaxNumFOpGenericAdaptorBase::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::detail::MaxNumFOpGenericAdaptorBase::getDenormal)
 ;
 
 auto mlir_arith_detail_MaxNumFOpGenericAdaptorBase_Properties = nb::class_<mlir::arith::detail::MaxNumFOpGenericAdaptorBase::Properties>(mlir_arith_detail_MaxNumFOpGenericAdaptorBase, "Properties")
-.def_prop_ro("denormal", &mlir::arith::detail::MaxNumFOpGenericAdaptorBase::Properties::getDenormal)
-.def("set_denormal", &mlir::arith::detail::MaxNumFOpGenericAdaptorBase::Properties::setDenormal, "prop_value"_a)
 .def_prop_ro("fastmath", &mlir::arith::detail::MaxNumFOpGenericAdaptorBase::Properties::getFastmath)
 .def("set_fastmath", &mlir::arith::detail::MaxNumFOpGenericAdaptorBase::Properties::setFastmath, "prop_value"_a)
 .def("__eq__", &mlir::arith::detail::MaxNumFOpGenericAdaptorBase::Properties::operator==, "rhs"_a)
@@ -1316,8 +1286,6 @@ auto mlir_arith_MaxNumFOpAdaptor = nb::class_<mlir::arith::MaxNumFOpAdaptor>(m, 
 
 auto mlir_arith_MaxNumFOp = nb::class_<mlir::arith::MaxNumFOp,  mlir::OpState>(m, "MaxNumFOp")
 .def_static("attribute_names", &mlir::arith::MaxNumFOp::getAttributeNames)
-.def_prop_ro("denormal_attr_name", [](mlir::arith::MaxNumFOp& self){ return self.getDenormalAttrName(); })
-.def_static("get_denormal_attr_name", [](mlir::OperationName name){ return mlir::arith::MaxNumFOp::getDenormalAttrName(name); }, "name"_a)
 .def_prop_ro("fastmath_attr_name", [](mlir::arith::MaxNumFOp& self){ return self.getFastmathAttrName(); })
 .def_static("get_fastmath_attr_name", [](mlir::OperationName name){ return mlir::arith::MaxNumFOp::getFastmathAttrName(name); }, "name"_a)
 .def_static("operation_name", &mlir::arith::MaxNumFOp::getOperationName)
@@ -1341,18 +1309,14 @@ auto mlir_arith_MaxNumFOp = nb::class_<mlir::arith::MaxNumFOp,  mlir::OpState>(m
 .def("write_properties", &mlir::arith::MaxNumFOp::writeProperties, "writer"_a)
 .def_prop_ro("fastmath_attr", &mlir::arith::MaxNumFOp::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::MaxNumFOp::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::MaxNumFOp::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::MaxNumFOp::getDenormal)
 .def("set_fastmath_attr", &mlir::arith::MaxNumFOp::setFastmathAttr, "attr"_a)
 .def("set_fastmath", &mlir::arith::MaxNumFOp::setFastmath, "attr_value"_a)
-.def("set_denormal_attr", &mlir::arith::MaxNumFOp::setDenormalAttr, "attr"_a)
-.def("set_denormal", &mlir::arith::MaxNumFOp::setDenormal, "attr_value"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
 .def_static("build", [](mlir::OpBuilder & _, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::MaxNumFOp::build(_, odsState, resultTypes, operands, attributes); }, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
 .def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::MaxNumFOp::build(odsBuilder, odsState, operands, attributes); }, "ods_builder"_a, "ods_state"_a, "operands"_a, "attributes"_a)
 .def_static("populate_default_properties", &mlir::arith::MaxNumFOp::populateDefaultProperties, "op_name"_a, "properties"_a)
@@ -1364,7 +1328,8 @@ auto mlir_arith_MaxNumFOp = nb::class_<mlir::arith::MaxNumFOp,  mlir::OpState>(m
 .def("get_effects", &mlir::arith::MaxNumFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MaxNumFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MaxNumFOp>>(m, "TypeIDResolver[arith::MaxNumFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MaxNumFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MaxNumFOp>>(m, "TypeIDResolver[arith::MaxNumFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MaxNumFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MaxSIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MaxSIOpGenericAdaptorBase>(m, "MaxSIOpGenericAdaptorBase")
@@ -1405,7 +1370,8 @@ auto mlir_arith_MaxSIOp = nb::class_<mlir::arith::MaxSIOp,  mlir::OpState>(m, "M
 .def("get_effects", &mlir::arith::MaxSIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MaxSIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MaxSIOp>>(m, "TypeIDResolver[arith::MaxSIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MaxSIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MaxSIOp>>(m, "TypeIDResolver[arith::MaxSIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MaxSIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MaxUIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MaxUIOpGenericAdaptorBase>(m, "MaxUIOpGenericAdaptorBase")
@@ -1446,7 +1412,8 @@ auto mlir_arith_MaxUIOp = nb::class_<mlir::arith::MaxUIOp,  mlir::OpState>(m, "M
 .def("get_effects", &mlir::arith::MaxUIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MaxUIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MaxUIOp>>(m, "TypeIDResolver[arith::MaxUIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MaxUIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MaxUIOp>>(m, "TypeIDResolver[arith::MaxUIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MaxUIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MaximumFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MaximumFOpGenericAdaptorBase>(m, "MaximumFOpGenericAdaptorBase")
@@ -1457,13 +1424,9 @@ auto mlir_arith_detail_MaximumFOpGenericAdaptorBase = nb::class_<mlir::arith::de
 .def_prop_ro("attributes", &mlir::arith::detail::MaximumFOpGenericAdaptorBase::getAttributes)
 .def_prop_ro("fastmath_attr", &mlir::arith::detail::MaximumFOpGenericAdaptorBase::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::detail::MaximumFOpGenericAdaptorBase::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::detail::MaximumFOpGenericAdaptorBase::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::detail::MaximumFOpGenericAdaptorBase::getDenormal)
 ;
 
 auto mlir_arith_detail_MaximumFOpGenericAdaptorBase_Properties = nb::class_<mlir::arith::detail::MaximumFOpGenericAdaptorBase::Properties>(mlir_arith_detail_MaximumFOpGenericAdaptorBase, "Properties")
-.def_prop_ro("denormal", &mlir::arith::detail::MaximumFOpGenericAdaptorBase::Properties::getDenormal)
-.def("set_denormal", &mlir::arith::detail::MaximumFOpGenericAdaptorBase::Properties::setDenormal, "prop_value"_a)
 .def_prop_ro("fastmath", &mlir::arith::detail::MaximumFOpGenericAdaptorBase::Properties::getFastmath)
 .def("set_fastmath", &mlir::arith::detail::MaximumFOpGenericAdaptorBase::Properties::setFastmath, "prop_value"_a)
 .def("__eq__", &mlir::arith::detail::MaximumFOpGenericAdaptorBase::Properties::operator==, "rhs"_a)
@@ -1477,8 +1440,6 @@ auto mlir_arith_MaximumFOpAdaptor = nb::class_<mlir::arith::MaximumFOpAdaptor>(m
 
 auto mlir_arith_MaximumFOp = nb::class_<mlir::arith::MaximumFOp,  mlir::OpState>(m, "MaximumFOp")
 .def_static("attribute_names", &mlir::arith::MaximumFOp::getAttributeNames)
-.def_prop_ro("denormal_attr_name", [](mlir::arith::MaximumFOp& self){ return self.getDenormalAttrName(); })
-.def_static("get_denormal_attr_name", [](mlir::OperationName name){ return mlir::arith::MaximumFOp::getDenormalAttrName(name); }, "name"_a)
 .def_prop_ro("fastmath_attr_name", [](mlir::arith::MaximumFOp& self){ return self.getFastmathAttrName(); })
 .def_static("get_fastmath_attr_name", [](mlir::OperationName name){ return mlir::arith::MaximumFOp::getFastmathAttrName(name); }, "name"_a)
 .def_static("operation_name", &mlir::arith::MaximumFOp::getOperationName)
@@ -1502,18 +1463,14 @@ auto mlir_arith_MaximumFOp = nb::class_<mlir::arith::MaximumFOp,  mlir::OpState>
 .def("write_properties", &mlir::arith::MaximumFOp::writeProperties, "writer"_a)
 .def_prop_ro("fastmath_attr", &mlir::arith::MaximumFOp::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::MaximumFOp::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::MaximumFOp::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::MaximumFOp::getDenormal)
 .def("set_fastmath_attr", &mlir::arith::MaximumFOp::setFastmathAttr, "attr"_a)
 .def("set_fastmath", &mlir::arith::MaximumFOp::setFastmath, "attr_value"_a)
-.def("set_denormal_attr", &mlir::arith::MaximumFOp::setDenormalAttr, "attr"_a)
-.def("set_denormal", &mlir::arith::MaximumFOp::setDenormal, "attr_value"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
 .def_static("build", [](mlir::OpBuilder & _, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::MaximumFOp::build(_, odsState, resultTypes, operands, attributes); }, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
 .def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::MaximumFOp::build(odsBuilder, odsState, operands, attributes); }, "ods_builder"_a, "ods_state"_a, "operands"_a, "attributes"_a)
 .def_static("populate_default_properties", &mlir::arith::MaximumFOp::populateDefaultProperties, "op_name"_a, "properties"_a)
@@ -1525,7 +1482,8 @@ auto mlir_arith_MaximumFOp = nb::class_<mlir::arith::MaximumFOp,  mlir::OpState>
 .def("get_effects", &mlir::arith::MaximumFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MaximumFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MaximumFOp>>(m, "TypeIDResolver[arith::MaximumFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MaximumFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MaximumFOp>>(m, "TypeIDResolver[arith::MaximumFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MaximumFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MinNumFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MinNumFOpGenericAdaptorBase>(m, "MinNumFOpGenericAdaptorBase")
@@ -1536,13 +1494,9 @@ auto mlir_arith_detail_MinNumFOpGenericAdaptorBase = nb::class_<mlir::arith::det
 .def_prop_ro("attributes", &mlir::arith::detail::MinNumFOpGenericAdaptorBase::getAttributes)
 .def_prop_ro("fastmath_attr", &mlir::arith::detail::MinNumFOpGenericAdaptorBase::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::detail::MinNumFOpGenericAdaptorBase::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::detail::MinNumFOpGenericAdaptorBase::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::detail::MinNumFOpGenericAdaptorBase::getDenormal)
 ;
 
 auto mlir_arith_detail_MinNumFOpGenericAdaptorBase_Properties = nb::class_<mlir::arith::detail::MinNumFOpGenericAdaptorBase::Properties>(mlir_arith_detail_MinNumFOpGenericAdaptorBase, "Properties")
-.def_prop_ro("denormal", &mlir::arith::detail::MinNumFOpGenericAdaptorBase::Properties::getDenormal)
-.def("set_denormal", &mlir::arith::detail::MinNumFOpGenericAdaptorBase::Properties::setDenormal, "prop_value"_a)
 .def_prop_ro("fastmath", &mlir::arith::detail::MinNumFOpGenericAdaptorBase::Properties::getFastmath)
 .def("set_fastmath", &mlir::arith::detail::MinNumFOpGenericAdaptorBase::Properties::setFastmath, "prop_value"_a)
 .def("__eq__", &mlir::arith::detail::MinNumFOpGenericAdaptorBase::Properties::operator==, "rhs"_a)
@@ -1556,8 +1510,6 @@ auto mlir_arith_MinNumFOpAdaptor = nb::class_<mlir::arith::MinNumFOpAdaptor>(m, 
 
 auto mlir_arith_MinNumFOp = nb::class_<mlir::arith::MinNumFOp,  mlir::OpState>(m, "MinNumFOp")
 .def_static("attribute_names", &mlir::arith::MinNumFOp::getAttributeNames)
-.def_prop_ro("denormal_attr_name", [](mlir::arith::MinNumFOp& self){ return self.getDenormalAttrName(); })
-.def_static("get_denormal_attr_name", [](mlir::OperationName name){ return mlir::arith::MinNumFOp::getDenormalAttrName(name); }, "name"_a)
 .def_prop_ro("fastmath_attr_name", [](mlir::arith::MinNumFOp& self){ return self.getFastmathAttrName(); })
 .def_static("get_fastmath_attr_name", [](mlir::OperationName name){ return mlir::arith::MinNumFOp::getFastmathAttrName(name); }, "name"_a)
 .def_static("operation_name", &mlir::arith::MinNumFOp::getOperationName)
@@ -1581,18 +1533,14 @@ auto mlir_arith_MinNumFOp = nb::class_<mlir::arith::MinNumFOp,  mlir::OpState>(m
 .def("write_properties", &mlir::arith::MinNumFOp::writeProperties, "writer"_a)
 .def_prop_ro("fastmath_attr", &mlir::arith::MinNumFOp::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::MinNumFOp::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::MinNumFOp::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::MinNumFOp::getDenormal)
 .def("set_fastmath_attr", &mlir::arith::MinNumFOp::setFastmathAttr, "attr"_a)
 .def("set_fastmath", &mlir::arith::MinNumFOp::setFastmath, "attr_value"_a)
-.def("set_denormal_attr", &mlir::arith::MinNumFOp::setDenormalAttr, "attr"_a)
-.def("set_denormal", &mlir::arith::MinNumFOp::setDenormal, "attr_value"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
 .def_static("build", [](mlir::OpBuilder & _, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::MinNumFOp::build(_, odsState, resultTypes, operands, attributes); }, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
 .def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::MinNumFOp::build(odsBuilder, odsState, operands, attributes); }, "ods_builder"_a, "ods_state"_a, "operands"_a, "attributes"_a)
 .def_static("populate_default_properties", &mlir::arith::MinNumFOp::populateDefaultProperties, "op_name"_a, "properties"_a)
@@ -1604,7 +1552,8 @@ auto mlir_arith_MinNumFOp = nb::class_<mlir::arith::MinNumFOp,  mlir::OpState>(m
 .def("get_effects", &mlir::arith::MinNumFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MinNumFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MinNumFOp>>(m, "TypeIDResolver[arith::MinNumFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MinNumFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MinNumFOp>>(m, "TypeIDResolver[arith::MinNumFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MinNumFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MinSIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MinSIOpGenericAdaptorBase>(m, "MinSIOpGenericAdaptorBase")
@@ -1645,7 +1594,8 @@ auto mlir_arith_MinSIOp = nb::class_<mlir::arith::MinSIOp,  mlir::OpState>(m, "M
 .def("get_effects", &mlir::arith::MinSIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MinSIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MinSIOp>>(m, "TypeIDResolver[arith::MinSIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MinSIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MinSIOp>>(m, "TypeIDResolver[arith::MinSIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MinSIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MinUIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MinUIOpGenericAdaptorBase>(m, "MinUIOpGenericAdaptorBase")
@@ -1686,7 +1636,8 @@ auto mlir_arith_MinUIOp = nb::class_<mlir::arith::MinUIOp,  mlir::OpState>(m, "M
 .def("get_effects", &mlir::arith::MinUIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MinUIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MinUIOp>>(m, "TypeIDResolver[arith::MinUIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MinUIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MinUIOp>>(m, "TypeIDResolver[arith::MinUIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MinUIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MinimumFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MinimumFOpGenericAdaptorBase>(m, "MinimumFOpGenericAdaptorBase")
@@ -1697,13 +1648,9 @@ auto mlir_arith_detail_MinimumFOpGenericAdaptorBase = nb::class_<mlir::arith::de
 .def_prop_ro("attributes", &mlir::arith::detail::MinimumFOpGenericAdaptorBase::getAttributes)
 .def_prop_ro("fastmath_attr", &mlir::arith::detail::MinimumFOpGenericAdaptorBase::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::detail::MinimumFOpGenericAdaptorBase::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::detail::MinimumFOpGenericAdaptorBase::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::detail::MinimumFOpGenericAdaptorBase::getDenormal)
 ;
 
 auto mlir_arith_detail_MinimumFOpGenericAdaptorBase_Properties = nb::class_<mlir::arith::detail::MinimumFOpGenericAdaptorBase::Properties>(mlir_arith_detail_MinimumFOpGenericAdaptorBase, "Properties")
-.def_prop_ro("denormal", &mlir::arith::detail::MinimumFOpGenericAdaptorBase::Properties::getDenormal)
-.def("set_denormal", &mlir::arith::detail::MinimumFOpGenericAdaptorBase::Properties::setDenormal, "prop_value"_a)
 .def_prop_ro("fastmath", &mlir::arith::detail::MinimumFOpGenericAdaptorBase::Properties::getFastmath)
 .def("set_fastmath", &mlir::arith::detail::MinimumFOpGenericAdaptorBase::Properties::setFastmath, "prop_value"_a)
 .def("__eq__", &mlir::arith::detail::MinimumFOpGenericAdaptorBase::Properties::operator==, "rhs"_a)
@@ -1717,8 +1664,6 @@ auto mlir_arith_MinimumFOpAdaptor = nb::class_<mlir::arith::MinimumFOpAdaptor>(m
 
 auto mlir_arith_MinimumFOp = nb::class_<mlir::arith::MinimumFOp,  mlir::OpState>(m, "MinimumFOp")
 .def_static("attribute_names", &mlir::arith::MinimumFOp::getAttributeNames)
-.def_prop_ro("denormal_attr_name", [](mlir::arith::MinimumFOp& self){ return self.getDenormalAttrName(); })
-.def_static("get_denormal_attr_name", [](mlir::OperationName name){ return mlir::arith::MinimumFOp::getDenormalAttrName(name); }, "name"_a)
 .def_prop_ro("fastmath_attr_name", [](mlir::arith::MinimumFOp& self){ return self.getFastmathAttrName(); })
 .def_static("get_fastmath_attr_name", [](mlir::OperationName name){ return mlir::arith::MinimumFOp::getFastmathAttrName(name); }, "name"_a)
 .def_static("operation_name", &mlir::arith::MinimumFOp::getOperationName)
@@ -1742,18 +1687,14 @@ auto mlir_arith_MinimumFOp = nb::class_<mlir::arith::MinimumFOp,  mlir::OpState>
 .def("write_properties", &mlir::arith::MinimumFOp::writeProperties, "writer"_a)
 .def_prop_ro("fastmath_attr", &mlir::arith::MinimumFOp::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::MinimumFOp::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::MinimumFOp::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::MinimumFOp::getDenormal)
 .def("set_fastmath_attr", &mlir::arith::MinimumFOp::setFastmathAttr, "attr"_a)
 .def("set_fastmath", &mlir::arith::MinimumFOp::setFastmath, "attr_value"_a)
-.def("set_denormal_attr", &mlir::arith::MinimumFOp::setDenormalAttr, "attr"_a)
-.def("set_denormal", &mlir::arith::MinimumFOp::setDenormal, "attr_value"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
 .def_static("build", [](mlir::OpBuilder & _, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::MinimumFOp::build(_, odsState, resultTypes, operands, attributes); }, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
 .def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::MinimumFOp::build(odsBuilder, odsState, operands, attributes); }, "ods_builder"_a, "ods_state"_a, "operands"_a, "attributes"_a)
 .def_static("populate_default_properties", &mlir::arith::MinimumFOp::populateDefaultProperties, "op_name"_a, "properties"_a)
@@ -1765,7 +1706,8 @@ auto mlir_arith_MinimumFOp = nb::class_<mlir::arith::MinimumFOp,  mlir::OpState>
 .def("get_effects", &mlir::arith::MinimumFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MinimumFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MinimumFOp>>(m, "TypeIDResolver[arith::MinimumFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MinimumFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MinimumFOp>>(m, "TypeIDResolver[arith::MinimumFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MinimumFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MulFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MulFOpGenericAdaptorBase>(m, "MulFOpGenericAdaptorBase")
@@ -1776,13 +1718,9 @@ auto mlir_arith_detail_MulFOpGenericAdaptorBase = nb::class_<mlir::arith::detail
 .def_prop_ro("attributes", &mlir::arith::detail::MulFOpGenericAdaptorBase::getAttributes)
 .def_prop_ro("fastmath_attr", &mlir::arith::detail::MulFOpGenericAdaptorBase::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::detail::MulFOpGenericAdaptorBase::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::detail::MulFOpGenericAdaptorBase::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::detail::MulFOpGenericAdaptorBase::getDenormal)
 ;
 
 auto mlir_arith_detail_MulFOpGenericAdaptorBase_Properties = nb::class_<mlir::arith::detail::MulFOpGenericAdaptorBase::Properties>(mlir_arith_detail_MulFOpGenericAdaptorBase, "Properties")
-.def_prop_ro("denormal", &mlir::arith::detail::MulFOpGenericAdaptorBase::Properties::getDenormal)
-.def("set_denormal", &mlir::arith::detail::MulFOpGenericAdaptorBase::Properties::setDenormal, "prop_value"_a)
 .def_prop_ro("fastmath", &mlir::arith::detail::MulFOpGenericAdaptorBase::Properties::getFastmath)
 .def("set_fastmath", &mlir::arith::detail::MulFOpGenericAdaptorBase::Properties::setFastmath, "prop_value"_a)
 .def("__eq__", &mlir::arith::detail::MulFOpGenericAdaptorBase::Properties::operator==, "rhs"_a)
@@ -1796,8 +1734,6 @@ auto mlir_arith_MulFOpAdaptor = nb::class_<mlir::arith::MulFOpAdaptor>(m, "MulFO
 
 auto mlir_arith_MulFOp = nb::class_<mlir::arith::MulFOp,  mlir::OpState>(m, "MulFOp")
 .def_static("attribute_names", &mlir::arith::MulFOp::getAttributeNames)
-.def_prop_ro("denormal_attr_name", [](mlir::arith::MulFOp& self){ return self.getDenormalAttrName(); })
-.def_static("get_denormal_attr_name", [](mlir::OperationName name){ return mlir::arith::MulFOp::getDenormalAttrName(name); }, "name"_a)
 .def_prop_ro("fastmath_attr_name", [](mlir::arith::MulFOp& self){ return self.getFastmathAttrName(); })
 .def_static("get_fastmath_attr_name", [](mlir::OperationName name){ return mlir::arith::MulFOp::getFastmathAttrName(name); }, "name"_a)
 .def_static("operation_name", &mlir::arith::MulFOp::getOperationName)
@@ -1821,18 +1757,14 @@ auto mlir_arith_MulFOp = nb::class_<mlir::arith::MulFOp,  mlir::OpState>(m, "Mul
 .def("write_properties", &mlir::arith::MulFOp::writeProperties, "writer"_a)
 .def_prop_ro("fastmath_attr", &mlir::arith::MulFOp::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::MulFOp::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::MulFOp::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::MulFOp::getDenormal)
 .def("set_fastmath_attr", &mlir::arith::MulFOp::setFastmathAttr, "attr"_a)
 .def("set_fastmath", &mlir::arith::MulFOp::setFastmath, "attr_value"_a)
-.def("set_denormal_attr", &mlir::arith::MulFOp::setDenormalAttr, "attr"_a)
-.def("set_denormal", &mlir::arith::MulFOp::setDenormal, "attr_value"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MulFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MulFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::MulFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MulFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MulFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::MulFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MulFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MulFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::MulFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MulFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MulFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::MulFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
 .def_static("build", [](mlir::OpBuilder & _, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::MulFOp::build(_, odsState, resultTypes, operands, attributes); }, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
 .def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::MulFOp::build(odsBuilder, odsState, operands, attributes); }, "ods_builder"_a, "ods_state"_a, "operands"_a, "attributes"_a)
 .def_static("populate_default_properties", &mlir::arith::MulFOp::populateDefaultProperties, "op_name"_a, "properties"_a)
@@ -1845,7 +1777,8 @@ auto mlir_arith_MulFOp = nb::class_<mlir::arith::MulFOp,  mlir::OpState>(m, "Mul
 .def("get_effects", &mlir::arith::MulFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MulFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MulFOp>>(m, "TypeIDResolver[arith::MulFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MulFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MulFOp>>(m, "TypeIDResolver[arith::MulFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MulFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MulIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MulIOpGenericAdaptorBase>(m, "MulIOpGenericAdaptorBase")
@@ -1917,7 +1850,8 @@ auto mlir_arith_MulIOp = nb::class_<mlir::arith::MulIOp,  mlir::OpState>(m, "Mul
 .def("get_effects", &mlir::arith::MulIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MulIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MulIOp>>(m, "TypeIDResolver[arith::MulIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MulIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MulIOp>>(m, "TypeIDResolver[arith::MulIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MulIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MulSIExtendedOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MulSIExtendedOpGenericAdaptorBase>(m, "MulSIExtendedOpGenericAdaptorBase")
@@ -1961,7 +1895,8 @@ auto mlir_arith_MulSIExtendedOp = nb::class_<mlir::arith::MulSIExtendedOp,  mlir
 .def_prop_ro("shape_for_unroll", &mlir::arith::MulSIExtendedOp::getShapeForUnroll)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MulSIExtendedOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MulSIExtendedOp>>(m, "TypeIDResolver[arith::MulSIExtendedOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MulSIExtendedOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MulSIExtendedOp>>(m, "TypeIDResolver[arith::MulSIExtendedOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MulSIExtendedOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_MulUIExtendedOpGenericAdaptorBase = nb::class_<mlir::arith::detail::MulUIExtendedOpGenericAdaptorBase>(m, "MulUIExtendedOpGenericAdaptorBase")
@@ -2005,7 +1940,8 @@ auto mlir_arith_MulUIExtendedOp = nb::class_<mlir::arith::MulUIExtendedOp,  mlir
 .def_prop_ro("shape_for_unroll", &mlir::arith::MulUIExtendedOp::getShapeForUnroll)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_MulUIExtendedOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::MulUIExtendedOp>>(m, "TypeIDResolver[arith::MulUIExtendedOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_MulUIExtendedOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::MulUIExtendedOp>>(m, "TypeIDResolver[arith::MulUIExtendedOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::MulUIExtendedOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_NegFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::NegFOpGenericAdaptorBase>(m, "NegFOpGenericAdaptorBase")
@@ -2016,13 +1952,9 @@ auto mlir_arith_detail_NegFOpGenericAdaptorBase = nb::class_<mlir::arith::detail
 .def_prop_ro("attributes", &mlir::arith::detail::NegFOpGenericAdaptorBase::getAttributes)
 .def_prop_ro("fastmath_attr", &mlir::arith::detail::NegFOpGenericAdaptorBase::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::detail::NegFOpGenericAdaptorBase::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::detail::NegFOpGenericAdaptorBase::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::detail::NegFOpGenericAdaptorBase::getDenormal)
 ;
 
 auto mlir_arith_detail_NegFOpGenericAdaptorBase_Properties = nb::class_<mlir::arith::detail::NegFOpGenericAdaptorBase::Properties>(mlir_arith_detail_NegFOpGenericAdaptorBase, "Properties")
-.def_prop_ro("denormal", &mlir::arith::detail::NegFOpGenericAdaptorBase::Properties::getDenormal)
-.def("set_denormal", &mlir::arith::detail::NegFOpGenericAdaptorBase::Properties::setDenormal, "prop_value"_a)
 .def_prop_ro("fastmath", &mlir::arith::detail::NegFOpGenericAdaptorBase::Properties::getFastmath)
 .def("set_fastmath", &mlir::arith::detail::NegFOpGenericAdaptorBase::Properties::setFastmath, "prop_value"_a)
 .def("__eq__", &mlir::arith::detail::NegFOpGenericAdaptorBase::Properties::operator==, "rhs"_a)
@@ -2036,8 +1968,6 @@ auto mlir_arith_NegFOpAdaptor = nb::class_<mlir::arith::NegFOpAdaptor>(m, "NegFO
 
 auto mlir_arith_NegFOp = nb::class_<mlir::arith::NegFOp,  mlir::OpState>(m, "NegFOp")
 .def_static("attribute_names", &mlir::arith::NegFOp::getAttributeNames)
-.def_prop_ro("denormal_attr_name", [](mlir::arith::NegFOp& self){ return self.getDenormalAttrName(); })
-.def_static("get_denormal_attr_name", [](mlir::OperationName name){ return mlir::arith::NegFOp::getDenormalAttrName(name); }, "name"_a)
 .def_prop_ro("fastmath_attr_name", [](mlir::arith::NegFOp& self){ return self.getFastmathAttrName(); })
 .def_static("get_fastmath_attr_name", [](mlir::OperationName name){ return mlir::arith::NegFOp::getFastmathAttrName(name); }, "name"_a)
 .def_static("operation_name", &mlir::arith::NegFOp::getOperationName)
@@ -2059,18 +1989,14 @@ auto mlir_arith_NegFOp = nb::class_<mlir::arith::NegFOp,  mlir::OpState>(m, "Neg
 .def("write_properties", &mlir::arith::NegFOp::writeProperties, "writer"_a)
 .def_prop_ro("fastmath_attr", &mlir::arith::NegFOp::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::NegFOp::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::NegFOp::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::NegFOp::getDenormal)
 .def("set_fastmath_attr", &mlir::arith::NegFOp::setFastmathAttr, "attr"_a)
 .def("set_fastmath", &mlir::arith::NegFOp::setFastmath, "attr_value"_a)
-.def("set_denormal_attr", &mlir::arith::NegFOp::setDenormalAttr, "attr"_a)
-.def("set_denormal", &mlir::arith::NegFOp::setDenormal, "attr_value"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value operand, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::NegFOp::build(odsBuilder, odsState, result, operand, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "operand"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value operand, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::NegFOp::build(odsBuilder, odsState, operand, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "operand"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value operand, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::NegFOp::build(odsBuilder, odsState, resultTypes, operand, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "operand"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value operand, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::NegFOp::build(odsBuilder, odsState, result, operand, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "operand"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value operand, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::NegFOp::build(odsBuilder, odsState, operand, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "operand"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value operand, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::NegFOp::build(odsBuilder, odsState, resultTypes, operand, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "operand"_a, "fastmath"_a, "denormal"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value operand, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::NegFOp::build(odsBuilder, odsState, result, operand, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "operand"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value operand, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::NegFOp::build(odsBuilder, odsState, operand, fastmath); }, "ods_builder"_a, "ods_state"_a, "operand"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value operand, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::NegFOp::build(odsBuilder, odsState, resultTypes, operand, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "operand"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value operand, mlir::arith::FastMathFlags fastmath){ return mlir::arith::NegFOp::build(odsBuilder, odsState, result, operand, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "operand"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value operand, mlir::arith::FastMathFlags fastmath){ return mlir::arith::NegFOp::build(odsBuilder, odsState, operand, fastmath); }, "ods_builder"_a, "ods_state"_a, "operand"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value operand, mlir::arith::FastMathFlags fastmath){ return mlir::arith::NegFOp::build(odsBuilder, odsState, resultTypes, operand, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "operand"_a, "fastmath"_a)
 .def_static("build", [](mlir::OpBuilder & _, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::NegFOp::build(_, odsState, resultTypes, operands, attributes); }, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
 .def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::NegFOp::build(odsBuilder, odsState, operands, attributes); }, "ods_builder"_a, "ods_state"_a, "operands"_a, "attributes"_a)
 .def_static("populate_default_properties", &mlir::arith::NegFOp::populateDefaultProperties, "op_name"_a, "properties"_a)
@@ -2082,7 +2008,8 @@ auto mlir_arith_NegFOp = nb::class_<mlir::arith::NegFOp,  mlir::OpState>(m, "Neg
 .def("get_effects", &mlir::arith::NegFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_NegFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::NegFOp>>(m, "TypeIDResolver[arith::NegFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_NegFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::NegFOp>>(m, "TypeIDResolver[arith::NegFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::NegFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_OrIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::OrIOpGenericAdaptorBase>(m, "OrIOpGenericAdaptorBase")
@@ -2124,7 +2051,8 @@ auto mlir_arith_OrIOp = nb::class_<mlir::arith::OrIOp,  mlir::OpState>(m, "OrIOp
 .def("get_effects", &mlir::arith::OrIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_OrIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::OrIOp>>(m, "TypeIDResolver[arith::OrIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_OrIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::OrIOp>>(m, "TypeIDResolver[arith::OrIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::OrIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_RemFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::RemFOpGenericAdaptorBase>(m, "RemFOpGenericAdaptorBase")
@@ -2135,13 +2063,9 @@ auto mlir_arith_detail_RemFOpGenericAdaptorBase = nb::class_<mlir::arith::detail
 .def_prop_ro("attributes", &mlir::arith::detail::RemFOpGenericAdaptorBase::getAttributes)
 .def_prop_ro("fastmath_attr", &mlir::arith::detail::RemFOpGenericAdaptorBase::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::detail::RemFOpGenericAdaptorBase::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::detail::RemFOpGenericAdaptorBase::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::detail::RemFOpGenericAdaptorBase::getDenormal)
 ;
 
 auto mlir_arith_detail_RemFOpGenericAdaptorBase_Properties = nb::class_<mlir::arith::detail::RemFOpGenericAdaptorBase::Properties>(mlir_arith_detail_RemFOpGenericAdaptorBase, "Properties")
-.def_prop_ro("denormal", &mlir::arith::detail::RemFOpGenericAdaptorBase::Properties::getDenormal)
-.def("set_denormal", &mlir::arith::detail::RemFOpGenericAdaptorBase::Properties::setDenormal, "prop_value"_a)
 .def_prop_ro("fastmath", &mlir::arith::detail::RemFOpGenericAdaptorBase::Properties::getFastmath)
 .def("set_fastmath", &mlir::arith::detail::RemFOpGenericAdaptorBase::Properties::setFastmath, "prop_value"_a)
 .def("__eq__", &mlir::arith::detail::RemFOpGenericAdaptorBase::Properties::operator==, "rhs"_a)
@@ -2155,8 +2079,6 @@ auto mlir_arith_RemFOpAdaptor = nb::class_<mlir::arith::RemFOpAdaptor>(m, "RemFO
 
 auto mlir_arith_RemFOp = nb::class_<mlir::arith::RemFOp,  mlir::OpState>(m, "RemFOp")
 .def_static("attribute_names", &mlir::arith::RemFOp::getAttributeNames)
-.def_prop_ro("denormal_attr_name", [](mlir::arith::RemFOp& self){ return self.getDenormalAttrName(); })
-.def_static("get_denormal_attr_name", [](mlir::OperationName name){ return mlir::arith::RemFOp::getDenormalAttrName(name); }, "name"_a)
 .def_prop_ro("fastmath_attr_name", [](mlir::arith::RemFOp& self){ return self.getFastmathAttrName(); })
 .def_static("get_fastmath_attr_name", [](mlir::OperationName name){ return mlir::arith::RemFOp::getFastmathAttrName(name); }, "name"_a)
 .def_static("operation_name", &mlir::arith::RemFOp::getOperationName)
@@ -2180,18 +2102,14 @@ auto mlir_arith_RemFOp = nb::class_<mlir::arith::RemFOp,  mlir::OpState>(m, "Rem
 .def("write_properties", &mlir::arith::RemFOp::writeProperties, "writer"_a)
 .def_prop_ro("fastmath_attr", &mlir::arith::RemFOp::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::RemFOp::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::RemFOp::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::RemFOp::getDenormal)
 .def("set_fastmath_attr", &mlir::arith::RemFOp::setFastmathAttr, "attr"_a)
 .def("set_fastmath", &mlir::arith::RemFOp::setFastmath, "attr_value"_a)
-.def("set_denormal_attr", &mlir::arith::RemFOp::setDenormalAttr, "attr"_a)
-.def("set_denormal", &mlir::arith::RemFOp::setDenormal, "attr_value"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::RemFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::RemFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::RemFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::RemFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::RemFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::RemFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::RemFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::RemFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::RemFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::RemFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::RemFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::RemFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
 .def_static("build", [](mlir::OpBuilder & _, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::RemFOp::build(_, odsState, resultTypes, operands, attributes); }, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
 .def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::RemFOp::build(odsBuilder, odsState, operands, attributes); }, "ods_builder"_a, "ods_state"_a, "operands"_a, "attributes"_a)
 .def_static("populate_default_properties", &mlir::arith::RemFOp::populateDefaultProperties, "op_name"_a, "properties"_a)
@@ -2203,7 +2121,8 @@ auto mlir_arith_RemFOp = nb::class_<mlir::arith::RemFOp,  mlir::OpState>(m, "Rem
 .def("get_effects", &mlir::arith::RemFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_RemFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::RemFOp>>(m, "TypeIDResolver[arith::RemFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_RemFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::RemFOp>>(m, "TypeIDResolver[arith::RemFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::RemFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_RemSIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::RemSIOpGenericAdaptorBase>(m, "RemSIOpGenericAdaptorBase")
@@ -2244,7 +2163,8 @@ auto mlir_arith_RemSIOp = nb::class_<mlir::arith::RemSIOp,  mlir::OpState>(m, "R
 .def("get_effects", &mlir::arith::RemSIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_RemSIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::RemSIOp>>(m, "TypeIDResolver[arith::RemSIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_RemSIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::RemSIOp>>(m, "TypeIDResolver[arith::RemSIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::RemSIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_RemUIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::RemUIOpGenericAdaptorBase>(m, "RemUIOpGenericAdaptorBase")
@@ -2285,7 +2205,8 @@ auto mlir_arith_RemUIOp = nb::class_<mlir::arith::RemUIOp,  mlir::OpState>(m, "R
 .def("get_effects", &mlir::arith::RemUIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_RemUIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::RemUIOp>>(m, "TypeIDResolver[arith::RemUIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_RemUIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::RemUIOp>>(m, "TypeIDResolver[arith::RemUIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::RemUIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_SIToFPOpGenericAdaptorBase = nb::class_<mlir::arith::detail::SIToFPOpGenericAdaptorBase>(m, "SIToFPOpGenericAdaptorBase")
@@ -2321,7 +2242,8 @@ auto mlir_arith_SIToFPOp = nb::class_<mlir::arith::SIToFPOp,  mlir::OpState>(m, 
 .def("get_effects", &mlir::arith::SIToFPOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_SIToFPOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::SIToFPOp>>(m, "TypeIDResolver[arith::SIToFPOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_SIToFPOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::SIToFPOp>>(m, "TypeIDResolver[arith::SIToFPOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::SIToFPOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_ShLIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::ShLIOpGenericAdaptorBase>(m, "ShLIOpGenericAdaptorBase")
@@ -2391,7 +2313,8 @@ auto mlir_arith_ShLIOp = nb::class_<mlir::arith::ShLIOp,  mlir::OpState>(m, "ShL
 .def("get_effects", &mlir::arith::ShLIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_ShLIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::ShLIOp>>(m, "TypeIDResolver[arith::ShLIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_ShLIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::ShLIOp>>(m, "TypeIDResolver[arith::ShLIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::ShLIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_ShRSIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::ShRSIOpGenericAdaptorBase>(m, "ShRSIOpGenericAdaptorBase")
@@ -2432,7 +2355,8 @@ auto mlir_arith_ShRSIOp = nb::class_<mlir::arith::ShRSIOp,  mlir::OpState>(m, "S
 .def("get_effects", &mlir::arith::ShRSIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_ShRSIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::ShRSIOp>>(m, "TypeIDResolver[arith::ShRSIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_ShRSIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::ShRSIOp>>(m, "TypeIDResolver[arith::ShRSIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::ShRSIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_ShRUIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::ShRUIOpGenericAdaptorBase>(m, "ShRUIOpGenericAdaptorBase")
@@ -2473,7 +2397,8 @@ auto mlir_arith_ShRUIOp = nb::class_<mlir::arith::ShRUIOp,  mlir::OpState>(m, "S
 .def("get_effects", &mlir::arith::ShRUIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_ShRUIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::ShRUIOp>>(m, "TypeIDResolver[arith::ShRUIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_ShRUIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::ShRUIOp>>(m, "TypeIDResolver[arith::ShRUIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::ShRUIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_SubFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::SubFOpGenericAdaptorBase>(m, "SubFOpGenericAdaptorBase")
@@ -2484,13 +2409,9 @@ auto mlir_arith_detail_SubFOpGenericAdaptorBase = nb::class_<mlir::arith::detail
 .def_prop_ro("attributes", &mlir::arith::detail::SubFOpGenericAdaptorBase::getAttributes)
 .def_prop_ro("fastmath_attr", &mlir::arith::detail::SubFOpGenericAdaptorBase::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::detail::SubFOpGenericAdaptorBase::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::detail::SubFOpGenericAdaptorBase::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::detail::SubFOpGenericAdaptorBase::getDenormal)
 ;
 
 auto mlir_arith_detail_SubFOpGenericAdaptorBase_Properties = nb::class_<mlir::arith::detail::SubFOpGenericAdaptorBase::Properties>(mlir_arith_detail_SubFOpGenericAdaptorBase, "Properties")
-.def_prop_ro("denormal", &mlir::arith::detail::SubFOpGenericAdaptorBase::Properties::getDenormal)
-.def("set_denormal", &mlir::arith::detail::SubFOpGenericAdaptorBase::Properties::setDenormal, "prop_value"_a)
 .def_prop_ro("fastmath", &mlir::arith::detail::SubFOpGenericAdaptorBase::Properties::getFastmath)
 .def("set_fastmath", &mlir::arith::detail::SubFOpGenericAdaptorBase::Properties::setFastmath, "prop_value"_a)
 .def("__eq__", &mlir::arith::detail::SubFOpGenericAdaptorBase::Properties::operator==, "rhs"_a)
@@ -2504,8 +2425,6 @@ auto mlir_arith_SubFOpAdaptor = nb::class_<mlir::arith::SubFOpAdaptor>(m, "SubFO
 
 auto mlir_arith_SubFOp = nb::class_<mlir::arith::SubFOp,  mlir::OpState>(m, "SubFOp")
 .def_static("attribute_names", &mlir::arith::SubFOp::getAttributeNames)
-.def_prop_ro("denormal_attr_name", [](mlir::arith::SubFOp& self){ return self.getDenormalAttrName(); })
-.def_static("get_denormal_attr_name", [](mlir::OperationName name){ return mlir::arith::SubFOp::getDenormalAttrName(name); }, "name"_a)
 .def_prop_ro("fastmath_attr_name", [](mlir::arith::SubFOp& self){ return self.getFastmathAttrName(); })
 .def_static("get_fastmath_attr_name", [](mlir::OperationName name){ return mlir::arith::SubFOp::getFastmathAttrName(name); }, "name"_a)
 .def_static("operation_name", &mlir::arith::SubFOp::getOperationName)
@@ -2529,18 +2448,14 @@ auto mlir_arith_SubFOp = nb::class_<mlir::arith::SubFOp,  mlir::OpState>(m, "Sub
 .def("write_properties", &mlir::arith::SubFOp::writeProperties, "writer"_a)
 .def_prop_ro("fastmath_attr", &mlir::arith::SubFOp::getFastmathAttr)
 .def_prop_ro("fastmath", &mlir::arith::SubFOp::getFastmath)
-.def_prop_ro("denormal_attr", &mlir::arith::SubFOp::getDenormalAttr)
-.def_prop_ro("denormal", &mlir::arith::SubFOp::getDenormal)
 .def("set_fastmath_attr", &mlir::arith::SubFOp::setFastmathAttr, "attr"_a)
 .def("set_fastmath", &mlir::arith::SubFOp::setFastmath, "attr_value"_a)
-.def("set_denormal_attr", &mlir::arith::SubFOp::setDenormalAttr, "attr"_a)
-.def("set_denormal", &mlir::arith::SubFOp::setDenormal, "attr_value"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::SubFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::SubFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath, mlir::arith::DenormalModeAttr denormal){ return mlir::arith::SubFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::SubFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::SubFOp::build(odsBuilder, odsState, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
-.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath, mlir::arith::DenormalMode denormal){ return mlir::arith::SubFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath, denormal); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a, "denormal"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::SubFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::SubFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlagsAttr fastmath){ return mlir::arith::SubFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Type result, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::SubFOp::build(odsBuilder, odsState, result, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::SubFOp::build(odsBuilder, odsState, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
+.def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::Value lhs, mlir::Value rhs, mlir::arith::FastMathFlags fastmath){ return mlir::arith::SubFOp::build(odsBuilder, odsState, resultTypes, lhs, rhs, fastmath); }, "ods_builder"_a, "ods_state"_a, "result_types"_a, "lhs"_a, "rhs"_a, "fastmath"_a)
 .def_static("build", [](mlir::OpBuilder & _, mlir::OperationState & odsState, mlir::TypeRange resultTypes, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::SubFOp::build(_, odsState, resultTypes, operands, attributes); }, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
 .def_static("build", [](mlir::OpBuilder & odsBuilder, mlir::OperationState & odsState, mlir::ValueRange operands, llvm::ArrayRef<mlir::NamedAttribute> attributes){ return mlir::arith::SubFOp::build(odsBuilder, odsState, operands, attributes); }, "ods_builder"_a, "ods_state"_a, "operands"_a, "attributes"_a)
 .def_static("populate_default_properties", &mlir::arith::SubFOp::populateDefaultProperties, "op_name"_a, "properties"_a)
@@ -2552,7 +2467,8 @@ auto mlir_arith_SubFOp = nb::class_<mlir::arith::SubFOp,  mlir::OpState>(m, "Sub
 .def("get_effects", &mlir::arith::SubFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_SubFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::SubFOp>>(m, "TypeIDResolver[arith::SubFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_SubFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::SubFOp>>(m, "TypeIDResolver[arith::SubFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::SubFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_SubIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::SubIOpGenericAdaptorBase>(m, "SubIOpGenericAdaptorBase")
@@ -2623,7 +2539,8 @@ auto mlir_arith_SubIOp = nb::class_<mlir::arith::SubIOp,  mlir::OpState>(m, "Sub
 .def("get_effects", &mlir::arith::SubIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_SubIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::SubIOp>>(m, "TypeIDResolver[arith::SubIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_SubIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::SubIOp>>(m, "TypeIDResolver[arith::SubIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::SubIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_TruncFOpGenericAdaptorBase = nb::class_<mlir::arith::detail::TruncFOpGenericAdaptorBase>(m, "TruncFOpGenericAdaptorBase")
@@ -2698,7 +2615,8 @@ auto mlir_arith_TruncFOp = nb::class_<mlir::arith::TruncFOp,  mlir::OpState>(m, 
 .def("get_effects", &mlir::arith::TruncFOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_TruncFOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::TruncFOp>>(m, "TypeIDResolver[arith::TruncFOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_TruncFOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::TruncFOp>>(m, "TypeIDResolver[arith::TruncFOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::TruncFOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_TruncIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::TruncIOpGenericAdaptorBase>(m, "TruncIOpGenericAdaptorBase")
@@ -2737,7 +2655,8 @@ auto mlir_arith_TruncIOp = nb::class_<mlir::arith::TruncIOp,  mlir::OpState>(m, 
 .def("get_effects", &mlir::arith::TruncIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_TruncIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::TruncIOp>>(m, "TypeIDResolver[arith::TruncIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_TruncIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::TruncIOp>>(m, "TypeIDResolver[arith::TruncIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::TruncIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_UIToFPOpGenericAdaptorBase = nb::class_<mlir::arith::detail::UIToFPOpGenericAdaptorBase>(m, "UIToFPOpGenericAdaptorBase")
@@ -2773,7 +2692,8 @@ auto mlir_arith_UIToFPOp = nb::class_<mlir::arith::UIToFPOp,  mlir::OpState>(m, 
 .def("get_effects", &mlir::arith::UIToFPOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_UIToFPOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::UIToFPOp>>(m, "TypeIDResolver[arith::UIToFPOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_UIToFPOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::UIToFPOp>>(m, "TypeIDResolver[arith::UIToFPOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::UIToFPOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_XOrIOpGenericAdaptorBase = nb::class_<mlir::arith::detail::XOrIOpGenericAdaptorBase>(m, "XOrIOpGenericAdaptorBase")
@@ -2815,7 +2735,8 @@ auto mlir_arith_XOrIOp = nb::class_<mlir::arith::XOrIOp,  mlir::OpState>(m, "XOr
 .def("get_effects", &mlir::arith::XOrIOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_XOrIOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::XOrIOp>>(m, "TypeIDResolver[arith::XOrIOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_XOrIOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::XOrIOp>>(m, "TypeIDResolver[arith::XOrIOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::XOrIOp>::resolveTypeID)
 ;
 
 auto mlir_arith_detail_SelectOpGenericAdaptorBase = nb::class_<mlir::arith::detail::SelectOpGenericAdaptorBase>(m, "SelectOpGenericAdaptorBase")
@@ -2860,7 +2781,8 @@ auto mlir_arith_SelectOp = nb::class_<mlir::arith::SelectOp,  mlir::OpState>(m, 
 .def("get_effects", &mlir::arith::SelectOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_arith_SelectOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::arith::SelectOp>>(m, "TypeIDResolver[arith::SelectOp]")
+auto mlir_detail_TypeIDResolver___mlir_arith_SelectOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::arith::SelectOp>>(m, "TypeIDResolver[arith::SelectOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::arith::SelectOp>::resolveTypeID)
 ;
 
 }

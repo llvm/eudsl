@@ -696,6 +696,34 @@ class ArrayRef[int64_t]:
     def count(self, arg: int, /) -> int:
         """Return number of occurrences of `arg`."""
 
+class ArrayRef[long]:
+    def __init__(self) -> None:
+        """Default constructor"""
+
+    def __len__(self) -> int: ...
+
+    def __bool__(self) -> bool:
+        """Check whether the vector is nonempty"""
+
+    def __repr__(self) -> str: ...
+
+    def __iter__(self) -> Iterator[int]: ...
+
+    def __getitem__(self, arg: int, /) -> int: ...
+
+    def __eq__(self, arg: object, /) -> bool: ...
+
+    def __ne__(self, arg: object, /) -> bool: ...
+
+    @overload
+    def __contains__(self, arg: int, /) -> bool: ...
+
+    @overload
+    def __contains__(self, arg: object, /) -> bool: ...
+
+    def count(self, arg: int, /) -> int:
+        """Return number of occurrences of `arg`."""
+
 class ArrayRef[signed_char]:
     def __init__(self) -> None:
         """Default constructor"""

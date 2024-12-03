@@ -1,10 +1,11 @@
+
 #include "ir.h"
 namespace nb = nanobind;
 using namespace nb::literals;
-
 void populateIRModule(nanobind::module_ & m) {
 using namespace mlir;
 using namespace mlir::detail;
+
 auto mlir_MLIRContext = nb::class_<mlir::MLIRContext>(m, "MLIRContext")
 .def(nb::init<mlir::MLIRContext::Threading>(), "multithreading"_a)
 .def(nb::init<const mlir::DialectRegistry &, mlir::MLIRContext::Threading>(), "registry"_a, "multithreading"_a)
@@ -250,14 +251,14 @@ auto mlir_Location = nb::class_<mlir::Location>(m, "Location")
 .def_static("classof", &mlir::Location::classof, "attr"_a)
 ;
 
-auto mlir_CallSiteLoc = nb::class_<mlir::CallSiteLoc, mlir::LocationAttr>(m, "CallSiteLoc")
+auto mlir_CallSiteLoc = nb::class_<mlir::CallSiteLoc,  mlir::LocationAttr>(m, "CallSiteLoc")
 .def_static("get", [](mlir::Location callee, mlir::Location caller){ return mlir::CallSiteLoc::get(callee, caller); }, "callee"_a, "caller"_a)
 .def_static("get", [](mlir::Location name, llvm::ArrayRef<mlir::Location> frames){ return mlir::CallSiteLoc::get(name, frames); }, "name"_a, "frames"_a)
 .def_prop_ro("callee", &mlir::CallSiteLoc::getCallee)
 .def_prop_ro("caller", &mlir::CallSiteLoc::getCaller)
 ;
 
-auto mlir_FileLineColRange = nb::class_<mlir::FileLineColRange, mlir::LocationAttr>(m, "FileLineColRange")
+auto mlir_FileLineColRange = nb::class_<mlir::FileLineColRange,  mlir::LocationAttr>(m, "FileLineColRange")
 .def_prop_ro("filename", &mlir::FileLineColRange::getFilename)
 .def_prop_ro("start_line", &mlir::FileLineColRange::getStartLine)
 .def_prop_ro("start_column", &mlir::FileLineColRange::getStartColumn)
@@ -272,7 +273,7 @@ auto mlir_FileLineColRange = nb::class_<mlir::FileLineColRange, mlir::LocationAt
 .def_static("get", [](mlir::MLIRContext * context, llvm::StringRef filename, unsigned int start_line, unsigned int start_column, unsigned int end_line, unsigned int end_column){ return mlir::FileLineColRange::get(context, filename, start_line, start_column, end_line, end_column); }, "context"_a, "filename"_a, "start_line"_a, "start_column"_a, "end_line"_a, "end_column"_a)
 ;
 
-auto mlir_FusedLoc = nb::class_<mlir::FusedLoc, mlir::LocationAttr>(m, "FusedLoc")
+auto mlir_FusedLoc = nb::class_<mlir::FusedLoc,  mlir::LocationAttr>(m, "FusedLoc")
 .def_static("get", [](llvm::ArrayRef<mlir::Location> locs, mlir::Attribute metadata, mlir::MLIRContext * context){ return mlir::FusedLoc::get(locs, metadata, context); }, "locs"_a, "metadata"_a, "context"_a)
 .def_static("get", [](mlir::MLIRContext * context, llvm::ArrayRef<mlir::Location> locs){ return mlir::FusedLoc::get(context, locs); }, "context"_a, "locs"_a)
 .def_static("get", [](mlir::MLIRContext * context, llvm::ArrayRef<mlir::Location> locations, mlir::Attribute metadata){ return mlir::FusedLoc::get(context, locations, metadata); }, "context"_a, "locations"_a, "metadata"_a)
@@ -280,40 +281,46 @@ auto mlir_FusedLoc = nb::class_<mlir::FusedLoc, mlir::LocationAttr>(m, "FusedLoc
 .def_prop_ro("metadata", &mlir::FusedLoc::getMetadata)
 ;
 
-auto mlir_NameLoc = nb::class_<mlir::NameLoc, mlir::LocationAttr>(m, "NameLoc")
+auto mlir_NameLoc = nb::class_<mlir::NameLoc,  mlir::LocationAttr>(m, "NameLoc")
 .def_static("get", [](mlir::StringAttr name, mlir::Location childLoc){ return mlir::NameLoc::get(name, childLoc); }, "name"_a, "child_loc"_a)
 .def_static("get", [](mlir::StringAttr name){ return mlir::NameLoc::get(name); }, "name"_a)
 .def_prop_ro("name", &mlir::NameLoc::getName)
 .def_prop_ro("child_loc", &mlir::NameLoc::getChildLoc)
 ;
 
-auto mlir_OpaqueLoc = nb::class_<mlir::OpaqueLoc, mlir::LocationAttr>(m, "OpaqueLoc")
+auto mlir_OpaqueLoc = nb::class_<mlir::OpaqueLoc,  mlir::LocationAttr>(m, "OpaqueLoc")
 .def_static("get", [](uintptr_t underlyingLocation, mlir::TypeID underlyingTypeID, mlir::Location fallbackLocation){ return mlir::OpaqueLoc::get(underlyingLocation, underlyingTypeID, fallbackLocation); }, "underlying_location"_a, "underlying_type_id"_a, "fallback_location"_a)
 .def_prop_ro("underlying_location", [](mlir::OpaqueLoc& self){ return self.getUnderlyingLocation(); })
 .def_prop_ro("underlying_type_id", &mlir::OpaqueLoc::getUnderlyingTypeID)
 .def_prop_ro("fallback_location", &mlir::OpaqueLoc::getFallbackLocation)
 ;
 
-auto mlir_UnknownLoc = nb::class_<mlir::UnknownLoc, mlir::LocationAttr>(m, "UnknownLoc")
+auto mlir_UnknownLoc = nb::class_<mlir::UnknownLoc,  mlir::LocationAttr>(m, "UnknownLoc")
 .def_static("get", &mlir::UnknownLoc::get, "context"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_CallSiteLoc__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::CallSiteLoc>>(m, "TypeIDResolver[CallSiteLoc]")
+auto mlir_detail_TypeIDResolver___mlir_CallSiteLoc__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::CallSiteLoc>>(m, "TypeIDResolver[CallSiteLoc]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::CallSiteLoc>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_FileLineColRange__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::FileLineColRange>>(m, "TypeIDResolver[FileLineColRange]")
+auto mlir_detail_TypeIDResolver___mlir_FileLineColRange__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::FileLineColRange>>(m, "TypeIDResolver[FileLineColRange]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::FileLineColRange>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_FusedLoc__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::FusedLoc>>(m, "TypeIDResolver[FusedLoc]")
+auto mlir_detail_TypeIDResolver___mlir_FusedLoc__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::FusedLoc>>(m, "TypeIDResolver[FusedLoc]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::FusedLoc>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_NameLoc__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::NameLoc>>(m, "TypeIDResolver[NameLoc]")
+auto mlir_detail_TypeIDResolver___mlir_NameLoc__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::NameLoc>>(m, "TypeIDResolver[NameLoc]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::NameLoc>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_OpaqueLoc__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::OpaqueLoc>>(m, "TypeIDResolver[OpaqueLoc]")
+auto mlir_detail_TypeIDResolver___mlir_OpaqueLoc__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::OpaqueLoc>>(m, "TypeIDResolver[OpaqueLoc]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::OpaqueLoc>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_UnknownLoc__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::UnknownLoc>>(m, "TypeIDResolver[UnknownLoc]")
+auto mlir_detail_TypeIDResolver___mlir_UnknownLoc__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::UnknownLoc>>(m, "TypeIDResolver[UnknownLoc]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::UnknownLoc>::resolveTypeID)
 ;
 
 auto mlir_FileLineColLoc = nb::class_<mlir::FileLineColLoc, mlir::FileLineColRange>(m, "FileLineColLoc")
@@ -743,13 +750,13 @@ auto mlir_SplatElementsAttr = nb::class_<mlir::SplatElementsAttr, mlir::DenseEle
 .def_static("classof", &mlir::SplatElementsAttr::classof, "attr"_a)
 ;
 
-auto mlir_AffineMapAttr = nb::class_<mlir::AffineMapAttr, mlir::Attribute>(m, "AffineMapAttr")
+auto mlir_AffineMapAttr = nb::class_<mlir::AffineMapAttr,  mlir::Attribute>(m, "AffineMapAttr")
 .def_prop_ro("affine_map", &mlir::AffineMapAttr::getAffineMap)
 .def_static("get", &mlir::AffineMapAttr::get, "value"_a)
 .def_prop_ro("value", &mlir::AffineMapAttr::getValue)
 ;
 
-auto mlir_ArrayAttr = nb::class_<mlir::ArrayAttr, mlir::Attribute>(m, "ArrayAttr")
+auto mlir_ArrayAttr = nb::class_<mlir::ArrayAttr,  mlir::Attribute>(m, "ArrayAttr")
 .def("__getitem__", &mlir::ArrayAttr::operator[], "idx"_a)
 .def("begin", &mlir::ArrayAttr::begin)
 .def("end", &mlir::ArrayAttr::end)
@@ -759,7 +766,7 @@ auto mlir_ArrayAttr = nb::class_<mlir::ArrayAttr, mlir::Attribute>(m, "ArrayAttr
 .def_prop_ro("value", &mlir::ArrayAttr::getValue)
 ;
 
-auto mlir_DenseArrayAttr = nb::class_<mlir::DenseArrayAttr, mlir::Attribute>(m, "DenseArrayAttr")
+auto mlir_DenseArrayAttr = nb::class_<mlir::DenseArrayAttr,  mlir::Attribute>(m, "DenseArrayAttr")
 .def("size", &mlir::DenseArrayAttr::size)
 .def("empty", &mlir::DenseArrayAttr::empty)
 .def_static("get", [](mlir::MLIRContext * context, mlir::Type elementType, int64_t size, llvm::ArrayRef<char> rawData){ return mlir::DenseArrayAttr::get(context, elementType, size, rawData); }, "context"_a, "element_type"_a, "size"_a, "raw_data"_a)
@@ -771,21 +778,21 @@ auto mlir_DenseArrayAttr = nb::class_<mlir::DenseArrayAttr, mlir::Attribute>(m, 
 .def_prop_ro("raw_data", &mlir::DenseArrayAttr::getRawData)
 ;
 
-auto mlir_DenseIntOrFPElementsAttr = nb::class_<mlir::DenseIntOrFPElementsAttr, mlir::DenseElementsAttr>(m, "DenseIntOrFPElementsAttr")
+auto mlir_DenseIntOrFPElementsAttr = nb::class_<mlir::DenseIntOrFPElementsAttr,  mlir::DenseElementsAttr>(m, "DenseIntOrFPElementsAttr")
 .def_static("convert_endian_of_array_ref_for_b_emachine", &mlir::DenseIntOrFPElementsAttr::convertEndianOfArrayRefForBEmachine, "in_raw_data"_a, "out_raw_data"_a, "type"_a)
 ;
 
-auto mlir_DenseStringElementsAttr = nb::class_<mlir::DenseStringElementsAttr, mlir::DenseElementsAttr>(m, "DenseStringElementsAttr")
+auto mlir_DenseStringElementsAttr = nb::class_<mlir::DenseStringElementsAttr,  mlir::DenseElementsAttr>(m, "DenseStringElementsAttr")
 .def_static("get", &mlir::DenseStringElementsAttr::get, "type"_a, "values"_a)
 ;
 
-auto mlir_DenseResourceElementsAttr = nb::class_<mlir::DenseResourceElementsAttr, mlir::Attribute>(m, "DenseResourceElementsAttr")
+auto mlir_DenseResourceElementsAttr = nb::class_<mlir::DenseResourceElementsAttr,  mlir::Attribute>(m, "DenseResourceElementsAttr")
 .def_static("get", [](mlir::ShapedType type, mlir::DialectResourceBlobHandle<mlir::BuiltinDialect> handle){ return mlir::DenseResourceElementsAttr::get(type, handle); }, "type"_a, "handle"_a)
 .def_prop_ro("type", &mlir::DenseResourceElementsAttr::getType)
 .def_prop_ro("raw_handle", &mlir::DenseResourceElementsAttr::getRawHandle)
 ;
 
-auto mlir_DictionaryAttr = nb::class_<mlir::DictionaryAttr, mlir::Attribute>(m, "DictionaryAttr")
+auto mlir_DictionaryAttr = nb::class_<mlir::DictionaryAttr,  mlir::Attribute>(m, "DictionaryAttr")
 .def_static("get_with_sorted", &mlir::DictionaryAttr::getWithSorted, "context"_a, "value"_a)
 .def("get", [](mlir::DictionaryAttr& self, llvm::StringRef name){ return self.get(name); }, "name"_a)
 .def("get", [](mlir::DictionaryAttr& self, mlir::StringAttr name){ return self.get(name); }, "name"_a)
@@ -804,7 +811,7 @@ auto mlir_DictionaryAttr = nb::class_<mlir::DictionaryAttr, mlir::Attribute>(m, 
 .def_prop_ro("value", &mlir::DictionaryAttr::getValue)
 ;
 
-auto mlir_FloatAttr = nb::class_<mlir::FloatAttr, mlir::Attribute>(m, "FloatAttr")
+auto mlir_FloatAttr = nb::class_<mlir::FloatAttr,  mlir::Attribute>(m, "FloatAttr")
 .def_prop_ro("value_as_double", [](mlir::FloatAttr& self){ return self.getValueAsDouble(); })
 .def_static("get_value_as_double", [](llvm::APFloat val){ return mlir::FloatAttr::getValueAsDouble(val); }, "val"_a)
 .def_static("get", [](mlir::Type type, const llvm::APFloat & value){ return mlir::FloatAttr::get(type, value); }, "type"_a, "value"_a)
@@ -815,7 +822,7 @@ auto mlir_FloatAttr = nb::class_<mlir::FloatAttr, mlir::Attribute>(m, "FloatAttr
 .def_prop_ro("value", &mlir::FloatAttr::getValue)
 ;
 
-auto mlir_IntegerAttr = nb::class_<mlir::IntegerAttr, mlir::Attribute>(m, "IntegerAttr")
+auto mlir_IntegerAttr = nb::class_<mlir::IntegerAttr,  mlir::Attribute>(m, "IntegerAttr")
 .def_prop_ro("int", &mlir::IntegerAttr::getInt)
 .def_prop_ro("s_int", &mlir::IntegerAttr::getSInt)
 .def_prop_ro("u_int", &mlir::IntegerAttr::getUInt)
@@ -829,12 +836,12 @@ auto mlir_IntegerAttr = nb::class_<mlir::IntegerAttr, mlir::Attribute>(m, "Integ
 .def_prop_ro("value", &mlir::IntegerAttr::getValue)
 ;
 
-auto mlir_IntegerSetAttr = nb::class_<mlir::IntegerSetAttr, mlir::Attribute>(m, "IntegerSetAttr")
+auto mlir_IntegerSetAttr = nb::class_<mlir::IntegerSetAttr,  mlir::Attribute>(m, "IntegerSetAttr")
 .def_static("get", &mlir::IntegerSetAttr::get, "value"_a)
 .def_prop_ro("value", &mlir::IntegerSetAttr::getValue)
 ;
 
-auto mlir_OpaqueAttr = nb::class_<mlir::OpaqueAttr, mlir::Attribute>(m, "OpaqueAttr")
+auto mlir_OpaqueAttr = nb::class_<mlir::OpaqueAttr,  mlir::Attribute>(m, "OpaqueAttr")
 .def_static("get", &mlir::OpaqueAttr::get, "dialect"_a, "attr_data"_a, "type"_a)
 .def_static("verify", &mlir::OpaqueAttr::verify, "emit_error"_a, "dialect_namespace"_a, "attr_data"_a, "type"_a)
 .def_static("verify_invariants", &mlir::OpaqueAttr::verifyInvariants, "emit_error"_a, "dialect_namespace"_a, "attr_data"_a, "type"_a)
@@ -843,7 +850,7 @@ auto mlir_OpaqueAttr = nb::class_<mlir::OpaqueAttr, mlir::Attribute>(m, "OpaqueA
 .def_prop_ro("type", &mlir::OpaqueAttr::getType)
 ;
 
-auto mlir_SparseElementsAttr = nb::class_<mlir::SparseElementsAttr, mlir::Attribute>(m, "SparseElementsAttr")
+auto mlir_SparseElementsAttr = nb::class_<mlir::SparseElementsAttr,  mlir::Attribute>(m, "SparseElementsAttr")
 .def_static("get", &mlir::SparseElementsAttr::get, "type"_a, "indices"_a, "values"_a)
 .def_static("verify", &mlir::SparseElementsAttr::verify, "emit_error"_a, "type"_a, "indices"_a, "values"_a)
 .def_static("verify_invariants", &mlir::SparseElementsAttr::verifyInvariants, "emit_error"_a, "type"_a, "indices"_a, "values"_a)
@@ -851,7 +858,7 @@ auto mlir_SparseElementsAttr = nb::class_<mlir::SparseElementsAttr, mlir::Attrib
 .def_prop_ro("indices", &mlir::SparseElementsAttr::getIndices)
 ;
 
-auto mlir_StridedLayoutAttr = nb::class_<mlir::StridedLayoutAttr, mlir::Attribute>(m, "StridedLayoutAttr")
+auto mlir_StridedLayoutAttr = nb::class_<mlir::StridedLayoutAttr,  mlir::Attribute>(m, "StridedLayoutAttr")
 .def("print", &mlir::StridedLayoutAttr::print, "os"_a)
 .def("has_static_layout", &mlir::StridedLayoutAttr::hasStaticLayout)
 .def_static("get", &mlir::StridedLayoutAttr::get, "context"_a, "offset"_a, "strides"_a)
@@ -863,7 +870,7 @@ auto mlir_StridedLayoutAttr = nb::class_<mlir::StridedLayoutAttr, mlir::Attribut
 .def("verify_layout", &mlir::StridedLayoutAttr::verifyLayout, "shape"_a, "emit_error"_a)
 ;
 
-auto mlir_StringAttr = nb::class_<mlir::StringAttr, mlir::Attribute>(m, "StringAttr")
+auto mlir_StringAttr = nb::class_<mlir::StringAttr,  mlir::Attribute>(m, "StringAttr")
 .def_prop_ro("referenced_dialect", &mlir::StringAttr::getReferencedDialect)
 .def("strref", &mlir::StringAttr::strref)
 .def("str", &mlir::StringAttr::str)
@@ -880,7 +887,7 @@ auto mlir_StringAttr = nb::class_<mlir::StringAttr, mlir::Attribute>(m, "StringA
 .def_prop_ro("type", &mlir::StringAttr::getType)
 ;
 
-auto mlir_SymbolRefAttr = nb::class_<mlir::SymbolRefAttr, mlir::Attribute>(m, "SymbolRefAttr")
+auto mlir_SymbolRefAttr = nb::class_<mlir::SymbolRefAttr,  mlir::Attribute>(m, "SymbolRefAttr")
 .def_static("get", [](mlir::MLIRContext * ctx, llvm::StringRef value, llvm::ArrayRef<mlir::FlatSymbolRefAttr> nestedRefs){ return mlir::SymbolRefAttr::get(ctx, value, nestedRefs); }, "ctx"_a, "value"_a, "nested_refs"_a)
 .def_static("get", [](mlir::StringAttr value){ return mlir::SymbolRefAttr::get(value); }, "value"_a)
 .def_static("get", [](mlir::MLIRContext * ctx, llvm::StringRef value){ return mlir::SymbolRefAttr::get(ctx, value); }, "ctx"_a, "value"_a)
@@ -891,64 +898,81 @@ auto mlir_SymbolRefAttr = nb::class_<mlir::SymbolRefAttr, mlir::Attribute>(m, "S
 .def_prop_ro("nested_references", &mlir::SymbolRefAttr::getNestedReferences)
 ;
 
-auto mlir_TypeAttr = nb::class_<mlir::TypeAttr, mlir::Attribute>(m, "TypeAttr")
+auto mlir_TypeAttr = nb::class_<mlir::TypeAttr,  mlir::Attribute>(m, "TypeAttr")
 .def_static("get", &mlir::TypeAttr::get, "type"_a)
 .def_prop_ro("value", &mlir::TypeAttr::getValue)
 ;
 
-auto mlir_UnitAttr = nb::class_<mlir::UnitAttr, mlir::Attribute>(m, "UnitAttr")
+auto mlir_UnitAttr = nb::class_<mlir::UnitAttr,  mlir::Attribute>(m, "UnitAttr")
 .def_static("get", &mlir::UnitAttr::get, "context"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_AffineMapAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::AffineMapAttr>>(m, "TypeIDResolver[AffineMapAttr]")
+auto mlir_detail_TypeIDResolver___mlir_AffineMapAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::AffineMapAttr>>(m, "TypeIDResolver[AffineMapAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::AffineMapAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_ArrayAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::ArrayAttr>>(m, "TypeIDResolver[ArrayAttr]")
+auto mlir_detail_TypeIDResolver___mlir_ArrayAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::ArrayAttr>>(m, "TypeIDResolver[ArrayAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::ArrayAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_DenseArrayAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::DenseArrayAttr>>(m, "TypeIDResolver[DenseArrayAttr]")
+auto mlir_detail_TypeIDResolver___mlir_DenseArrayAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::DenseArrayAttr>>(m, "TypeIDResolver[DenseArrayAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::DenseArrayAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_DenseIntOrFPElementsAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::DenseIntOrFPElementsAttr>>(m, "TypeIDResolver[DenseIntOrFPElementsAttr]")
+auto mlir_detail_TypeIDResolver___mlir_DenseIntOrFPElementsAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::DenseIntOrFPElementsAttr>>(m, "TypeIDResolver[DenseIntOrFPElementsAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::DenseIntOrFPElementsAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_DenseStringElementsAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::DenseStringElementsAttr>>(m, "TypeIDResolver[DenseStringElementsAttr]")
+auto mlir_detail_TypeIDResolver___mlir_DenseStringElementsAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::DenseStringElementsAttr>>(m, "TypeIDResolver[DenseStringElementsAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::DenseStringElementsAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_DenseResourceElementsAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::DenseResourceElementsAttr>>(m, "TypeIDResolver[DenseResourceElementsAttr]")
+auto mlir_detail_TypeIDResolver___mlir_DenseResourceElementsAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::DenseResourceElementsAttr>>(m, "TypeIDResolver[DenseResourceElementsAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::DenseResourceElementsAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_DictionaryAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::DictionaryAttr>>(m, "TypeIDResolver[DictionaryAttr]")
+auto mlir_detail_TypeIDResolver___mlir_DictionaryAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::DictionaryAttr>>(m, "TypeIDResolver[DictionaryAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::DictionaryAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_FloatAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::FloatAttr>>(m, "TypeIDResolver[FloatAttr]")
+auto mlir_detail_TypeIDResolver___mlir_FloatAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::FloatAttr>>(m, "TypeIDResolver[FloatAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::FloatAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_IntegerAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::IntegerAttr>>(m, "TypeIDResolver[IntegerAttr]")
+auto mlir_detail_TypeIDResolver___mlir_IntegerAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::IntegerAttr>>(m, "TypeIDResolver[IntegerAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::IntegerAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_IntegerSetAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::IntegerSetAttr>>(m, "TypeIDResolver[IntegerSetAttr]")
+auto mlir_detail_TypeIDResolver___mlir_IntegerSetAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::IntegerSetAttr>>(m, "TypeIDResolver[IntegerSetAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::IntegerSetAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_OpaqueAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::OpaqueAttr>>(m, "TypeIDResolver[OpaqueAttr]")
+auto mlir_detail_TypeIDResolver___mlir_OpaqueAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::OpaqueAttr>>(m, "TypeIDResolver[OpaqueAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::OpaqueAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_SparseElementsAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::SparseElementsAttr>>(m, "TypeIDResolver[SparseElementsAttr]")
+auto mlir_detail_TypeIDResolver___mlir_SparseElementsAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::SparseElementsAttr>>(m, "TypeIDResolver[SparseElementsAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::SparseElementsAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_StridedLayoutAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::StridedLayoutAttr>>(m, "TypeIDResolver[StridedLayoutAttr]")
+auto mlir_detail_TypeIDResolver___mlir_StridedLayoutAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::StridedLayoutAttr>>(m, "TypeIDResolver[StridedLayoutAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::StridedLayoutAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_StringAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::StringAttr>>(m, "TypeIDResolver[StringAttr]")
+auto mlir_detail_TypeIDResolver___mlir_StringAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::StringAttr>>(m, "TypeIDResolver[StringAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::StringAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_SymbolRefAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::SymbolRefAttr>>(m, "TypeIDResolver[SymbolRefAttr]")
+auto mlir_detail_TypeIDResolver___mlir_SymbolRefAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::SymbolRefAttr>>(m, "TypeIDResolver[SymbolRefAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::SymbolRefAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_TypeAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::TypeAttr>>(m, "TypeIDResolver[TypeAttr]")
+auto mlir_detail_TypeIDResolver___mlir_TypeAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::TypeAttr>>(m, "TypeIDResolver[TypeAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::TypeAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_UnitAttr__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::UnitAttr>>(m, "TypeIDResolver[UnitAttr]")
+auto mlir_detail_TypeIDResolver___mlir_UnitAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::UnitAttr>>(m, "TypeIDResolver[UnitAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::UnitAttr>::resolveTypeID)
 ;
 
 auto mlir_detail_DenseArrayAttrImpl__bool__ = nb::class_<mlir::detail::DenseArrayAttrImpl<bool>>(m, "DenseArrayAttrImpl[bool]")
@@ -1034,7 +1058,7 @@ auto mlir_DenseIntElementsAttr = nb::class_<mlir::DenseIntElementsAttr, mlir::De
 .def_static("classof", &mlir::DenseIntElementsAttr::classof, "attr"_a)
 ;
 
-auto mlir_DistinctAttr = nb::class_<mlir::DistinctAttr, mlir::Attribute>(m, "DistinctAttr")
+auto mlir_DistinctAttr = nb::class_<mlir::DistinctAttr,  mlir::Attribute>(m, "DistinctAttr")
 .def_prop_ro("referenced_attr", &mlir::DistinctAttr::getReferencedAttr)
 .def_static("create", &mlir::DistinctAttr::create, "referenced_attr"_a)
 ;
@@ -1958,9 +1982,12 @@ auto mlir_OpBuilder_InsertionGuard = nb::class_<mlir::OpBuilder::InsertionGuard>
 
 auto mlir_BuiltinDialect = nb::class_<mlir::BuiltinDialect, mlir::Dialect>(m, "BuiltinDialect")
 .def_static("dialect_namespace", &mlir::BuiltinDialect::getDialectNamespace)
+.def_static("insert_into_registry", [](mlir::DialectRegistry &registry) { registry.insert<mlir::BuiltinDialect>(); })
+.def_static("load_into_context", [](mlir::MLIRContext &context) { return context.getOrLoadDialect<mlir::BuiltinDialect>(); })
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_BuiltinDialect__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::BuiltinDialect>>(m, "TypeIDResolver[BuiltinDialect]")
+auto mlir_detail_TypeIDResolver___mlir_BuiltinDialect__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::BuiltinDialect>>(m, "TypeIDResolver[BuiltinDialect]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::BuiltinDialect>::resolveTypeID)
 ;
 
 auto mlir_DialectInterface = nb::class_<mlir::DialectInterface>(m, "DialectInterface")
@@ -2022,86 +2049,86 @@ auto mlir_BaseMemRefType = nb::class_<mlir::BaseMemRefType>(m, "BaseMemRefType")
 .def_prop_ro("memory_space_as_int", &mlir::BaseMemRefType::getMemorySpaceAsInt)
 ;
 
-auto mlir_ComplexType = nb::class_<mlir::ComplexType, mlir::Type>(m, "ComplexType")
+auto mlir_ComplexType = nb::class_<mlir::ComplexType,  mlir::Type>(m, "ComplexType")
 .def_static("get", &mlir::ComplexType::get, "element_type"_a)
 .def_static("verify", &mlir::ComplexType::verify, "emit_error"_a, "element_type"_a)
 .def_static("verify_invariants", &mlir::ComplexType::verifyInvariants, "emit_error"_a, "element_type"_a)
 .def_prop_ro("element_type", &mlir::ComplexType::getElementType)
 ;
 
-auto mlir_Float8E5M2Type = nb::class_<mlir::Float8E5M2Type, mlir::FloatType>(m, "Float8E5M2Type")
+auto mlir_Float8E5M2Type = nb::class_<mlir::Float8E5M2Type,  mlir::FloatType>(m, "Float8E5M2Type")
 .def_static("get", &mlir::Float8E5M2Type::get, "context"_a)
 ;
 
-auto mlir_Float8E4M3Type = nb::class_<mlir::Float8E4M3Type, mlir::FloatType>(m, "Float8E4M3Type")
+auto mlir_Float8E4M3Type = nb::class_<mlir::Float8E4M3Type,  mlir::FloatType>(m, "Float8E4M3Type")
 .def_static("get", &mlir::Float8E4M3Type::get, "context"_a)
 ;
 
-auto mlir_Float8E4M3FNType = nb::class_<mlir::Float8E4M3FNType, mlir::FloatType>(m, "Float8E4M3FNType")
+auto mlir_Float8E4M3FNType = nb::class_<mlir::Float8E4M3FNType,  mlir::FloatType>(m, "Float8E4M3FNType")
 .def_static("get", &mlir::Float8E4M3FNType::get, "context"_a)
 ;
 
-auto mlir_Float8E5M2FNUZType = nb::class_<mlir::Float8E5M2FNUZType, mlir::FloatType>(m, "Float8E5M2FNUZType")
+auto mlir_Float8E5M2FNUZType = nb::class_<mlir::Float8E5M2FNUZType,  mlir::FloatType>(m, "Float8E5M2FNUZType")
 .def_static("get", &mlir::Float8E5M2FNUZType::get, "context"_a)
 ;
 
-auto mlir_Float8E4M3FNUZType = nb::class_<mlir::Float8E4M3FNUZType, mlir::FloatType>(m, "Float8E4M3FNUZType")
+auto mlir_Float8E4M3FNUZType = nb::class_<mlir::Float8E4M3FNUZType,  mlir::FloatType>(m, "Float8E4M3FNUZType")
 .def_static("get", &mlir::Float8E4M3FNUZType::get, "context"_a)
 ;
 
-auto mlir_Float8E4M3B11FNUZType = nb::class_<mlir::Float8E4M3B11FNUZType, mlir::FloatType>(m, "Float8E4M3B11FNUZType")
+auto mlir_Float8E4M3B11FNUZType = nb::class_<mlir::Float8E4M3B11FNUZType,  mlir::FloatType>(m, "Float8E4M3B11FNUZType")
 .def_static("get", &mlir::Float8E4M3B11FNUZType::get, "context"_a)
 ;
 
-auto mlir_Float8E3M4Type = nb::class_<mlir::Float8E3M4Type, mlir::FloatType>(m, "Float8E3M4Type")
+auto mlir_Float8E3M4Type = nb::class_<mlir::Float8E3M4Type,  mlir::FloatType>(m, "Float8E3M4Type")
 .def_static("get", &mlir::Float8E3M4Type::get, "context"_a)
 ;
 
-auto mlir_Float4E2M1FNType = nb::class_<mlir::Float4E2M1FNType, mlir::FloatType>(m, "Float4E2M1FNType")
+auto mlir_Float4E2M1FNType = nb::class_<mlir::Float4E2M1FNType,  mlir::FloatType>(m, "Float4E2M1FNType")
 .def_static("get", &mlir::Float4E2M1FNType::get, "context"_a)
 ;
 
-auto mlir_Float6E2M3FNType = nb::class_<mlir::Float6E2M3FNType, mlir::FloatType>(m, "Float6E2M3FNType")
+auto mlir_Float6E2M3FNType = nb::class_<mlir::Float6E2M3FNType,  mlir::FloatType>(m, "Float6E2M3FNType")
 .def_static("get", &mlir::Float6E2M3FNType::get, "context"_a)
 ;
 
-auto mlir_Float6E3M2FNType = nb::class_<mlir::Float6E3M2FNType, mlir::FloatType>(m, "Float6E3M2FNType")
+auto mlir_Float6E3M2FNType = nb::class_<mlir::Float6E3M2FNType,  mlir::FloatType>(m, "Float6E3M2FNType")
 .def_static("get", &mlir::Float6E3M2FNType::get, "context"_a)
 ;
 
-auto mlir_Float8E8M0FNUType = nb::class_<mlir::Float8E8M0FNUType, mlir::FloatType>(m, "Float8E8M0FNUType")
+auto mlir_Float8E8M0FNUType = nb::class_<mlir::Float8E8M0FNUType,  mlir::FloatType>(m, "Float8E8M0FNUType")
 .def_static("get", &mlir::Float8E8M0FNUType::get, "context"_a)
 ;
 
-auto mlir_BFloat16Type = nb::class_<mlir::BFloat16Type, mlir::FloatType>(m, "BFloat16Type")
+auto mlir_BFloat16Type = nb::class_<mlir::BFloat16Type,  mlir::FloatType>(m, "BFloat16Type")
 .def_static("get", &mlir::BFloat16Type::get, "context"_a)
 ;
 
-auto mlir_Float16Type = nb::class_<mlir::Float16Type, mlir::FloatType>(m, "Float16Type")
+auto mlir_Float16Type = nb::class_<mlir::Float16Type,  mlir::FloatType>(m, "Float16Type")
 .def_static("get", &mlir::Float16Type::get, "context"_a)
 ;
 
-auto mlir_FloatTF32Type = nb::class_<mlir::FloatTF32Type, mlir::FloatType>(m, "FloatTF32Type")
+auto mlir_FloatTF32Type = nb::class_<mlir::FloatTF32Type,  mlir::FloatType>(m, "FloatTF32Type")
 .def_static("get", &mlir::FloatTF32Type::get, "context"_a)
 ;
 
-auto mlir_Float32Type = nb::class_<mlir::Float32Type, mlir::FloatType>(m, "Float32Type")
+auto mlir_Float32Type = nb::class_<mlir::Float32Type,  mlir::FloatType>(m, "Float32Type")
 .def_static("get", &mlir::Float32Type::get, "context"_a)
 ;
 
-auto mlir_Float64Type = nb::class_<mlir::Float64Type, mlir::FloatType>(m, "Float64Type")
+auto mlir_Float64Type = nb::class_<mlir::Float64Type,  mlir::FloatType>(m, "Float64Type")
 .def_static("get", &mlir::Float64Type::get, "context"_a)
 ;
 
-auto mlir_Float80Type = nb::class_<mlir::Float80Type, mlir::FloatType>(m, "Float80Type")
+auto mlir_Float80Type = nb::class_<mlir::Float80Type,  mlir::FloatType>(m, "Float80Type")
 .def_static("get", &mlir::Float80Type::get, "context"_a)
 ;
 
-auto mlir_Float128Type = nb::class_<mlir::Float128Type, mlir::FloatType>(m, "Float128Type")
+auto mlir_Float128Type = nb::class_<mlir::Float128Type,  mlir::FloatType>(m, "Float128Type")
 .def_static("get", &mlir::Float128Type::get, "context"_a)
 ;
 
-auto mlir_FunctionType = nb::class_<mlir::FunctionType, mlir::Type>(m, "FunctionType")
+auto mlir_FunctionType = nb::class_<mlir::FunctionType,  mlir::Type>(m, "FunctionType")
 .def_prop_ro("num_inputs", &mlir::FunctionType::getNumInputs)
 .def("get_input", &mlir::FunctionType::getInput, "i"_a)
 .def_prop_ro("num_results", &mlir::FunctionType::getNumResults)
@@ -2114,11 +2141,11 @@ auto mlir_FunctionType = nb::class_<mlir::FunctionType, mlir::Type>(m, "Function
 .def_prop_ro("results", &mlir::FunctionType::getResults)
 ;
 
-auto mlir_IndexType = nb::class_<mlir::IndexType, mlir::Type>(m, "IndexType")
+auto mlir_IndexType = nb::class_<mlir::IndexType,  mlir::Type>(m, "IndexType")
 .def_static("get", &mlir::IndexType::get, "context"_a)
 ;
 
-auto mlir_IntegerType = nb::class_<mlir::IntegerType, mlir::Type>(m, "IntegerType")
+auto mlir_IntegerType = nb::class_<mlir::IntegerType,  mlir::Type>(m, "IntegerType")
 .def("is_signless", &mlir::IntegerType::isSignless)
 .def("is_signed", &mlir::IntegerType::isSigned)
 .def("is_unsigned", &mlir::IntegerType::isUnsigned)
@@ -2136,7 +2163,7 @@ nb::enum_<mlir::IntegerType::SignednessSemantics>(m, "SignednessSemantics")
 .value("Unsigned", mlir::IntegerType::SignednessSemantics::Unsigned)
 ;
 
-auto mlir_MemRefType = nb::class_<mlir::MemRefType, mlir::BaseMemRefType>(m, "MemRefType")
+auto mlir_MemRefType = nb::class_<mlir::MemRefType,  mlir::BaseMemRefType>(m, "MemRefType")
 .def_prop_ro("memory_space_as_int", &mlir::MemRefType::getMemorySpaceAsInt)
 .def_static("get", [](ArrayRef<int64_t> shape, mlir::Type elementType, mlir::MemRefLayoutAttrInterface layout, mlir::Attribute memorySpace){ return mlir::MemRefType::get(shape, elementType, layout, memorySpace); }, "shape"_a, "element_type"_a, "layout"_a, "memory_space"_a)
 .def_static("get", [](ArrayRef<int64_t> shape, mlir::Type elementType, mlir::AffineMap map, mlir::Attribute memorySpace){ return mlir::MemRefType::get(shape, elementType, map, memorySpace); }, "shape"_a, "element_type"_a, "map"_a, "memory_space"_a)
@@ -2149,11 +2176,11 @@ auto mlir_MemRefType = nb::class_<mlir::MemRefType, mlir::BaseMemRefType>(m, "Me
 .def_prop_ro("memory_space", &mlir::MemRefType::getMemorySpace)
 ;
 
-auto mlir_NoneType = nb::class_<mlir::NoneType, mlir::Type>(m, "NoneType")
+auto mlir_NoneType = nb::class_<mlir::NoneType,  mlir::Type>(m, "NoneType")
 .def_static("get", &mlir::NoneType::get, "context"_a)
 ;
 
-auto mlir_OpaqueType = nb::class_<mlir::OpaqueType, mlir::Type>(m, "OpaqueType")
+auto mlir_OpaqueType = nb::class_<mlir::OpaqueType,  mlir::Type>(m, "OpaqueType")
 .def_static("get", &mlir::OpaqueType::get, "dialect_namespace"_a, "type_data"_a)
 .def_static("verify", &mlir::OpaqueType::verify, "emit_error"_a, "dialect_namespace"_a, "type_data"_a)
 .def_static("verify_invariants", &mlir::OpaqueType::verifyInvariants, "emit_error"_a, "dialect_namespace"_a, "type_data"_a)
@@ -2161,7 +2188,7 @@ auto mlir_OpaqueType = nb::class_<mlir::OpaqueType, mlir::Type>(m, "OpaqueType")
 .def_prop_ro("type_data", &mlir::OpaqueType::getTypeData)
 ;
 
-auto mlir_RankedTensorType = nb::class_<mlir::RankedTensorType, mlir::TensorType>(m, "RankedTensorType")
+auto mlir_RankedTensorType = nb::class_<mlir::RankedTensorType,  mlir::TensorType>(m, "RankedTensorType")
 .def_static("get", &mlir::RankedTensorType::get, "shape"_a, "element_type"_a, "encoding"_a)
 .def_static("verify", &mlir::RankedTensorType::verify, "emit_error"_a, "shape"_a, "element_type"_a, "encoding"_a)
 .def_static("verify_invariants", &mlir::RankedTensorType::verifyInvariants, "emit_error"_a, "shape"_a, "element_type"_a, "encoding"_a)
@@ -2170,7 +2197,7 @@ auto mlir_RankedTensorType = nb::class_<mlir::RankedTensorType, mlir::TensorType
 .def_prop_ro("encoding", &mlir::RankedTensorType::getEncoding)
 ;
 
-auto mlir_TupleType = nb::class_<mlir::TupleType, mlir::Type>(m, "TupleType")
+auto mlir_TupleType = nb::class_<mlir::TupleType,  mlir::Type>(m, "TupleType")
 .def("get_flattened_types", &mlir::TupleType::getFlattenedTypes, "types"_a)
 .def("size", &mlir::TupleType::size)
 .def("begin", &mlir::TupleType::begin)
@@ -2181,7 +2208,7 @@ auto mlir_TupleType = nb::class_<mlir::TupleType, mlir::Type>(m, "TupleType")
 .def_prop_ro("types", &mlir::TupleType::getTypes)
 ;
 
-auto mlir_UnrankedMemRefType = nb::class_<mlir::UnrankedMemRefType, mlir::BaseMemRefType>(m, "UnrankedMemRefType")
+auto mlir_UnrankedMemRefType = nb::class_<mlir::UnrankedMemRefType,  mlir::BaseMemRefType>(m, "UnrankedMemRefType")
 .def_prop_ro("shape", &mlir::UnrankedMemRefType::getShape)
 .def_prop_ro("memory_space_as_int", &mlir::UnrankedMemRefType::getMemorySpaceAsInt)
 .def_static("get", [](mlir::Type elementType, mlir::Attribute memorySpace){ return mlir::UnrankedMemRefType::get(elementType, memorySpace); }, "element_type"_a, "memory_space"_a)
@@ -2192,7 +2219,7 @@ auto mlir_UnrankedMemRefType = nb::class_<mlir::UnrankedMemRefType, mlir::BaseMe
 .def_prop_ro("memory_space", &mlir::UnrankedMemRefType::getMemorySpace)
 ;
 
-auto mlir_UnrankedTensorType = nb::class_<mlir::UnrankedTensorType, mlir::TensorType>(m, "UnrankedTensorType")
+auto mlir_UnrankedTensorType = nb::class_<mlir::UnrankedTensorType,  mlir::TensorType>(m, "UnrankedTensorType")
 .def_prop_ro("shape", &mlir::UnrankedTensorType::getShape)
 .def_static("get", &mlir::UnrankedTensorType::get, "element_type"_a)
 .def_static("verify", &mlir::UnrankedTensorType::verify, "emit_error"_a, "element_type"_a)
@@ -2200,7 +2227,7 @@ auto mlir_UnrankedTensorType = nb::class_<mlir::UnrankedTensorType, mlir::Tensor
 .def_prop_ro("element_type", &mlir::UnrankedTensorType::getElementType)
 ;
 
-auto mlir_VectorType = nb::class_<mlir::VectorType, mlir::Type>(m, "VectorType")
+auto mlir_VectorType = nb::class_<mlir::VectorType,  mlir::Type>(m, "VectorType")
 .def_static("is_valid_element_type", &mlir::VectorType::isValidElementType, "t"_a)
 .def("is_scalable", &mlir::VectorType::isScalable)
 .def("all_dims_scalable", &mlir::VectorType::allDimsScalable)
@@ -2217,94 +2244,124 @@ auto mlir_VectorType = nb::class_<mlir::VectorType, mlir::Type>(m, "VectorType")
 .def_prop_ro("scalable_dims", &mlir::VectorType::getScalableDims)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_ComplexType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::ComplexType>>(m, "TypeIDResolver[ComplexType]")
+auto mlir_detail_TypeIDResolver___mlir_ComplexType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::ComplexType>>(m, "TypeIDResolver[ComplexType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::ComplexType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float8E5M2Type__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float8E5M2Type>>(m, "TypeIDResolver[Float8E5M2Type]")
+auto mlir_detail_TypeIDResolver___mlir_Float8E5M2Type__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float8E5M2Type>>(m, "TypeIDResolver[Float8E5M2Type]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float8E5M2Type>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float8E4M3Type__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float8E4M3Type>>(m, "TypeIDResolver[Float8E4M3Type]")
+auto mlir_detail_TypeIDResolver___mlir_Float8E4M3Type__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float8E4M3Type>>(m, "TypeIDResolver[Float8E4M3Type]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float8E4M3Type>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float8E4M3FNType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float8E4M3FNType>>(m, "TypeIDResolver[Float8E4M3FNType]")
+auto mlir_detail_TypeIDResolver___mlir_Float8E4M3FNType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float8E4M3FNType>>(m, "TypeIDResolver[Float8E4M3FNType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float8E4M3FNType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float8E5M2FNUZType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float8E5M2FNUZType>>(m, "TypeIDResolver[Float8E5M2FNUZType]")
+auto mlir_detail_TypeIDResolver___mlir_Float8E5M2FNUZType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float8E5M2FNUZType>>(m, "TypeIDResolver[Float8E5M2FNUZType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float8E5M2FNUZType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float8E4M3FNUZType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float8E4M3FNUZType>>(m, "TypeIDResolver[Float8E4M3FNUZType]")
+auto mlir_detail_TypeIDResolver___mlir_Float8E4M3FNUZType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float8E4M3FNUZType>>(m, "TypeIDResolver[Float8E4M3FNUZType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float8E4M3FNUZType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float8E4M3B11FNUZType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float8E4M3B11FNUZType>>(m, "TypeIDResolver[Float8E4M3B11FNUZType]")
+auto mlir_detail_TypeIDResolver___mlir_Float8E4M3B11FNUZType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float8E4M3B11FNUZType>>(m, "TypeIDResolver[Float8E4M3B11FNUZType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float8E4M3B11FNUZType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float8E3M4Type__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float8E3M4Type>>(m, "TypeIDResolver[Float8E3M4Type]")
+auto mlir_detail_TypeIDResolver___mlir_Float8E3M4Type__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float8E3M4Type>>(m, "TypeIDResolver[Float8E3M4Type]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float8E3M4Type>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float4E2M1FNType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float4E2M1FNType>>(m, "TypeIDResolver[Float4E2M1FNType]")
+auto mlir_detail_TypeIDResolver___mlir_Float4E2M1FNType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float4E2M1FNType>>(m, "TypeIDResolver[Float4E2M1FNType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float4E2M1FNType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float6E2M3FNType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float6E2M3FNType>>(m, "TypeIDResolver[Float6E2M3FNType]")
+auto mlir_detail_TypeIDResolver___mlir_Float6E2M3FNType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float6E2M3FNType>>(m, "TypeIDResolver[Float6E2M3FNType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float6E2M3FNType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float6E3M2FNType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float6E3M2FNType>>(m, "TypeIDResolver[Float6E3M2FNType]")
+auto mlir_detail_TypeIDResolver___mlir_Float6E3M2FNType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float6E3M2FNType>>(m, "TypeIDResolver[Float6E3M2FNType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float6E3M2FNType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float8E8M0FNUType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float8E8M0FNUType>>(m, "TypeIDResolver[Float8E8M0FNUType]")
+auto mlir_detail_TypeIDResolver___mlir_Float8E8M0FNUType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float8E8M0FNUType>>(m, "TypeIDResolver[Float8E8M0FNUType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float8E8M0FNUType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_BFloat16Type__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::BFloat16Type>>(m, "TypeIDResolver[BFloat16Type]")
+auto mlir_detail_TypeIDResolver___mlir_BFloat16Type__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::BFloat16Type>>(m, "TypeIDResolver[BFloat16Type]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::BFloat16Type>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float16Type__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float16Type>>(m, "TypeIDResolver[Float16Type]")
+auto mlir_detail_TypeIDResolver___mlir_Float16Type__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float16Type>>(m, "TypeIDResolver[Float16Type]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float16Type>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_FloatTF32Type__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::FloatTF32Type>>(m, "TypeIDResolver[FloatTF32Type]")
+auto mlir_detail_TypeIDResolver___mlir_FloatTF32Type__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::FloatTF32Type>>(m, "TypeIDResolver[FloatTF32Type]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::FloatTF32Type>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float32Type__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float32Type>>(m, "TypeIDResolver[Float32Type]")
+auto mlir_detail_TypeIDResolver___mlir_Float32Type__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float32Type>>(m, "TypeIDResolver[Float32Type]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float32Type>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float64Type__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float64Type>>(m, "TypeIDResolver[Float64Type]")
+auto mlir_detail_TypeIDResolver___mlir_Float64Type__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float64Type>>(m, "TypeIDResolver[Float64Type]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float64Type>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float80Type__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float80Type>>(m, "TypeIDResolver[Float80Type]")
+auto mlir_detail_TypeIDResolver___mlir_Float80Type__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float80Type>>(m, "TypeIDResolver[Float80Type]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float80Type>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_Float128Type__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::Float128Type>>(m, "TypeIDResolver[Float128Type]")
+auto mlir_detail_TypeIDResolver___mlir_Float128Type__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::Float128Type>>(m, "TypeIDResolver[Float128Type]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::Float128Type>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_FunctionType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::FunctionType>>(m, "TypeIDResolver[FunctionType]")
+auto mlir_detail_TypeIDResolver___mlir_FunctionType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::FunctionType>>(m, "TypeIDResolver[FunctionType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::FunctionType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_IndexType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::IndexType>>(m, "TypeIDResolver[IndexType]")
+auto mlir_detail_TypeIDResolver___mlir_IndexType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::IndexType>>(m, "TypeIDResolver[IndexType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::IndexType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_IntegerType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::IntegerType>>(m, "TypeIDResolver[IntegerType]")
+auto mlir_detail_TypeIDResolver___mlir_IntegerType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::IntegerType>>(m, "TypeIDResolver[IntegerType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::IntegerType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_MemRefType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::MemRefType>>(m, "TypeIDResolver[MemRefType]")
+auto mlir_detail_TypeIDResolver___mlir_MemRefType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::MemRefType>>(m, "TypeIDResolver[MemRefType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::MemRefType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_NoneType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::NoneType>>(m, "TypeIDResolver[NoneType]")
+auto mlir_detail_TypeIDResolver___mlir_NoneType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::NoneType>>(m, "TypeIDResolver[NoneType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::NoneType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_OpaqueType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::OpaqueType>>(m, "TypeIDResolver[OpaqueType]")
+auto mlir_detail_TypeIDResolver___mlir_OpaqueType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::OpaqueType>>(m, "TypeIDResolver[OpaqueType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::OpaqueType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_RankedTensorType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::RankedTensorType>>(m, "TypeIDResolver[RankedTensorType]")
+auto mlir_detail_TypeIDResolver___mlir_RankedTensorType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::RankedTensorType>>(m, "TypeIDResolver[RankedTensorType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::RankedTensorType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_TupleType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::TupleType>>(m, "TypeIDResolver[TupleType]")
+auto mlir_detail_TypeIDResolver___mlir_TupleType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::TupleType>>(m, "TypeIDResolver[TupleType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::TupleType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_UnrankedMemRefType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::UnrankedMemRefType>>(m, "TypeIDResolver[UnrankedMemRefType]")
+auto mlir_detail_TypeIDResolver___mlir_UnrankedMemRefType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::UnrankedMemRefType>>(m, "TypeIDResolver[UnrankedMemRefType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::UnrankedMemRefType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_UnrankedTensorType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::UnrankedTensorType>>(m, "TypeIDResolver[UnrankedTensorType]")
+auto mlir_detail_TypeIDResolver___mlir_UnrankedTensorType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::UnrankedTensorType>>(m, "TypeIDResolver[UnrankedTensorType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::UnrankedTensorType>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_VectorType__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::VectorType>>(m, "TypeIDResolver[VectorType]")
+auto mlir_detail_TypeIDResolver___mlir_VectorType__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::VectorType>>(m, "TypeIDResolver[VectorType]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::VectorType>::resolveTypeID)
 ;
 
 auto mlir_MemRefType_Builder = nb::class_<mlir::MemRefType::Builder>(mlir_MemRefType, "Builder")
@@ -2625,8 +2682,7 @@ auto mlir_ModuleOpAdaptor = nb::class_<mlir::ModuleOpAdaptor>(m, "ModuleOpAdapto
 .def("verify", &mlir::ModuleOpAdaptor::verify, "loc"_a)
 ;
 
-nb::class_<mlir::Op<mlir::ModuleOp, mlir::OpTrait::OneRegion, mlir::OpTrait::ZeroResults, mlir::OpTrait::ZeroSuccessors, mlir::OpTrait::ZeroOperands, mlir::OpTrait::NoRegionArguments, mlir::OpTrait::NoTerminator, mlir::OpTrait::SingleBlock, mlir::OpTrait::OpInvariants, mlir::BytecodeOpInterface::Trait, mlir::OpTrait::AffineScope, mlir::OpTrait::IsIsolatedFromAbove, mlir::OpTrait::SymbolTable, mlir::SymbolOpInterface::Trait, mlir::OpAsmOpInterface::Trait, mlir::RegionKindInterface::Trait, mlir::OpTrait::HasOnlyGraphRegion>, mlir::OpState>(m, "mlir_Op[ModuleOp]");
-auto mlir_ModuleOp = nb::class_<mlir::ModuleOp, mlir::Op<mlir::ModuleOp, mlir::OpTrait::OneRegion, mlir::OpTrait::ZeroResults, mlir::OpTrait::ZeroSuccessors, mlir::OpTrait::ZeroOperands, mlir::OpTrait::NoRegionArguments, mlir::OpTrait::NoTerminator, mlir::OpTrait::SingleBlock, mlir::OpTrait::OpInvariants, mlir::BytecodeOpInterface::Trait, mlir::OpTrait::AffineScope, mlir::OpTrait::IsIsolatedFromAbove, mlir::OpTrait::SymbolTable, mlir::SymbolOpInterface::Trait, mlir::OpAsmOpInterface::Trait, mlir::RegionKindInterface::Trait, mlir::OpTrait::HasOnlyGraphRegion>>(m, "ModuleOp")
+auto mlir_ModuleOp = nb::class_<mlir::ModuleOp,  mlir::OpState>(m, "ModuleOp")
 .def_static("attribute_names", &mlir::ModuleOp::getAttributeNames)
 .def_prop_ro("sym_name_attr_name", [](mlir::ModuleOp& self){ return self.getSymNameAttrName(); })
 .def_static("get_sym_name_attr_name", [](mlir::OperationName name){ return mlir::ModuleOp::getSymNameAttrName(name); }, "name"_a)
@@ -2670,7 +2726,8 @@ auto mlir_ModuleOp = nb::class_<mlir::ModuleOp, mlir::Op<mlir::ModuleOp, mlir::O
 .def_static("default_dialect", &mlir::ModuleOp::getDefaultDialect)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_ModuleOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::ModuleOp>>(m, "TypeIDResolver[ModuleOp]")
+auto mlir_detail_TypeIDResolver___mlir_ModuleOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::ModuleOp>>(m, "TypeIDResolver[ModuleOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::ModuleOp>::resolveTypeID)
 ;
 
 auto mlir_detail_UnrealizedConversionCastOpGenericAdaptorBase = nb::class_<mlir::detail::UnrealizedConversionCastOpGenericAdaptorBase>(m, "UnrealizedConversionCastOpGenericAdaptorBase")
@@ -2685,8 +2742,7 @@ auto mlir_UnrealizedConversionCastOpAdaptor = nb::class_<mlir::UnrealizedConvers
 .def("verify", &mlir::UnrealizedConversionCastOpAdaptor::verify, "loc"_a)
 ;
 
-nb::class_<mlir::Op<mlir::UnrealizedConversionCastOp, mlir::OpTrait::ZeroRegions, mlir::OpTrait::VariadicResults, mlir::OpTrait::ZeroSuccessors, mlir::OpTrait::VariadicOperands, mlir::OpTrait::OpInvariants, mlir::ConditionallySpeculatable::Trait, mlir::OpTrait::AlwaysSpeculatableImplTrait, mlir::MemoryEffectOpInterface::Trait>, mlir::OpState>(m, "mlir_Op[UnrealizedConversionCastOp]");
-auto mlir_UnrealizedConversionCastOp = nb::class_<mlir::UnrealizedConversionCastOp, mlir::Op<mlir::UnrealizedConversionCastOp, mlir::OpTrait::ZeroRegions, mlir::OpTrait::VariadicResults, mlir::OpTrait::ZeroSuccessors, mlir::OpTrait::VariadicOperands, mlir::OpTrait::OpInvariants, mlir::ConditionallySpeculatable::Trait, mlir::OpTrait::AlwaysSpeculatableImplTrait, mlir::MemoryEffectOpInterface::Trait>>(m, "UnrealizedConversionCastOp")
+auto mlir_UnrealizedConversionCastOp = nb::class_<mlir::UnrealizedConversionCastOp,  mlir::OpState>(m, "UnrealizedConversionCastOp")
 .def_static("attribute_names", &mlir::UnrealizedConversionCastOp::getAttributeNames)
 .def_static("operation_name", &mlir::UnrealizedConversionCastOp::getOperationName)
 .def("get_ods_operand_index_and_length", &mlir::UnrealizedConversionCastOp::getODSOperandIndexAndLength, "index"_a)
@@ -2705,7 +2761,8 @@ auto mlir_UnrealizedConversionCastOp = nb::class_<mlir::UnrealizedConversionCast
 .def("get_effects", &mlir::UnrealizedConversionCastOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_UnrealizedConversionCastOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::UnrealizedConversionCastOp>>(m, "TypeIDResolver[UnrealizedConversionCastOp]")
+auto mlir_detail_TypeIDResolver___mlir_UnrealizedConversionCastOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::UnrealizedConversionCastOp>>(m, "TypeIDResolver[UnrealizedConversionCastOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::UnrealizedConversionCastOp>::resolveTypeID)
 ;
 
 auto mlir_DialectAsmPrinter = nb::class_<mlir::DialectAsmPrinter, mlir::AsmPrinter>(m, "DialectAsmPrinter")
@@ -2777,7 +2834,7 @@ auto mlir_DynamicAttrDefinition = nb::class_<mlir::DynamicAttrDefinition>(m, "Dy
 .def_prop_ro("dialect", &mlir::DynamicAttrDefinition::getDialect)
 ;
 
-auto mlir_DynamicAttr = nb::class_<mlir::DynamicAttr, mlir::Attribute>(m, "DynamicAttr")
+auto mlir_DynamicAttr = nb::class_<mlir::DynamicAttr,  mlir::Attribute>(m, "DynamicAttr")
 .def_static("get", &mlir::DynamicAttr::get, "attr_def"_a, "params"_a)
 .def_prop_ro("attr_def", &mlir::DynamicAttr::getAttrDef)
 .def_prop_ro("params", &mlir::DynamicAttr::getParams)
@@ -2799,7 +2856,7 @@ auto mlir_DynamicTypeDefinition = nb::class_<mlir::DynamicTypeDefinition>(m, "Dy
 .def_prop_ro("dialect", &mlir::DynamicTypeDefinition::getDialect)
 ;
 
-auto mlir_DynamicType = nb::class_<mlir::DynamicType, mlir::Type>(m, "DynamicType")
+auto mlir_DynamicType = nb::class_<mlir::DynamicType,  mlir::Type>(m, "DynamicType")
 .def_static("get", &mlir::DynamicType::get, "type_def"_a, "params"_a)
 .def_prop_ro("type_def", &mlir::DynamicType::getTypeDef)
 .def_prop_ro("params", &mlir::DynamicType::getParams)
@@ -3121,7 +3178,7 @@ auto mlir_detail_pdl_function_builder_ProcessPDLValue__std_string__ = nb::class_
 .def_static("process_as_result", &mlir::detail::pdl_function_builder::ProcessPDLValue<std::string>::processAsResult, "rewriter"_a, "results"_a, "value"_a)
 ;
 
-auto mlir_detail_pdl_function_builder_ProcessPDLValue__Operation_____ = nb::class_<mlir::detail::pdl_function_builder::ProcessPDLValue<Operation*>>(m, "ProcessPDLValue[Operation]")
+auto mlir_detail_pdl_function_builder_ProcessPDLValue__Operation_____ = nb::class_<mlir::detail::pdl_function_builder::ProcessPDLValue<Operation *>>(m, "ProcessPDLValue[Operation]")
 ;
 
 auto mlir_detail_pdl_function_builder_ProcessPDLValue__Type__ = nb::class_<mlir::detail::pdl_function_builder::ProcessPDLValue<Type>>(m, "ProcessPDLValue[Type]")
