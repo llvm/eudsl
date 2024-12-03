@@ -1,9 +1,14 @@
+import ctypes
+import glob
 import os
 import platform
 import sysconfig
+import warnings
 from collections import defaultdict
 from logging import warning
 from pathlib import Path
+from tempfile import TemporaryFile, NamedTemporaryFile
+from textwrap import dedent
 
 import clang.cindex
 import inflection
@@ -15,7 +20,14 @@ from clang.cindex import (
     TranslationUnit,
     AccessSpecifier,
     TypeKind,
+    Index,
+    _CXUnsavedFile,
+    conf,
+    c_object_p,
+    c_interop_string,
 )
+from ctypes import c_char_p, c_void_p
+from blacklists import fn_blacklist, class_blacklist
 
 if os.path.exists(
     "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libclang.dylib"
@@ -37,7 +49,10 @@ comp_args = [
     f"-I{LLVM_INSTALL_DIR / 'include'}",
     f"-I{sysconfig.get_paths()['include']}",
     f"-I{nanobind.include_dir()}",
+    # "-std=c++17",
     "-std=c++17",
+    "-fsyntax-only",
+    "-fdirectives-only",
 ]
 if platform.system() == "Darwin":
     comp_args.extend(
@@ -47,162 +62,150 @@ if platform.system() == "Darwin":
         ]
     )
 
-tu = TranslationUnit.from_source(
-    filename,
-    comp_args,
-    options=TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
-    | TranslationUnit.PARSE_INCOMPLETE
-    | TranslationUnit.PARSE_SKIP_FUNCTION_BODIES,
+clang.cindex.register_function(
+    conf.lib,
+    (
+        "clang_parseTranslationUnit2",
+        [
+            Index,
+            clang.cindex.c_interop_string,
+            c_void_p,
+            ctypes.c_int,
+            c_void_p,
+            ctypes.c_int,
+            ctypes.c_int,
+            c_void_p,
+        ],
+        ctypes.c_uint,
+    ),
+    False,
 )
-for d in tu.diagnostics:
-    print(d)
 
 
-# assert len(list(tu.diagnostics)) == 0
+def b(x):
+    if isinstance(x, bytes):
+        return x
+    return x.encode("utf-8")
 
 
-def collect_overloaded_methods(node: clang.cindex.Cursor, parent, methods):
-    if (
-        node.kind
-        in {CursorKind.CXX_METHOD, CursorKind.CONSTRUCTOR, CursorKind.FUNCTION_TEMPLATE}
-        and node.access_specifier == AccessSpecifier.PUBLIC
-        and parent.type.get_canonical().spelling == class_being_visited[0]
-    ):
-        is_getter = (
-            node.displayname.startswith("get") and len(list(node.get_arguments())) == 0
-        )
-        fn_name = node.displayname.split("(")[0]
-        methods[fn_name].append(
-            {"is_static": node.is_static_method(), "is_getter": is_getter}
-        )
+def from_source(filename, args=None, unsaved_files=None, options=0, index=None):
+    if args is None:
+        args = []
 
-    return 1  # means continue adjacent
+    if unsaved_files is None:
+        unsaved_files = []
+
+    if index is None:
+        index = Index.create()
+
+    args_array = None
+    if len(args) > 0:
+        args_array = (c_char_p * len(args))(*[b(x) for x in args])
+
+    unsaved_array = None
+    if len(unsaved_files) > 0:
+        unsaved_array = (_CXUnsavedFile * len(unsaved_files))()
+        for i, (name, contents) in enumerate(unsaved_files):
+            if hasattr(contents, "read"):
+                contents = contents.read()
+            unsaved_array[i].name = c_interop_string(name)
+            unsaved_array[i].contents = c_interop_string(contents)
+            unsaved_array[i].length = len(unsaved_array[i].contents)
+
+    tu = c_object_p()
+    err_code = conf.lib.clang_parseTranslationUnit2(
+        index,
+        os.fspath(filename) if filename is not None else None,
+        args_array,
+        len(args),
+        unsaved_array,
+        len(unsaved_files),
+        options,
+        ctypes.byref(tu),
+    )
+    if err_code:
+        match err_code:
+            case 1:
+                raise RuntimeError("CXError_Failure")
+            case 2:
+                raise RuntimeError("CXError_Crashed")
+            case 3:
+                raise RuntimeError("CXError_InvalidArguments")
+            case 4:
+                raise RuntimeError("CXError_ASTReadError")
+
+    tu = TranslationUnit(tu, index)
+    for d in tu.diagnostics:
+        print(d)
+
+    return tu
 
 
-class_being_visited = [None]
+def parse_file(filepath):
+    tu = from_source(
+        filepath,
+        comp_args,
+        options=TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
+        | TranslationUnit.PARSE_INCOMPLETE
+        | TranslationUnit.PARSE_SKIP_FUNCTION_BODIES,
+    )
+    return tu
 
-FILE = open("scf.cpp", "w")
 
-print('#include "ir.h"', file=FILE)
-print("namespace nb = nanobind;", file=FILE)
-print("using namespace nb::literals;", file=FILE)
-print(file=FILE)
-print("void populateSCFModule(nanobind::module_ & m) {", file=FILE)
-# FieldParser<AffineMap> is emitted without the canonical namespace for AffineMap
-print("using namespace mlir;", file=FILE)
-print("using namespace mlir::detail;", file=FILE)
-print("using namespace mlir::scf;", file=FILE)
+def parse_files(source_files: list[Path]):
+    with NamedTemporaryFile(mode="w", suffix=".hpp") as t:
+        for s in source_files:
+            t.write(f'#include "{s}"\n')
+        t.flush()
+        tu = parse_file(t.name)
+    return tu
 
-class_blacklist = {
-    "mlir::AsmPrinter::Impl",
-    "mlir::OperationName::Impl",
-    "mlir::DialectRegistry",
-    # allocating an object of abstract class type
-    "mlir::AsmResourceParser",
-    "mlir::AsmResourcePrinter",
-    # object of type 'std::pair<std::basic_string<char>, std::unique_ptr<mlir::FallbackAsmResourceMap::ResourceCollection>>' cannot be assigned because its copy assignment operator is implicitly deleted
-    "mlir::FallbackAsmResourceMap",
-    # error: call to deleted constructor of 'std::unique_ptr<mlir::AsmResourceParser>'
-    "mlir::ParserConfig",
-    "mlir::SymbolTableCollection",
-    "mlir::PDLResultList",
-    # pure virtual
-    "mlir::AsmParser",
-    "mlir::AsmParser::CyclicParseReset",
-    # error: overload resolution selected deleted operator '='
-    "mlir::PDLPatternConfigSet",
-    # wack
-    # call to deleted constructor of 'std::unique_ptr<mlir::Region>'
-    "mlir::OperationState",
-    "mlir::FallbackAsmResourceMap::OpaqueAsmResource",
-    # wrong base class
-    # "collision on `value` method with ConstantOp
-    "mlir::arith::ConstantIntOp",
-    "mlir::arith::ConstantFloatOp",
-    "mlir::arith::ConstantIndexOp",
-}
 
-fn_blacklist = {
-    "getImpl()",
-    "getAsOpaquePointer()",
-    "getFromOpaquePointer(const void *)",
-    "WalkResult(ResultEnum)",
-    "initChainWithUse(IROperandBase **)",
-    "AsmPrinter(Impl &)",
-    "insert(std::unique_ptr<OperationName::Impl>, ArrayRef<StringRef>)",
-    # these are all collisions with templated overloads
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, ::mlir::MLIRContext *, Type, int64_t, ::llvm::ArrayRef<char>)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, Type, unsigned int, ArrayRef<char>)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, Type, const APFloat &)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, Type, double)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, Type, const APInt &)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, ::mlir::MLIRContext *, const APSInt &)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, Type, int64_t)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, StringAttr, StringRef, Type)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, ShapedType, DenseElementsAttr, DenseElementsAttr)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, ::mlir::MLIRContext *, int64_t, ::llvm::ArrayRef<int64_t>)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, Type)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, ::mlir::MLIRContext *, unsigned int, SignednessSemantics)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, ArrayRef<int64_t>, Type, MemRefLayoutAttrInterface, Attribute)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, ArrayRef<int64_t>, Type, AffineMap, Attribute)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, ArrayRef<int64_t>, Type, AffineMap, unsigned int)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, StringAttr, StringRef)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, ArrayRef<int64_t>, Type, Attribute)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, Type, Attribute)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, Type, unsigned int)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, Type)",
-    "getChecked(::llvm::function_ref< ::mlir::InFlightDiagnostic ()>, ArrayRef<int64_t>, Type, ArrayRef<bool>)",
-    "getChecked(function_ref<InFlightDiagnostic ()>, DynamicAttrDefinition *, ArrayRef<Attribute>)",
-    "getChecked(function_ref<InFlightDiagnostic ()>, DynamicTypeDefinition *, ArrayRef<Attribute>)",
-    "get(ShapedType, StringRef, AsmResourceBlob)",
-    "processAsArg(StringAttr)",
-    # mlir::SparseElementsAttr::getValues
-    "getValues()",
-    "registerHandler(HandlerTy)",
-    "emitDiagnostic(Location, Twine, DiagnosticSeverity, bool)",
-    "operator++()",
-    "clone(::mlir::Type)",
-    "printFunctionalType(Operation *)",
-    "print(::mlir::OpAsmPrinter &)",
-    "insert(StringRef, std::optional<AsmResourceBlob>)",
-    # incomplete types
-    "AffineBinaryOpExpr(AffineExpr::ImplType *)",
-    "AffineDimExpr(AffineExpr::ImplType *)",
-    "AffineSymbolExpr(AffineExpr::ImplType *)",
-    "AffineConstantExpr(AffineExpr::ImplType *)",
-    "AffineExpr(const ImplType *)",
-    "AffineMap(ImplType *)",
-    "IntegerSet(ImplType *)",
-    "Type(const ImplType *)",
-    "Attribute(const ImplType *)",
-    "Location(const LocationAttr::ImplType *)",
-    "parseFloat(const llvm::fltSemantics &, APFloat &)",
-    "getFloatSemantics()",
-    # const char*
-    "convertEndianOfCharForBEmachine(const char *, char *, size_t, size_t)",
-    "parseKeywordType(const char *, Type &)",
-    # no matching function for call to object of type 'const std::remove_reference_t
-    "parseOptionalRegion(std::unique_ptr<Region> &, ArrayRef<Argument>, bool)",
-    "parseSuccessor(Block *&)",
-    "parseOptionalSuccessor(Block *&)",
-    "parseSuccessorAndUseList(Block *&, SmallVectorImpl<Value> &)",
-    # call to implicitly-deleted default constructor of
-    #  call to deleted constructor
-    "NamedAttrList(std::nullopt_t)",
-    "OptionalParseResult(std::nullopt_t)",
-    "OpPrintingFlags(std::nullopt_t)",
-    "AsmResourceBlob(ArrayRef<char>, size_t, DeleterFn, bool)",
-    "allocateWithAlign(ArrayRef<char>, size_t, AsmResourceBlob::DeleterFn, bool)",
-    "AsmResourceBlob(const AsmResourceBlob &)",
-    "InsertionGuard(const InsertionGuard &)",
-    "CyclicPrintReset(const CyclicPrintReset &)",
-    "CyclicParseReset(const CyclicParseReset &)",
-    "PDLPatternModule(OwningOpRef<ModuleOp>)",
-    # something weird - linker error - missing symbol in libMLIR.a
-    # probably flags?
-    "parseAssembly(OpAsmParser &, OperationState &)",
-    "getPredicateByName(StringRef)",
-}
+def parse_directory(dir_):
+    source_files = [
+        dir_ / p for p in glob.glob("**/*.h", root_dir=dir_, recursive=True)
+    ]
+    return parse_files(source_files)
+
+
+def get_canonical_type(node: Cursor):
+    return node.type.get_canonical().spelling
+
+
+def collect_methods_for_class(class_node: Cursor):
+    assert class_node.kind in {CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL}
+
+    def visitor(node: Cursor, parent: Cursor, class_being_visited_methods):
+        class_being_visited, methods = class_being_visited_methods
+        if (
+            node.kind
+            in {
+                CursorKind.CXX_METHOD,
+                CursorKind.CONSTRUCTOR,
+                CursorKind.FUNCTION_TEMPLATE,
+            }
+            and node.access_specifier == AccessSpecifier.PUBLIC
+            and get_canonical_type(parent) == class_being_visited
+        ):
+            is_getter = (
+                node.displayname.startswith("get")
+                and len(list(node.get_arguments())) == 0
+            )
+            fn_name = node.displayname.split("(")[0]
+            methods[fn_name].append(
+                {"is_static": node.is_static_method(), "is_getter": is_getter}
+            )
+
+        return 1  # means continue adjacent
+
+    methods = defaultdict(list)
+    conf.lib.clang_visitChildren(
+        class_node,
+        clang.cindex.callbacks["cursor_visit"](visitor),
+        (get_canonical_type(class_node), methods),
+    )
+    return methods
+
 
 renames = {"from": "from_", "except": "except_"}
 
@@ -270,16 +273,49 @@ def parse_parameter(cursor):
     )
 
 
-def class_visitor(node: clang.cindex.Cursor, parent, counts):
+def get_public_supers(node: Cursor, parent, supers):
+    if node.kind == CursorKind.CXX_BASE_SPECIFIER:
+        supers.append(node)
+        # print(node.spelling, node.is_definition(), node.kind, parent.spelling)
+    return 1  # don't recurse so you won't hit nested classes
+
+
+def emit_enum_values(node: clang.cindex.Cursor, _parent, FILE):
+    print(
+        f'.value("{node.spelling}", {node.type.spelling}::{node.spelling})', file=FILE
+    )
+    return 1  # means continue visiting adjacent
+
+
+def get_all_classes_enums_structs(tu: TranslationUnit, file_match_string):
+    all_classes_enums_structs = set()
+    for node in tu.cursor.walk_preorder():
+        node: Cursor
+        ty: Type = node.type
+        if not (
+            node.kind in {CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL}
+            and node.is_definition()
+            and ty.spelling.startswith("mlir")
+            and node.access_specifier
+            not in {AccessSpecifier.PRIVATE, AccessSpecifier.PROTECTED}
+            and file_match_string in node.location.file.name
+            and get_canonical_type(node) not in class_blacklist
+        ):
+            continue
+        all_classes_enums_structs.add(get_canonical_type(node))
+
+    return all_classes_enums_structs
+
+
+def emit_class_members(node: Cursor, parent: Cursor, counts_class_being_visited_FILE):
+    class_being_visited, counts, FILE = counts_class_being_visited_FILE
     if not (
         node.kind in {CursorKind.CXX_METHOD, CursorKind.CONSTRUCTOR}
         and node.access_specifier == AccessSpecifier.PUBLIC
-        and parent.type.get_canonical().spelling == class_being_visited[0]
+        and get_canonical_type(parent) == class_being_visited
         and node.displayname not in fn_blacklist
     ):
         return 2
-
-    # print(node.displayname)
 
     arg_names = []
     arg_types = []
@@ -289,7 +325,7 @@ def class_visitor(node: clang.cindex.Cursor, parent, counts):
         if t_parent and parent and t_parent == parent:
             t_spelling = t.get_named_type().spelling
         elif "_t" not in t.spelling:
-            t_spelling = a.type.get_canonical().spelling
+            t_spelling = get_canonical_type(a)
         else:
             t_spelling = t.spelling
 
@@ -302,7 +338,7 @@ def class_visitor(node: clang.cindex.Cursor, parent, counts):
             a_name = "_" * (i + 1)
         arg_names.append(a_name)
 
-    fq_name = parent.type.get_canonical().spelling
+    fq_name = get_canonical_type(parent)
     is_getter = (
         node.displayname.startswith("get") and len(list(node.get_arguments())) == 0
     )
@@ -428,237 +464,241 @@ def class_visitor(node: clang.cindex.Cursor, parent, counts):
     return 2  # means continue visiting recursively
 
 
-def enum_visitor(node: clang.cindex.Cursor, parent, userdata):
-    print(
-        f'.value("{node.spelling}", {node.type.spelling}::{node.spelling})', file=FILE
+def emit_class(node: Cursor, all_classes_enums_structs, FILE):
+    if node.semantic_parent.kind in {CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL}:
+        scope = get_nb_bind_class_name(node.semantic_parent)
+    else:
+        scope = "m"
+
+    superclasses = []
+    conf.lib.clang_visitChildren(
+        node,
+        clang.cindex.callbacks["cursor_visit"](get_public_supers),
+        superclasses,
     )
-    return 1  # means continue visiting adjacent
+
+    cpp_class_name: str = get_canonical_type(node)
+    super_name = None
+    if len(superclasses) > 1:
+        warning(f"multiple base classes not supported {node.spelling}")
+        class_ = f"{cpp_class_name}"
+    elif len(superclasses) == 1:
+        super_name = get_canonical_type(superclasses[0].referenced)
+        if super_name in all_classes_enums_structs:
+            class_ = f"{cpp_class_name}, {super_name}"
+        elif super_name.startswith("mlir::Op<"):
+            # print(
+            #     f'nb::class_<{super_name}, mlir::OpState>({scope}, "mlir_Op[{py_class_name}]");',
+            #     file=FILE,
+            # )
+            class_ = f"{cpp_class_name},  mlir::OpState"
+        elif super_name.startswith("mlir::detail::StorageUserBase<"):
+            super_name = super_name.split(",")[1]
+            class_ = f"{cpp_class_name}, {super_name}"
+        elif super_name.startswith("mlir::IntegerAttr"):
+            class_ = f"{cpp_class_name}, mlir::IntegerAttr"
+        elif super_name.startswith("mlir::Dialect"):
+            class_ = f"{cpp_class_name}, mlir::Dialect"
+        else:
+            warning(f"unknown super {super_name} for {cpp_class_name}")
+            class_ = f"{cpp_class_name}"
+    else:
+        class_ = f"{cpp_class_name}"
+
+    auto_var = f"""auto {get_nb_bind_class_name(node)} = """
+    print(
+        f'{auto_var}nb::class_<{class_}>({scope}, "{get_py_class_name(node)}")',
+        file=FILE,
+    )
+
+    methods = collect_methods_for_class(node)
+    conf.lib.clang_visitChildren(
+        node,
+        clang.cindex.callbacks["cursor_visit"](emit_class_members),
+        (get_canonical_type(node), methods, FILE),
+    )
+
+    if (
+        super_name
+        and super_name.startswith("mlir::Dialect")
+        and cpp_class_name != "mlir::ExtensibleDialect"
+    ):
+        print(
+            f""".def_static("insert_into_registry", [](mlir::DialectRegistry &registry) {{ registry.insert<{cpp_class_name}>(); }})""",
+            file=FILE,
+        )
+        print(
+            f""".def_static("load_into_context", [](mlir::MLIRContext &context) {{ return context.getOrLoadDialect<{cpp_class_name}>(); }})""",
+            file=FILE,
+        )
+
+    print(";\n", file=FILE)
 
 
-def walk_postorder(cursor):
-    for child in cursor.get_children():
-        for descendant in walk_postorder(child):
-            yield descendant
-    yield cursor
-
-
-def get_public_supers(node: Cursor, parent, supers):
-    if node.kind == CursorKind.CXX_BASE_SPECIFIER:
-        supers.append(
-            node
-        )  # print(node.spelling, node.is_definition(), node.kind, parent.spelling)
-
-    return 1  # don't recurse so you won't hit nested classes
-
-
-def get_ctor(cursor):
-    for node in cursor.walk_preorder():
-        if node.kind == CursorKind.CONSTRUCTOR:
-            return node
-    warning(f"couldn't find ctor for {cursor.displayname}")
-
-
-def canonicalize_class_name(name):
+def get_nb_bind_class_name(node):
     return (
-        name.replace(" ", "")
-        .replace("*", "___")
+        get_canonical_type(node)
+        .replace(" ", "")
         .replace("::", "_")
         .replace("<", "__")
         .replace(">", "__")
+        .replace("*", "___")
+        .replace(",", "____")
     )
 
 
-all_classes_enums_structs = set()
-for node in tu.cursor.walk_preorder():
-    node: Cursor
-    ty: Type = node.type
-    if (
-        node.kind in {CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL}
-        and node.is_definition()
-        and ty.spelling.startswith("mlir")
-        and node.access_specifier
-        not in {AccessSpecifier.PRIVATE, AccessSpecifier.PROTECTED}
-        and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/SCF/IR")
-        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/ControlFlow/IR")
-        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/Arith/IR")
-        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/IR")
-        and node.type.get_canonical().spelling not in class_blacklist
-    ):
-        all_classes_enums_structs.add(
-            node.type.get_canonical().spelling.replace(" ", "")
-        )
-
-for node in tu.cursor.walk_preorder():
-    node: Cursor
-    ty: Type = node.type
-    if (
-        node.kind in {CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL}
-        and node.is_definition()
-        and ty.spelling.startswith("mlir")
-        and node.access_specifier
-        not in {AccessSpecifier.PRIVATE, AccessSpecifier.PROTECTED}
-        and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/SCF/IR")
-        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/ControlFlow/IR")
-        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/Arith/IR")
-        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/IR")
-        and node.type.get_canonical().spelling not in class_blacklist
-    ):
-        methods = defaultdict(list)
-        class_being_visited[0] = node.type.get_canonical().spelling.replace(" ", "")
-        clang.cindex.conf.lib.clang_visitChildren(
-            node,
-            clang.cindex.callbacks["cursor_visit"](collect_overloaded_methods),
-            methods,
-        )
-
-        py_class_name = (
-            node.displayname.replace("<", "[")
-            .replace(">", "]")
-            .replace("::mlir::", "")
-            .replace("mlir::", "")
-            .replace(" ", "")
-            .replace("*", "")
-        )
-
-        cpp_class_name: str = node.type.get_canonical().spelling.replace(" ", "")
-        if node.semantic_parent.kind in {CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL}:
-            scope = (
-                node.semantic_parent.type.get_canonical()
-                .spelling.replace("::", "_")
-                .replace("<", "__")
-                .replace(">", "__")
-                .replace("*", "___")
-            )
-        else:
-            scope = "m"
-
-        auto_var = f"""auto {cpp_class_name.replace('::', '_').replace("<", "__").replace(">", "__").replace("*", "___").replace(",", "____")} = """
-
-        superclasses = []
-        clang.cindex.conf.lib.clang_visitChildren(
-            node,
-            clang.cindex.callbacks["cursor_visit"](get_public_supers),
-            superclasses,
-        )
-
-        super_name = None
-        if len(superclasses) > 1:
-            warning(f"multiple base classes not supported {node.spelling}")
-            class_ = f"{cpp_class_name}"
-        elif len(superclasses) == 1:
-            super_name = superclasses[0].referenced.type.get_canonical().spelling
-            if super_name in all_classes_enums_structs:
-                class_ = f"{cpp_class_name}, {super_name}"
-            elif super_name.startswith("mlir::Op<"):
-                # print(
-                #     f'nb::class_<{super_name}, mlir::OpState>({scope}, "mlir_Op[{py_class_name}]");',
-                #     file=FILE,
-                # )
-                class_ = f"{cpp_class_name},  mlir::OpState"
-            elif super_name.startswith("mlir::detail::StorageUserBase<"):
-                super_name = super_name.split(", ")[1]
-                class_ = f"{cpp_class_name}, {super_name}"
-            elif super_name.startswith("mlir::IntegerAttr"):
-                class_ = f"{cpp_class_name}, mlir::IntegerAttr"
-            elif super_name.startswith("mlir::Dialect"):
-                class_ = f"{cpp_class_name}, mlir::Dialect"
-            else:
-                warning(f"unknown super {super_name} for {cpp_class_name}")
-                class_ = f"{cpp_class_name}"
-        else:
-            class_ = f"{cpp_class_name}"
-
-        print(
-            f'{auto_var}nb::class_<{class_}>({scope}, "{py_class_name}")',
-            file=FILE,
-        )
-        clang.cindex.conf.lib.clang_visitChildren(
-            node, clang.cindex.callbacks["cursor_visit"](class_visitor), methods
-        )
-
-        if super_name and super_name.startswith("mlir::Dialect"):
-            print(
-                f""".def_static("insert_into_registry", [](mlir::DialectRegistry &registry) {{ registry.insert<{cpp_class_name}>(); }})""",
-                file=FILE,
-            )
-            print(
-                f""".def_static("load_into_context", [](mlir::MLIRContext &context) {{ return context.getOrLoadDialect<{cpp_class_name}>(); }})""",
-                file=FILE,
-            )
-
-        print(";", file=FILE)
-        class_being_visited[0] = None
-        print(file=FILE)
-
-    if (
-        node.kind == CursorKind.ENUM_DECL
-        and node.is_definition()
-        and ty.spelling.startswith("mlir")
-        and node.access_specifier
-        not in {AccessSpecifier.PRIVATE, AccessSpecifier.PROTECTED}
-        and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/SCF/IR")
-        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/ControlFlow/IR")
-        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/Arith/IR")
-        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/IR")
-        and node.type.get_canonical().spelling not in class_blacklist
-    ):
-        if not "unnamed enum" in node.type.get_canonical().spelling:
-            class_being_visited[0] = node.type.get_canonical().spelling
-            print(
-                f'nb::enum_<{node.type.get_canonical().spelling}>(m, "{node.displayname}")',
-                file=FILE,
-            )
-            clang.cindex.conf.lib.clang_visitChildren(
-                node, clang.cindex.callbacks["cursor_visit"](enum_visitor), {}
-            )
-            print(";", file=FILE)
-            class_being_visited[0] = None
-            print(file=FILE)
-
-print("}", file=FILE)
-
-FILE.close()
+def get_py_class_name(node):
+    return (
+        node.displayname.replace("<", "[")
+        .replace(">", "]")
+        .replace("::mlir::", "")
+        .replace("mlir::", "")
+        .replace(" ", "")
+        .replace("*", "")
+    )
 
 
-def get_cursor(source, spelling):
-    root_cursor = source if isinstance(source, Cursor) else source.cursor
-    for cursor in root_cursor.walk_preorder():
-        if cursor.spelling == spelling:
-            return cursor
+def emit_enum(node, FILE):
+    print(
+        f'nb::enum_<{get_canonical_type(node)}>(m, "{node.displayname}")',
+        file=FILE,
+    )
+    conf.lib.clang_visitChildren(
+        node, clang.cindex.callbacks["cursor_visit"](emit_enum_values), FILE
+    )
+    print(";\n", file=FILE)
 
-    return None
+
+def emit_file(tu, filename, prologue, epilogue, file_match_string):
+    seen = set()
+    all_classes_enums_structs = get_all_classes_enums_structs(tu, file_match_string)
+    FILE = open(filename, "w")
+
+    print(prologue, file=FILE)
+
+    for node in tu.cursor.walk_preorder():
+        node: Cursor
+        if node.hash in seen:
+            continue
+        seen.add(node.hash)
+        if not node.location.file or file_match_string not in node.location.file.name:
+            continue
+        node_ty: Type = node.type
+        cpp_class_name: str = get_canonical_type(node)
+
+        if (
+            node.kind in {CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL}
+            and node.is_definition()
+            and cpp_class_name.startswith("mlir")
+            and node.access_specifier
+            not in {AccessSpecifier.PRIVATE, AccessSpecifier.PROTECTED}
+            and get_canonical_type(node) not in class_blacklist
+        ):
+            emit_class(node, all_classes_enums_structs, FILE)
+
+        if (
+            node.kind == CursorKind.ENUM_DECL
+            and node.is_definition()
+            and node_ty.spelling.startswith("mlir")
+            and node.access_specifier
+            not in {AccessSpecifier.PRIVATE, AccessSpecifier.PROTECTED}
+            and get_canonical_type(node) not in class_blacklist
+            and "unnamed enum" not in get_canonical_type(node)
+        ):
+            emit_enum(node, FILE)
+
+    print(epilogue, file=FILE)
 
 
-# TODO: don't return void
+def emit_ir_module():
+    prologue = dedent(
+        f"""
+    #include "ir.h"
+    namespace nb = nanobind;
+    using namespace nb::literals;
+    void populateIRModule(nanobind::module_ & m) {{
+    using namespace mlir;
+    using namespace mlir::detail;
+    """
+    )
+    epilogue = "}"
+    # tu = parse_directory(
+    #     Path("/Users/mlevental/dev_projects/eudsl/llvm-install/include/mlir/IR")
+    # )
+    tu = parse_file(
+        "/Users/mlevental/dev_projects/eudsl/projects/eudsl-py/src/eudsl_ext.cpp"
+    )
+
+    emit_file(tu, "ir.cpp", prologue, epilogue, "include/mlir/IR")
 
 
-# src = """
-# class A {};
-# class B: public A {};
-# void main(int b, bool a = false) {
-# }
-# """
-#
-# filename = "test.cpp"
-# tu = clang.cindex.TranslationUnit.from_source(
-#     filename,
-#     comp_args,
-#     options=clang.cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
-#     | clang.cindex.TranslationUnit.PARSE_INCOMPLETE,
-#     unsaved_files=[(filename, src)],
-# )
-#
-# B = get_cursor(tu, "B")
-#
-#
-# def printchild(node: Cursor, parent, _):
-#     if not node.kind == CursorKind.MACRO_DEFINITION:
-#         print(node.spelling, node.is_definition(), node.kind, parent.spelling)
-#     return 2
-#
-#
-# clang.cindex.conf.lib.clang_visitChildren(
-#     tu.cursor,
-#     clang.cindex.callbacks["cursor_visit"](printchild),
-#     {},
-# )
+def emit_arith_module():
+    prologue = dedent(
+        f"""
+    #include "ir.h"
+    namespace nb = nanobind;
+    using namespace nb::literals;
+    void populateArithModule(nanobind::module_ & m) {{
+    using namespace mlir;
+    using namespace mlir::detail;
+    using namespace mlir::arith;
+    """
+    )
+    epilogue = "}"
+    # tu = parse_directory(
+    #     Path("/Users/mlevental/dev_projects/eudsl/llvm-install/include/mlir/IR")
+    # )
+    tu = parse_file(
+        "/Users/mlevental/dev_projects/eudsl/projects/eudsl-py/src/eudsl_ext.cpp"
+    )
+    emit_file(tu, "arith.cpp", prologue, epilogue, "include/mlir/Dialect/Arith/IR")
+
+
+def emit_cf_module():
+    prologue = dedent(
+        f"""
+    #include "ir.h"
+    namespace nb = nanobind;
+    using namespace nb::literals;
+    void populateControlFlowModule(nanobind::module_ & m) {{
+    using namespace mlir;
+    using namespace mlir::detail;
+    using namespace mlir::cf;
+    """
+    )
+    epilogue = "}"
+    # tu = parse_directory(
+    #     Path("/Users/mlevental/dev_projects/eudsl/llvm-install/include/mlir/IR")
+    # )
+    tu = parse_file(
+        "/Users/mlevental/dev_projects/eudsl/projects/eudsl-py/src/eudsl_ext.cpp"
+    )
+    emit_file(tu, "cf.cpp", prologue, epilogue, "include/mlir/Dialect/ControlFlow/IR")
+
+
+def emit_scf_module():
+    prologue = dedent(
+        f"""
+    #include "ir.h"
+    namespace nb = nanobind;
+    using namespace nb::literals;
+    void populateSCFModule(nanobind::module_ & m) {{
+    using namespace mlir;
+    using namespace mlir::detail;
+    using namespace mlir::scf;
+    """
+    )
+    epilogue = "}"
+    # tu = parse_directory(
+    #     Path("/Users/mlevental/dev_projects/eudsl/llvm-install/include/mlir/IR")
+    # )
+    tu = parse_file(
+        "/Users/mlevental/dev_projects/eudsl/projects/eudsl-py/src/eudsl_ext.cpp"
+    )
+    emit_file(tu, "scf.cpp", prologue, epilogue, "include/mlir/Dialect/SCF/IR")
+
+
+emit_ir_module()
+# emit_arith_module()
+emit_cf_module()
+emit_scf_module()

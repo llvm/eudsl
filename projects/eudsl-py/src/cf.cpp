@@ -1,18 +1,20 @@
+
 #include "ir.h"
 namespace nb = nanobind;
 using namespace nb::literals;
-
 void populateControlFlowModule(nanobind::module_ & m) {
 using namespace mlir;
 using namespace mlir::detail;
 using namespace mlir::cf;
+
 auto mlir_cf_ControlFlowDialect = nb::class_<mlir::cf::ControlFlowDialect, mlir::Dialect>(m, "ControlFlowDialect")
 .def_static("dialect_namespace", &mlir::cf::ControlFlowDialect::getDialectNamespace)
 .def_static("insert_into_registry", [](mlir::DialectRegistry &registry) { registry.insert<mlir::cf::ControlFlowDialect>(); })
 .def_static("load_into_context", [](mlir::MLIRContext &context) { return context.getOrLoadDialect<mlir::cf::ControlFlowDialect>(); })
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_cf_ControlFlowDialect__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::cf::ControlFlowDialect>>(m, "TypeIDResolver[cf::ControlFlowDialect]")
+auto mlir_detail_TypeIDResolver___mlir_cf_ControlFlowDialect__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::cf::ControlFlowDialect>>(m, "TypeIDResolver[cf::ControlFlowDialect]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::cf::ControlFlowDialect>::resolveTypeID)
 ;
 
 auto mlir_cf_detail_AssertOpGenericAdaptorBase = nb::class_<mlir::cf::detail::AssertOpGenericAdaptorBase>(m, "AssertOpGenericAdaptorBase")
@@ -74,7 +76,8 @@ auto mlir_cf_AssertOp = nb::class_<mlir::cf::AssertOp,  mlir::OpState>(m, "Asser
 .def_static("parse", &mlir::cf::AssertOp::parse, "parser"_a, "result"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_cf_AssertOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::cf::AssertOp>>(m, "TypeIDResolver[cf::AssertOp]")
+auto mlir_detail_TypeIDResolver___mlir_cf_AssertOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::cf::AssertOp>>(m, "TypeIDResolver[cf::AssertOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::cf::AssertOp>::resolveTypeID)
 ;
 
 auto mlir_cf_detail_BranchOpGenericAdaptorBase = nb::class_<mlir::cf::detail::BranchOpGenericAdaptorBase>(m, "BranchOpGenericAdaptorBase")
@@ -115,7 +118,8 @@ auto mlir_cf_BranchOp = nb::class_<mlir::cf::BranchOp,  mlir::OpState>(m, "Branc
 .def("erase_operand", &mlir::cf::BranchOp::eraseOperand, "index"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_cf_BranchOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::cf::BranchOp>>(m, "TypeIDResolver[cf::BranchOp]")
+auto mlir_detail_TypeIDResolver___mlir_cf_BranchOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::cf::BranchOp>>(m, "TypeIDResolver[cf::BranchOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::cf::BranchOp>::resolveTypeID)
 ;
 
 auto mlir_cf_detail_CondBranchOpGenericAdaptorBase = nb::class_<mlir::cf::detail::CondBranchOpGenericAdaptorBase>(m, "CondBranchOpGenericAdaptorBase")
@@ -188,7 +192,8 @@ auto mlir_cf_CondBranchOp = nb::class_<mlir::cf::CondBranchOp,  mlir::OpState>(m
 .def("erase_false_operand", &mlir::cf::CondBranchOp::eraseFalseOperand, "index"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_cf_CondBranchOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::cf::CondBranchOp>>(m, "TypeIDResolver[cf::CondBranchOp]")
+auto mlir_detail_TypeIDResolver___mlir_cf_CondBranchOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::cf::CondBranchOp>>(m, "TypeIDResolver[cf::CondBranchOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::cf::CondBranchOp>::resolveTypeID)
 ;
 
 auto mlir_cf_detail_SwitchOpGenericAdaptorBase = nb::class_<mlir::cf::detail::SwitchOpGenericAdaptorBase>(m, "SwitchOpGenericAdaptorBase")
@@ -275,7 +280,8 @@ auto mlir_cf_SwitchOp = nb::class_<mlir::cf::SwitchOp,  mlir::OpState>(m, "Switc
 .def("get_case_operands_mutable", [](mlir::cf::SwitchOp& self, unsigned int index){ return self.getCaseOperandsMutable(index); }, "index"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_cf_SwitchOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::cf::SwitchOp>>(m, "TypeIDResolver[cf::SwitchOp]")
+auto mlir_detail_TypeIDResolver___mlir_cf_SwitchOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::cf::SwitchOp>>(m, "TypeIDResolver[cf::SwitchOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::cf::SwitchOp>::resolveTypeID)
 ;
 
 }

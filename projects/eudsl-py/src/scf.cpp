@@ -1,11 +1,12 @@
+
 #include "ir.h"
 namespace nb = nanobind;
 using namespace nb::literals;
-
 void populateSCFModule(nanobind::module_ & m) {
 using namespace mlir;
 using namespace mlir::detail;
 using namespace mlir::scf;
+
 auto mlir_detail_DeviceMappingAttrInterfaceInterfaceTraits = nb::class_<mlir::detail::DeviceMappingAttrInterfaceInterfaceTraits>(m, "DeviceMappingAttrInterfaceInterfaceTraits")
 ;
 
@@ -24,7 +25,8 @@ auto mlir_scf_SCFDialect = nb::class_<mlir::scf::SCFDialect, mlir::Dialect>(m, "
 .def_static("load_into_context", [](mlir::MLIRContext &context) { return context.getOrLoadDialect<mlir::scf::SCFDialect>(); })
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_SCFDialect__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::SCFDialect>>(m, "TypeIDResolver[scf::SCFDialect]")
+auto mlir_detail_TypeIDResolver___mlir_scf_SCFDialect__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::SCFDialect>>(m, "TypeIDResolver[scf::SCFDialect]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::SCFDialect>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_ConditionOpGenericAdaptorBase = nb::class_<mlir::scf::detail::ConditionOpGenericAdaptorBase>(m, "ConditionOpGenericAdaptorBase")
@@ -61,7 +63,8 @@ auto mlir_scf_ConditionOp = nb::class_<mlir::scf::ConditionOp,  mlir::OpState>(m
 .def("get_effects", &mlir::scf::ConditionOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_ConditionOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::ConditionOp>>(m, "TypeIDResolver[scf::ConditionOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_ConditionOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::ConditionOp>>(m, "TypeIDResolver[scf::ConditionOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::ConditionOp>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_ExecuteRegionOpGenericAdaptorBase = nb::class_<mlir::scf::detail::ExecuteRegionOpGenericAdaptorBase>(m, "ExecuteRegionOpGenericAdaptorBase")
@@ -96,7 +99,8 @@ auto mlir_scf_ExecuteRegionOp = nb::class_<mlir::scf::ExecuteRegionOp,  mlir::Op
 .def("get_successor_regions", &mlir::scf::ExecuteRegionOp::getSuccessorRegions, "point"_a, "regions"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_ExecuteRegionOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::ExecuteRegionOp>>(m, "TypeIDResolver[scf::ExecuteRegionOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_ExecuteRegionOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::ExecuteRegionOp>>(m, "TypeIDResolver[scf::ExecuteRegionOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::ExecuteRegionOp>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_ForOpGenericAdaptorBase = nb::class_<mlir::scf::detail::ForOpGenericAdaptorBase>(m, "ForOpGenericAdaptorBase")
@@ -162,7 +166,8 @@ auto mlir_scf_ForOp = nb::class_<mlir::scf::ForOp,  mlir::OpState>(m, "ForOp")
 .def_prop_ro("speculatability", &mlir::scf::ForOp::getSpeculatability)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_ForOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::ForOp>>(m, "TypeIDResolver[scf::ForOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_ForOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::ForOp>>(m, "TypeIDResolver[scf::ForOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::ForOp>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_ForallOpGenericAdaptorBase = nb::class_<mlir::scf::detail::ForallOpGenericAdaptorBase>(m, "ForallOpGenericAdaptorBase")
@@ -294,7 +299,8 @@ auto mlir_scf_ForallOp = nb::class_<mlir::scf::ForallOp,  mlir::OpState>(m, "For
 .def("get_combining_ops", &mlir::scf::ForallOp::getCombiningOps, "bb_arg"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_ForallOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::ForallOp>>(m, "TypeIDResolver[scf::ForallOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_ForallOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::ForallOp>>(m, "TypeIDResolver[scf::ForallOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::ForallOp>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_IfOpGenericAdaptorBase = nb::class_<mlir::scf::detail::IfOpGenericAdaptorBase>(m, "IfOpGenericAdaptorBase")
@@ -348,7 +354,8 @@ auto mlir_scf_IfOp = nb::class_<mlir::scf::IfOp,  mlir::OpState>(m, "IfOp")
 .def("else_yield", &mlir::scf::IfOp::elseYield)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_IfOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::IfOp>>(m, "TypeIDResolver[scf::IfOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_IfOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::IfOp>>(m, "TypeIDResolver[scf::IfOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::IfOp>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_InParallelOpGenericAdaptorBase = nb::class_<mlir::scf::detail::InParallelOpGenericAdaptorBase>(m, "InParallelOpGenericAdaptorBase")
@@ -384,7 +391,8 @@ auto mlir_scf_InParallelOp = nb::class_<mlir::scf::InParallelOp,  mlir::OpState>
 .def("get_parent_result", &mlir::scf::InParallelOp::getParentResult, "idx"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_InParallelOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::InParallelOp>>(m, "TypeIDResolver[scf::InParallelOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_InParallelOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::InParallelOp>>(m, "TypeIDResolver[scf::InParallelOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::InParallelOp>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_IndexSwitchOpGenericAdaptorBase = nb::class_<mlir::scf::detail::IndexSwitchOpGenericAdaptorBase>(m, "IndexSwitchOpGenericAdaptorBase")
@@ -455,7 +463,8 @@ auto mlir_scf_IndexSwitchOp = nb::class_<mlir::scf::IndexSwitchOp,  mlir::OpStat
 .def("get_case_block", &mlir::scf::IndexSwitchOp::getCaseBlock, "idx"_a, nb::rv_policy::reference_internal)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_IndexSwitchOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::IndexSwitchOp>>(m, "TypeIDResolver[scf::IndexSwitchOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_IndexSwitchOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::IndexSwitchOp>>(m, "TypeIDResolver[scf::IndexSwitchOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::IndexSwitchOp>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_ParallelOpGenericAdaptorBase = nb::class_<mlir::scf::detail::ParallelOpGenericAdaptorBase>(m, "ParallelOpGenericAdaptorBase")
@@ -526,7 +535,8 @@ auto mlir_scf_ParallelOp = nb::class_<mlir::scf::ParallelOp,  mlir::OpState>(m, 
 .def_prop_ro("num_reductions", &mlir::scf::ParallelOp::getNumReductions)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_ParallelOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::ParallelOp>>(m, "TypeIDResolver[scf::ParallelOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_ParallelOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::ParallelOp>>(m, "TypeIDResolver[scf::ParallelOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::ParallelOp>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_ReduceOpGenericAdaptorBase = nb::class_<mlir::scf::detail::ReduceOpGenericAdaptorBase>(m, "ReduceOpGenericAdaptorBase")
@@ -562,7 +572,8 @@ auto mlir_scf_ReduceOp = nb::class_<mlir::scf::ReduceOp,  mlir::OpState>(m, "Red
 .def_static("parse", &mlir::scf::ReduceOp::parse, "parser"_a, "result"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_ReduceOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::ReduceOp>>(m, "TypeIDResolver[scf::ReduceOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_ReduceOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::ReduceOp>>(m, "TypeIDResolver[scf::ReduceOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::ReduceOp>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_ReduceReturnOpGenericAdaptorBase = nb::class_<mlir::scf::detail::ReduceReturnOpGenericAdaptorBase>(m, "ReduceReturnOpGenericAdaptorBase")
@@ -596,7 +607,8 @@ auto mlir_scf_ReduceReturnOp = nb::class_<mlir::scf::ReduceReturnOp,  mlir::OpSt
 .def("get_effects", &mlir::scf::ReduceReturnOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_ReduceReturnOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::ReduceReturnOp>>(m, "TypeIDResolver[scf::ReduceReturnOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_ReduceReturnOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::ReduceReturnOp>>(m, "TypeIDResolver[scf::ReduceReturnOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::ReduceReturnOp>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_WhileOpGenericAdaptorBase = nb::class_<mlir::scf::detail::WhileOpGenericAdaptorBase>(m, "WhileOpGenericAdaptorBase")
@@ -646,7 +658,8 @@ auto mlir_scf_WhileOp = nb::class_<mlir::scf::WhileOp,  mlir::OpState>(m, "While
 .def_prop_ro("after_body", &mlir::scf::WhileOp::getAfterBody)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_WhileOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::WhileOp>>(m, "TypeIDResolver[scf::WhileOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_WhileOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::WhileOp>>(m, "TypeIDResolver[scf::WhileOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::WhileOp>::resolveTypeID)
 ;
 
 auto mlir_scf_detail_YieldOpGenericAdaptorBase = nb::class_<mlir::scf::detail::YieldOpGenericAdaptorBase>(m, "YieldOpGenericAdaptorBase")
@@ -680,7 +693,8 @@ auto mlir_scf_YieldOp = nb::class_<mlir::scf::YieldOp,  mlir::OpState>(m, "Yield
 .def("get_effects", &mlir::scf::YieldOp::getEffects, "effects"_a)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_scf_YieldOp__ = nb::class_<mlir::detail::TypeIDResolver<::mlir::scf::YieldOp>>(m, "TypeIDResolver[scf::YieldOp]")
+auto mlir_detail_TypeIDResolver___mlir_scf_YieldOp__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::scf::YieldOp>>(m, "TypeIDResolver[scf::YieldOp]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::scf::YieldOp>::resolveTypeID)
 ;
 
 auto mlir_scf_LoopNest = nb::class_<mlir::scf::LoopNest>(m, "LoopNest")
