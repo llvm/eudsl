@@ -614,6 +614,15 @@ def emit_ir_module():
     prologue = dedent(
         f"""
     #include "ir.h"
+    #include "mlir/IR/Action.h"
+    #include "mlir/IR/AffineExpr.h"
+    #include "mlir/IR/AffineExprVisitor.h"
+    #include "mlir/IR/AffineMap.h"
+    #include "mlir/IR/IntegerSet.h"
+    #include "mlir/IR/AsmState.h"
+    #include "mlir/IR/DialectResourceBlobManager.h"
+    #include "mlir/IR/Iterators.h"
+    #include "llvm/Support/ThreadPool.h"
     namespace nb = nanobind;
     using namespace nb::literals;
     void populateIRModule(nanobind::module_ & m) {{
@@ -658,6 +667,8 @@ def emit_cf_module():
     prologue = dedent(
         f"""
     #include "ir.h"
+    #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+    #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
     namespace nb = nanobind;
     using namespace nb::literals;
     void populateControlFlowModule(nanobind::module_ & m) {{
@@ -698,7 +709,32 @@ def emit_scf_module():
     emit_file(tu, "scf.cpp", prologue, epilogue, "include/mlir/Dialect/SCF/IR")
 
 
-emit_ir_module()
+def emit_affine_module():
+    prologue = dedent(
+        f"""
+    #include "ir.h"
+    #include "mlir/IR/IntegerSet.h";
+    #include "mlir/Dialect/Affine/IR/AffineValueMap.h"
+    namespace nb = nanobind;
+    using namespace nb::literals;
+    void populateAffineModule(nanobind::module_ & m) {{
+    using namespace mlir;
+    using namespace mlir::detail;
+    using namespace mlir::affine;
+    """
+    )
+    epilogue = "}"
+    # tu = parse_directory(
+    #     Path("/Users/mlevental/dev_projects/eudsl/llvm-install/include/mlir/IR")
+    # )
+    tu = parse_file(
+        "/Users/mlevental/dev_projects/eudsl/projects/eudsl-py/src/eudsl_ext.cpp"
+    )
+    emit_file(tu, "affine.cpp", prologue, epilogue, "include/mlir/Dialect/Affine/IR")
+
+
+# emit_ir_module()
 # emit_arith_module()
-emit_cf_module()
-emit_scf_module()
+# emit_cf_module()
+# emit_scf_module()
+emit_affine_module()

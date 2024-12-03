@@ -1,5 +1,7 @@
 
 #include "ir.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 namespace nb = nanobind;
 using namespace nb::literals;
 void populateControlFlowModule(nanobind::module_ & m) {

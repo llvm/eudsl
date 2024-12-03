@@ -1,6 +1,8 @@
 #include <iostream>
 #include <nanobind/nanobind.h>
 
+#include "llvm/Support/ThreadPool.h"
+
 #include "bind_vec_like.h"
 #include "ir.h"
 
@@ -305,10 +307,16 @@ NB_MODULE(eudsl_ext, m) {
 
   populateIRModule(irModule);
   auto dialectsModule = m.def_submodule("dialects");
+
   auto arithModule = dialectsModule.def_submodule("arith");
   populateArithModule(arithModule);
+
   auto cfModule = dialectsModule.def_submodule("cf");
   populateControlFlowModule(cfModule);
+
   auto scfModule = dialectsModule.def_submodule("scf");
   populateSCFModule(scfModule);
+
+  auto affineModule = dialectsModule.def_submodule("affine");
+  populateAffineModule(affineModule);
 }

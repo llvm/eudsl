@@ -1,5 +1,6 @@
 
 #include "ir.h"
+#include "llvm/Support/ThreadPool.h"
 namespace nb = nanobind;
 using namespace nb::literals;
 void populateSCFModule(nanobind::module_ & m) {
