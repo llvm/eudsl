@@ -307,4 +307,8 @@ NB_MODULE(eudsl_ext, m) {
   auto dialectsModule = m.def_submodule("dialects");
   auto arithModule = dialectsModule.def_submodule("arith");
   populateArithModule(arithModule);
+  auto cfModule = dialectsModule.def_submodule("cf");
+  populateControlFlowModule(cfModule);
+  auto scfModule = dialectsModule.def_submodule("scf");
+  populateSCFModule(scfModule);
 }

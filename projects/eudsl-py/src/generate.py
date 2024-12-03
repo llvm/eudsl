@@ -81,17 +81,17 @@ def collect_overloaded_methods(node: clang.cindex.Cursor, parent, methods):
 
 class_being_visited = [None]
 
-FILE = open("arith.cpp", "w")
+FILE = open("scf.cpp", "w")
 
 print('#include "ir.h"', file=FILE)
 print("namespace nb = nanobind;", file=FILE)
 print("using namespace nb::literals;", file=FILE)
 print(file=FILE)
-print("void populateArithModule(nanobind::module_ & m) {", file=FILE)
+print("void populateSCFModule(nanobind::module_ & m) {", file=FILE)
 # FieldParser<AffineMap> is emitted without the canonical namespace for AffineMap
 print("using namespace mlir;", file=FILE)
 print("using namespace mlir::detail;", file=FILE)
-print("using namespace mlir::arith;", file=FILE)
+print("using namespace mlir::scf;", file=FILE)
 
 class_blacklist = {
     "mlir::AsmPrinter::Impl",
@@ -120,10 +120,6 @@ class_blacklist = {
     "mlir::arith::ConstantIntOp",
     "mlir::arith::ConstantFloatOp",
     "mlir::arith::ConstantIndexOp",
-}
-
-dialects = {
-    "mlir::arith::ArithDialect",
 }
 
 fn_blacklist = {
@@ -482,7 +478,9 @@ for node in tu.cursor.walk_preorder():
         and ty.spelling.startswith("mlir")
         and node.access_specifier
         not in {AccessSpecifier.PRIVATE, AccessSpecifier.PROTECTED}
-        and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/Arith/IR")
+        and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/SCF/IR")
+        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/ControlFlow/IR")
+        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/Arith/IR")
         # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/IR")
         and node.type.get_canonical().spelling not in class_blacklist
     ):
@@ -499,7 +497,9 @@ for node in tu.cursor.walk_preorder():
         and ty.spelling.startswith("mlir")
         and node.access_specifier
         not in {AccessSpecifier.PRIVATE, AccessSpecifier.PROTECTED}
-        and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/Arith/IR")
+        and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/SCF/IR")
+        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/ControlFlow/IR")
+        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/Arith/IR")
         # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/IR")
         and node.type.get_canonical().spelling not in class_blacklist
     ):
@@ -596,21 +596,24 @@ for node in tu.cursor.walk_preorder():
         and ty.spelling.startswith("mlir")
         and node.access_specifier
         not in {AccessSpecifier.PRIVATE, AccessSpecifier.PROTECTED}
-        and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/Arith/IR")
+        and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/SCF/IR")
+        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/ControlFlow/IR")
+        # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/Dialect/Arith/IR")
         # and node.location.file.name.startswith(f"{LLVM_INSTALL_DIR}/include/mlir/IR")
         and node.type.get_canonical().spelling not in class_blacklist
     ):
-        class_being_visited[0] = node.type.get_canonical().spelling
-        print(
-            f'nb::enum_<{node.type.get_canonical().spelling}>(m, "{node.displayname}")',
-            file=FILE,
-        )
-        clang.cindex.conf.lib.clang_visitChildren(
-            node, clang.cindex.callbacks["cursor_visit"](enum_visitor), {}
-        )
-        print(";", file=FILE)
-        class_being_visited[0] = None
-        print(file=FILE)
+        if not "unnamed enum" in node.type.get_canonical().spelling:
+            class_being_visited[0] = node.type.get_canonical().spelling
+            print(
+                f'nb::enum_<{node.type.get_canonical().spelling}>(m, "{node.displayname}")',
+                file=FILE,
+            )
+            clang.cindex.conf.lib.clang_visitChildren(
+                node, clang.cindex.callbacks["cursor_visit"](enum_visitor), {}
+            )
+            print(";", file=FILE)
+            class_being_visited[0] = None
+            print(file=FILE)
 
 print("}", file=FILE)
 
