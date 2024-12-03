@@ -43,8 +43,8 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/eudsl)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_compile_options(-Wno-cast-qual -Wno-deprecated-literal-operator)
-nanobind_add_module(eudsl_ext NB_STATIC STABLE_ABI eudsl_ext.cpp ir.cpp arith.cpp)
-target_link_libraries(eudsl_ext PRIVATE MLIRIR LLVMSupport MLIRTransforms MLIRArithDialect)
+nanobind_add_module(eudsl_ext NB_STATIC STABLE_ABI eudsl_ext.cpp ir.cpp arith.cpp cf.cpp scf.cpp)
+target_link_libraries(eudsl_ext PRIVATE MLIRIR LLVMSupport MLIRTransforms MLIRArithDialect MLIRControlFlowDialect MLIRSCFDialect)
 target_compile_options(eudsl_ext
   PRIVATE
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>

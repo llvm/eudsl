@@ -64,6 +64,9 @@
 #include "mlir/Support/InterfaceSupport.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
@@ -202,5 +205,9 @@ struct non_copying_non_moving_class_ : nanobind::class_<T, Ts...> {
 void populateIRModule(nanobind::module_ &m);
 
 void populateArithModule(nanobind::module_ &m);
+
+void populateControlFlowModule(nanobind::module_ &m);
+
+void populateSCFModule(nanobind::module_ &m);
 
 #endif //IR_H
