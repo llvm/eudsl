@@ -20,11 +20,15 @@ from eudsl.ir import (
     Dialect,
 )
 from eudsl.dialects.arith import ArithDialect, ConstantOp
+from eudsl.dialects.cf import SwitchOp, ControlFlowDialect
+from eudsl.dialects.scf import ConditionOp, SCFDialect
 
 
 def test_arith_dialect():
     ctx = MLIRContext(Threading.DISABLED)
     ArithDialect.insert_into_registry(ctx.dialect_registry)
+    ControlFlowDialect.insert_into_registry(ctx.dialect_registry)
+    SCFDialect.insert_into_registry(ctx.dialect_registry)
     ctx.load_all_available_dialects()
     l = OpBuilder.Listener()
     b = OpBuilder(ctx, l)
