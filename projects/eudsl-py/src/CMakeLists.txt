@@ -49,7 +49,8 @@ nanobind_add_module(eudsl_ext NB_STATIC STABLE_ABI
   arith.cpp
   cf.cpp
   scf.cpp
-  affine.cpp)
+  affine.cpp
+)
 target_link_libraries(eudsl_ext PRIVATE
   MLIRIR
   LLVMSupport
@@ -61,6 +62,7 @@ target_link_libraries(eudsl_ext PRIVATE
 )
 target_compile_options(eudsl_ext
   PRIVATE
+  -Wno-cast-qual
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Darwin>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>)
