@@ -49,7 +49,8 @@ nanobind_add_module(eudsl_ext NB_STATIC STABLE_ABI
   arith.cpp
   cf.cpp
   scf.cpp
-  affine.cpp)
+  affine.cpp
+)
 target_link_libraries(eudsl_ext PRIVATE
   MLIRIR
   LLVMSupport
