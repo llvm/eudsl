@@ -713,7 +713,7 @@ def emit_affine_module():
     prologue = dedent(
         f"""
     #include "ir.h"
-    #include "mlir/IR/IntegerSet.h";
+    #include "mlir/IR/IntegerSet.h"
     #include "mlir/Dialect/Affine/IR/AffineValueMap.h"
     namespace nb = nanobind;
     using namespace nb::literals;

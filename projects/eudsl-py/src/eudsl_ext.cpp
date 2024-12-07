@@ -1,5 +1,6 @@
-#include <iostream>
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/bind_vector.h>
+#include <nanobind/typing.h>
 
 #include "llvm/Support/ThreadPool.h"
 
@@ -15,173 +16,221 @@ public:
       : Dialect(name, context, id) {}
 };
 
-NB_MODULE(eudsl_ext, m) {
+nanobind::class_<_SmallVector> smallVector;
+nanobind::class_<_ArrayRef> arrayRef;
+nanobind::class_<_MutableArrayRef> mutableArrayRef;
 
-  nb::class_<mlir::TypeID>(m, "TypeID");
-  nb::class_<llvm::LogicalResult>(m, "LogicalResult");
-  nb::class_<llvm::APSInt>(m, "APSInt");
-  nb::class_<llvm::APInt>(m, "APInt");
+void bind_array_ref_smallvector(nanobind::handle scope) {
+  scope.attr("T") = nanobind::type_var("T");
+  arrayRef =
+      nanobind::class_<_ArrayRef>(scope, "ArrayRef", nanobind::is_generic(),
+                                  nanobind::sig("class ArrayRef[T]"));
+  mutableArrayRef = nanobind::class_<_MutableArrayRef>(
+      scope, "MutableArrayRef", nanobind::is_generic(),
+      nanobind::sig("class MutableArrayRef[T]"));
+  smallVector = nanobind::class_<_SmallVector>(
+      scope, "SmallVector", nanobind::is_generic(),
+      nanobind::sig("class SmallVector[T]"));
+}
+
+NB_MODULE(eudsl_ext, m) {
+  // nb::class_<mlir::SymbolTableCollection>(m, "SymbolTableCollection");
+  // nb::class_<mlir::FallbackAsmResourceMap>(m, "FallbackAsmResourceMap");
+
+  bind_array_ref_smallvector(m);
+
   nb::class_<llvm::APFloat>(m, "APFloat");
+  nb::class_<llvm::APInt>(m, "APInt");
+  nb::class_<llvm::APSInt>(m, "APSInt");
+  nb::class_<llvm::LogicalResult>(m, "LogicalResult");
+  nb::class_<llvm::ParseResult>(m, "ParseResult");
+  nb::class_<llvm::SourceMgr>(m, "SourceMgr");
+  nb::class_<llvm::ThreadPoolInterface>(m, "ThreadPoolInterface");
+  nb::class_<llvm::hash_code>(m, "hash_code");
   nb::class_<llvm::raw_ostream>(m, "raw_ostream");
+  nb::class_<mlir::AsmParser>(m, "AsmParser");
+  nb::class_<mlir::AsmResourcePrinter>(m, "AsmResourcePrinter");
+  nb::class_<mlir::DataLayoutSpecInterface>(m, "DataLayoutSpecInterface");
+  nb::class_<mlir::DialectBytecodeReader>(m, "DialectBytecodeReader");
+  nb::class_<mlir::DialectBytecodeWriter>(m, "DialectBytecodeWriter");
+  nb::class_<mlir::IntegerValueRange>(m, "IntegerValueRange");
+  nb::class_<mlir::StorageUniquer>(m, "StorageUniquer");
+  nb::class_<mlir::TargetSystemSpecInterface>(m, "TargetSystemSpecInterface");
+  nb::class_<mlir::TypeID>(m, "TypeID");
   nb::class_<mlir::detail::InterfaceMap>(m, "InterfaceMap");
-  nb::class_<llvm::SmallBitVector>(m, "SmallBitVector");
-  nb::class_<llvm::SmallVectorImpl<mlir::Attribute>>(
-      m, "SmallVectorImpl[Attribute]");
-  nb::class_<llvm::SmallVectorImpl<long>>(m, "SmallVectorImpl[int]");
+
   nb::class_<llvm::FailureOr<bool>>(m, "FailureOr[bool]");
   nb::class_<llvm::FailureOr<mlir::StringAttr>>(m, "FailureOr[StringAttr]");
   nb::class_<llvm::FailureOr<mlir::AsmResourceBlob>>(
       m, "FailureOr[AsmResourceBlob]");
-  // nb::class_<mlir::FallbackAsmResourceMap>(m, "FallbackAsmResourceMap");
-  nb::class_<mlir::AsmResourcePrinter>(m, "AsmResourcePrinter");
+  nb::class_<llvm::FailureOr<mlir::AffineMap>>(m, "FailureOr[AffineMap]");
+  nb::class_<llvm::FailureOr<mlir::detail::ElementsAttrIndexer>>(
+      m, "FailureOr[ElementsAttrIndexer]");
+  nb::class_<llvm::FailureOr<mlir::AsmDialectResourceHandle>>(
+      m, "FailureOr[AsmDialectResourceHandle]");
+  nb::class_<llvm::FailureOr<mlir::OperationName>>(m,
+                                                   "FailureOr[OperationName]");
+
+  nb::class_<mlir::IRObjectWithUseList<mlir::BlockOperand>>(
+      m, "IRObjectWithUseList[BlockOperand]");
+  nb::class_<mlir::IRObjectWithUseList<mlir::OpOperand>>(
+      m, "IRObjectWithUseList[OpOperand]");
+
+  nb::class_<mlir::DialectResourceBlobHandle<mlir::BuiltinDialect>>(
+      m, "DialectResourceBlobHandle[BuiltinDialect]");
+
+  nb::class_<mlir::AttrTypeSubElementReplacements<mlir::Attribute>>(
+      m, "AttrTypeSubElementReplacements[Attribute]");
+  nb::class_<mlir::AttrTypeSubElementReplacements<mlir::Type>>(
+      m, "AttrTypeSubElementReplacements[Type]");
+
   nb::class_<std::reverse_iterator<mlir::BlockArgument *>>(
       m, "reverse_iterator[BlockArgument]");
+
+  nb::class_<llvm::SmallPtrSetImpl<mlir::Operation *>>(
+      m, "SmallPtrSetImpl[Operation]");
+
+  nb::class_<mlir::ValueUseIterator<mlir::OpOperand>>(
+      m, "ValueUseIterator[OpOperand]");
+  nb::class_<mlir::ValueUseIterator<mlir::BlockOperand>>(
+      m, "ValueUseIterator[BlockOperand]");
+
+  nb::class_<std::initializer_list<mlir::Type>>(m, "initializer_list[Type]");
+  nb::class_<std::initializer_list<mlir::Value>>(m, "initializer_list[Value]");
+  nb::class_<std::initializer_list<mlir::Block *>>(m,
+                                                   "initializer_list[Block]");
+
+  nb::class_<llvm::SmallBitVector>(m, "SmallBitVector");
+  nb::class_<llvm::BitVector>(m, "BitVector");
+
+  auto [smallVectorOfBool, arrayRefOfBool, mutableArrayRefOfBool] =
+      bind_array_ref<bool>(m);
+  auto [smallVectorOfFloat, arrayRefOfFloat, mutableArrayRefOfFloat] =
+      bind_array_ref<float>(m);
+  auto [smallVectorOfInt, arrayRefOfInt, mutableArrayRefOfInt] =
+      bind_array_ref<int>(m);
+
+  auto [smallVectorOfChar, arrayRefOfChar, mutableArrayRefOfChar] =
+      bind_array_ref<char>(m);
+  auto [smallVectorOfDouble, arrayRefOfDouble, mutableArrayRefOfDouble] =
+      bind_array_ref<double>(m);
+  auto [smallVectorOfLong, arrayRefOfLong, mutableArrayRefOfLong] =
+      bind_array_ref<long>(m);
+  auto [smallVectorOfInt16, arrayRefOfInt16, mutableArrayRefOfInt16] =
+      bind_array_ref<int16_t>(m);
+  auto [smallVectorOfInt32, arrayRefOfInt32, mutableArrayRefOfInt32] =
+      bind_array_ref<int32_t>(m);
+  auto [smallVectorOfInt64, arrayRefOfInt64, mutableArrayRefOfInt64] =
+      bind_array_ref<int64_t>(m);
+  auto [smallVectorOfUInt16, arrayRefOfUInt16, mutableArrayRefOfUInt16] =
+      bind_array_ref<uint16_t>(m);
+  auto [smallVectorOfUInt32, arrayRefOfUInt32, mutableArrayRefOfUInt32] =
+      bind_array_ref<uint32_t>(m);
+  auto [smallVectorOfUInt64, arrayRefOfUInt64, mutableArrayRefOfUInt64] =
+      bind_array_ref<uint64_t>(m);
+
+  // these have to precede...
+  bind_array_ref<mlir::Type>(m);
+  bind_array_ref<mlir::Location>(m);
+  bind_array_ref<mlir::Attribute>(m);
+  bind_array_ref<mlir::AffineExpr>(m);
+  bind_array_ref<mlir::AffineMap>(m);
+  bind_array_ref<mlir::IRUnit>(m);
+
+  bind_array_ref<mlir::RegisteredOperationName>(m);
+
+  bind_array_ref<llvm::APInt>(m);
+  bind_array_ref<llvm::APFloat>(m);
+  bind_array_ref<mlir::Value>(m);
+  bind_array_ref<mlir::StringAttr>(m);
+  bind_array_ref<mlir::OperationName>(m);
+  bind_array_ref<mlir::Region *>(m);
+  bind_array_ref<mlir::SymbolTable *>(m);
+  bind_array_ref<mlir::Operation *>(m);
+  bind_array_ref<mlir::OpFoldResult>(m);
+  bind_array_ref<mlir::NamedAttribute>(m);
+
+  bind_array_ref<mlir::FlatSymbolRefAttr>(m);
+  bind_array_ref<mlir::BlockArgument>(m);
+  bind_array_ref<llvm::ArrayRef<mlir::Block *>>(m);
+
+  bind_array_ref<llvm::StringRef>(m);
+  bind_array_ref<mlir::DiagnosticArgument>(m);
+  // bind_array_ref<mlir::PDLValue>(m);
+  bind_array_ref<mlir::OpAsmParser::Argument>(m);
+  bind_array_ref<mlir::OpAsmParser::UnresolvedOperand>(m);
+
+  smallVector.def_static(
+      "__class_getitem__",
+      [smallVectorOfBool, smallVectorOfInt, smallVectorOfFloat,
+       smallVectorOfInt16, smallVectorOfInt32, smallVectorOfInt64,
+       smallVectorOfUInt16, smallVectorOfUInt32, smallVectorOfUInt64,
+       smallVectorOfChar, smallVectorOfDouble,
+       smallVectorOfLong](nanobind::type_object type) -> nb::object {
+        PyTypeObject *typeObj = (PyTypeObject *)type.ptr();
+        if (typeObj == &PyBool_Type)
+          return smallVectorOfBool;
+        if (typeObj == &PyLong_Type)
+          return smallVectorOfInt;
+        if (typeObj == &PyFloat_Type)
+          return smallVectorOfFloat;
+
+        auto np = nb::module_::import_("numpy");
+        auto charDType = np.attr("char");
+        auto doubleDType = np.attr("double");
+        auto longDType = np.attr("long");
+        auto int16DType = np.attr("int16");
+        auto int32DType = np.attr("int32");
+        auto int64DType = np.attr("int64");
+        auto uint16DType = np.attr("uint16");
+        auto uint32DType = np.attr("uint32");
+        auto uint64DType = np.attr("uint64");
+
+        if (type.is(charDType))
+          return smallVectorOfChar;
+        if (type.is(doubleDType))
+          return smallVectorOfDouble;
+        if (type.is(longDType))
+          return smallVectorOfLong;
+        if (type.is(int16DType))
+          return smallVectorOfInt16;
+        if (type.is(int32DType))
+          return smallVectorOfInt32;
+        if (type.is(int64DType))
+          return smallVectorOfInt64;
+        if (type.is(uint16DType))
+          return smallVectorOfUInt16;
+        if (type.is(uint32DType))
+          return smallVectorOfUInt32;
+        if (type.is(uint64DType))
+          return smallVectorOfUInt64;
+        std::string errMsg = "unsupported type for SmallVector";
+        errMsg += nb::repr(type).c_str();
+        throw std::runtime_error(errMsg);
+      });
+
   nb::class_<llvm::iterator_range<mlir::BlockArgument *>>(
       m, "iterator_range[BlockArgument]");
   nb::class_<llvm::iterator_range<mlir::PredecessorIterator>>(
       m, "iterator_range[PredecessorIterator]");
   nb::class_<llvm::iterator_range<mlir::Region::OpIterator>>(
       m, "iterator_range[Region.OpIterator]");
-  nb::class_<llvm::BitVector>(m, "BitVector");
-  nb::class_<mlir::IRObjectWithUseList<mlir::BlockOperand>>(
-      m, "IRObjectWithUseList[BlockOperand]");
-  nb::class_<mlir::IRObjectWithUseList<mlir::OpOperand>>(
-      m, "IRObjectWithUseList[OpOperand]");
-  nb::class_<llvm::ArrayRef<mlir::Block *>>(m, "ArrayRef[Block]");
-  nb::class_<mlir::AsmParser>(m, "AsmParser");
-  nb::class_<mlir::DialectResourceBlobHandle<mlir::BuiltinDialect>>(
-      m, "DialectResourceBlobHandle[BuiltinDialect]");
-  nb::class_<llvm::MutableArrayRef<mlir::DiagnosticArgument>>(
-      m, "MutableArrayRef[DiagnosticArgument]");
-  nb::class_<llvm::SmallVectorImpl<mlir::DiagnosticArgument>>(
-      m, "SmallVectorImpl[DiagnosticArgument]");
-  nb::class_<llvm::MutableArrayRef<mlir::Dialect *>>(
-      m, "MutableArrayRef[Dialect]");
-  nb::class_<llvm::SmallVectorImpl<mlir::NamedAttribute>>(
-      m, "SmallVectorImpl[NamedAttribute]");
-  nb::class_<llvm::ParseResult>(m, "ParseResult");
-  nb::class_<llvm::SmallVectorImpl<mlir::OpFoldResult>>(
-      m, "SmallVectorImpl[OpFoldResult]");
-  nb::class_<llvm::hash_code>(m, "hash_code");
-  nb::class_<mlir::AttrTypeSubElementReplacements<mlir::Attribute>>(
-      m, "AttrTypeSubElementReplacements[Attribute]");
-  nb::class_<mlir::AttrTypeSubElementReplacements<mlir::Type>>(
-      m, "AttrTypeSubElementReplacements[Type]");
-  nb::class_<llvm::FailureOr<mlir::AffineMap>>(m, "FailureOr[AffineMap]");
-  nb::class_<llvm::SmallVectorImpl<mlir::OpAsmParser::Argument>>(
-      m, "SmallVectorImpl[OpAsmParser.Argument]");
-  nb::class_<llvm::MutableArrayRef<mlir::Region>>(m, "MutableArrayRef[Region]");
-
-  nb::class_<llvm::FailureOr<mlir::detail::ElementsAttrIndexer>>(
-      m, "FailureOr[ElementsAttrIndexer]");
-  nb::class_<llvm::SmallPtrSetImpl<mlir::Operation *>>(
-      m, "SmallPtrSetImpl[Operation]");
-  nb::class_<mlir::ValueUseIterator<mlir::OpOperand>>(
-      m, "ValueUseIterator[OpOperand]");
-  nb::class_<mlir::ValueUseIterator<mlir::BlockOperand>>(
-      m, "ValueUseIterator[BlockOperand]");
-  nb::class_<std::initializer_list<mlir::Value>>(m, "initializer_list[Value]");
-  nb::class_<std::initializer_list<mlir::Block *>>(m,
-                                                   "initializer_list[Block]");
-  nb::class_<mlir::StorageUniquer>(m, "StorageUniquer");
-  nb::class_<llvm::ThreadPoolInterface>(m, "ThreadPoolInterface");
-  nb::class_<llvm::SmallVectorImpl<mlir::Operation *>>(
-      m, "SmallVectorImpl[Operation]");
-  nb::class_<mlir::DialectBytecodeReader>(m, "DialectBytecodeReader");
-  nb::class_<mlir::DataLayoutSpecInterface>(m, "DataLayoutSpecInterface");
-  nb::class_<mlir::TargetSystemSpecInterface>(m, "TargetSystemSpecInterface");
-  nb::class_<llvm::FailureOr<mlir::AsmDialectResourceHandle>>(
-      m, "FailureOr[AsmDialectResourceHandle]");
-  nb::class_<llvm::FailureOr<mlir::OperationName>>(m,
-                                                   "FailureOr[OperationName]");
-  nb::class_<llvm::SmallVectorImpl<mlir::Value>>(m, "SmallVectorImpl[Value]");
-  nb::class_<llvm::SmallVectorImpl<mlir::OpAsmParser::UnresolvedOperand>>(
-      m, "SmallVectorImpl[OpAsmParser.UnresolvedOperand]");
-  nb::class_<mlir::DialectBytecodeWriter>(m, "DialectBytecodeWriter");
   nb::class_<llvm::iterator_range<mlir::Operation::dialect_attr_iterator>>(
       m, "iterator_range[Operation.dialect_attr_iterator]");
   nb::class_<llvm::iterator_range<mlir::ResultRange::UseIterator>>(
       m, "iterator_range[ResultRange.UseIterator]");
-  nb::class_<llvm::SourceMgr>(m, "SourceMgr");
-  nb::class_<llvm::SmallVectorImpl<mlir::Type>>(m, "SmallVectorImpl[Type]");
-  nb::class_<std::initializer_list<mlir::Type>>(m, "initializer_list[Type]");
-  nb::class_<mlir::IntegerValueRange>(m, "IntegerValueRange");
-  // nb::class_<mlir::SymbolTableCollection>(m, "SymbolTableCollection");
 
-  nb::bind_vec_like<llvm::ArrayRef<mlir::Attribute>>(m, "ArrayRef[Attribute]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::AffineExpr>>(m,
-                                                      "ArrayRef[AffineExpr]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::AffineMap>>(m, "ArrayRef[AffineMap]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::IRUnit>>(m, "ArrayRef[IRUnit]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::RegisteredOperationName>>(
-      m, "ArrayRef[RegisteredOperationName]");
-  nb::bind_vec_like<llvm::ArrayRef<unsigned>>(m, "ArrayRef[unsigned]");
-  nb::bind_vec_like<llvm::ArrayRef<unsigned int>>(m, "ArrayRef[unsigned_int]");
-  nb::bind_vec_like<llvm::ArrayRef<unsigned long>>(m,
-                                                   "ArrayRef[unsigned_long]");
-  nb::bind_vec_like<llvm::ArrayRef<bool>>(m, "ArrayRef[bool]");
-  nb::bind_vec_like<llvm::ArrayRef<int16_t>>(m, "ArrayRef[int16_t]");
-  nb::bind_vec_like<llvm::ArrayRef<int32_t>>(m, "ArrayRef[int32_t]");
-  nb::bind_vec_like<llvm::ArrayRef<int64_t>>(m, "ArrayRef[int64_t]");
-  nb::bind_vec_like<llvm::ArrayRef<int>>(m, "ArrayRef[int]");
-  nb::bind_vec_like<llvm::ArrayRef<long>>(m, "ArrayRef[long]");
-  nb::bind_vec_like<llvm::ArrayRef<float>>(m, "ArrayRef[float]");
-  nb::bind_vec_like<llvm::ArrayRef<double>>(m, "ArrayRef[double]");
-  nb::bind_vec_like<llvm::ArrayRef<char>>(m, "ArrayRef[char]");
-  nb::bind_vec_like<llvm::ArrayRef<signed char>>(m, "ArrayRef[signed_char]");
-  nb::bind_vec_like<llvm::ArrayRef<llvm::APInt>>(m, "ArrayRef[APInt]");
-  nb::bind_vec_like<llvm::ArrayRef<llvm::APFloat>>(m, "ArrayRef[APFloat]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::Value>>(m, "ArrayRef[Value]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::StringAttr>>(m, "ArrayRef[str]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::OperationName>>(
-      m, "ArrayRef[OperationName]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::Region *>>(m, "ArrayRef[Region]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::SymbolTable *>>(
-      m, "ArrayRef[SymbolTable]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::Operation *>>(m,
-                                                       "ArrayRef[Operation]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::NamedAttribute>>(
-      m, "ArrayRef[NamedAttribute]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::FlatSymbolRefAttr>>(
-      m, "ArrayRef[FlatSymbolRefAttr]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::BlockArgument>>(
-      m, "ArrayRef[BlockArgument]");
-
-  nb::bind_vector<std::vector<mlir::Type>>(m, "VectorOfType");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::Type>>(m, "ArrayRefOfType")
-      .def(nb::init<const std::vector<mlir::Type> &>());
-  nb::implicitly_convertible<std::vector<mlir::Type>,
-                             llvm::ArrayRef<mlir::Type>>();
-
-  nb::bind_vec_like<llvm::ArrayRef<mlir::Location>>(m, "ArrayRef[Location]");
-  nb::bind_vector<std::vector<llvm::StringRef>>(m, "VectorOfStringRef");
-  nb::bind_vec_like<llvm::ArrayRef<llvm::StringRef>>(m, "ArrayRef[str]");
-  // nb::bind_vec_like<llvm::ArrayRef<mlir::PDLValue>>(m, "ArrayRef[PDLValue]");
-  nb::bind_vec_like<llvm::MutableArrayRef<mlir::BlockArgument>>(
-      m, "MutableArrayRef[BlockArgument]");
-  nb::bind_vec_like<llvm::MutableArrayRef<char>>(m, "MutableArrayRef[char]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::OpAsmParser::Argument>>(
-      m, "ArrayRef[OpAsmParser.Argument]");
-  nb::bind_vec_like<llvm::ArrayRef<mlir::OpAsmParser::UnresolvedOperand>>(
-      m, "ArrayRef[OpAsmParser.UnresolvedOperand]");
-  nb::bind_vec_like<llvm::MutableArrayRef<mlir::OpOperand>,
-                    nb::rv_policy::reference_internal>(
-      m, "MutableArrayRef[OpOperand]");
-  nb::bind_vec_like<llvm::MutableArrayRef<mlir::BlockOperand>,
-                    nb::rv_policy::reference_internal>(
-      m, "MutableArrayRef[BlockOperand]");
-
-  nb::bind_iter_range<mlir::ValueTypeRange<mlir::ValueRange>, mlir::Type>(
+  bind_iter_range<mlir::ValueTypeRange<mlir::ValueRange>, mlir::Type>(
       m, "ValueTypeRange[ValueRange]");
-  nb::bind_iter_range<mlir::ValueTypeRange<mlir::OperandRange>, mlir::Type>(
+  bind_iter_range<mlir::ValueTypeRange<mlir::OperandRange>, mlir::Type>(
       m, "ValueTypeRange[OperandRange]");
-  nb::bind_iter_range<mlir::ValueTypeRange<mlir::ResultRange>, mlir::Type>(
+  bind_iter_range<mlir::ValueTypeRange<mlir::ResultRange>, mlir::Type>(
       m, "ValueTypeRange[ResultRange]");
 
-  nb::bind_iter_like<llvm::iplist<mlir::Block>,
-                     nb::rv_policy::reference_internal>(m, "iplist[Block]");
-  nb::bind_iter_like<llvm::iplist<mlir::Operation>,
-                     nb::rv_policy::reference_internal>(m, "iplist[Operation]");
+  bind_iter_like<llvm::iplist<mlir::Block>, nb::rv_policy::reference_internal>(
+      m, "iplist[Block]");
+  bind_iter_like<llvm::iplist<mlir::Operation>,
+                 nb::rv_policy::reference_internal>(m, "iplist[Operation]");
 
   auto irModule = m.def_submodule("ir");
 
@@ -306,6 +355,7 @@ NB_MODULE(eudsl_ext, m) {
           .def_prop_ro("context", &mlir::OperationState::getContext);
 
   populateIRModule(irModule);
+
   auto dialectsModule = m.def_submodule("dialects");
 
   auto arithModule = dialectsModule.def_submodule("arith");
