@@ -186,6 +186,12 @@ jobs:
 
     if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: [test-eudsl-tblgen]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [ubuntu_x86_64, windows_x86_64, macos_arm64, macos_x86_64]
+    
     runs-on: "ubuntu-22.04"
     name: "Release eudsl-tblgen"
 
@@ -197,12 +203,13 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          name: eudsl_tblgen_${{ matrix.name }}_artifact
           path: wheelhouse
 
       - name: Release current commit
         uses: ncipollo/release-action@v1.12.0
         with:
-          artifacts: "wheelhouse/*.whl"
+          artifacts: "wheelhouse/eudsl_tblgen*.whl"
           token: "${{ secrets.GITHUB_TOKEN }}"
           tag: "latest"
           name: "latest"
