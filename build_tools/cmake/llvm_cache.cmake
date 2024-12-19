@@ -1,4 +1,4 @@
-set(LLVM_ENABLE_PROJECTS "llvm;mlir" CACHE STRING "")
+set(LLVM_ENABLE_PROJECTS "llvm;mlir;clang" CACHE STRING "")
 
 # LLVM options
 
