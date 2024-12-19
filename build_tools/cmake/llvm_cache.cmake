@@ -18,7 +18,6 @@ endif()
 set(LLVM_ENABLE_ASSERTIONS ON CACHE BOOL "")
 set(LLVM_ENABLE_WARNINGS ON CACHE BOOL "")
 set(LLVM_FORCE_ENABLE_STATS ON CACHE BOOL "")
-set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 
 # MLIR options
 
@@ -83,17 +82,22 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     clangTooling
     clangToolingCore
     clangToolingInclusions
+    # triggers ClangConfig.cmake and etc
+    clang-cmake-exports
+    # triggers ClangMlirDevelopmentTargets.cmake
+    clang-mlirdevelopment-cmake-exports
 
+    # triggers LLVMConfig.cmake and etc
+    cmake-exports
+    # triggers LLVMMlirDevelopmentExports.cmake
+    mlirdevelopment-cmake-exports
     llvm-config
     llvm-headers
     llvm-libraries
 
-    cmake-exports
     FileCheck
     not
     MLIRPythonModules
-    # triggers LLVMMlirDevelopmentExports.cmake
-    mlirdevelopment-cmake-exports
     # triggers MLIRMlirDevelopmentTargets.cmake
     mlir-mlirdevelopment-cmake-exports
     # triggers MLIRConfig.cmake and etc
