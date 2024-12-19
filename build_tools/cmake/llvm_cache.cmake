@@ -82,12 +82,14 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     clangTooling
     clangToolingCore
     clangToolingInclusions
+
+    clang-headers
     # triggers ClangConfig.cmake and etc
     clang-cmake-exports
     # triggers ClangMlirDevelopmentTargets.cmake
     clang-mlirdevelopment-cmake-exports
 
-    # triggers LLVMConfig.cmake and etc
+    # triggers ClangConfig.cmake and etc
     cmake-exports
     # triggers LLVMMlirDevelopmentExports.cmake
     mlirdevelopment-cmake-exports
