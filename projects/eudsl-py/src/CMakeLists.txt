@@ -43,7 +43,9 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/eudsl)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_compile_options(-Wno-cast-qual -Wno-deprecated-literal-operator)
-nanobind_add_module(eudsl_ext NB_STATIC STABLE_ABI
+nanobind_add_module(eudsl_ext
+  NB_STATIC STABLE_ABI
+  NB_DOMAIN eudsl
   eudsl_ext.cpp
   ir.cpp
   arith.cpp
@@ -60,9 +62,10 @@ target_link_libraries(eudsl_ext PRIVATE
   MLIRSCFDialect
   MLIRAffineDialect
 )
-target_compile_options(eudsl_ext
+target_compile_options(nanobind-static-abi3
   PRIVATE
   -Wno-cast-qual
+  -Wno-covered-switch-default
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Darwin>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>)
