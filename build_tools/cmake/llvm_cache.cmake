@@ -1,4 +1,4 @@
-set(LLVM_ENABLE_PROJECTS "llvm;mlir" CACHE STRING "")
+set(LLVM_ENABLE_PROJECTS "llvm;mlir;clang" CACHE STRING "")
 
 # LLVM options
 
@@ -18,7 +18,6 @@ endif()
 set(LLVM_ENABLE_ASSERTIONS ON CACHE BOOL "")
 set(LLVM_ENABLE_WARNINGS ON CACHE BOOL "")
 set(LLVM_FORCE_ENABLE_STATS ON CACHE BOOL "")
-set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 
 # MLIR options
 
@@ -64,26 +63,54 @@ set(LLVM_INSTALL_TOOLCHAIN_ONLY OFF CACHE BOOL "")
 
 set(LLVM_DISTRIBUTIONS MlirDevelopment CACHE STRING "")
 set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
-      llvm-config
-      llvm-headers
-      llvm-libraries
-      cmake-exports
-      FileCheck
-      not
-      MLIRPythonModules
-      # triggers LLVMMlirDevelopmentExports.cmake
-      mlirdevelopment-cmake-exports
-      # triggers MLIRMlirDevelopmentTargets.cmake
-      mlir-mlirdevelopment-cmake-exports
-      # triggers MLIRConfig.cmake and etc
-      mlir-cmake-exports
-      mlir-headers
-      mlir-libraries
-      mlir-opt
-      mlir-python-sources
-      mlir-reduce
-      mlir-tblgen
-      mlir-translate
+    clangAPINotes
+    clangAST
+    clangASTMatchers
+    clangAnalysis
+    clangBasic
+    clangDriver
+    clangDriver
+    clangEdit
+    clangFormat
+    clangFrontend
+    clangLex
+    clangParse
+    clangRewrite
+    clangSema
+    clangSerialization
+    clangSupport
+    clangTooling
+    clangToolingCore
+    clangToolingInclusions
+
+    clang-headers
+    # triggers ClangConfig.cmake and etc
+    clang-cmake-exports
+    # triggers ClangMlirDevelopmentTargets.cmake
+    clang-mlirdevelopment-cmake-exports
+
+    # triggers ClangConfig.cmake and etc
+    cmake-exports
+    # triggers LLVMMlirDevelopmentExports.cmake
+    mlirdevelopment-cmake-exports
+    llvm-config
+    llvm-headers
+    llvm-libraries
+
+    FileCheck
+    not
+    MLIRPythonModules
+    # triggers MLIRMlirDevelopmentTargets.cmake
+    mlir-mlirdevelopment-cmake-exports
+    # triggers MLIRConfig.cmake and etc
+    mlir-cmake-exports
+    mlir-headers
+    mlir-libraries
+    mlir-opt
+    mlir-python-sources
+    mlir-reduce
+    mlir-tblgen
+    mlir-translate
     CACHE STRING "")
 
 if (NOT WIN32)

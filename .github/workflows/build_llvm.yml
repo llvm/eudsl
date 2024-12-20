@@ -142,8 +142,8 @@ jobs:
         with:
           artifacts: "*.tar.gz"
           token: "${{ secrets.GITHUB_TOKEN }}"
-          tag: "latest"
-          name: "latest"
+          tag: "llvm"
+          name: "llvm"
           removeArtifacts: false
           allowUpdates: true
           replacesArtifacts: true
