@@ -42,8 +42,9 @@ cmake_options=(
   -C "$TD/cmake/llvm_cache.cmake"
   -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}"
 )
-echo "ostype $OSTYPE"
+
 if [[ "$OSTYPE" == "msys"* ]]; then
+  echo "setting C/CXX flags for MSVC runtime to /MT"
   CMAKE_ARGS+=(
     -DCMAKE_C_FLAGS="/MT"
     -DCMAKE_CXX_FLAGS="/MT"
