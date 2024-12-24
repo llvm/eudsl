@@ -26,6 +26,10 @@ set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 
 # without one of these (no clue which), windows will disable exception handling
 if(WIN32)
+  # specifically to enable CMAKE_MSVC_RUNTIME_LIBRARY
+  if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+  endif()
   set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded CACHE STRING "")
   list(APPEND CMAKE_C_FLAGS "/MT")
   list(APPEND CMAKE_CXX_FLAGS "/MT")
