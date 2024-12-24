@@ -42,6 +42,13 @@ cmake_options=(
   -C "$TD/cmake/llvm_cache.cmake"
   -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}"
 )
+echo "ostype $OSTYPE"
+if [[ "$OSTYPE" == "msys"* ]]; then
+  CMAKE_ARGS+=(
+    -DCMAKE_C_FLAGS="/MT"
+    -DCMAKE_CXX_FLAGS="/MT"
+  )
+fi
 
 echo "Source Directory: ${LLVM_SOURCE_DIR}"
 echo "Build Directory: ${LLVM_BUILD_DIR}"
