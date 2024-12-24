@@ -47,14 +47,14 @@ cmake_options=(
 
 if [[ "$OSTYPE" == "msys"* ]]; then
   echo "setting C/CXX flags for MSVC runtime to /MT"
-  CMAKE_ARGS+=(
+  cmake_options+=(
     -DCMAKE_C_FLAGS="/MT"
     -DCMAKE_CXX_FLAGS="/MT"
   )
 fi
 
 # last so that C/CXX flags get set first
-CMAKE_ARGS+=(-C "$TD/cmake/llvm_cache.cmake")
+cmake_options+=(-C "$TD/cmake/llvm_cache.cmake")
 
 echo "Source Directory: ${LLVM_SOURCE_DIR}"
 echo "Build Directory: ${LLVM_BUILD_DIR}"
