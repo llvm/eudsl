@@ -8,7 +8,9 @@ include_directories(${LLVM_INCLUDE_DIRS})
 
 # technically we need this but our LLVM is compiled without exception handling
 # and that breaks windows
-#include(HandleLLVMOptions)
+if(NOT WIN32)
+  include(HandleLLVMOptions)
+endif()
 
 find_package(Python 3.8
   REQUIRED COMPONENTS Interpreter Development.Module
@@ -25,7 +27,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 nanobind_add_module(eudsl_tblgen_ext NB_STATIC STABLE_ABI eudsl_tblgen_ext.cpp TGParser.cpp TGLexer.cpp)
 target_link_libraries(eudsl_tblgen_ext PRIVATE LLVMTableGenCommon LLVMTableGen)
 target_compile_options(eudsl_tblgen_ext
-  PUBLIC
+  PRIVATE
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Darwin>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>)
