@@ -38,10 +38,15 @@ cmake_options=(
   -B "${LLVM_BUILD_DIR}"
   -DLLVM_TARGETS_TO_BUILD="${LLVM_TARGETS_TO_BUILD:-host}"
   -DCMAKE_BUILD_TYPE=Release
+  # this flag keeps changing names in CMake...
   -DPython3_EXECUTABLE="$Python3_EXECUTABLE"
-  -C "$TD/cmake/llvm_cache.cmake"
+  -DPython_EXECUTABLE="$Python3_EXECUTABLE"
+  -DPYTHON_EXECUTABLE="$Python3_EXECUTABLE"
   -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}"
 )
+
+# last so that C/CXX flags get set first
+cmake_options+=(-C "$TD/cmake/llvm_cache.cmake")
 
 echo "Source Directory: ${LLVM_SOURCE_DIR}"
 echo "Build Directory: ${LLVM_BUILD_DIR}"
