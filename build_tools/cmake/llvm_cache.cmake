@@ -20,6 +20,9 @@ set(LLVM_ENABLE_WARNINGS ON CACHE BOOL "")
 set(LLVM_FORCE_ENABLE_STATS ON CACHE BOOL "")
 # for nanobind/pybind in mlir
 set(LLVM_ENABLE_EH ON CACHE BOOL "")
+# because AMD target td files are insane...
+set(LLVM_OPTIMIZED_TABLEGEN ON CACHE BOOL "")
+
 
 # MLIR options
 
