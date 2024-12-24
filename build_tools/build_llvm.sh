@@ -46,6 +46,9 @@ cmake_options=(
 )
 
 if [[ "$OSTYPE" == "msys"* ]]; then
+  # msys does automatic conversion of things that look like paths...
+  # https://www.msys2.org/docs/filesystem-paths/
+  MSYS2_ARG_CONV_EXCL='-DCMAKE_C_FLAGS=";-DCMAKE_CXX_FLAGS="'
   echo "setting C/CXX flags for MSVC runtime to /MT"
   cmake_options+=(
     -DCMAKE_C_FLAGS="/MT"
