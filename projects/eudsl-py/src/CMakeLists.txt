@@ -5,10 +5,21 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(LLVM REQUIRED CONFIG)
 find_package(MLIR REQUIRED CONFIG)
+find_package(Clang REQUIRED CONFIG)
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
+message(STATUS "Using ClangConfig.cmake in: ${Clang_DIR}")
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
+include_directories(${CLANG_INCLUDE_DIRS})
+
+list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${CLANG_CMAKE_DIR}")
+include(TableGen)
+include(AddLLVM)
+include(AddMLIR)
+include(AddClang)
 # technically we need this but our LLVM is compiled without exception handling
 # and that breaks windows
 if(NOT WIN32)
@@ -18,6 +29,17 @@ endif()
 if(NOT TARGET LLVMSupport)
   message(FATAL_ERROR "LLVMSupport not found")
 endif()
+
+add_clang_executable(eudsl-generator Generator.cpp PARTIAL_SOURCES_INTENDED)
+target_link_libraries(eudsl-generator
+  PRIVATE
+  clangAST
+  clangBasic
+  clangFrontend
+  clangSerialization
+  clangTooling
+  LLVMSupport
+)
 
 # no clue why but with LLVM_LINK_LLVM_DYLIB even static libs depend on LLVM
 get_property(MLIR_ALL_LIBS GLOBAL PROPERTY MLIR_ALL_LIBS)
