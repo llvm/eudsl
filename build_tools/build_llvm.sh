@@ -47,6 +47,7 @@ cmake_options=(
 
 if [[ "$OSTYPE" == "msys"* ]]; then
   sed -i.bak 's/MSVC/WIN32/g' "${LLVM_SOURCE_DIR}/mlir/cmake/modules/AddMLIRPython.cmake"
+  cat "${LLVM_SOURCE_DIR}/mlir/cmake/modules/AddMLIRPython.cmake"
 fi
 
 # last so that C/CXX flags get set first
