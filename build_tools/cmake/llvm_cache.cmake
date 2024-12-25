@@ -27,17 +27,12 @@ set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 # without one of these (no clue which), windows will disable exception handling
 if(WIN32)
   # specifically to enable CMAKE_MSVC_RUNTIME_LIBRARY
-  # set(CMAKE_POLICY_DEFAULT_CMP0091 NEW CACHE STRING "")
-  # set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded CACHE STRING "")
-  # list(APPEND CMAKE_C_FLAGS "/MT")
-  # list(APPEND CMAKE_CXX_FLAGS "/MT")
-  # set(LLVM_USE_CRT_MINSIZEREL MT CACHE STRING "")
-  # set(LLVM_USE_CRT_RELEASE MT CACHE STRING "")
-# else()
-#   # When exceptions are disabled, unwind tables are large and useless
-#   set(LLVM_ENABLE_UNWIND_TABLES OFF CACHE BOOL "")
-  list(APPEND CMAKE_C_FLAGS "/EHsc")
-  list(APPEND CMAKE_CXX_FLAGS "/EHsc")
+  set(CMAKE_POLICY_DEFAULT_CMP0091 NEW CACHE STRING "")
+  set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded CACHE STRING "")
+  list(APPEND CMAKE_C_FLAGS "/MT /EHsc")
+  list(APPEND CMAKE_CXX_FLAGS "/MT /EHsc")
+  set(LLVM_USE_CRT_MINSIZEREL MT CACHE STRING "")
+  set(LLVM_USE_CRT_RELEASE MT CACHE STRING "")
 endif()
 
 # MLIR options
