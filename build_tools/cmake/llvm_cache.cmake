@@ -1,3 +1,5 @@
+include(CMakePrintHelpers)
+
 set(LLVM_ENABLE_PROJECTS "llvm;mlir;clang" CACHE STRING "")
 
 # LLVM options
@@ -18,6 +20,9 @@ endif()
 set(LLVM_ENABLE_ASSERTIONS ON CACHE BOOL "")
 set(LLVM_ENABLE_WARNINGS ON CACHE BOOL "")
 set(LLVM_FORCE_ENABLE_STATS ON CACHE BOOL "")
+# because AMD target td files are insane...
+set(LLVM_OPTIMIZED_TABLEGEN ON CACHE BOOL "")
+set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 
 # MLIR options
 
@@ -36,10 +41,8 @@ set(LLVM_ENABLE_LIBCXX OFF CACHE BOOL "")
 set(LLVM_ENABLE_LIBCXX OFF CACHE BOOL "")
 set(LLVM_ENABLE_LIBEDIT OFF CACHE BOOL "")
 set(LLVM_ENABLE_LIBXML2 OFF CACHE BOOL "")
-set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 set(LLVM_ENABLE_TERMINFO OFF CACHE BOOL "")
-# When exceptions are disabled, unwind tables are large and useless
-set(LLVM_ENABLE_UNWIND_TABLES OFF CACHE BOOL "")
+
 set(LLVM_ENABLE_CRASH_OVERRIDES OFF CACHE BOOL "")
 set(LLVM_ENABLE_Z3_SOLVER OFF CACHE BOOL "")
 set(LLVM_ENABLE_ZLIB OFF CACHE BOOL "")
@@ -116,3 +119,7 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
 if (NOT WIN32)
   list(APPEND LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS LLVM)
 endif()
+
+get_cmake_property(_variableNames VARIABLES)
+list(SORT _variableNames)
+cmake_print_variables(${_variableNames})
