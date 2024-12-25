@@ -45,11 +45,6 @@ cmake_options=(
   -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}"
 )
 
-if [[ "$OSTYPE" == "msys"* ]]; then
-  sed -i.bak 's/MSVC/CLANG_CL/g' "${LLVM_SOURCE_DIR}/mlir/cmake/modules/AddMLIRPython.cmake"
-  cat "${LLVM_SOURCE_DIR}/mlir/cmake/modules/AddMLIRPython.cmake"
-fi
-
 # last so that C/CXX flags get set first
 cmake_options+=(-C "$TD/cmake/llvm_cache.cmake")
 
