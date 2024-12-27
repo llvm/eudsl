@@ -22,12 +22,13 @@ Homepage = "https://github.com/llvm/eudsl"
 minimum-version = "0.4"
 build-dir = "build/{wheel_tag}"
 wheel.py-api = "cp312"
-cmake.source-dir = "src"
+cmake.source-dir = "."
 
 [tool.scikit-build.cmake.define]
 LLVM_DIR = {env="LLVM_DIR", default="EMPTY"}
 MLIR_DIR = {env="MLIR_DIR", default="EMPTY"}
 Clang_DIR = {env="Clang_DIR", default="EMPTY"}
+CMAKE_PREFIX_PATH = {env="CMAKE_PREFIX_PATH", default="EMPTY"}
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 CMAKE_VERBOSE_MAKEFILE = "ON"
 
@@ -40,5 +41,6 @@ environment-pass = [
     "LLVM_DIR",
     "MLIR_DIR",
     "Clang_DIR",
-    "CMAKE_GENERATOR"
+    "CMAKE_GENERATOR",
+    "CMAKE_PREFIX_PATH"
 ]

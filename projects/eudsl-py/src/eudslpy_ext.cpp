@@ -41,8 +41,6 @@
 
 #include "bind_vec_like.h"
 
-#include <memory>
-
 namespace nb = nanobind;
 using namespace nb::literals;
 
@@ -193,10 +191,127 @@ struct non_copying_non_moving_class_ : nb::class_<T, Ts...> {
 
 void populateIRModule(nb::module_ &m) {
   using namespace mlir;
+  auto mlir_DialectRegistry =
+      non_copying_non_moving_class_<mlir::DialectRegistry>(m, "DialectRegistry")
+          .def(nb::init<>())
+          .def(
+              "insert",
+              [](mlir::DialectRegistry &self, mlir::TypeID typeID,
+                 llvm::StringRef dialectName) {
+                self.insert(
+                    typeID, dialectName,
+                    [=](mlir::MLIRContext *ctx) -> mlir::Dialect * {
+                      return ctx->getOrLoadDialect(dialectName, typeID, [=]() {
+                        return std::make_unique<FakeDialect>(dialectName, ctx,
+                                                             typeID);
+                      });
+                    });
+              },
+              "type_id"_a, "name"_a)
+          .def("insert_dynamic", &mlir::DialectRegistry::insertDynamic,
+               "name"_a, "ctor"_a)
+          .def("get_dialect_allocator",
+               &mlir::DialectRegistry::getDialectAllocator, "name"_a)
+          .def("append_to", &mlir::DialectRegistry::appendTo, "destination"_a)
+          .def_prop_ro("dialect_names", &mlir::DialectRegistry::getDialectNames)
+          .def(
+              "apply_extensions",
+              [](mlir::DialectRegistry &self, mlir::Dialect *dialect) {
+                return self.applyExtensions(dialect);
+              },
+              "dialect"_a)
+          .def(
+              "apply_extensions",
+              [](mlir::DialectRegistry &self, mlir::MLIRContext *ctx) {
+                return self.applyExtensions(ctx);
+              },
+              "ctx"_a)
+          .def(
+              "add_extension",
+              [](mlir::DialectRegistry &self, mlir::TypeID extensionID,
+                 std::unique_ptr<mlir::DialectExtensionBase> extension) {
+                return self.addExtension(extensionID, std::move(extension));
+              },
+              "extension_id"_a, "extension"_a)
+          .def("is_subset_of", &mlir::DialectRegistry::isSubsetOf, "rhs"_a);
+
+  auto mlir_OperationState =
+      non_copying_non_moving_class_<mlir::OperationState>(m, "OperationState")
+          .def(nb::init<mlir::Location, llvm::StringRef>(), "location"_a,
+               "name"_a)
+          .def(nb::init<mlir::Location, mlir::OperationName>(), "location"_a,
+               "name"_a)
+          .def(nb::init<mlir::Location, mlir::OperationName, mlir::ValueRange,
+                        mlir::TypeRange, llvm::ArrayRef<mlir::NamedAttribute>,
+                        mlir::BlockRange,
+                        llvm::MutableArrayRef<std::unique_ptr<mlir::Region>>>(),
+               "location"_a, "name"_a, "operands"_a, "types"_a, "attributes"_a,
+               "successors"_a, "regions"_a)
+          .def(nb::init<mlir::Location, llvm::StringRef, mlir::ValueRange,
+                        mlir::TypeRange, llvm::ArrayRef<mlir::NamedAttribute>,
+                        mlir::BlockRange,
+                        llvm::MutableArrayRef<std::unique_ptr<mlir::Region>>>(),
+               "location"_a, "name"_a, "operands"_a, "types"_a, "attributes"_a,
+               "successors"_a, "regions"_a)
+          .def_prop_ro("raw_properties",
+                       &mlir::OperationState::getRawProperties)
+          .def("set_properties", &mlir::OperationState::setProperties, "op"_a,
+               "emit_error"_a)
+          .def("add_operands", &mlir::OperationState::addOperands,
+               "new_operands"_a)
+          .def(
+              "add_types",
+              [](mlir::OperationState &self,
+                 llvm::ArrayRef<mlir::Type> newTypes) {
+                return self.addTypes(newTypes);
+              },
+              "new_types"_a)
+          .def(
+              "add_attribute",
+              [](mlir::OperationState &self, llvm::StringRef name,
+                 mlir::Attribute attr) {
+                return self.addAttribute(name, attr);
+              },
+              "name"_a, "attr"_a)
+          .def(
+              "add_attribute",
+              [](mlir::OperationState &self, mlir::StringAttr name,
+                 mlir::Attribute attr) {
+                return self.addAttribute(name, attr);
+              },
+              "name"_a, "attr"_a)
+          .def("add_attributes", &mlir::OperationState::addAttributes,
+               "new_attributes"_a)
+          .def(
+              "add_successors",
+              [](mlir::OperationState &self, mlir::Block *successor) {
+                return self.addSuccessors(successor);
+              },
+              "successor"_a)
+          .def(
+              "add_successors",
+              [](mlir::OperationState &self, mlir::BlockRange newSuccessors) {
+                return self.addSuccessors(newSuccessors);
+              },
+              "new_successors"_a)
+          .def(
+              "add_region",
+              [](mlir::OperationState &self) { return self.addRegion(); },
+              nb::rv_policy::reference_internal)
+          .def(
+              "add_region",
+              [](mlir::OperationState &self,
+                 std::unique_ptr<mlir::Region> &&region) {
+                return self.addRegion(std::move(region));
+              },
+              "region"_a)
+          .def("add_regions", &mlir::OperationState::addRegions, "regions"_a)
+          .def_prop_ro("context", &mlir::OperationState::getContext);
+
 #include "ir.cpp.inc"
 }
 
-void populateArithModule(nb::module_ &m){
+void populateArithModule(nb::module_ &m) {
 #include "EUDSLGenArith.cpp.inc"
 }
 
@@ -303,6 +418,7 @@ NB_MODULE(eudslpy_ext, m) {
   bind_array_ref<mlir::AffineExpr>(m);
   bind_array_ref<mlir::AffineMap>(m);
   bind_array_ref<mlir::IRUnit>(m);
+  bind_array_ref<mlir::Dialect *>(m);
 
   bind_array_ref<mlir::RegisteredOperationName>(m);
 
@@ -319,7 +435,7 @@ NB_MODULE(eudslpy_ext, m) {
 
   bind_array_ref<mlir::FlatSymbolRefAttr>(m);
   bind_array_ref<mlir::BlockArgument>(m);
-  bind_array_ref<llvm::ArrayRef<mlir::Block *>>(m);
+  bind_array_ref<mlir::Block *>(m);
 
   bind_array_ref<llvm::StringRef>(m);
   bind_array_ref<mlir::DiagnosticArgument>(m);
@@ -400,127 +516,6 @@ NB_MODULE(eudslpy_ext, m) {
                  nb::rv_policy::reference_internal>(m, "iplist[Operation]");
 
   auto irModule = m.def_submodule("ir");
-
-  nb::bind_vector<std::vector<mlir::Dialect *>>(m, "VectorOfDialect");
-  auto mlir_DialectRegistry =
-      non_copying_non_moving_class_<mlir::DialectRegistry>(irModule,
-                                                           "DialectRegistry")
-          .def(nb::init<>())
-          .def(
-              "insert",
-              [](mlir::DialectRegistry &self, mlir::TypeID typeID,
-                 llvm::StringRef dialectName) {
-                self.insert(
-                    typeID, dialectName,
-                    [=](mlir::MLIRContext *ctx) -> mlir::Dialect * {
-                      return ctx->getOrLoadDialect(dialectName, typeID, [=]() {
-                        return std::make_unique<FakeDialect>(dialectName, ctx,
-                                                             typeID);
-                      });
-                    });
-              },
-              "type_id"_a, "name"_a)
-          .def("insert_dynamic", &mlir::DialectRegistry::insertDynamic,
-               "name"_a, "ctor"_a)
-          .def("get_dialect_allocator",
-               &mlir::DialectRegistry::getDialectAllocator, "name"_a)
-          .def("append_to", &mlir::DialectRegistry::appendTo, "destination"_a)
-          .def_prop_ro("dialect_names", &mlir::DialectRegistry::getDialectNames)
-          .def(
-              "apply_extensions",
-              [](mlir::DialectRegistry &self, mlir::Dialect *dialect) {
-                return self.applyExtensions(dialect);
-              },
-              "dialect"_a)
-          .def(
-              "apply_extensions",
-              [](mlir::DialectRegistry &self, mlir::MLIRContext *ctx) {
-                return self.applyExtensions(ctx);
-              },
-              "ctx"_a)
-          .def(
-              "add_extension",
-              [](mlir::DialectRegistry &self, mlir::TypeID extensionID,
-                 std::unique_ptr<mlir::DialectExtensionBase> extension) {
-                return self.addExtension(extensionID, std::move(extension));
-              },
-              "extension_id"_a, "extension"_a)
-          .def("is_subset_of", &mlir::DialectRegistry::isSubsetOf, "rhs"_a);
-
-  auto mlir_OperationState =
-      non_copying_non_moving_class_<mlir::OperationState>(irModule,
-                                                          "OperationState")
-          .def(nb::init<mlir::Location, llvm::StringRef>(), "location"_a,
-               "name"_a)
-          .def(nb::init<mlir::Location, mlir::OperationName>(), "location"_a,
-               "name"_a)
-          .def(nb::init<mlir::Location, mlir::OperationName, mlir::ValueRange,
-                        mlir::TypeRange, llvm::ArrayRef<mlir::NamedAttribute>,
-                        mlir::BlockRange,
-                        llvm::MutableArrayRef<std::unique_ptr<mlir::Region>>>(),
-               "location"_a, "name"_a, "operands"_a, "types"_a, "attributes"_a,
-               "successors"_a, "regions"_a)
-          .def(nb::init<mlir::Location, llvm::StringRef, mlir::ValueRange,
-                        mlir::TypeRange, llvm::ArrayRef<mlir::NamedAttribute>,
-                        mlir::BlockRange,
-                        llvm::MutableArrayRef<std::unique_ptr<mlir::Region>>>(),
-               "location"_a, "name"_a, "operands"_a, "types"_a, "attributes"_a,
-               "successors"_a, "regions"_a)
-          .def_prop_ro("raw_properties",
-                       &mlir::OperationState::getRawProperties)
-          .def("set_properties", &mlir::OperationState::setProperties, "op"_a,
-               "emit_error"_a)
-          .def("add_operands", &mlir::OperationState::addOperands,
-               "new_operands"_a)
-          .def(
-              "add_types",
-              [](mlir::OperationState &self,
-                 llvm::ArrayRef<mlir::Type> newTypes) {
-                return self.addTypes(newTypes);
-              },
-              "new_types"_a)
-          .def(
-              "add_attribute",
-              [](mlir::OperationState &self, llvm::StringRef name,
-                 mlir::Attribute attr) {
-                return self.addAttribute(name, attr);
-              },
-              "name"_a, "attr"_a)
-          .def(
-              "add_attribute",
-              [](mlir::OperationState &self, mlir::StringAttr name,
-                 mlir::Attribute attr) {
-                return self.addAttribute(name, attr);
-              },
-              "name"_a, "attr"_a)
-          .def("add_attributes", &mlir::OperationState::addAttributes,
-               "new_attributes"_a)
-          .def(
-              "add_successors",
-              [](mlir::OperationState &self, mlir::Block *successor) {
-                return self.addSuccessors(successor);
-              },
-              "successor"_a)
-          .def(
-              "add_successors",
-              [](mlir::OperationState &self, mlir::BlockRange newSuccessors) {
-                return self.addSuccessors(newSuccessors);
-              },
-              "new_successors"_a)
-          .def(
-              "add_region",
-              [](mlir::OperationState &self) { return self.addRegion(); },
-              nb::rv_policy::reference_internal)
-          .def(
-              "add_region",
-              [](mlir::OperationState &self,
-                 std::unique_ptr<mlir::Region> &&region) {
-                return self.addRegion(std::move(region));
-              },
-              "region"_a)
-          .def("add_regions", &mlir::OperationState::addRegions, "regions"_a)
-          .def_prop_ro("context", &mlir::OperationState::getContext);
-
   populateIRModule(irModule);
   auto dialectsModule = m.def_submodule("dialects");
   auto arithModule = dialectsModule.def_submodule("arith");

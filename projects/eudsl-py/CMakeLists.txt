@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.29)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
-include(AddEUDSL)
 set(LLVM_SUBPROJECT_TITLE "EUDSLPY")
 set(EUDSLPY_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
@@ -81,10 +79,12 @@ if(NOT TARGET LLVMSupport)
   message(FATAL_ERROR "LLVMSupport not found")
 endif()
 
+set(EUDSLPY_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake")
+find_package(EUDSLPY CONFIG REQUIRED)
 add_eudslpygen(eudslpy-gen EUDSLPY
   DESTINATION "${CMAKE_INSTALL_BINDIR}"
   EXPORT ${LLVM_SUBPROJECT_TITLE}
-  eudslpy-gen.cpp
+  src/eudslpy-gen.cpp
 )
 
 eudslpygen(EUDSLGenArith
@@ -92,8 +92,6 @@ eudslpygen(EUDSLGenArith
   EUDSLGenArith.cpp.inc
   NAMESPACES mlir::arith mlir::arith::detail
 )
-
-
 
 execute_process(
   COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
@@ -112,34 +110,70 @@ set(nanobind_options
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>
 )
 
+set(EUDSLPY_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/src")
+
 nanobind_add_module(eudslpy_ext
   NB_STATIC
   NB_DOMAIN eudsl
-  eudslpy_ext.cpp
+  src/eudslpy_ext.cpp
 )
 set_target_properties(eudslpy_ext
   PROPERTIES
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/eudsl"
+  LIBRARY_OUTPUT_DIRECTORY "${EUDSLPY_SRC_DIR}/eudsl"
 )
 target_link_libraries(eudslpy_ext PRIVATE MLIR)
+
+# hack so we can move libMLIR and libLLVM into the wheel
+# see AddLLVM.cmake#llvm_setup_rpath
+if(APPLE OR UNIX)
+  set(_origin_prefix "\$ORIGIN")
+  if(APPLE)
+    set(_origin_prefix "@loader_path")
+  endif()
+  if (EUDSLPY_STANDALONE_BUILD)
+    get_target_property(_mlir_loc MLIR LOCATION)
+    get_target_property(_llvm_loc LLVM LOCATION)
+  else()
+    set(_mlir_loc "$<TARGET_FILE:MLIR>")
+    set(_llvm_loc "$<TARGET_FILE:LLVM>")
+  endif()
+  set(_old_rpath "${_origin_prefix}/../lib${LLVM_LIBDIR_SUFFIX}")
+  if(APPLE)
+    execute_process(COMMAND install_name_tool -rpath "${_old_rpath}" ${_origin_prefix} "${_mlir_loc}" ERROR_VARIABLE rpath_err)
+    execute_process(COMMAND install_name_tool -rpath "${_old_rpath}" ${_origin_prefix} "${_llvm_loc}" ERROR_VARIABLE rpath_err)
+    # maybe already updated...
+    if (rpath_err AND NOT rpath_err MATCHES "no LC_RPATH load command with path: ${_old_rpath}")
+      message(FATAL_ERROR "couldn't update rpath because: ${rpath_err}")
+    endif()
+  else()
+    # sneaky sneaky - undocumented
+    file(RPATH_CHANGE FILE "${_mlir_loc}" OLD_RPATH "${_old_rpath}" NEW_RPATH "${_origin_prefix}")
+    file(RPATH_CHANGE FILE "${_llvm_loc}" OLD_RPATH "${_old_rpath}" NEW_RPATH "${_origin_prefix}")
+  endif()
+  set_target_properties(eudslpy_ext PROPERTIES INSTALL_RPATH "${_origin_prefix}")
+endif()
+# copy libMLIR into the ext dir for wheels
+install(IMPORTED_RUNTIME_ARTIFACTS MLIR LLVM LIBRARY DESTINATION eudsl)
+
 target_compile_options(eudslpy_ext PRIVATE ${nanobind_options})
 target_compile_options(nanobind-static PRIVATE ${nanobind_options})
 add_dependencies(eudslpy_ext EUDSLGenArith)
 
-set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen" -m eudsl -r)
-set(NB_STUBGEN_OUTPUTS ${CMAKE_CURRENT_LIST_DIR}/eudsl/__init__.pyi)
+set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen" --module eudslpy_ext --recursive --include-private --output-dir .)
+set(NB_STUBGEN_OUTPUTS "eudslpy_ext.pyi")
 add_custom_command(
   OUTPUT ${NB_STUBGEN_OUTPUTS}
   COMMAND ${NB_STUBGEN_CMD}
-  WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+  WORKING_DIRECTORY "${EUDSLPY_SRC_DIR}/eudsl"
   DEPENDS eudslpy_ext
 )
 add_custom_target(eudslpy_ext_stub ALL DEPENDS ${NB_STUBGEN_OUTPUTS})
 
 install(TARGETS eudslpy_ext LIBRARY DESTINATION eudsl)
 install(
-  DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/eudsl
+  DIRECTORY "${EUDSLPY_SRC_DIR}/eudsl"
   DESTINATION ${CMAKE_INSTALL_PREFIX}
+  PATTERN "*.pyc" EXCLUDE
   PATTERN "*.so" EXCLUDE
   PATTERN "*.a" EXCLUDE
   PATTERN ".gitignore" EXCLUDE

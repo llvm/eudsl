@@ -124,6 +124,7 @@ jobs:
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
 
       - name: "Build eudsl-py"
+        if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
 
@@ -239,11 +240,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: ["ubuntu-22.04", "macos-14", "macos-13", "windows-2019"]
+        runs-on: ["ubuntu-22.04", "macos-14", "macos-13",
+                  # "windows-2019"
+        ]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
-          {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
+          # {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
           {runs-on: "macos-13", name: "macos_x86_64", os: "macos"},
         ]
@@ -269,7 +272,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: eudsl_py_${{ matrix.name }}_artifact
+          name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse
 
       - name: "Install eudsl-py"

@@ -53,34 +53,30 @@ function(eudslpygen target inputFile outputFileName)
   # this could be smarter by asking people to list td targets or something but that's too onerous
   file(GLOB_RECURSE global_tds "${MLIR_INCLUDE_DIR}/mlir/*.td")
   # use cc -MM  to collect all transitive headers
+  set(_depfile ${CMAKE_CURRENT_BINARY_DIR}/${outputFileName}.d)
   file(RELATIVE_PATH outputFileName_rel
-    ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${outputFileName})
-  set(clang_command ${CMAKE_CXX_COMPILER} -xc++ "-std=c++${CMAKE_CXX_STANDARD}" -MM ${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}
-    ${eudslpygen_includes} -MT ${outputFileName_rel} -o ${outputFileName_rel}.d)
+    "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/${outputFileName}")
+  set(clang_command ${CMAKE_CXX_COMPILER} -v -xc++ "-std=c++${CMAKE_CXX_STANDARD}" -MM ${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}
+    ${eudslpygen_includes} -MT ${outputFileName_rel} -o ${_depfile})
   execute_process(COMMAND ${clang_command} RESULT_VARIABLE had_error COMMAND_ECHO STDERR)
-  if(had_error OR NOT EXISTS "${outputFileName_rel}.d")
-    message(WARNING "couldn't build depfile")
+  if(had_error OR NOT EXISTS "${_depfile}")
+    set(additional_cmdline -o "${outputFileName_rel}")
   else()
     # Use depfile instead of globbing arbitrary *.td(s) for Ninja.
     if(CMAKE_GENERATOR MATCHES "Ninja")
-      # Make output path relative to build.ninja, assuming located on
-      # ${CMAKE_BINARY_DIR}.
+      # Make output path relative to build.ninja, assuming located on ${CMAKE_BINARY_DIR}.
       # CMake emits build targets as relative paths but Ninja doesn't identify
       # absolute path (in *.d) as relative path (in build.ninja)
       # Note that eudslpygen is executed on ${CMAKE_BINARY_DIR} as working directory.
-      set(additional_cmdline
-        -o ${outputFileName_rel}
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${outputFileName}.d
-      )
+      set(additional_cmdline -o "${outputFileName_rel}" DEPFILE "${_depfile}")
     else()
       # the length of the first line in the depfile...
       string(LENGTH "${outputFileName_rel}: \\" depfile_offset)
-      file(READ ${CMAKE_CURRENT_BINARY_DIR}/${outputFileName}.d local_headers OFFSET ${depfile_offset})
+      file(READ ${_depfile} local_headers OFFSET ${depfile_offset})
       string(REPLACE "\\" ";" local_headers "${local_headers}")
       string(REGEX REPLACE "[ \t\r\n]" "" local_headers "${local_headers}")
       list(REMOVE_ITEM local_headers "")
-      set(additional_cmdline -o ${CMAKE_CURRENT_BINARY_DIR}/${outputFileName})
+      set(additional_cmdline -o "${outputFileName_rel}")
     endif()
   endif()
 
@@ -112,6 +108,7 @@ function(eudslpygen target inputFile outputFileName)
     ${eudslpygen_includes}
     ${eudslpygen_defines}
     ${additional_cmdline}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     # The file in EUDSLPYGEN_TARGET_DEFINITIONS may be not in the current
     # directory and local_headers may not contain it, so we must
     # explicitly list it here:
