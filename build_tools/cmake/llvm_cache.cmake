@@ -10,11 +10,12 @@ set(LLVM_INCLUDE_TOOLS ON CACHE BOOL "")
 set(LLVM_INSTALL_UTILS ON CACHE BOOL "")
 
 # All the tools will use libllvm shared library
+set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
 # (but doesn't work on windows)
 if (NOT WIN32)
-  set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
   set(LLVM_LINK_LLVM_DYLIB ON CACHE BOOL "")
 endif()
+set(MLIR_LINK_MLIR_DYLIB OFF CACHE BOOL "")
 
 # useful things
 set(LLVM_ENABLE_ASSERTIONS ON CACHE BOOL "")
@@ -117,7 +118,7 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     CACHE STRING "")
 
 if (NOT WIN32)
-  list(APPEND LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS LLVM)
+  list(APPEND LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS LLVM MLIR)
 endif()
 
 get_cmake_property(_variableNames VARIABLES)
