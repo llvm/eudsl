@@ -9,8 +9,8 @@ set(LLVM_BUILD_UTILS ON CACHE BOOL "")
 set(LLVM_INCLUDE_TOOLS ON CACHE BOOL "")
 set(LLVM_INSTALL_UTILS ON CACHE BOOL "")
 
-# All the tools will use libllvm shared library
 set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
+# All the tools will use libllvm shared library
 # (but doesn't work on windows)
 if (NOT WIN32)
   set(LLVM_LINK_LLVM_DYLIB ON CACHE BOOL "")
@@ -103,6 +103,7 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
 
     FileCheck
     not
+    MLIR
     MLIRPythonModules
     # triggers MLIRMlirDevelopmentTargets.cmake
     mlir-mlirdevelopment-cmake-exports

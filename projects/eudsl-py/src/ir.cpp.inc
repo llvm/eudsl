@@ -1,12 +1,3 @@
-
-#include "ir.h"
-#include "llvm/Support/ThreadPool.h"
-namespace nb = nanobind;
-using namespace nb::literals;
-void populateIRModule(nanobind::module_ & m) {
-using namespace mlir;
-using namespace mlir::detail;
-
 auto mlir_MLIRContext = nb::class_<mlir::MLIRContext>(m, "MLIRContext")
 .def(nb::init<mlir::MLIRContext::Threading>(), "multithreading"_a)
 .def(nb::init<const mlir::DialectRegistry &, mlir::MLIRContext::Threading>(), "registry"_a, "multithreading"_a)
@@ -3257,5 +3248,3 @@ auto mlir_OperandElementTypeIterator = nb::class_<mlir::OperandElementTypeIterat
 auto mlir_ResultElementTypeIterator = nb::class_<mlir::ResultElementTypeIterator>(m, "ResultElementTypeIterator")
 .def("map_element", &mlir::ResultElementTypeIterator::mapElement, "value"_a)
 ;
-
-}

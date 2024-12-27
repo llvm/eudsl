@@ -1,7 +1,7 @@
 [build-system]
 requires = [
     "scikit-build-core==0.10.7",
-    "nanobind==2.2.0",
+    "nanobind==2.4.0",
     "typing_extensions==4.12.2",
     "numpy==2.0.2"
 ]
@@ -27,7 +27,9 @@ cmake.source-dir = "src"
 [tool.scikit-build.cmake.define]
 LLVM_DIR = {env="LLVM_DIR", default="EMPTY"}
 MLIR_DIR = {env="MLIR_DIR", default="EMPTY"}
+Clang_DIR = {env="Clang_DIR", default="EMPTY"}
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
+CMAKE_VERBOSE_MAKEFILE = "ON"
 
 [tool.cibuildwheel]
 build-verbosity = 1
@@ -37,5 +39,6 @@ manylinux-x86_64-image = "manylinux_2_28"
 environment-pass = [
     "LLVM_DIR",
     "MLIR_DIR",
+    "Clang_DIR",
     "CMAKE_GENERATOR"
 ]

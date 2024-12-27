@@ -19,26 +19,35 @@
 
 #include <regex>
 
+static llvm::cl::OptionCategory EUDSLPYGenCat("Options for eudslpy-gen");
 static llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional,
                                                 llvm::cl::desc("<input file>"),
-                                                llvm::cl::Required);
+                                                llvm::cl::Required,
+                                                llvm::cl::cat(EUDSLPYGenCat));
 
 static llvm::cl::list<std::string>
     IncludeDirs("I", llvm::cl::desc("Directory of include files"),
-                llvm::cl::value_desc("directory"), llvm::cl::Prefix);
+                llvm::cl::value_desc("directory"), llvm::cl::Prefix,
+                llvm::cl::cat(EUDSLPYGenCat));
 
 static llvm::cl::opt<std::string>
     OutputFilename("o", llvm::cl::desc("Output filename"),
-                   llvm::cl::value_desc("filename"), llvm::cl::Required);
+                   llvm::cl::value_desc("filename"), llvm::cl::Required,
+                   llvm::cl::cat(EUDSLPYGenCat));
 
 static llvm::cl::list<std::string>
-    Namespace("namespace", llvm::cl::desc("Namespaces to generate from"),
-              llvm::cl::CommaSeparated);
+    Namespaces("namespaces", llvm::cl::desc("Namespaces to generate from"),
+               llvm::cl::CommaSeparated, llvm::cl::cat(EUDSLPYGenCat));
+
+static llvm::cl::list<std::string>
+    Defines("D", llvm::cl::desc("Name of the macro to be defined"),
+            llvm::cl::value_desc("macro name"), llvm::cl::Prefix,
+            llvm::cl::cat(EUDSLPYGenCat));
 
 static bool filterInNamespace(const std::string &s) {
-  if (Namespace.empty())
+  if (Namespaces.empty())
     return true;
-  for (auto ns : Namespace)
+  for (auto ns : Namespaces)
     if (ns == s || ("::" + ns == s))
       return true;
   return false;
@@ -142,9 +151,8 @@ static bool emitClassMember(clang::CXXMethodDecl *decl,
       llvm::cast<clang::CXXRecordDecl>(decl->getParent());
   std::string methodName = decl->getNameAsString();
   std::string className = parentRecord->getQualifiedNameAsString();
-  auto isGetter = [](clang::CXXMethodDecl *d) {
-    return d->getNameAsString().rfind("get", 0) == 0 && d->getNumParams() == 0;
-  };
+  // clang::CXXMethodDecl *overridesBaseMethod =
+  //     decl->getCorrespondingMethodInClass(parentRecord, /*MayBeBase*/ true);
 
   std::string funcRef, nbFnName;
   // TODO(max): hasPointerRepresentation
@@ -203,23 +211,14 @@ static bool emitClassMember(clang::CXXMethodDecl *decl,
 
     nbFnName = methodName;
     if (decl->isOverloadedOperator()) {
-      nbFnName = nbFnName;
+      // nbFnName = nbFnName;
     } else {
-      // static method with non-static overloads that aren't also getters (getters are renamed already to break overlap)
+      // disambiguate static method with non-static overloads (nanobind doesn't let you overload static with non-static)
       // see mlir::ElementsAttr
-      if (overloads.size() > 1 &&
+      if (decl->isStatic() && overloads.size() > 1 &&
           llvm::any_of(overloads,
-                       [isGetter](clang::CXXMethodDecl *m) {
-                         return !m->isStatic() && !isGetter(m);
-                       }) &&
-          decl->isStatic() && !isGetter(decl)) {
+                       [](clang::CXXMethodDecl *m) { return !m->isStatic(); }))
         nbFnName += "_static";
-      }
-
-      // remove the redundant `get` because we're going to use def_prop below
-      if (isGetter(decl) && nbFnName.rfind("get", 0) == 0)
-        nbFnName = nbFnName.replace(0, 3, "");
-
       nbFnName = snakeCase(nbFnName);
     }
   }
@@ -236,8 +235,6 @@ static bool emitClassMember(clang::CXXMethodDecl *decl,
   std::string defStr = "def";
   if (decl->isStatic())
     defStr = "def_static";
-  else if (isGetter(decl))
-    defStr = "def_prop_ro";
 
   std::string refInternal;
   if (returnsPtr || returnsRef)
@@ -274,6 +271,7 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
     scope = getNBBindClassName(ctx->getQualifiedNameAsString());
   }
 
+  std::string additional = "";
   std::string className = decl->getQualifiedNameAsString();
   if (decl->getNumBases() > 1) {
     clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
@@ -282,24 +280,45 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
                                  "multiple base classes not supported"));
     (void)builder.setForceEmit();
   } else if (decl->getNumBases() == 1) {
+    // handle some known bases that we've already found a wap to bind
     clang::CXXBaseSpecifier baseClass = *decl->bases_begin();
     std::string baseName = baseClass.getType().getAsString(getPrintingPolicy());
+    // TODO(max): these could be lookups on the corresponding recorddecls using sema...
     if (baseName.rfind("mlir::Op<", 0) == 0) {
       className = llvm::formatv("{0}, mlir::OpState", className);
     } else if (baseName.rfind("mlir::detail::StorageUserBase<", 0) == 0) {
-      className = llvm::formatv("{0}, {1}", className,
-                                llvm::StringRef{baseName}.split(",").first);
-    } else {
+      llvm::SmallVector<llvm::StringRef, 2> templParams;
+      llvm::StringRef{baseName}.split(templParams, ",");
+      className = llvm::formatv("{0}, {1}", className, templParams[1]);
+    } else if (baseName.rfind("mlir::Dialect", 0) == 0 &&
+               className.rfind("mlir::ExtensibleDialect") ==
+                   std::string::npos) {
+      // clang-format off
+      additional += llvm::formatv(".def_static(\"insert_into_registry\", [](mlir::DialectRegistry &registry) {{ registry.insert<{0}>(); })", className);
+      additional += llvm::formatv(".def_static(\"load_into_context\", [](mlir::MLIRContext &context) {{ return context.getOrLoadDialect<{0}>(); })", className);
+      // clang-format on
+    } else if (!llvm::isa<clang::ClassTemplateSpecializationDecl>(
+                   baseClass.getType()->getAsCXXRecordDecl())) {
       className = llvm::formatv("{0}, {1}", className, baseName);
+    } else {
+      assert(llvm::isa<clang::ClassTemplateSpecializationDecl>(
+                 baseClass.getType()->getAsCXXRecordDecl()) &&
+             "expected class template specialization");
+      clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
+          baseClass.getBeginLoc(), ci.getDiagnostics().getCustomDiagID(
+                                       clang::DiagnosticsEngine::Warning,
+                                       "unknown base templated base class: "));
+      builder << baseName << "\n";
+      (void)builder.setForceEmit();
     }
   }
 
   std::string autoVar = llvm::formatv(
       "auto {0}", getNBBindClassName(decl->getQualifiedNameAsString()));
 
-  outputFile->os() << llvm::formatv("\n{0} = nb::class_<{1}>({2}, \"{3}\");\n",
-                                    autoVar, className, scope,
-                                    getPyClassName(decl->getNameAsString()));
+  outputFile->os() << llvm::formatv(
+      "\n{0} = nb::class_<{1}>({2}, \"{3}\"){4};\n", autoVar, className, scope,
+      getPyClassName(decl->getNameAsString()), additional);
 
   return true;
 }
@@ -394,7 +413,7 @@ struct ClassStructEnumConsumer : clang::ASTConsumer {
   ClassStructEnumVisitor visitor;
 };
 
-struct GenerateBindingsAction : clang::SyntaxOnlyAction {
+struct GenerateBindingsAction : clang::ASTFrontendAction {
   explicit GenerateBindingsAction(
       const std::shared_ptr<llvm::ToolOutputFile> &outputFile)
       : outputFile(outputFile) {}
@@ -443,22 +462,24 @@ int main(int argc, char **argv) {
       "-E",
       "-xc++",
       "-std=c++17",
-      "-fsyntax-only",
       "-fdirectives-only",
       "-fkeep-system-includes",
       "-fdelayed-template-parsing",
-      // "-nostdinc", "-nostdlibinc"
+      "-Wno-unused-command-line-argument",
+      "-v",
+      // annoyingly clang will insert -internal-isystem with relative paths and those could hit on the build dir
+      // (which have headers and relationships amongst them that won't necessarily be valid)
+      // more annoyingly different toolchains decide differently which flag determines whether to include
+      // the tell-tale sign is if you uncomment -v and see "ignoring non-existant directory..." in the output
+      "-nobuiltininc",
+      "-nostdinc",
+      "-nostdinc++",
+      "-nostdlibinc",
   };
   for (const auto &includeDir : IncludeDirs)
     args.emplace_back(llvm::formatv("-I{0}", includeDir));
-
-  args.emplace_back(
-      llvm::formatv("-I{0}", "/usr/lib/llvm-20/lib/clang/20/include"));
-  args.emplace_back(llvm::formatv("-I{0}", "/usr/include/c++/12"));
-  args.emplace_back(
-      llvm::formatv("-I{0}", "/usr/include/x86_64-linux-gnu/c++/12"));
-  args.emplace_back(llvm::formatv("-I{0}", "/usr/include"));
-  args.emplace_back(llvm::formatv("-I{0}", "/usr/include/x86_64-linux-gnu"));
+  for (const auto &define : Defines)
+    args.emplace_back(llvm::formatv("-D{0}", define));
 
   if (!clang::tooling::runToolOnCodeWithArgs(
           std::make_unique<GenerateBindingsAction>(outputFile), buffer, args,

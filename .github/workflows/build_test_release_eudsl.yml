@@ -95,16 +95,18 @@ jobs:
           else
             export RELEASE_PREFIX="mlir_${{ matrix.name }}"
           fi
-          RELEASE_URL=$(gh release view latest --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains(env.RELEASE_PREFIX))) | .[-1] | .url')
+          RELEASE_URL=$(gh release view llvm --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains(env.RELEASE_PREFIX))) | .[-1] | .url')
           curl -sLO $RELEASE_URL
           tar xf $RELEASE_PREFIX*.tar.gz
           
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             echo "LLVM_DIR=/host/$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
             echo "MLIR_DIR=/host/$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
+            echo "Clang_DIR=/host/$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
           else
             echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
             echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
+            echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
           fi
           
           # these have to match the deployment targets of the LLVM build runners
@@ -139,7 +141,7 @@ jobs:
           limit-access-to-actor: true
           install-dependencies: ${{ startsWith(matrix.os, 'macos') || startsWith(matrix.os, 'windows') || startsWith(matrix.os, 'ubuntu') }}
 
-  test-eudsl:
+  test-eudsl-tblgen:
 
     needs: [build-eudsl]
 
@@ -196,7 +198,7 @@ jobs:
   release-eudsl-tblgen:
 
     if: ${{ github.event_name == 'workflow_dispatch' }}
-    needs: [test-eudsl]
+    needs: [test-eudsl-tblgen]
 
     strategy:
       fail-fast: false
@@ -230,105 +232,9 @@ jobs:
           makeLatest: true
           omitBody: true
 
-  build-eudsl-py:
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: "ubuntu_x86_64"
-            runs-on: "ubuntu-22.04"
-            os: "ubuntu"
-          - name: "windows_x86_64"
-            runs-on: "windows-2019"
-            os: "windows"
-          - name: "macos_arm64"
-            runs-on: "macos-14"
-            os: "macos"
-          - name: "macos_x86_64"
-            runs-on: "macos-13"
-            os: "macos"
-
-    runs-on: ${{ matrix.runs-on }}
-
-    name: "Build eudsl-py ${{ matrix.name }}"
-
-    defaults:
-      run:
-        shell: bash
-
-    permissions:
-      id-token: write
-      contents: write
-
-    env:
-      # either the PR number or `branch-N` where N always increments
-      cache-key: eudsl_${{ matrix.name }}_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
-
-    container:
-      image: ${{ matrix.container }}
-
-    steps:
-      - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
-
-      - name: "Setup base"
-        uses: ./.github/actions/setup_base
-        id: setup_base
-        with:
-          cache-key: ${{ env.cache-key }}
-          restore-key: "eudsl_${{ matrix.name }}_clang"
-          os: ${{ matrix.os }}
-          arch: ${{ matrix.arch }}
-
-      - name: "Download MLIR"
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          
-          if [[ "${{ matrix.os }}" == "almalinux" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export RELEASE_PREFIX="mlir_manylinux_x86_64"
-          else
-            export RELEASE_PREFIX="mlir_${{ matrix.name }}"
-          fi
-          RELEASE_URL=$(gh release view latest --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains(env.RELEASE_PREFIX))) | .[-1] | .url')
-          curl -sLO $RELEASE_URL
-          tar xf $RELEASE_PREFIX*.tar.gz
-          echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
-          echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
-
-      - name: "Build eudsl-py"
-        id: build
-        run: |
-          pip install cibuildwheel
-          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export LLVM_DIR="/host/$LLVM_DIR"
-            export MLIR_DIR="/host/$MLIR_DIR"
-          fi
-          if [[ "${{ matrix.runs-on }}" == "macos-14" ]]; then
-            export MACOSX_DEPLOYMENT_TARGET=14.0
-          elif [[ "${{ matrix.runs-on }}" == "macos-13" ]]; then
-            export MACOSX_DEPLOYMENT_TARGET=13.7
-          fi
-          $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: eudsl_py_${{ matrix.name }}_artifact
-          path: wheelhouse/*.whl
-          if-no-files-found: warn
-
-      - name: "Setup tmate session"
-        if: ${{ (failure() && inputs.debug_with_tmate) || inputs.force_debug_with_tmate }}
-        uses: mxschmitt/action-tmate@v3.18
-        with:
-          limit-access-to-actor: true
-          install-dependencies: ${{ startsWith(matrix.os, 'macos') || startsWith(matrix.os, 'windows') || startsWith(matrix.os, 'ubuntu') }}
-
   test-eudsl-py:
 
-    needs: [build-eudsl-py]
+    needs: [build-eudsl]
 
     strategy:
       fail-fast: false
@@ -380,10 +286,10 @@ jobs:
             python -m pytest -rA --capture=tee-sys $TESTS_DIR
           fi
 
-  release-eudsl:
+  release-eudsl-py:
 
     if: ${{ github.event_name == 'workflow_dispatch' }}
-    needs: [test-eudsl]
+    needs: [test-eudsl-tblgen, test-eudsl-py]
     runs-on: "ubuntu-22.04"
     name: "Release eudsl"
 

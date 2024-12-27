@@ -1,11 +1,47 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_vector.h>
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/unique_ptr.h>
 #include <nanobind/typing.h>
 
+#include "mlir/Bytecode/BytecodeImplementation.h"
+#include "mlir/IR/Action.h"
+#include "mlir/IR/AffineExpr.h"
+#include "mlir/IR/AffineExprVisitor.h"
+#include "mlir/IR/AffineMap.h"
+#include "mlir/IR/AsmState.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinDialect.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Dialect.h"
+#include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/DialectResourceBlobManager.h"
+#include "mlir/IR/Dominance.h"
+#include "mlir/IR/ExtensibleDialect.h"
+#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/IntegerSet.h"
+#include "mlir/IR/Iterators.h"
+#include "mlir/IR/Matchers.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/RegionKindInterface.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/TensorEncoding.h"
+#include "mlir/IR/TypeUtilities.h"
+#include "mlir/IR/Unit.h"
+#include "mlir/InitAllDialects.h"
+#include "mlir/Interfaces/DataLayoutInterfaces.h"
+#include "mlir/Interfaces/InferIntRangeInterface.h"
+
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/APSInt.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ThreadPool.h"
 
 #include "bind_vec_like.h"
-#include "ir.h"
+
+#include <memory>
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -16,24 +52,155 @@ public:
       : Dialect(name, context, id) {}
 };
 
-nanobind::class_<_SmallVector> smallVector;
-nanobind::class_<_ArrayRef> arrayRef;
-nanobind::class_<_MutableArrayRef> mutableArrayRef;
+nb::class_<_SmallVector> smallVector;
+nb::class_<_ArrayRef> arrayRef;
+nb::class_<_MutableArrayRef> mutableArrayRef;
 
-void bind_array_ref_smallvector(nanobind::handle scope) {
-  scope.attr("T") = nanobind::type_var("T");
-  arrayRef =
-      nanobind::class_<_ArrayRef>(scope, "ArrayRef", nanobind::is_generic(),
-                                  nanobind::sig("class ArrayRef[T]"));
-  mutableArrayRef = nanobind::class_<_MutableArrayRef>(
-      scope, "MutableArrayRef", nanobind::is_generic(),
-      nanobind::sig("class MutableArrayRef[T]"));
-  smallVector = nanobind::class_<_SmallVector>(
-      scope, "SmallVector", nanobind::is_generic(),
-      nanobind::sig("class SmallVector[T]"));
+void bind_array_ref_smallvector(nb::handle scope) {
+  scope.attr("T") = nb::type_var("T");
+  arrayRef = nb::class_<_ArrayRef>(scope, "ArrayRef", nb::is_generic(),
+                                   nb::sig("class ArrayRef[T]"));
+  mutableArrayRef =
+      nb::class_<_MutableArrayRef>(scope, "MutableArrayRef", nb::is_generic(),
+                                   nb::sig("class MutableArrayRef[T]"));
+  smallVector = nb::class_<_SmallVector>(scope, "SmallVector", nb::is_generic(),
+                                         nb::sig("class SmallVector[T]"));
 }
 
-NB_MODULE(eudsl_ext, m) {
+template <>
+struct nb::detail::type_caster<llvm::StringRef> {
+  NB_TYPE_CASTER(llvm::StringRef, const_name("str"))
+
+  bool from_python(handle src, uint8_t, cleanup_list *) noexcept {
+    Py_ssize_t size;
+    const char *str = PyUnicode_AsUTF8AndSize(src.ptr(), &size);
+    if (!str) {
+      PyErr_Clear();
+      return false;
+    }
+    value = llvm::StringRef(str, (size_t)size);
+    return true;
+  }
+
+  static handle from_cpp(llvm::StringRef value, rv_policy,
+                         cleanup_list *) noexcept {
+    return PyUnicode_FromStringAndSize(value.data(), value.size());
+  }
+};
+
+template <>
+struct nb::detail::type_caster<llvm::StringLiteral> {
+  NB_TYPE_CASTER(llvm::StringLiteral, const_name("str"))
+
+  static handle from_cpp(llvm::StringLiteral value, rv_policy,
+                         cleanup_list *) noexcept {
+    return PyUnicode_FromStringAndSize(value.data(), value.size());
+  }
+};
+
+template <>
+struct nb::detail::type_caster<llvm::Twine> {
+  using Value = llvm::Twine;
+  static constexpr auto Name = const_name("str");
+  template <typename T_>
+  using Cast = movable_cast_t<T_>;
+
+  template <typename T_>
+  static constexpr bool can_cast() {
+    return true;
+  }
+
+  template <typename T_,
+            enable_if_t<std::is_same_v<std::remove_cv_t<T_>, Value>> = 0>
+  static handle from_cpp(T_ *p, rv_policy policy, cleanup_list *list) {
+    if (!p)
+      return none().release();
+    return from_cpp(*p, policy, list);
+  }
+
+  explicit operator Value *() { return &*value; }
+  explicit operator Value &() { return (Value &)*value; }
+  explicit operator Value &&() { return (Value &&)*value; }
+
+  // hack because Twine::operator= is deleted
+  std::optional<Value> value;
+
+  bool from_python(handle src, uint8_t, cleanup_list *) noexcept {
+    Py_ssize_t size;
+    const char *str = PyUnicode_AsUTF8AndSize(src.ptr(), &size);
+    if (!str) {
+      PyErr_Clear();
+      return false;
+    }
+    std::string_view s{str, (size_t)size};
+    value.emplace(s);
+    return true;
+  }
+
+  static handle from_cpp(llvm::Twine value, rv_policy,
+                         cleanup_list *) noexcept {
+    llvm::StringRef s = value.getSingleStringRef();
+    return PyUnicode_FromStringAndSize(s.data(), s.size());
+  }
+};
+
+template <typename T, typename... Ts>
+struct non_copying_non_moving_class_ : nb::class_<T, Ts...> {
+  template <typename... Extra>
+  NB_INLINE non_copying_non_moving_class_(nb::handle scope, const char *name,
+                                          const Extra &...extra) {
+    nb::detail::type_init_data d;
+
+    d.flags = 0;
+    d.align = (uint8_t)alignof(typename nb::class_<T, Ts...>::Alias);
+    d.size = (uint32_t)sizeof(typename nb::class_<T, Ts...>::Alias);
+    d.name = name;
+    d.scope = scope.ptr();
+    d.type = &typeid(T);
+
+    if constexpr (!std::is_same_v<typename nb::class_<T, Ts...>::Base, T>) {
+      d.base = &typeid(typename nb::class_<T, Ts...>::Base);
+      d.flags |= (uint32_t)nb::detail::type_init_flags::has_base;
+    }
+
+    if constexpr (std::is_destructible_v<T>) {
+      d.flags |= (uint32_t)nb::detail::type_flags::is_destructible;
+
+      if constexpr (!std::is_trivially_destructible_v<T>) {
+        d.flags |= (uint32_t)nb::detail::type_flags::has_destruct;
+        d.destruct = nb::detail::wrap_destruct<T>;
+      }
+    }
+
+    if constexpr (nb::detail::has_shared_from_this_v<T>) {
+      d.flags |= (uint32_t)nb::detail::type_flags::has_shared_from_this;
+      d.keep_shared_from_this_alive = [](PyObject *self) noexcept {
+        if (auto sp = nb::inst_ptr<T>(self)->weak_from_this().lock()) {
+          nb::detail::keep_alive(
+              self, new auto(std::move(sp)),
+              [](void *p) noexcept { delete (decltype(sp) *)p; });
+          return true;
+        }
+        return false;
+      };
+    }
+
+    (nb::detail::type_extra_apply(d, extra), ...);
+
+    this->m_ptr = nb::detail::nb_type_new(&d);
+  }
+};
+
+void populateIRModule(nb::module_ &m) {
+  using namespace mlir;
+#include "ir.cpp.inc"
+}
+
+void populateArithModule(nb::module_ &m){
+#include "EUDSLGenArith.cpp.inc"
+}
+
+NB_MODULE(eudslpy_ext, m) {
   // nb::class_<mlir::SymbolTableCollection>(m, "SymbolTableCollection");
   // nb::class_<mlir::FallbackAsmResourceMap>(m, "FallbackAsmResourceMap");
 
@@ -166,7 +333,7 @@ NB_MODULE(eudsl_ext, m) {
        smallVectorOfInt16, smallVectorOfInt32, smallVectorOfInt64,
        smallVectorOfUInt16, smallVectorOfUInt32, smallVectorOfUInt64,
        smallVectorOfChar, smallVectorOfDouble,
-       smallVectorOfLong](nanobind::type_object type) -> nb::object {
+       smallVectorOfLong](nb::type_object type) -> nb::object {
         PyTypeObject *typeObj = (PyTypeObject *)type.ptr();
         if (typeObj == &PyBool_Type)
           return smallVectorOfBool;
@@ -355,18 +522,7 @@ NB_MODULE(eudsl_ext, m) {
           .def_prop_ro("context", &mlir::OperationState::getContext);
 
   populateIRModule(irModule);
-
   auto dialectsModule = m.def_submodule("dialects");
-
   auto arithModule = dialectsModule.def_submodule("arith");
   populateArithModule(arithModule);
-
-  auto cfModule = dialectsModule.def_submodule("cf");
-  populateControlFlowModule(cfModule);
-
-  auto scfModule = dialectsModule.def_submodule("scf");
-  populateSCFModule(scfModule);
-
-  auto affineModule = dialectsModule.def_submodule("affine");
-  populateAffineModule(affineModule);
 }
