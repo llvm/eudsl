@@ -42,5 +42,13 @@ environment-pass = [
     "MLIR_DIR",
     "Clang_DIR",
     "CMAKE_GENERATOR",
-    "CMAKE_PREFIX_PATH"
+    "CMAKE_PREFIX_PATH",
+    "DISABLE_COMPILE_OPT",
+    "CC",
+    "CXX"
+]
+
+[tool.cibuildwheel.linux]
+before-build = [
+    "yum install -y clang",
 ]

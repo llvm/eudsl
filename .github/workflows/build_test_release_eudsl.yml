@@ -13,6 +13,11 @@ on:
         description: 'Run the build with a tmate session ONLY in case of failure'
         required: false
         default: false
+      eudslpy_disable_compile_opt:
+        type: boolean
+        description: 'use -O0 to build'
+        required: false
+        default: true
   pull_request:
     paths:
       - ".github/workflows/build_test_release_eudsl.yml"
@@ -126,6 +131,11 @@ jobs:
       - name: "Build eudsl-py"
         if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
+          # prevent OOM on free GHA
+          # TODO(max): implement sharding instead
+          export DISABLE_COMPILE_OPT="${{ inputs.debug_with_tmate }}"
+          export CC=clang
+          export CXX=clang++
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
 
       - name: Upload artifacts

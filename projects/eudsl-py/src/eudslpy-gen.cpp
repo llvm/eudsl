@@ -121,16 +121,70 @@ static llvm::SmallPtrSet<T *, 1> findOverloads(clang::FunctionDecl *decl,
 }
 
 // TODO(max): split this into two functions (one for names and one for types)
-static std::string sanitizeNameType(std::string name, int emptyIdx = 0) {
-  if (name == "from")
-    name = "from_";
-  else if (name == "except")
-    name = "except_";
-  else if (name == "")
-    name = std::string(emptyIdx + 1, '_');
-  else if (name.rfind("ArrayRef", 0) == 0)
-    name = "llvm::" + name;
-  return name;
+static std::string sanitizeNameOrType(std::string nameOrType,
+                                      int emptyIdx = 0) {
+  if (nameOrType == "from")
+    nameOrType = "from_";
+  else if (nameOrType == "except")
+    nameOrType = "except_";
+  else if (nameOrType == "")
+    nameOrType = std::string(emptyIdx + 1, '_');
+  else if (nameOrType.rfind("ArrayRef", 0) == 0)
+    nameOrType = "llvm::" + nameOrType;
+  if (std::regex_search(nameOrType, std::regex(R"(std::__1)")))
+    nameOrType = std::regex_replace(nameOrType, std::regex("std::__1"), "std");
+  return nameOrType;
+}
+
+// emit a lambda body to disambiguate/break ties amongst overloads
+// TODO(max):: overloadimpl or whatever should work but it doesn't...
+std::string emitNBLambdaBody(clang::FunctionDecl *decl,
+                             llvm::SmallVector<std::string> paramNames,
+                             llvm::SmallVector<std::string> paramTypes) {
+  std::string typedParamsStr;
+  if (decl->getNumParams()) {
+    llvm::SmallVector<std::string> typedParams =
+        llvm::to_vector(llvm::map_range(
+            llvm::zip(paramTypes, paramNames),
+            [](std::tuple<std::string, std::string> item) -> std::string {
+              auto [t, n] = item;
+              return llvm::formatv("{0} {1}", t, n);
+            }));
+    typedParamsStr = llvm::join(typedParams, ", ");
+  }
+  // since we're emitting a body, we need to do std::move for some
+  // unique_ptrs
+  llvm::SmallVector<std::string> newParamNames(paramNames);
+  for (auto [idx, item] :
+       llvm::enumerate(llvm::zip(paramTypes, newParamNames))) {
+    // TODO(max): characterize this condition better...
+    auto [t, n] = item;
+    if ((t.rfind("std::unique_ptr") != std::string::npos && t.back() != '&') ||
+        t.rfind("&&") != std::string::npos)
+      n = llvm::formatv("std::move({0})", n);
+  }
+  std::string newParamNamesStr = llvm::join(newParamNames, ", ");
+  std::string funcRef;
+  std::string returnType = sanitizeNameOrType(
+      decl->getReturnType().getAsString(getPrintingPolicy()));
+  if (decl->isStatic() || !decl->isCXXClassMember()) {
+    funcRef = llvm::formatv("\n  []({0}) -> {1} {{\n    return {2}({3});\n  }",
+                            typedParamsStr, returnType,
+                            decl->getQualifiedNameAsString(), newParamNamesStr);
+  } else {
+    assert(decl->isCXXClassMember() && "expected class member");
+    if (decl->getNumParams())
+      typedParamsStr = llvm::formatv("self, {0}", typedParamsStr);
+    else
+      typedParamsStr = "self";
+    const clang::CXXRecordDecl *parentRecord =
+        llvm::cast<clang::CXXRecordDecl>(decl->getParent());
+    funcRef = llvm::formatv(
+        "\n  []({0}& {1}) -> {2} {{\n    return self.{3}({4});\n  }",
+        parentRecord->getQualifiedNameAsString(), typedParamsStr, returnType,
+        decl->getNameAsString(), newParamNamesStr);
+  }
+  return funcRef;
 }
 
 static bool
@@ -149,28 +203,17 @@ emitClassMethodOrFunction(clang::FunctionDecl *decl,
     // word boundary excludes x86_amx_tdpbf16ps
     if (std::regex_search(t.getAsString(), std::regex(R"(_t\b)")))
       canonical = false;
-    if (std::regex_search(t.getAsString(), std::regex(R"(std::function)")))
-      canonical = false;
-    if (std::regex_search(t.getCanonicalType().getAsString(),
-                          std::regex(R"(std::__1)")))
-      canonical = false;
-    paramTypes.push_back(
-        sanitizeNameType(t.getAsString(getPrintingPolicy(canonical))));
-    paramNames.push_back(sanitizeNameType(name, i));
+    std::string paramType = t.getAsString(getPrintingPolicy(canonical));
+    paramTypes.push_back(sanitizeNameOrType(paramType));
+    paramNames.push_back(sanitizeNameOrType(name, i));
   }
-
-  const clang::CXXRecordDecl *parentRecord =
-      llvm::dyn_cast_if_present<clang::CXXRecordDecl>(decl->getParent());
-
-  std::string funcRef, nbFnName;
-  // TODO(max): hasPointerRepresentation
-  bool returnsPtr = decl->getType()->isPointerType(),
-       returnsRef = decl->getType()->isReferenceType();
 
   llvm::SmallPtrSet<clang::FunctionDecl *, 1> funcOverloads =
       findOverloads<clang::FunctionDecl>(decl, ci.getSema());
   llvm::SmallPtrSet<clang::FunctionTemplateDecl *, 1> funcTemplOverloads =
       findOverloads<clang::FunctionTemplateDecl>(decl, ci.getSema());
+  std::string funcRef, nbFnName;
+
   if (auto ctor = llvm::dyn_cast<clang::CXXConstructorDecl>(decl)) {
     if (ctor->isDeleted())
       return false;
@@ -179,50 +222,7 @@ emitClassMethodOrFunction(clang::FunctionDecl *decl,
     if (funcOverloads.size() == 1 && funcTemplOverloads.empty()) {
       funcRef = llvm::formatv("&{0}", decl->getQualifiedNameAsString());
     } else {
-      // emit a lambda body to disambiguate/break ties amongst overloads
-      // TODO(max):: overloadimpl or whatever should work but it doesn't...
-      std::string typedParamsStr;
-      if (decl->getNumParams()) {
-        llvm::SmallVector<std::string> typedParams =
-            llvm::to_vector(llvm::map_range(
-                llvm::zip(paramTypes, paramNames),
-                [](std::tuple<std::string, std::string> item) -> std::string {
-                  auto [t, n] = item;
-                  return llvm::formatv("{0} {1}", t, n);
-                }));
-        typedParamsStr = llvm::join(typedParams, ", ");
-      }
-      // since we're emitting a body, we need to do std::move for some
-      // unique_ptrs
-      llvm::SmallVector<std::string> newParamNames(paramNames);
-      for (auto [idx, item] :
-           llvm::enumerate(llvm::zip(paramTypes, newParamNames))) {
-        // TODO(max): characterize this condition better...
-        auto [t, n] = item;
-        if ((t.rfind("std::unique_ptr") != std::string::npos &&
-             t.back() != '&') ||
-            t.rfind("&&") != std::string::npos)
-          n = llvm::formatv("std::move({0})", n);
-      }
-      std::string newParamNamesStr = llvm::join(newParamNames, ", ");
-
-      if (decl->isStatic() || !decl->isCXXClassMember()) {
-        funcRef =
-            llvm::formatv("\n  []({0}){{\n    return {1}{2}({3});\n  }",
-                          typedParamsStr, returnsRef ? "&" : "",
-                          decl->getQualifiedNameAsString(), newParamNamesStr);
-      } else {
-        assert(decl->isCXXClassMember() && "expected class member");
-        if (decl->getNumParams())
-          typedParamsStr = llvm::formatv("self, {0}", typedParamsStr);
-        else
-          typedParamsStr = "self";
-        assert(parentRecord && "no parent record");
-        funcRef = llvm::formatv(
-            "\n  []({0}& {1}){{\n    return {2}self.{3}({4});\n  }",
-            parentRecord->getQualifiedNameAsString(), typedParamsStr,
-            returnsRef ? "&" : "", decl->getNameAsString(), newParamNamesStr);
-      }
+      funcRef = emitNBLambdaBody(decl, paramNames, paramTypes);
     }
 
     nbFnName = snakeCase(decl->getNameAsString());
@@ -252,22 +252,36 @@ emitClassMethodOrFunction(clang::FunctionDecl *decl,
   if (decl->isCXXClassMember()) {
     if (decl->isStatic())
       defStr = "def_static";
-    if (returnsPtr || returnsRef)
+    if (decl->getReturnType()->hasPointerRepresentation())
       refInternal = ", nb::rv_policy::reference_internal";
   }
 
-  if (!nbFnName.empty())
+  std::string sig;
+  if (!nbFnName.empty()) {
+    // no clue why but nb has trouble inferring the signature
+    // (and this causes and assert failure in nb_func_render_signature
+    // https://github.com/wjakob/nanobind/blob/c2e394eee5d19816871151de43c29b4051fbf9ff/src/nb_func.cpp#L1020
+    if (decl->isStatic() && !decl->getNumParams())
+      sig =
+          llvm::formatv(", nb::sig(\"def {0}(/) -> {1}\") ", nbFnName,
+                        decl->getReturnType().getAsString(getPrintingPolicy()));
+    // uncomment this to debug nb which doesn't tell where the method actually
+    // is when it fails if (parentRecord) {
+    //   nbFnName += parentRecord->getNameAsString();
+    // }
     nbFnName = llvm::formatv("\"{0}\", ", nbFnName);
+  }
 
   std::string scope = "m";
   if (decl->isCXXClassMember()) {
-    assert(parentRecord && "no parent record");
+    const clang::CXXRecordDecl *parentRecord =
+        llvm::cast<clang::CXXRecordDecl>(decl->getParent());
     scope = getNBBindClassName(parentRecord->getQualifiedNameAsString());
   }
 
-  outputFile->os() << llvm::formatv("{0}.{1}({2}{3}{4}{5});\n", scope, defStr,
-                                    nbFnName, funcRef, paramNamesStr,
-                                    refInternal);
+  outputFile->os() << llvm::formatv("{0}.{1}({2}{3}{4}{5}{6});\n", scope,
+                                    defStr, nbFnName, funcRef, paramNamesStr,
+                                    refInternal, sig);
 
   return true;
 }
@@ -376,7 +390,6 @@ static bool emitField(clang::DeclaratorDecl *field, clang::CompilerInstance &ci,
                       std::shared_ptr<llvm::ToolOutputFile> outputFile) {
   const clang::CXXRecordDecl *parentRecord =
       llvm::cast<clang::CXXRecordDecl>(field->getLexicalDeclContext());
-  assert(parentRecord && "Expected a CXXRecordDecl");
 
   std::string defStr = "def_rw";
   if (clang::VarDecl *vard = llvm::dyn_cast<clang::VarDecl>(field)) {
@@ -419,10 +432,11 @@ static bool shouldSkip(T *decl) {
     if (!decl->isCompleteDefinition())
       return true;
   }
-  if constexpr (std::is_same_v<T, clang::FunctionDecl>) {
-    if (decl->isConstexpr())
-      return true;
-  }
+  // if constexpr (std::is_same_v<T, clang::FunctionDecl> ||
+  //               std::is_same_v<T, clang::CXXMethodDecl>) {
+  //   if (decl->isConstexpr())
+  //     return true;
+  // }
   if (decl->getAccess() == clang::AS_private ||
       decl->getAccess() == clang::AS_protected)
     return true;

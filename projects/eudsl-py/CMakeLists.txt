@@ -380,6 +380,51 @@ nanobind_add_module(eudslpy_ext
   NB_STATIC
   NB_DOMAIN eudsl
   src/eudslpy_ext.cpp
+  src/EUDSLGenacc.inc.cpp
+  src/EUDSLGenaffine.inc.cpp
+  src/EUDSLGenamdgpu.inc.cpp
+  src/EUDSLGenamx.inc.cpp
+  src/EUDSLGenarith.inc.cpp
+  src/EUDSLGenarm_neon.inc.cpp
+  src/EUDSLGenarm_sme.inc.cpp
+  src/EUDSLGenarm_sve.inc.cpp
+  src/EUDSLGenasync.inc.cpp
+  src/EUDSLGenbufferization.inc.cpp
+  src/EUDSLGencf.inc.cpp
+  src/EUDSLGencomplex.inc.cpp
+  src/EUDSLGenDLTIDialect.inc.cpp
+#  src/EUDSLGenemitc.inc.cpp
+  src/EUDSLGenfunc.inc.cpp
+  src/EUDSLGengpu.inc.cpp
+  src/EUDSLGenindex.inc.cpp
+#  src/EUDSLGenirdl.inc.cpp
+#  src/EUDSLGenlinalg.inc.cpp
+#  src/EUDSLGenLLVM.inc.cpp
+  src/EUDSLGenmath.inc.cpp
+  src/EUDSLGenmemref.inc.cpp
+  src/EUDSLGenmesh.inc.cpp
+  src/EUDSLGenml_program.inc.cpp
+  src/EUDSLGenmpi.inc.cpp
+  src/EUDSLGennvgpu.inc.cpp
+  src/EUDSLGenNVVM.inc.cpp
+#  src/EUDSLGenomp.inc.cpp
+  src/EUDSLGenpdl.inc.cpp
+  src/EUDSLGenpdl_interp.inc.cpp
+  src/EUDSLGenpolynomial.inc.cpp
+  src/EUDSLGenptr.inc.cpp
+  src/EUDSLGenquant.inc.cpp
+  src/EUDSLGenROCDL.inc.cpp
+  # src/EUDSLGenscf.inc.cpp
+  # src/EUDSLGenshape.inc.cpp
+  src/EUDSLGensparse_tensor.inc.cpp
+  # src/EUDSLGenspirv.inc.cpp
+  src/EUDSLGentensor.inc.cpp
+  src/EUDSLGentosa.inc.cpp
+  src/EUDSLGentransform.inc.cpp
+  src/EUDSLGenub.inc.cpp
+#  src/EUDSLGenvector.inc.cpp
+  src/EUDSLGenx86vector.inc.cpp
+#  src/EUDSLGenxegpu.inc.cpp
 )
 add_dependencies(eudslpy_ext
   EUDSLGenacc
@@ -400,7 +445,7 @@ add_dependencies(eudslpy_ext
   EUDSLGengpu
   EUDSLGenindex
 #  EUDSLGenirdl
-  EUDSLGenlinalg
+#  EUDSLGenlinalg
 #  EUDSLGenLLVM
   EUDSLGenmath
   EUDSLGenmemref
@@ -416,10 +461,10 @@ add_dependencies(eudslpy_ext
   EUDSLGenptr
   EUDSLGenquant
   EUDSLGenROCDL
-  EUDSLGenscf
-  EUDSLGenshape
+  # EUDSLGenscf
+  # EUDSLGenshape
   EUDSLGensparse_tensor
-  EUDSLGenspirv
+  # EUDSLGenspirv
   EUDSLGentensor
   EUDSLGentosa
   EUDSLGentransform
@@ -433,6 +478,10 @@ set_target_properties(eudslpy_ext
   LIBRARY_OUTPUT_DIRECTORY "${EUDSLPY_SRC_DIR}/eudsl"
 )
 target_link_libraries(eudslpy_ext PRIVATE MLIR)
+# hack - on GHA, linux, the build OOMs
+if ("$ENV{DISABLE_COMPILE_OPT}" MATCHES "true")
+  target_compile_options(eudslpy_ext PRIVATE -O0)
+endif()
 
 # hack so we can move libMLIR and libLLVM into the wheel
 # see AddLLVM.cmake#llvm_setup_rpath

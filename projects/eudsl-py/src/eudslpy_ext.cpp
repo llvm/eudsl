@@ -53,6 +53,7 @@
 #include "llvm/Support/ThreadPool.h"
 
 #include "bind_vec_like.h"
+#include "type_casters.h"
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -77,83 +78,6 @@ void bind_array_ref_smallvector(nb::handle scope) {
   smallVector = nb::class_<_SmallVector>(scope, "SmallVector", nb::is_generic(),
                                          nb::sig("class SmallVector[T]"));
 }
-
-template <>
-struct nb::detail::type_caster<llvm::StringRef> {
-  NB_TYPE_CASTER(llvm::StringRef, const_name("str"))
-
-  bool from_python(handle src, uint8_t, cleanup_list *) noexcept {
-    Py_ssize_t size;
-    const char *str = PyUnicode_AsUTF8AndSize(src.ptr(), &size);
-    if (!str) {
-      PyErr_Clear();
-      return false;
-    }
-    value = llvm::StringRef(str, (size_t)size);
-    return true;
-  }
-
-  static handle from_cpp(llvm::StringRef value, rv_policy,
-                         cleanup_list *) noexcept {
-    return PyUnicode_FromStringAndSize(value.data(), value.size());
-  }
-};
-
-template <>
-struct nb::detail::type_caster<llvm::StringLiteral> {
-  NB_TYPE_CASTER(llvm::StringLiteral, const_name("str"))
-
-  static handle from_cpp(llvm::StringLiteral value, rv_policy,
-                         cleanup_list *) noexcept {
-    return PyUnicode_FromStringAndSize(value.data(), value.size());
-  }
-};
-
-template <>
-struct nb::detail::type_caster<llvm::Twine> {
-  using Value = llvm::Twine;
-  static constexpr auto Name = const_name("str");
-  template <typename T_>
-  using Cast = movable_cast_t<T_>;
-
-  template <typename T_>
-  static constexpr bool can_cast() {
-    return true;
-  }
-
-  template <typename T_,
-            enable_if_t<std::is_same_v<std::remove_cv_t<T_>, Value>> = 0>
-  static handle from_cpp(T_ *p, rv_policy policy, cleanup_list *list) {
-    if (!p)
-      return none().release();
-    return from_cpp(*p, policy, list);
-  }
-
-  explicit operator Value *() { return &*value; }
-  explicit operator Value &() { return (Value &)*value; }
-  explicit operator Value &&() { return (Value &&)*value; }
-
-  // hack because Twine::operator= is deleted
-  std::optional<Value> value;
-
-  bool from_python(handle src, uint8_t, cleanup_list *) noexcept {
-    Py_ssize_t size;
-    const char *str = PyUnicode_AsUTF8AndSize(src.ptr(), &size);
-    if (!str) {
-      PyErr_Clear();
-      return false;
-    }
-    std::string_view s{str, (size_t)size};
-    value.emplace(s);
-    return true;
-  }
-
-  static handle from_cpp(llvm::Twine value, rv_policy,
-                         cleanup_list *) noexcept {
-    llvm::StringRef s = value.getSingleStringRef();
-    return PyUnicode_FromStringAndSize(s.data(), s.size());
-  }
-};
 
 template <typename T, typename... Ts>
 struct non_copying_non_moving_class_ : nb::class_<T, Ts...> {
@@ -324,75 +248,42 @@ void populateIRModule(nb::module_ &m) {
 #include "ir.cpp.inc"
 }
 
-// TODO(max): maybe split these into separate CU/TUs?
-void populateaccModule(nb::module_ &m) {
-#include "EUDSLGenacc.cpp.inc"
-}
+extern void populateaccModule(nb::module_ &m);
 
-void populateaffineModule(nb::module_ &m) {
-#include "EUDSLGenaffine.cpp.inc"
-}
+extern void populateaffineModule(nb::module_ &m);
 
-void populateamdgpuModule(nb::module_ &m) {
-#include "EUDSLGenamdgpu.cpp.inc"
-}
+extern void populateamdgpuModule(nb::module_ &m);
 
-void populateamxModule(nb::module_ &m) {
-#include "EUDSLGenamx.cpp.inc"
-}
+extern void populateamxModule(nb::module_ &m);
 
-void populatearithModule(nb::module_ &m) {
-#include "EUDSLGenarith.cpp.inc"
-}
+extern void populatearithModule(nb::module_ &m);
 
-void populatearm_neonModule(nb::module_ &m) {
-#include "EUDSLGenarm_neon.cpp.inc"
-}
+extern void populatearm_neonModule(nb::module_ &m);
 
-void populatearm_smeModule(nb::module_ &m) {
-#include "EUDSLGenarm_sme.cpp.inc"
-}
+extern void populatearm_smeModule(nb::module_ &m);
 
-void populatearm_sveModule(nb::module_ &m) {
-#include "EUDSLGenarm_sve.cpp.inc"
-}
+extern void populatearm_sveModule(nb::module_ &m);
 
-void populateasyncModule(nb::module_ &m) {
-#include "EUDSLGenasync.cpp.inc"
-}
+extern void populateasyncModule(nb::module_ &m);
 
-void populatebufferizationModule(nb::module_ &m) {
-#include "EUDSLGenbufferization.cpp.inc"
-}
+extern void populatebufferizationModule(nb::module_ &m);
 
-void populatecfModule(nb::module_ &m) {
-#include "EUDSLGencf.cpp.inc"
-}
+extern void populatecfModule(nb::module_ &m);
 
-void populatecomplexModule(nb::module_ &m) {
-#include "EUDSLGencomplex.cpp.inc"
-}
+extern void populatecomplexModule(nb::module_ &m);
 
-void populateDLTIDialectModule(nb::module_ &m) {
-#include "EUDSLGenDLTIDialect.cpp.inc"
-}
+extern void populateDLTIDialectModule(nb::module_ &m);
 
 // mlir::emitc::IfOp::elseBlock()
 // void populateemitcModule(nb::module_ &m) {
 // #include "EUDSLGenemitc.cpp.inc"
 // }
 
-void populatefuncModule(nb::module_ &m) {
-#include "EUDSLGenfunc.cpp.inc"
-}
+extern void populatefuncModule(nb::module_ &m);
 
-void populategpuModule(nb::module_ &m) {
-#include "EUDSLGengpu.cpp.inc"
-}
+extern void populategpuModule(nb::module_ &m);
 
-void populateindexModule(nb::module_ &m) {
-#include "EUDSLGenindex.cpp.inc"
-}
+extern void populateindexModule(nb::module_ &m);
 
 // error: use of class template 'ArrayRef' requires template arguments; argument
 // deduction not allowed in conversion function type void
@@ -412,103 +303,62 @@ void populateindexModule(nb::module_ &m) {
 // #include "EUDSLGenLLVM.cpp.inc"
 // }
 
-void populatemathModule(nb::module_ &m) {
-#include "EUDSLGenmath.cpp.inc"
-}
+extern void populatemathModule(nb::module_ &m);
 
-void populatememrefModule(nb::module_ &m) {
-#include "EUDSLGenmemref.cpp.inc"
-}
+extern void populatememrefModule(nb::module_ &m);
 
-void populatemeshModule(nb::module_ &m) {
-#include "EUDSLGenmesh.cpp.inc"
-}
+extern void populatemeshModule(nb::module_ &m);
 
-void populateml_programModule(nb::module_ &m) {
-#include "EUDSLGenml_program.cpp.inc"
-}
+extern void populateml_programModule(nb::module_ &m);
 
-void populatempiModule(nb::module_ &m) {
-#include "EUDSLGenmpi.cpp.inc"
-}
+extern void populatempiModule(nb::module_ &m);
 
-void populatenvgpuModule(nb::module_ &m) {
-#include "EUDSLGennvgpu.cpp.inc"
-}
+extern void populatenvgpuModule(nb::module_ &m);
 
-void populateNVVMModule(nb::module_ &m) {
-#include "EUDSLGenNVVM.cpp.inc"
-}
+extern void populateNVVMModule(nb::module_ &m);
 
 // mlir::omp::TaskloopOp::getEffects(llvm::SmallVectorImpl<mlir::SideEffects::EffectInstance<mlir::MemoryEffects::Effect>>&)
 // void populateompModule(nb::module_ &m) {
 // #include "EUDSLGenomp.cpp.inc"
 // }
 
-void populatepdlModule(nb::module_ &m) {
-#include "EUDSLGenpdl.cpp.inc"
-}
+extern void populatepdlModule(nb::module_ &m);
 
-void populatepdl_interpModule(nb::module_ &m) {
-#include "EUDSLGenpdl_interp.cpp.inc"
-}
+extern void populatepdl_interpModule(nb::module_ &m);
 
-void populatepolynomialModule(nb::module_ &m) {
-#include "EUDSLGenpolynomial.cpp.inc"
-}
+extern void populatepolynomialModule(nb::module_ &m);
 
-void populateptrModule(nb::module_ &m) {
-#include "EUDSLGenptr.cpp.inc"
-}
+extern void populateptrModule(nb::module_ &m);
 
-void populatequantModule(nb::module_ &m) {
-#include "EUDSLGenquant.cpp.inc"
-}
+extern void populatequantModule(nb::module_ &m);
 
-void populateROCDLModule(nb::module_ &m) {
-#include "EUDSLGenROCDL.cpp.inc"
-}
+extern void populateROCDLModule(nb::module_ &m);
 
-void populatescfModule(nb::module_ &m) {
-#include "EUDSLGenscf.cpp.inc"
-}
+// missing ensureLoopTerminator
+// extern void populatescfModule(nb::module_ &m);
 
-void populateshapeModule(nb::module_ &m) {
-#include "EUDSLGenshape.cpp.inc"
-}
+// missing dim op builder
+// extern void populateshapeModule(nb::module_ &m);
 
-void populatesparse_tensorModule(nb::module_ &m) {
-#include "EUDSLGensparse_tensor.cpp.inc"
-}
+extern void populatesparse_tensorModule(nb::module_ &m);
 
-void populatespirvModule(nb::module_ &m) {
-#include "EUDSLGenspirv.cpp.inc"
-}
+// too big...
+// extern void populatespirvModule(nb::module_ &m);
 
-void populatetensorModule(nb::module_ &m) {
-#include "EUDSLGentensor.cpp.inc"
-}
+extern void populatetensorModule(nb::module_ &m);
 
-void populatetosaModule(nb::module_ &m) {
-#include "EUDSLGentosa.cpp.inc"
-}
+extern void populatetosaModule(nb::module_ &m);
 
-void populatetransformModule(nb::module_ &m) {
-#include "EUDSLGentransform.cpp.inc"
-}
+extern void populatetransformModule(nb::module_ &m);
 
-void populateubModule(nb::module_ &m) {
-#include "EUDSLGenub.cpp.inc"
-}
+extern void populateubModule(nb::module_ &m);
 
 // can't cast std::pair<VectorDim, VectorDim>
 // void populatevectorModule(nb::module_ &m) {
 // #include "EUDSLGenvector.cpp.inc"
 // }
 
-void populatex86vectorModule(nb::module_ &m) {
-#include "EUDSLGenx86vector.cpp.inc"
-}
+extern void populatex86vectorModule(nb::module_ &m);
 
 // missing mlir::xegpu::SGMapAttr::getChecked
 // void populatexegpuModule(nb::module_ &m) {
@@ -821,17 +671,17 @@ NB_MODULE(eudslpy_ext, m) {
   auto ROCDLModule = dialectsModule.def_submodule("ROCDL");
   populateROCDLModule(ROCDLModule);
 
-  auto scfModule = dialectsModule.def_submodule("scf");
-  populatescfModule(scfModule);
+  // auto scfModule = dialectsModule.def_submodule("scf");
+  // populatescfModule(scfModule);
 
-  auto shapeModule = dialectsModule.def_submodule("shape");
-  populateshapeModule(shapeModule);
+  // auto shapeModule = dialectsModule.def_submodule("shape");
+  // populateshapeModule(shapeModule);
 
   auto sparse_tensorModule = dialectsModule.def_submodule("sparse_tensor");
   populatesparse_tensorModule(sparse_tensorModule);
 
-  auto spirvModule = dialectsModule.def_submodule("spirv");
-  populatespirvModule(spirvModule);
+  // auto spirvModule = dialectsModule.def_submodule("spirv");
+  // populatespirvModule(spirvModule);
 
   auto tensorModule = dialectsModule.def_submodule("tensor");
   populatetensorModule(tensorModule);
