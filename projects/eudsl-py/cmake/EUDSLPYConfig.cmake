@@ -42,6 +42,10 @@ function(eudslpygen target inputFile outputFileName)
     set(EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE ${CMAKE_CURRENT_SOURCE_DIR}/${inputFile})
   endif()
 
+  if(NOT EXISTS "${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}")
+    message(FATAL_ERROR "${inputFile} does not exist")
+  endif()
+
   # message(FATAL_ERROR "${CMAKE_CXX_COMPILER}")
   get_directory_property(eudslpygen_includes INCLUDE_DIRECTORIES)
   list(APPEND eudslpygen_includes ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES} ${ARG_EXTRA_INCLUDES})
@@ -113,10 +117,11 @@ function(eudslpygen target inputFile outputFileName)
     # directory and local_headers may not contain it, so we must
     # explicitly list it here:
     DEPENDS ${ARG_DEPENDS} ${eudslpygen_depends} ${local_headers} ${global_tds}
-    COMMENT "Building ${outputFileName}..."
+    COMMENT "EUDSLPY: Generating ${outputFileName}..."
   )
 
   # `make clean' must remove all those generated files:
+  # TODO(max): clean up dep files
   set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES ${outputFileName})
   set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/${outputFileName} PROPERTIES
     GENERATED 1)

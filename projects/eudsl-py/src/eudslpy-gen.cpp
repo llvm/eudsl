@@ -98,27 +98,29 @@ static clang::PrintingPolicy getPrintingPolicy(bool canonical = true) {
   return p;
 }
 
-// stolen from https://github.com/llvm/llvm-project/blob/99dddef340e566e9d303010f1219f7d7d6d37a11/clang/lib/Sema/SemaChecking.cpp#L7055
+// stolen from
+// https://github.com/llvm/llvm-project/blob/99dddef340e566e9d303010f1219f7d7d6d37a11/clang/lib/Sema/SemaChecking.cpp#L7055
 // Determines if the specified is a C++ class or struct containing
 // a member with the specified name and kind (e.g. a CXXMethodDecl named
 // "c_str()").
-template <typename MemberKind>
-static llvm::SmallPtrSet<MemberKind *, 1>
-cxxRecordMembersNamed(clang::CXXMethodDecl *decl, clang::Sema &s) {
-  llvm::SmallPtrSet<MemberKind *, 1> results;
+template <typename T>
+static llvm::SmallPtrSet<T *, 1> findOverloads(clang::FunctionDecl *decl,
+                                               clang::Sema &s) {
+  llvm::SmallPtrSet<T *, 1> results;
   clang::LookupResult r(s, &s.Context.Idents.get(decl->getNameAsString()),
-                        decl->getLocation(), clang::Sema::LookupMemberName);
+                        decl->getLocation(), clang::Sema::LookupOrdinaryName);
   r.suppressDiagnostics();
   if (s.LookupQualifiedName(r, decl->getDeclContext()))
     for (clang::LookupResult::iterator i = r.begin(), e = r.end(); i != e;
          ++i) {
       clang::NamedDecl *namedDecl = (*i)->getUnderlyingDecl();
-      if (MemberKind *fk = llvm::dyn_cast<MemberKind>(namedDecl))
+      if (T *fk = llvm::dyn_cast<T>(namedDecl))
         results.insert(fk);
     }
   return results;
 }
 
+// TODO(max): split this into two functions (one for names and one for types)
 static std::string sanitizeNameType(std::string name, int emptyIdx = 0) {
   if (name == "from")
     name = "from_";
@@ -126,12 +128,15 @@ static std::string sanitizeNameType(std::string name, int emptyIdx = 0) {
     name = "except_";
   else if (name == "")
     name = std::string(emptyIdx + 1, '_');
+  else if (name.rfind("ArrayRef", 0) == 0)
+    name = "llvm::" + name;
   return name;
 }
 
-static bool emitClassMember(clang::CXXMethodDecl *decl,
-                            clang::CompilerInstance &ci,
-                            std::shared_ptr<llvm::ToolOutputFile> outputFile) {
+static bool
+emitClassMethodOrFunction(clang::FunctionDecl *decl,
+                          clang::CompilerInstance &ci,
+                          std::shared_ptr<llvm::ToolOutputFile> outputFile) {
   llvm::SmallVector<std::string> paramNames;
   llvm::SmallVector<std::string> paramTypes;
   for (unsigned i = 0; i < decl->getNumParams(); ++i) {
@@ -139,8 +144,15 @@ static bool emitClassMember(clang::CXXMethodDecl *decl,
     std::string name = param->getNameAsString();
     auto t = param->getType();
     bool canonical = true;
-    // TODO(max): this is dumb... (maybe there's a way to check where the typedef is defined...)
-    if (t.getAsString().rfind("_t") != std::string::npos)
+    // TODO(max): this is dumb... (maybe there's a way to check where the
+    // typedef is defined...)
+    // word boundary excludes x86_amx_tdpbf16ps
+    if (std::regex_search(t.getAsString(), std::regex(R"(_t\b)")))
+      canonical = false;
+    if (std::regex_search(t.getAsString(), std::regex(R"(std::function)")))
+      canonical = false;
+    if (std::regex_search(t.getCanonicalType().getAsString(),
+                          std::regex(R"(std::__1)")))
       canonical = false;
     paramTypes.push_back(
         sanitizeNameType(t.getAsString(getPrintingPolicy(canonical))));
@@ -148,24 +160,24 @@ static bool emitClassMember(clang::CXXMethodDecl *decl,
   }
 
   const clang::CXXRecordDecl *parentRecord =
-      llvm::cast<clang::CXXRecordDecl>(decl->getParent());
-  std::string methodName = decl->getNameAsString();
-  std::string className = parentRecord->getQualifiedNameAsString();
-  // clang::CXXMethodDecl *overridesBaseMethod =
-  //     decl->getCorrespondingMethodInClass(parentRecord, /*MayBeBase*/ true);
+      llvm::dyn_cast_if_present<clang::CXXRecordDecl>(decl->getParent());
 
   std::string funcRef, nbFnName;
   // TODO(max): hasPointerRepresentation
   bool returnsPtr = decl->getType()->isPointerType(),
        returnsRef = decl->getType()->isReferenceType();
 
-  if (llvm::isa<clang::CXXConstructorDecl>(decl)) {
+  llvm::SmallPtrSet<clang::FunctionDecl *, 1> funcOverloads =
+      findOverloads<clang::FunctionDecl>(decl, ci.getSema());
+  llvm::SmallPtrSet<clang::FunctionTemplateDecl *, 1> funcTemplOverloads =
+      findOverloads<clang::FunctionTemplateDecl>(decl, ci.getSema());
+  if (auto ctor = llvm::dyn_cast<clang::CXXConstructorDecl>(decl)) {
+    if (ctor->isDeleted())
+      return false;
     funcRef = llvm::formatv("nb::init<{0}>()", llvm::join(paramTypes, ", "));
   } else {
-    llvm::SmallPtrSet<clang::CXXMethodDecl *, 1> overloads =
-        cxxRecordMembersNamed<clang::CXXMethodDecl>(decl, ci.getSema());
-    if (overloads.size() == 1) {
-      funcRef = llvm::formatv("&{0}::{1}", className, methodName);
+    if (funcOverloads.size() == 1 && funcTemplOverloads.empty()) {
+      funcRef = llvm::formatv("&{0}", decl->getQualifiedNameAsString());
     } else {
       // emit a lambda body to disambiguate/break ties amongst overloads
       // TODO(max):: overloadimpl or whatever should work but it doesn't...
@@ -180,7 +192,8 @@ static bool emitClassMember(clang::CXXMethodDecl *decl,
                 }));
         typedParamsStr = llvm::join(typedParams, ", ");
       }
-      // since we're emitting a body, we need to do std::move for some unique_ptrs
+      // since we're emitting a body, we need to do std::move for some
+      // unique_ptrs
       llvm::SmallVector<std::string> newParamNames(paramNames);
       for (auto [idx, item] :
            llvm::enumerate(llvm::zip(paramTypes, newParamNames))) {
@@ -193,33 +206,36 @@ static bool emitClassMember(clang::CXXMethodDecl *decl,
       }
       std::string newParamNamesStr = llvm::join(newParamNames, ", ");
 
-      if (decl->isStatic()) {
-        funcRef = llvm::formatv("[]({0}){{ return {1}{2}::{3}({4}); }",
-                                typedParamsStr, returnsRef ? "&" : "",
-                                className, methodName, newParamNamesStr);
+      if (decl->isStatic() || !decl->isCXXClassMember()) {
+        funcRef =
+            llvm::formatv("\n  []({0}){{\n    return {1}{2}({3});\n  }",
+                          typedParamsStr, returnsRef ? "&" : "",
+                          decl->getQualifiedNameAsString(), newParamNamesStr);
       } else {
+        assert(decl->isCXXClassMember() && "expected class member");
         if (decl->getNumParams())
           typedParamsStr = llvm::formatv("self, {0}", typedParamsStr);
         else
           typedParamsStr = "self";
-        funcRef =
-            llvm::formatv("[]({0}& {1}){{ return {2}self.{3}({4}); }",
-                          className, typedParamsStr, returnsRef ? "&" : "",
-                          decl->getNameAsString(), newParamNamesStr);
+        assert(parentRecord && "no parent record");
+        funcRef = llvm::formatv(
+            "\n  []({0}& {1}){{\n    return {2}self.{3}({4});\n  }",
+            parentRecord->getQualifiedNameAsString(), typedParamsStr,
+            returnsRef ? "&" : "", decl->getNameAsString(), newParamNamesStr);
       }
     }
 
-    nbFnName = methodName;
+    nbFnName = snakeCase(decl->getNameAsString());
     if (decl->isOverloadedOperator()) {
+      // TODO(max): handle overloaded operators
       // nbFnName = nbFnName;
-    } else {
-      // disambiguate static method with non-static overloads (nanobind doesn't let you overload static with non-static)
-      // see mlir::ElementsAttr
-      if (decl->isStatic() && overloads.size() > 1 &&
-          llvm::any_of(overloads,
-                       [](clang::CXXMethodDecl *m) { return !m->isStatic(); }))
-        nbFnName += "_static";
-      nbFnName = snakeCase(nbFnName);
+    } else if (decl->isStatic() && funcOverloads.size() > 1 &&
+               llvm::any_of(funcOverloads, [](clang::FunctionDecl *m) {
+                 return !m->isStatic();
+               })) {
+      // disambiguate static method with non-static overloads (nanobind doesn't
+      // let you overload static with non-static) see mlir::ElementsAttr
+      nbFnName += "_static";
     }
   }
 
@@ -232,22 +248,39 @@ static bool emitClassMember(clang::CXXMethodDecl *decl,
     paramNamesStr = ", " + llvm::join(paramNames, ", ");
   }
 
-  std::string defStr = "def";
-  if (decl->isStatic())
-    defStr = "def_static";
-
-  std::string refInternal;
-  if (returnsPtr || returnsRef)
-    refInternal = ", nb::rv_policy::reference_internal";
+  std::string refInternal, defStr = "def";
+  if (decl->isCXXClassMember()) {
+    if (decl->isStatic())
+      defStr = "def_static";
+    if (returnsPtr || returnsRef)
+      refInternal = ", nb::rv_policy::reference_internal";
+  }
 
   if (!nbFnName.empty())
     nbFnName = llvm::formatv("\"{0}\", ", nbFnName);
-  outputFile->os() << llvm::formatv(
-      "{0}.{1}({2}{3}{4}{5});\n",
-      getNBBindClassName(parentRecord->getQualifiedNameAsString()), defStr,
-      nbFnName, funcRef, paramNamesStr, refInternal);
+
+  std::string scope = "m";
+  if (decl->isCXXClassMember()) {
+    assert(parentRecord && "no parent record");
+    scope = getNBBindClassName(parentRecord->getQualifiedNameAsString());
+  }
+
+  outputFile->os() << llvm::formatv("{0}.{1}({2}{3}{4}{5});\n", scope, defStr,
+                                    nbFnName, funcRef, paramNamesStr,
+                                    refInternal);
 
   return true;
+}
+
+std::string getNBScope(clang::TagDecl *decl) {
+  std::string scope = "m";
+  const clang::DeclContext *declContext = decl->getDeclContext();
+  if (declContext->isRecord()) {
+    const clang::CXXRecordDecl *ctx =
+        llvm::cast<clang::CXXRecordDecl>(declContext);
+    scope = getNBBindClassName(ctx->getQualifiedNameAsString());
+  }
+  return scope;
 }
 
 static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
@@ -257,20 +290,14 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
         decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
                                  clang::DiagnosticsEngine::Warning,
                                  "template classes not supported yet"));
-    // have to force emit because after the fatal error, no more warnings will be emitted
+    // have to force emit because after the fatal error, no more warnings will
+    // be emitted
     // https://github.com/llvm/llvm-project/blob/d74214cc8c03159e5d1f1168a09368cf3b23fd5f/clang/lib/Basic/DiagnosticIDs.cpp#L796
     (void)builder.setForceEmit();
     return false;
   }
 
-  std::string scope = "m";
-  const clang::DeclContext *declContext = decl->getDeclContext();
-  if (declContext->isRecord()) {
-    const clang::CXXRecordDecl *ctx =
-        llvm::cast<clang::CXXRecordDecl>(declContext);
-    scope = getNBBindClassName(ctx->getQualifiedNameAsString());
-  }
-
+  std::string scope = getNBScope(decl);
   std::string additional = "";
   std::string className = decl->getQualifiedNameAsString();
   if (decl->getNumBases() > 1) {
@@ -283,7 +310,8 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
     // handle some known bases that we've already found a wap to bind
     clang::CXXBaseSpecifier baseClass = *decl->bases_begin();
     std::string baseName = baseClass.getType().getAsString(getPrintingPolicy());
-    // TODO(max): these could be lookups on the corresponding recorddecls using sema...
+    // TODO(max): these could be lookups on the corresponding recorddecls using
+    // sema...
     if (baseName.rfind("mlir::Op<", 0) == 0) {
       className = llvm::formatv("{0}, mlir::OpState", className);
     } else if (baseName.rfind("mlir::detail::StorageUserBase<", 0) == 0) {
@@ -294,8 +322,8 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
                className.rfind("mlir::ExtensibleDialect") ==
                    std::string::npos) {
       // clang-format off
-      additional += llvm::formatv(".def_static(\"insert_into_registry\", [](mlir::DialectRegistry &registry) {{ registry.insert<{0}>(); })", className);
-      additional += llvm::formatv(".def_static(\"load_into_context\", [](mlir::MLIRContext &context) {{ return context.getOrLoadDialect<{0}>(); })", className);
+      additional += llvm::formatv("\n  .def_static(\"insert_into_registry\", [](mlir::DialectRegistry &registry) {{ registry.insert<{0}>(); })", className);
+      additional += llvm::formatv("\n  .def_static(\"load_into_context\", [](mlir::MLIRContext &context) {{ return context.getOrLoadDialect<{0}>(); })", className);
       // clang-format on
     } else if (!llvm::isa<clang::ClassTemplateSpecializationDecl>(
                    baseClass.getType()->getAsCXXRecordDecl())) {
@@ -323,52 +351,216 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
   return true;
 }
 
+static bool emitEnum(clang::EnumDecl *decl, clang::CompilerInstance &ci,
+                     std::shared_ptr<llvm::ToolOutputFile> outputFile) {
+  outputFile->os() << llvm::formatv("nb::enum_<{0}>({1}, \"{2}\")\n",
+                                    decl->getQualifiedNameAsString(),
+                                    getNBScope(decl), decl->getNameAsString());
+
+  int i = 0, nDecls = std::distance(decl->decls_begin(), decl->decls_end());
+  for (clang::Decl *cst : decl->decls()) {
+    clang::EnumConstantDecl *cstDecl = llvm::cast<clang::EnumConstantDecl>(cst);
+    outputFile->os() << llvm::formatv("  .value(\"{0}\", {1})",
+                                      cstDecl->getNameAsString(),
+                                      cstDecl->getQualifiedNameAsString());
+    if (i++ < nDecls - 1)
+      outputFile->os() << "\n";
+    else
+      outputFile->os() << ";\n";
+  }
+  outputFile->os() << "\n";
+  return true;
+}
+
+static bool emitField(clang::DeclaratorDecl *field, clang::CompilerInstance &ci,
+                      std::shared_ptr<llvm::ToolOutputFile> outputFile) {
+  const clang::CXXRecordDecl *parentRecord =
+      llvm::cast<clang::CXXRecordDecl>(field->getLexicalDeclContext());
+  assert(parentRecord && "Expected a CXXRecordDecl");
+
+  std::string defStr = "def_rw";
+  if (clang::VarDecl *vard = llvm::dyn_cast<clang::VarDecl>(field)) {
+    if (vard->isStaticDataMember()) {
+      if (vard->isConstexpr())
+        defStr = "def_ro_static";
+      else
+        defStr = "def_rw_static";
+    }
+  }
+
+  std::string refInternal;
+  if (field->getType()->hasPointerRepresentation())
+    refInternal = ", nb::rv_policy::reference_internal";
+
+  std::string scope =
+      getNBBindClassName(parentRecord->getQualifiedNameAsString());
+  std::string nbFnName =
+      llvm::formatv("\"{0}\"", snakeCase(field->getNameAsString()));
+  outputFile->os() << llvm::formatv("{0}.{1}({2}, &{3}{4});\n", scope, defStr,
+                                    nbFnName, field->getQualifiedNameAsString(),
+                                    refInternal);
+  return true;
+}
+
+template <typename T>
+static bool shouldSkip(T *decl) {
+  auto *encl = llvm::dyn_cast<clang::NamespaceDecl>(
+      decl->getEnclosingNamespaceContext());
+  if (!encl)
+    return true;
+  // this isn't redundant - filter might be empty but we still don't want to
+  // bind std::
+  if (encl->isStdNamespace() || encl->isInStdNamespace())
+    return true;
+  if (!filterInNamespace(encl->getQualifiedNameAsString()))
+    return true;
+  if constexpr (std::is_same_v<T, clang::CXXRecordDecl> ||
+                std::is_same_v<T, clang::EnumDecl>) {
+    if (!decl->isCompleteDefinition())
+      return true;
+  }
+  if constexpr (std::is_same_v<T, clang::FunctionDecl>) {
+    if (decl->isConstexpr())
+      return true;
+  }
+  if (decl->getAccess() == clang::AS_private ||
+      decl->getAccess() == clang::AS_protected)
+    return true;
+  if (decl->isImplicit())
+    return true;
+
+  return false;
+}
+
 struct HackDeclContext : clang::DeclContext {
   bool islastDecl(clang::Decl *d) const { return d == LastDecl; }
   clang::Decl *getLastDecl() const { return LastDecl; }
 };
 
-struct ClassStructEnumVisitor
-    : clang::LexicallyOrderedRecursiveASTVisitor<ClassStructEnumVisitor> {
-  ClassStructEnumVisitor(clang::CompilerInstance &ci,
-                         std::shared_ptr<llvm::ToolOutputFile> outputFile)
-      : LexicallyOrderedRecursiveASTVisitor<ClassStructEnumVisitor>(
+struct BindingsVisitor
+    : clang::LexicallyOrderedRecursiveASTVisitor<BindingsVisitor> {
+  BindingsVisitor(clang::CompilerInstance &ci,
+                  std::shared_ptr<llvm::ToolOutputFile> outputFile)
+      : LexicallyOrderedRecursiveASTVisitor<BindingsVisitor>(
             ci.getSourceManager()),
         ci(ci), outputFile(outputFile),
         mc(clang::ItaniumMangleContext::create(ci.getASTContext(),
                                                ci.getDiagnostics())) {}
 
   bool VisitCXXRecordDecl(clang::CXXRecordDecl *decl) {
-    auto *encl = llvm::dyn_cast<clang::NamespaceDecl>(
-        decl->getEnclosingNamespaceContext());
-    if (!encl)
+    if (shouldSkip(decl))
       return true;
-    if (encl->isStdNamespace() || encl->isInStdNamespace())
+    if (decl->isClass() || decl->isStruct()) {
+      if (emitClass(decl, ci, outputFile))
+        visitedRecords.insert(decl);
+    }
+    return true;
+  }
+
+  // clang-format off
+  /* method (member function) -> CXXMethodDecl (isStatic() tells statis/non-static)
+   * non-static data member -> FieldDecl
+   * static data member -> VarDecl with isStaticDataMember() == true
+   * static local variable -> VarDecl with isStaticLocal() == true
+   * non-static local variable -> VarDecl with isLocalVarDecl() == true
+   * there's also a isLocalVarDeclOrParm if you want local or parameter, etc
+   */
+  // clang-format on
+
+  bool VisitFieldDecl(clang::FieldDecl *decl) {
+    if (decl->isFunctionOrFunctionTemplate() || decl->isFunctionPointerType())
       return true;
-    if (!filterInNamespace(encl->getQualifiedNameAsString()))
+    // fields can be methods???
+    if (llvm::isa<clang::CXXMethodDecl>(decl))
       return true;
-    if (!decl->isCompleteDefinition())
+    if (!visitedRecords.contains(decl->getParent()))
       return true;
     if (decl->getAccess() == clang::AS_private ||
         decl->getAccess() == clang::AS_protected)
       return true;
 
-    if (decl->isClass() || decl->isStruct()) {
-      if (emitClass(decl, ci, outputFile))
-        visitedRecords.insert(decl);
+    if (decl->isAnonymousStructOrUnion()) {
+      clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
+          decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
+                                   clang::DiagnosticsEngine::Warning,
+                                   "anon structs/union fields not supported"));
+      (void)builder.setForceEmit();
+      return true;
+    }
+    if (decl->isBitField())
+      return true;
+
+    emitField(decl, ci, outputFile);
+    return true;
+  }
+
+  bool VisitVarDecl(clang::VarDecl *decl) {
+    if (decl->isFunctionOrMethodVarDecl())
+      return true;
+    if (llvm::isa<clang::CXXMethodDecl>(decl))
+      return true;
+    if (auto parent = llvm::dyn_cast<clang::CXXRecordDecl>(
+            decl->getLexicalDeclContext())) {
+      if (visitedRecords.contains(parent)) {
+        if (decl->getAccess() == clang::AS_private ||
+            decl->getAccess() == clang::AS_protected)
+          return true;
+        emitField(decl, ci, outputFile);
+      }
     }
 
     return true;
   }
 
   bool VisitCXXMethodDecl(clang::CXXMethodDecl *decl) {
-    if (visitedRecords.contains(decl->getParent()) &&
-        (decl->getAccess() == clang::AS_public ||
-         decl->getAccess() == clang::AS_none) &&
-        !decl->isImplicit()) {
-      emitClassMember(decl, ci, outputFile);
+    if (shouldSkip(decl) || llvm::isa<clang::CXXDestructorDecl>(decl) ||
+        !visitedRecords.contains(decl->getParent()))
+      return true;
+    if (decl->isTemplated() || decl->isTemplateDecl() ||
+        decl->isTemplateInstantiation() ||
+        decl->isFunctionTemplateSpecialization()) {
+      clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
+          decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
+                                   clang::DiagnosticsEngine::Warning,
+                                   "template methods not supported yet"));
+      (void)builder.setForceEmit();
+      return true;
     }
+    emitClassMethodOrFunction(decl, ci, outputFile);
+    return true;
+  }
 
+  bool VisitFunctionDecl(clang::FunctionDecl *decl) {
+    if (shouldSkip(decl) || decl->isCXXClassMember())
+      return true;
+    // clang-format off
+    // this
+    // template <typename EnumType> ::std::optional<EnumType> symbolizeEnum(::llvm::StringRef);
+    // is not a `TemplateDecl` but it is `Templated`...
+    // on the other hand every method in a template class `isTemplated` even
+    // if the template params don't play in the method decl (which is why this visitor can't be combined with VisitCXXMethodDecl)
+    // clang-format on
+    if (decl->isTemplated() || decl->isTemplateDecl() ||
+        decl->isTemplateInstantiation() ||
+        decl->isFunctionTemplateSpecialization()) {
+      clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
+          decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
+                                   clang::DiagnosticsEngine::Warning,
+                                   "template functions not supported yet"));
+      (void)builder.setForceEmit();
+      return true;
+    }
+    emitClassMethodOrFunction(decl, ci, outputFile);
+    return true;
+  }
+
+  bool VisitEnumDecl(clang::EnumDecl *decl) {
+    if (shouldSkip(decl))
+      return true;
+    if (decl->getQualifiedNameAsString().rfind("unnamed enum") !=
+        std::string::npos)
+      return true;
+    emitEnum(llvm::cast<clang::EnumDecl>(decl), ci, outputFile);
     return true;
   }
 
@@ -394,7 +586,7 @@ struct ClassStructEnumVisitor
   clang::CompilerInstance &ci;
   std::shared_ptr<llvm::ToolOutputFile> outputFile;
   std::unique_ptr<clang::ItaniumMangleContext> mc;
-  llvm::DenseSet<clang::CXXRecordDecl *> visitedRecords;
+  llvm::DenseSet<clang::TagDecl *> visitedRecords;
 };
 
 struct ClassStructEnumConsumer : clang::ASTConsumer {
@@ -410,7 +602,7 @@ struct ClassStructEnumConsumer : clang::ASTConsumer {
     visitor.TraverseDecl(context.getTranslationUnitDecl());
   }
   bool shouldSkipFunctionBody(clang::Decl *) override { return true; }
-  ClassStructEnumVisitor visitor;
+  BindingsVisitor visitor;
 };
 
 struct GenerateBindingsAction : clang::ASTFrontendAction {
@@ -467,25 +659,39 @@ int main(int argc, char **argv) {
       "-fdelayed-template-parsing",
       "-Wno-unused-command-line-argument",
       "-v",
-      // annoyingly clang will insert -internal-isystem with relative paths and those could hit on the build dir
-      // (which have headers and relationships amongst them that won't necessarily be valid)
-      // more annoyingly different toolchains decide differently which flag determines whether to include
-      // the tell-tale sign is if you uncomment -v and see "ignoring non-existant directory..." in the output
+      // annoyingly clang will insert -internal-isystem with relative paths and
+      // those could hit on the build dir (which have headers and relationships
+      // amongst them that won't necessarily be valid) more annoyingly different
+      // toolchains decide differently which flag determines whether to include
+      // the tell-tale sign is if you uncomment -v and see "ignoring
+      // non-existant directory..." in the output
       "-nobuiltininc",
       "-nostdinc",
       "-nostdinc++",
       "-nostdlibinc",
   };
+  int clangArgs = args.size();
   for (const auto &includeDir : IncludeDirs)
     args.emplace_back(llvm::formatv("-I{0}", includeDir));
   for (const auto &define : Defines)
     args.emplace_back(llvm::formatv("-D{0}", define));
 
+  outputFile->os() << "// Generated with eudslpy-gen args:\n";
+  outputFile->os() << "// " << InputFilename << " ";
+  auto arg = args.begin();
+  for (std::advance(arg, clangArgs); arg != args.end(); ++arg) {
+    outputFile->os() << *arg << ' ';
+  }
+  for (auto ns : Namespaces)
+    outputFile->os() << "-namespaces=" << ns << " ";
+  outputFile->os() << "-o " << OutputFilename << "\n";
+  outputFile->os() << "\n";
+
   if (!clang::tooling::runToolOnCodeWithArgs(
           std::make_unique<GenerateBindingsAction>(outputFile), buffer, args,
           InputFilename)) {
     llvm::errs() << "bindings generation failed.\n";
-    // return -1;
+    return -1;
   }
 
   outputFile->keep();

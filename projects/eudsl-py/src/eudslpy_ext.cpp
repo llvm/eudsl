@@ -1,10 +1,20 @@
 #include <nanobind/nanobind.h>
-#include <nanobind/stl/bind_vector.h>
 #include <nanobind/stl/optional.h>
+#include <nanobind/stl/pair.h>
 #include <nanobind/stl/unique_ptr.h>
 #include <nanobind/typing.h>
 
 #include "mlir/Bytecode/BytecodeImplementation.h"
+#include "mlir/Dialect/Affine/IR/AffineValueMap.h"
+#include "mlir/Dialect/Bufferization/Transforms/Bufferize.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
+#include "mlir/Dialect/Mesh/IR/MeshOps.h"
+#include "mlir/Dialect/PDL/IR/PDLOps.h"
+#include "mlir/Dialect/Polynomial/IR/PolynomialOps.h"
+#include "mlir/Dialect/Ptr/IR/PtrOps.h"
+#include "mlir/Dialect/Quant/IR/QuantTypes.h"
+#include "mlir/Dialect/SPIRV/IR/SPIRVOps.h"
 #include "mlir/IR/Action.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/AffineExprVisitor.h"
@@ -33,9 +43,12 @@
 #include "mlir/InitAllDialects.h"
 #include "mlir/Interfaces/DataLayoutInterfaces.h"
 #include "mlir/Interfaces/InferIntRangeInterface.h"
+#include "mlir/Target/LLVMIR/ModuleTranslation.h"
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ThreadPool.h"
 
@@ -311,9 +324,196 @@ void populateIRModule(nb::module_ &m) {
 #include "ir.cpp.inc"
 }
 
-void populateArithModule(nb::module_ &m) {
-#include "EUDSLGenArith.cpp.inc"
+// TODO(max): maybe split these into separate CU/TUs?
+void populateaccModule(nb::module_ &m) {
+#include "EUDSLGenacc.cpp.inc"
 }
+
+void populateaffineModule(nb::module_ &m) {
+#include "EUDSLGenaffine.cpp.inc"
+}
+
+void populateamdgpuModule(nb::module_ &m) {
+#include "EUDSLGenamdgpu.cpp.inc"
+}
+
+void populateamxModule(nb::module_ &m) {
+#include "EUDSLGenamx.cpp.inc"
+}
+
+void populatearithModule(nb::module_ &m) {
+#include "EUDSLGenarith.cpp.inc"
+}
+
+void populatearm_neonModule(nb::module_ &m) {
+#include "EUDSLGenarm_neon.cpp.inc"
+}
+
+void populatearm_smeModule(nb::module_ &m) {
+#include "EUDSLGenarm_sme.cpp.inc"
+}
+
+void populatearm_sveModule(nb::module_ &m) {
+#include "EUDSLGenarm_sve.cpp.inc"
+}
+
+void populateasyncModule(nb::module_ &m) {
+#include "EUDSLGenasync.cpp.inc"
+}
+
+void populatebufferizationModule(nb::module_ &m) {
+#include "EUDSLGenbufferization.cpp.inc"
+}
+
+void populatecfModule(nb::module_ &m) {
+#include "EUDSLGencf.cpp.inc"
+}
+
+void populatecomplexModule(nb::module_ &m) {
+#include "EUDSLGencomplex.cpp.inc"
+}
+
+void populateDLTIDialectModule(nb::module_ &m) {
+#include "EUDSLGenDLTIDialect.cpp.inc"
+}
+
+// mlir::emitc::IfOp::elseBlock()
+// void populateemitcModule(nb::module_ &m) {
+// #include "EUDSLGenemitc.cpp.inc"
+// }
+
+void populatefuncModule(nb::module_ &m) {
+#include "EUDSLGenfunc.cpp.inc"
+}
+
+void populategpuModule(nb::module_ &m) {
+#include "EUDSLGengpu.cpp.inc"
+}
+
+void populateindexModule(nb::module_ &m) {
+#include "EUDSLGenindex.cpp.inc"
+}
+
+// error: use of class template 'ArrayRef' requires template arguments; argument
+// deduction not allowed in conversion function type void
+// populateirdlModule(nb::module_ &m) {
+//   using namespace llvm;
+// #include "EUDSLGenirdl.cpp.inc"
+// }
+
+// __ZN4mlir6linalg11TransposeOp12createRegionERNS_9OpBuilderERNS_14OperationStateE
+// void populatelinalgModule(nb::module_ &m) {
+//   using namespace mlir;
+// #include "EUDSLGenlinalg.cpp.inc"
+// }
+
+// missing LLVM_TargetFeaturesAttr builder
+// void populateLLVMModule(nb::module_ &m) {
+// #include "EUDSLGenLLVM.cpp.inc"
+// }
+
+void populatemathModule(nb::module_ &m) {
+#include "EUDSLGenmath.cpp.inc"
+}
+
+void populatememrefModule(nb::module_ &m) {
+#include "EUDSLGenmemref.cpp.inc"
+}
+
+void populatemeshModule(nb::module_ &m) {
+#include "EUDSLGenmesh.cpp.inc"
+}
+
+void populateml_programModule(nb::module_ &m) {
+#include "EUDSLGenml_program.cpp.inc"
+}
+
+void populatempiModule(nb::module_ &m) {
+#include "EUDSLGenmpi.cpp.inc"
+}
+
+void populatenvgpuModule(nb::module_ &m) {
+#include "EUDSLGennvgpu.cpp.inc"
+}
+
+void populateNVVMModule(nb::module_ &m) {
+#include "EUDSLGenNVVM.cpp.inc"
+}
+
+// mlir::omp::TaskloopOp::getEffects(llvm::SmallVectorImpl<mlir::SideEffects::EffectInstance<mlir::MemoryEffects::Effect>>&)
+// void populateompModule(nb::module_ &m) {
+// #include "EUDSLGenomp.cpp.inc"
+// }
+
+void populatepdlModule(nb::module_ &m) {
+#include "EUDSLGenpdl.cpp.inc"
+}
+
+void populatepdl_interpModule(nb::module_ &m) {
+#include "EUDSLGenpdl_interp.cpp.inc"
+}
+
+void populatepolynomialModule(nb::module_ &m) {
+#include "EUDSLGenpolynomial.cpp.inc"
+}
+
+void populateptrModule(nb::module_ &m) {
+#include "EUDSLGenptr.cpp.inc"
+}
+
+void populatequantModule(nb::module_ &m) {
+#include "EUDSLGenquant.cpp.inc"
+}
+
+void populateROCDLModule(nb::module_ &m) {
+#include "EUDSLGenROCDL.cpp.inc"
+}
+
+void populatescfModule(nb::module_ &m) {
+#include "EUDSLGenscf.cpp.inc"
+}
+
+void populateshapeModule(nb::module_ &m) {
+#include "EUDSLGenshape.cpp.inc"
+}
+
+void populatesparse_tensorModule(nb::module_ &m) {
+#include "EUDSLGensparse_tensor.cpp.inc"
+}
+
+void populatespirvModule(nb::module_ &m) {
+#include "EUDSLGenspirv.cpp.inc"
+}
+
+void populatetensorModule(nb::module_ &m) {
+#include "EUDSLGentensor.cpp.inc"
+}
+
+void populatetosaModule(nb::module_ &m) {
+#include "EUDSLGentosa.cpp.inc"
+}
+
+void populatetransformModule(nb::module_ &m) {
+#include "EUDSLGentransform.cpp.inc"
+}
+
+void populateubModule(nb::module_ &m) {
+#include "EUDSLGenub.cpp.inc"
+}
+
+// can't cast std::pair<VectorDim, VectorDim>
+// void populatevectorModule(nb::module_ &m) {
+// #include "EUDSLGenvector.cpp.inc"
+// }
+
+void populatex86vectorModule(nb::module_ &m) {
+#include "EUDSLGenx86vector.cpp.inc"
+}
+
+// missing mlir::xegpu::SGMapAttr::getChecked
+// void populatexegpuModule(nb::module_ &m) {
+// #include "EUDSLGenxegpu.cpp.inc"
+// }
 
 NB_MODULE(eudslpy_ext, m) {
   // nb::class_<mlir::SymbolTableCollection>(m, "SymbolTableCollection");
@@ -518,6 +718,139 @@ NB_MODULE(eudslpy_ext, m) {
   auto irModule = m.def_submodule("ir");
   populateIRModule(irModule);
   auto dialectsModule = m.def_submodule("dialects");
+
+  auto accModule = dialectsModule.def_submodule("acc");
+  populateaccModule(accModule);
+
+  auto affineModule = dialectsModule.def_submodule("affine");
+  populateaffineModule(affineModule);
+
+  auto amdgpuModule = dialectsModule.def_submodule("amdgpu");
+  populateamdgpuModule(amdgpuModule);
+
+  auto amxModule = dialectsModule.def_submodule("amx");
+  populateamxModule(amxModule);
+
   auto arithModule = dialectsModule.def_submodule("arith");
-  populateArithModule(arithModule);
+  populatearithModule(arithModule);
+
+  auto arm_neonModule = dialectsModule.def_submodule("arm_neon");
+  populatearm_neonModule(arm_neonModule);
+
+  auto arm_smeModule = dialectsModule.def_submodule("arm_sme");
+  populatearm_smeModule(arm_smeModule);
+
+  auto arm_sveModule = dialectsModule.def_submodule("arm_sve");
+  populatearm_sveModule(arm_sveModule);
+
+  auto asyncModule = dialectsModule.def_submodule("async");
+  populateasyncModule(asyncModule);
+
+  auto bufferizationModule = dialectsModule.def_submodule("bufferization");
+  populatebufferizationModule(bufferizationModule);
+
+  auto cfModule = dialectsModule.def_submodule("cf");
+  populatecfModule(cfModule);
+
+  auto complexModule = dialectsModule.def_submodule("complex");
+  populatecomplexModule(complexModule);
+
+  auto DLTIDialectModule = dialectsModule.def_submodule("DLTIDialect");
+  populateDLTIDialectModule(DLTIDialectModule);
+
+  // auto emitcModule = dialectsModule.def_submodule("emitc");
+  // populateemitcModule(emitcModule);
+
+  auto funcModule = dialectsModule.def_submodule("func");
+  populatefuncModule(funcModule);
+
+  auto gpuModule = dialectsModule.def_submodule("gpu");
+  populategpuModule(gpuModule);
+
+  auto indexModule = dialectsModule.def_submodule("index");
+  populateindexModule(indexModule);
+
+  // auto irdlModule = dialectsModule.def_submodule("irdl");
+  // populateirdlModule(irdlModule);
+
+  // auto linalgModule = dialectsModule.def_submodule("linalg");
+  // populatelinalgModule(linalgModule);
+
+  // auto LLVMModule = dialectsModule.def_submodule("LLVM");
+  // populateLLVMModule(LLVMModule);
+
+  auto mathModule = dialectsModule.def_submodule("math");
+  populatemathModule(mathModule);
+
+  auto memrefModule = dialectsModule.def_submodule("memref");
+  populatememrefModule(memrefModule);
+
+  auto meshModule = dialectsModule.def_submodule("mesh");
+  populatemeshModule(meshModule);
+
+  auto ml_programModule = dialectsModule.def_submodule("ml_program");
+  populateml_programModule(ml_programModule);
+
+  auto mpiModule = dialectsModule.def_submodule("mpi");
+  populatempiModule(mpiModule);
+
+  auto nvgpuModule = dialectsModule.def_submodule("nvgpu");
+  populatenvgpuModule(nvgpuModule);
+
+  auto NVVMModule = dialectsModule.def_submodule("NVVM");
+  populateNVVMModule(NVVMModule);
+
+  // auto ompModule = dialectsModule.def_submodule("omp");
+  // populateompModule(ompModule);
+
+  auto pdlModule = dialectsModule.def_submodule("pdl");
+  populatepdlModule(pdlModule);
+
+  auto pdl_interpModule = dialectsModule.def_submodule("pdl_interp");
+  populatepdl_interpModule(pdl_interpModule);
+
+  auto polynomialModule = dialectsModule.def_submodule("polynomial");
+  populatepolynomialModule(polynomialModule);
+
+  auto ptrModule = dialectsModule.def_submodule("ptr");
+  populateptrModule(ptrModule);
+
+  auto quantModule = dialectsModule.def_submodule("quant");
+  populatequantModule(quantModule);
+
+  auto ROCDLModule = dialectsModule.def_submodule("ROCDL");
+  populateROCDLModule(ROCDLModule);
+
+  auto scfModule = dialectsModule.def_submodule("scf");
+  populatescfModule(scfModule);
+
+  auto shapeModule = dialectsModule.def_submodule("shape");
+  populateshapeModule(shapeModule);
+
+  auto sparse_tensorModule = dialectsModule.def_submodule("sparse_tensor");
+  populatesparse_tensorModule(sparse_tensorModule);
+
+  auto spirvModule = dialectsModule.def_submodule("spirv");
+  populatespirvModule(spirvModule);
+
+  auto tensorModule = dialectsModule.def_submodule("tensor");
+  populatetensorModule(tensorModule);
+
+  auto tosaModule = dialectsModule.def_submodule("tosa");
+  populatetosaModule(tosaModule);
+
+  auto transformModule = dialectsModule.def_submodule("transform");
+  populatetransformModule(transformModule);
+
+  auto ubModule = dialectsModule.def_submodule("ub");
+  populateubModule(ubModule);
+
+  // auto vectorModule = dialectsModule.def_submodule("vector");
+  // populatevectorModule(vectorModule);
+
+  auto x86vectorModule = dialectsModule.def_submodule("x86vector");
+  populatex86vectorModule(x86vectorModule);
+
+  // auto xegpuModule = dialectsModule.def_submodule("xegpu");
+  // populatexegpuModule(xegpuModule);
 }

@@ -87,11 +87,275 @@ add_eudslpygen(eudslpy-gen EUDSLPY
   src/eudslpy-gen.cpp
 )
 
-eudslpygen(EUDSLGenArith
-  ${MLIR_INCLUDE_DIR}/mlir/Dialect/Arith/IR/Arith.h
-  EUDSLGenArith.cpp.inc
+eudslpygen(EUDSLGenacc
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenacc.cpp.inc
+  NAMESPACES mlir::acc mlir::acc::detail
+)
+
+eudslpygen(EUDSLGenaffine
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenaffine.cpp.inc
+  NAMESPACES mlir::affine mlir::affine::detail
+)
+
+eudslpygen(EUDSLGenamdgpu
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenamdgpu.cpp.inc
+  NAMESPACES mlir::amdgpu mlir::amdgpu::detail
+)
+
+eudslpygen(EUDSLGenamx
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenamx.cpp.inc
+  NAMESPACES mlir::amx mlir::amx::detail
+)
+
+eudslpygen(EUDSLGenarith
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenarith.cpp.inc
   NAMESPACES mlir::arith mlir::arith::detail
 )
+
+eudslpygen(EUDSLGenarm_neon
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenarm_neon.cpp.inc
+  NAMESPACES mlir::arm_neon mlir::arm_neon::detail
+)
+
+eudslpygen(EUDSLGenarm_sme
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenarm_sme.cpp.inc
+  NAMESPACES mlir::arm_sme mlir::arm_sme::detail
+)
+
+eudslpygen(EUDSLGenarm_sve
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenarm_sve.cpp.inc
+  NAMESPACES mlir::arm_sve mlir::arm_sve::detail
+)
+
+eudslpygen(EUDSLGenasync
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenasync.cpp.inc
+  NAMESPACES mlir::async mlir::async::detail
+)
+
+eudslpygen(EUDSLGenbufferization
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenbufferization.cpp.inc
+  NAMESPACES mlir::bufferization mlir::bufferization::detail
+)
+
+eudslpygen(EUDSLGencf
+  ${MLIR_INCLUDE_DIR}/mlir/Dialect/ControlFlow/IR/ControlFlowOps.h
+  EUDSLGencf.cpp.inc
+  NAMESPACES mlir::cf mlir::cf::detail
+)
+
+eudslpygen(EUDSLGencomplex
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGencomplex.cpp.inc
+  NAMESPACES mlir::complex mlir::complex::detail
+)
+
+eudslpygen(EUDSLGenDLTIDialect
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenDLTIDialect.cpp.inc
+  NAMESPACES mlir::DLTIDialect mlir::DLTIDialect::detail
+)
+
+#eudslpygen(EUDSLGenemitc
+#  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+#  EUDSLGenemitc.cpp.inc
+#  NAMESPACES mlir::emitc mlir::emitc::detail
+#)
+
+eudslpygen(EUDSLGenfunc
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenfunc.cpp.inc
+  NAMESPACES mlir::func mlir::func::detail
+)
+
+eudslpygen(EUDSLGengpu
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGengpu.cpp.inc
+  NAMESPACES mlir::gpu mlir::gpu::detail
+)
+
+eudslpygen(EUDSLGenindex
+  ${MLIR_INCLUDE_DIR}/mlir/Dialect/Index/IR/IndexOps.h
+  EUDSLGenindex.cpp.inc
+  NAMESPACES mlir::index mlir::index::detail
+)
+
+#eudslpygen(EUDSLGenirdl
+#  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+#  EUDSLGenirdl.cpp.inc
+#  NAMESPACES mlir::irdl mlir::irdl::detail
+#)
+
+eudslpygen(EUDSLGenlinalg
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenlinalg.cpp.inc
+  NAMESPACES mlir::linalg mlir::linalg::detail
+)
+
+#eudslpygen(EUDSLGenLLVM
+#  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+#  EUDSLGenLLVM.cpp.inc
+#  NAMESPACES mlir::LLVM mlir::LLVM::detail
+#)
+
+eudslpygen(EUDSLGenmath
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenmath.cpp.inc
+  NAMESPACES mlir::math mlir::math::detail
+)
+
+eudslpygen(EUDSLGenmemref
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenmemref.cpp.inc
+  NAMESPACES mlir::memref mlir::memref::detail
+)
+
+eudslpygen(EUDSLGenmesh
+  ${MLIR_INCLUDE_DIR}/mlir/Dialect/Mesh/IR/MeshOps.h
+  EUDSLGenmesh.cpp.inc
+  NAMESPACES mlir::mesh mlir::mesh::detail
+)
+
+eudslpygen(EUDSLGenml_program
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenml_program.cpp.inc
+  NAMESPACES mlir::ml_program mlir::ml_program::detail
+)
+
+eudslpygen(EUDSLGenmpi
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenmpi.cpp.inc
+  NAMESPACES mlir::mpi mlir::mpi::detail
+)
+
+eudslpygen(EUDSLGennvgpu
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGennvgpu.cpp.inc
+  NAMESPACES mlir::nvgpu mlir::nvgpu::detail
+)
+
+eudslpygen(EUDSLGenNVVM
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenNVVM.cpp.inc
+  NAMESPACES mlir::NVVM mlir::NVVM::detail
+)
+
+#eudslpygen(EUDSLGenomp
+#  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+#  EUDSLGenomp.cpp.inc
+#  NAMESPACES mlir::omp mlir::omp::detail
+#)
+
+eudslpygen(EUDSLGenpdl
+  ${MLIR_INCLUDE_DIR}/mlir/Dialect/PDL/IR/PDLOps.h
+  EUDSLGenpdl.cpp.inc
+  NAMESPACES mlir::pdl mlir::pdl::detail
+)
+
+eudslpygen(EUDSLGenpdl_interp
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenpdl_interp.cpp.inc
+  NAMESPACES mlir::pdl_interp mlir::pdl_interp::detail
+)
+
+eudslpygen(EUDSLGenpolynomial
+  ${MLIR_INCLUDE_DIR}/mlir/Dialect/Polynomial/IR/PolynomialOps.h
+  EUDSLGenpolynomial.cpp.inc
+  NAMESPACES mlir::polynomial mlir::polynomial::detail
+)
+
+eudslpygen(EUDSLGenptr
+  ${MLIR_INCLUDE_DIR}/mlir/Dialect/Ptr/IR/PtrOps.h
+  EUDSLGenptr.cpp.inc
+  NAMESPACES mlir::ptr mlir::ptr::detail
+)
+
+eudslpygen(EUDSLGenquant
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenquant.cpp.inc
+  NAMESPACES mlir::quant mlir::quant::detail
+)
+
+eudslpygen(EUDSLGenROCDL
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenROCDL.cpp.inc
+  NAMESPACES mlir::ROCDL mlir::ROCDL::detail
+)
+
+eudslpygen(EUDSLGenscf
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenscf.cpp.inc
+  NAMESPACES mlir::scf mlir::scf::detail
+)
+
+eudslpygen(EUDSLGenshape
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenshape.cpp.inc
+  NAMESPACES mlir::shape mlir::shape::detail
+)
+
+eudslpygen(EUDSLGensparse_tensor
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGensparse_tensor.cpp.inc
+  NAMESPACES mlir::sparse_tensor mlir::sparse_tensor::detail
+)
+
+eudslpygen(EUDSLGenspirv
+  ${MLIR_INCLUDE_DIR}/mlir/Dialect/SPIRV/IR/SPIRVOps.h
+  EUDSLGenspirv.cpp.inc
+  NAMESPACES mlir::spirv mlir::spirv::detail
+)
+
+eudslpygen(EUDSLGentensor
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGentensor.cpp.inc
+  NAMESPACES mlir::tensor mlir::tensor::detail
+)
+
+eudslpygen(EUDSLGentosa
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGentosa.cpp.inc
+  NAMESPACES mlir::tosa mlir::tosa::detail
+)
+
+eudslpygen(EUDSLGentransform
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGentransform.cpp.inc
+  NAMESPACES mlir::transform mlir::transform::detail
+)
+
+eudslpygen(EUDSLGenub
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenub.cpp.inc
+  NAMESPACES mlir::ub mlir::ub::detail
+)
+
+#eudslpygen(EUDSLGenvector
+#  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+#  EUDSLGenvector.cpp.inc
+#  NAMESPACES mlir::vector mlir::vector::detail
+#)
+
+eudslpygen(EUDSLGenx86vector
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  EUDSLGenx86vector.cpp.inc
+  NAMESPACES mlir::x86vector mlir::x86vector::detail
+)
+
+#eudslpygen(EUDSLGenxegpu
+#  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+#  EUDSLGenxegpu.cpp.inc
+#  NAMESPACES mlir::xegpu mlir::xegpu::detail
+#)
 
 execute_process(
   COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
@@ -116,6 +380,53 @@ nanobind_add_module(eudslpy_ext
   NB_STATIC
   NB_DOMAIN eudsl
   src/eudslpy_ext.cpp
+)
+add_dependencies(eudslpy_ext
+  EUDSLGenacc
+  EUDSLGenaffine
+  EUDSLGenamdgpu
+  EUDSLGenamx
+  EUDSLGenarith
+  EUDSLGenarm_neon
+  EUDSLGenarm_sme
+  EUDSLGenarm_sve
+  EUDSLGenasync
+  EUDSLGenbufferization
+  EUDSLGencf
+  EUDSLGencomplex
+  EUDSLGenDLTIDialect
+#  EUDSLGenemitc
+  EUDSLGenfunc
+  EUDSLGengpu
+  EUDSLGenindex
+#  EUDSLGenirdl
+  EUDSLGenlinalg
+#  EUDSLGenLLVM
+  EUDSLGenmath
+  EUDSLGenmemref
+  EUDSLGenmesh
+  EUDSLGenml_program
+  EUDSLGenmpi
+  EUDSLGennvgpu
+  EUDSLGenNVVM
+#  EUDSLGenomp
+  EUDSLGenpdl
+  EUDSLGenpdl_interp
+  EUDSLGenpolynomial
+  EUDSLGenptr
+  EUDSLGenquant
+  EUDSLGenROCDL
+  EUDSLGenscf
+  EUDSLGenshape
+  EUDSLGensparse_tensor
+  EUDSLGenspirv
+  EUDSLGentensor
+  EUDSLGentosa
+  EUDSLGentransform
+  EUDSLGenub
+#  EUDSLGenvector
+  EUDSLGenx86vector
+#  EUDSLGenxegpu
 )
 set_target_properties(eudslpy_ext
   PROPERTIES
@@ -157,10 +468,10 @@ install(IMPORTED_RUNTIME_ARTIFACTS MLIR LLVM LIBRARY DESTINATION eudsl)
 
 target_compile_options(eudslpy_ext PRIVATE ${nanobind_options})
 target_compile_options(nanobind-static PRIVATE ${nanobind_options})
-add_dependencies(eudslpy_ext EUDSLGenArith)
 
+# note WORKING_DIRECTORY
 set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen" --module eudslpy_ext --recursive --include-private --output-dir .)
-set(NB_STUBGEN_OUTPUTS "eudslpy_ext.pyi")
+set(NB_STUBGEN_OUTPUTS "__init__.pyi")
 add_custom_command(
   OUTPUT ${NB_STUBGEN_OUTPUTS}
   COMMAND ${NB_STUBGEN_CMD}
