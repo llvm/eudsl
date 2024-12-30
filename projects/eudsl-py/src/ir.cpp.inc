@@ -2028,7 +2028,7 @@ auto mlir_TensorType = nb::class_<mlir::TensorType>(m, "TensorType")
 .def_static("classof", &mlir::TensorType::classof, "type"_a)
 ;
 
-auto mlir_BaseMemRefType = nb::class_<mlir::BaseMemRefType>(m, "BaseMemRefType")
+auto mlir_BaseMemRefType = nb::class_<mlir::BaseMemRefType, mlir::Type>(m, "BaseMemRefType")
 .def_prop_ro("element_type", &mlir::BaseMemRefType::getElementType)
 .def("has_rank", &mlir::BaseMemRefType::hasRank)
 .def_prop_ro("shape", &mlir::BaseMemRefType::getShape)
@@ -2363,6 +2363,7 @@ auto mlir_MemRefType_Builder = nb::class_<mlir::MemRefType::Builder>(mlir_MemRef
 .def("set_element_type", &mlir::MemRefType::Builder::setElementType, "new_element_type"_a, nb::rv_policy::reference_internal)
 .def("set_layout", &mlir::MemRefType::Builder::setLayout, "new_layout"_a, nb::rv_policy::reference_internal)
 .def("set_memory_space", &mlir::MemRefType::Builder::setMemorySpace, "new_memory_space"_a, nb::rv_policy::reference_internal)
+.def("memref_type", [](mlir::MemRefType::Builder& self) -> mlir::MemRefType { return self; })
 ;
 
 auto mlir_RankedTensorType_Builder = nb::class_<mlir::RankedTensorType::Builder>(mlir_RankedTensorType, "Builder")

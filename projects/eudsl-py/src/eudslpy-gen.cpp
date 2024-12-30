@@ -698,7 +698,7 @@ int main(int argc, char **argv) {
       "-fkeep-system-includes",
       "-fdelayed-template-parsing",
       "-Wno-unused-command-line-argument",
-      "-v",
+      // "-v",
       // annoyingly clang will insert -internal-isystem with relative paths and
       // those could hit on the build dir (which have headers and relationships
       // amongst them that won't necessarily be valid) more annoyingly different

@@ -1,9 +1,5 @@
 # copy-pasta from AddMLIR.cmake/AddLLVM.cmake/TableGen.cmake
 
-# Clear out any pre-existing compile_commands file before processing. This
-# allows for generating a clean compile_commands on each configure.
-file(REMOVE ${CMAKE_BINARY_DIR}/eudslpygen_compile_commands.yml)
-
 # no clue why but with LLVM_LINK_LLVM_DYLIB even static libs depend on LLVM
 get_property(MLIR_ALL_LIBS GLOBAL PROPERTY MLIR_ALL_LIBS)
 foreach(_lib ${MLIR_ALL_LIBS})
@@ -52,7 +48,7 @@ function(eudslpygen target inputFile)
   # Filter out empty items before prepending each entry with -I
   list(REMOVE_ITEM eudslpygen_includes "")
   list(TRANSFORM eudslpygen_includes PREPEND -I)
-  
+
   set(_gen_target_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/${target}")
   file(MAKE_DIRECTORY ${_gen_target_dir})
   set(fullGenFile "${_gen_target_dir}/${target}.cpp.gen")
@@ -63,12 +59,16 @@ function(eudslpygen target inputFile)
   # this could be smarter by asking people to list td targets or something but that's too onerous
   file(GLOB_RECURSE global_tds "${MLIR_INCLUDE_DIR}/mlir/*.td")
   # use cc -MM  to collect all transitive headers
-  set(clang_command ${CMAKE_CXX_COMPILER} -v -xc++ "-std=c++${CMAKE_CXX_STANDARD}"
+  set(clang_command ${CMAKE_CXX_COMPILER}
+    # -v
+    -xc++ "-std=c++${CMAKE_CXX_STANDARD}"
     -MM ${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}
     -MT ${fullGenFile_rel}
     ${eudslpygen_includes}
     -o ${_depfile})
-  execute_process(COMMAND ${clang_command} RESULT_VARIABLE had_error COMMAND_ECHO STDERR)
+  execute_process(COMMAND ${clang_command} RESULT_VARIABLE had_error
+    # COMMAND_ECHO STDERR
+  )
   if(had_error OR NOT EXISTS "${_depfile}")
     set(additional_cmdline -o "${fullGenFile_rel}")
   else()
@@ -126,36 +126,41 @@ function(eudslpygen target inputFile)
     DEPENDS ${ARG_DEPENDS} ${eudslpygen_depends} ${local_headers} ${global_tds}
     COMMENT "EUDSLPY: Generating ${fullGenFile}..."
   )
+  # this is the specific thing connected the dependencies...
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${fullGenFile})
+
+  # epic hack to specify all shards that will be generated even though we don't know them before hand
+  # TODO(max): refactor eudslpy-gen into its own subproject so that we can do execute_process(CMAKE_COMMAND... )
+  set(_byproducts)
+  # lol spirv has 260 ops
+  set(_max_num_shards 30)
+  foreach(i RANGE ${_max_num_shards})
+    list(APPEND _byproducts "${fullGenFile}.shard.${i}.cpp")
+  endforeach()
 
   add_custom_command(OUTPUT "${fullGenFile}.sharded.cpp"
     COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/make_generated_registration.py
       ${fullGenFile} -t ${target} -I ${ARG_EXTRA_INCLUDES} ${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}
+      -m ${_max_num_shards}
+    BYPRODUCTS ${_byproducts}
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS ${fullGenFile}
     COMMENT "EUDSLPY: Generating ${fullGenFile}.sharded.cpp..."
   )
-
-  # this is the specific thing connected the dependencies...
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${fullGenFile}.sharded.cpp")
-  file(GLOB _generated_shards "${_gen_target_dir}/*.shard.*")
-  list(APPEND _generated_shards "${fullGenFile}.sharded.cpp")
-  set(${target}_GENERATED_SHARDS ${_generated_shards} PARENT_SCOPE)
+
+  add_library(${target} STATIC "${fullGenFile}.sharded.cpp" ${_byproducts})
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --include_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_include_dir)
+  target_include_directories(${target} PRIVATE ${eudslpygen_includes}
+    ${Python_INCLUDE_DIRS} ${nanobind_include_dir})
 
   # `make clean' must remove all those generated files:
   # TODO(max): clean up dep files
-  set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES ${fullGenFile})
-  set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/${fullGenFile} PROPERTIES
-    GENERATED 1)
-
-  # Append the includes used for this file to the pdll_compilation_commands
-  # file.
-  file(APPEND ${CMAKE_BINARY_DIR}/eudslpygen_compile_commands.yml
-    "--- !FileInfo:\n"
-    "  filepath: \"${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}\"\n"
-    "  includes: \"${CMAKE_CURRENT_SOURCE_DIR};${eudslpygen_includes}\"\n"
-  )
-
-  add_public_eudslpygen_target(${target} "${fullGenFile}.sharded.cpp;${_generated_shards}")
+  set_property(DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+    APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES ${_byproducts})
+  set_source_files_properties(${_byproducts} PROPERTIES GENERATED 1)
 endfunction()
 
 macro(add_eudslpygen target project)

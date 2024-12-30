@@ -107,10 +107,11 @@ add_eudslpygen(eudslpy-gen EUDSLPY
   src/eudslpy-gen.cpp
 )
 
-eudslpygen(EUDSLGenacc
-  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
-  NAMESPACES mlir::acc mlir::acc::detail
-)
+# too big
+# eudslpygen(EUDSLGenacc
+#   ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+#   NAMESPACES mlir::acc mlir::acc::detail
+# )
 
 eudslpygen(EUDSLGenaffine
   ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
@@ -140,10 +141,11 @@ eudslpygen(EUDSLGenarm_neon
   NAMESPACES mlir::arm_neon mlir::arm_neon::detail
 )
 
-eudslpygen(EUDSLGenarm_sme
-  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
-  NAMESPACES mlir::arm_sme mlir::arm_sme::detail
-)
+# too big
+# eudslpygen(EUDSLGenarm_sme
+#   ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+#   NAMESPACES mlir::arm_sme mlir::arm_sme::detail
+# )
 
 eudslpygen(EUDSLGenarm_sve
   ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
@@ -180,10 +182,10 @@ eudslpygen(EUDSLGenDLTIDialect
   NAMESPACES mlir::DLTIDialect mlir::DLTIDialect::detail
 )
 
-#eudslpygen(EUDSLGenemitc
-#  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
-#  NAMESPACES mlir::emitc mlir::emitc::detail
-#)
+eudslpygen(EUDSLGenemitc
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  NAMESPACES mlir::emitc mlir::emitc::detail
+)
 
 eudslpygen(EUDSLGenfunc
   ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
@@ -216,10 +218,10 @@ eudslpygen(EUDSLGenlinalg
   NAMESPACES mlir::linalg mlir::linalg::detail
 )
 
-#eudslpygen(EUDSLGenLLVM
-#  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
-#  NAMESPACES mlir::LLVM mlir::LLVM::detail
-#)
+eudslpygen(EUDSLGenLLVM
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  NAMESPACES mlir::LLVM mlir::LLVM::detail
+)
 
 eudslpygen(EUDSLGenmath
   ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
@@ -318,12 +320,14 @@ eudslpygen(EUDSLGensparse_tensor
   NAMESPACES mlir::sparse_tensor mlir::sparse_tensor::detail
 )
 
-eudslpygen(EUDSLGenspirv
-  ${MLIR_INCLUDE_DIR}/mlir/Dialect/SPIRV/IR/SPIRVOps.h
-  NAMESPACES mlir::spirv mlir::spirv::detail
-  EXTRA_INCLUDES
-    mlir/Dialect/SPIRV/IR/SPIRVOps.h
-)
+# nb::detail::nb_func_new("get_vce_triple_attr_name"): mismatched static/instance method flags in function overloads!
+# eudslpygen(EUDSLGenspirv
+#   ${MLIR_INCLUDE_DIR}/mlir/Dialect/SPIRV/IR/SPIRVOps.h
+#   NAMESPACES mlir::spirv mlir::spirv::detail
+#   EXTRA_INCLUDES
+#     mlir/Dialect/SPIRV/IR/SPIRVOps.h
+#     mlir/IR/PatternMatch.h
+# )
 
 eudslpygen(EUDSLGentensor
   ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
@@ -355,107 +359,65 @@ eudslpygen(EUDSLGenx86vector
   NAMESPACES mlir::x86vector mlir::x86vector::detail
 )
 
-#eudslpygen(EUDSLGenxegpu
-#  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
-#  NAMESPACES mlir::xegpu mlir::xegpu::detail
-#)
+eudslpygen(EUDSLGenxegpu
+  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  NAMESPACES mlir::xegpu mlir::xegpu::detail
+)
 
 nanobind_add_module(eudslpy_ext
   NB_STATIC
   NB_DOMAIN eudsl
   src/eudslpy_ext.cpp
-  ${EUDSLGenacc_GENERATED_SHARDS}
-  ${EUDSLGenaffine_GENERATED_SHARDS}
-  ${EUDSLGenamdgpu_GENERATED_SHARDS}
-  ${EUDSLGenamx_GENERATED_SHARDS}
-  ${EUDSLGenarith_GENERATED_SHARDS}
-  ${EUDSLGenarm_neon_GENERATED_SHARDS}
-  ${EUDSLGenarm_sme_GENERATED_SHARDS}
-  ${EUDSLGenarm_sve_GENERATED_SHARDS}
-  ${EUDSLGenasync_GENERATED_SHARDS}
-  ${EUDSLGenbufferization_GENERATED_SHARDS}
-  ${EUDSLGencf_GENERATED_SHARDS}
-  ${EUDSLGencomplex_GENERATED_SHARDS}
-  ${EUDSLGenDLTIDialect_GENERATED_SHARDS}
-  #  ${EUDSLGenemitc_GENERATED_SHARDS}
-  ${EUDSLGenfunc_GENERATED_SHARDS}
-  ${EUDSLGengpu_GENERATED_SHARDS}
-  ${EUDSLGenindex_GENERATED_SHARDS}
-  #  ${EUDSLGenirdl_GENERATED_SHARDS}
-  #  ${EUDSLGenlinalg_GENERATED_SHARDS}
-  #  ${EUDSLGenLLVM_GENERATED_SHARDS}
-  ${EUDSLGenmath_GENERATED_SHARDS}
-  ${EUDSLGenmemref_GENERATED_SHARDS}
-  ${EUDSLGenmesh_GENERATED_SHARDS}
-  ${EUDSLGenml_program_GENERATED_SHARDS}
-  ${EUDSLGenmpi_GENERATED_SHARDS}
-  ${EUDSLGennvgpu_GENERATED_SHARDS}
-  ${EUDSLGenNVVM_GENERATED_SHARDS}
-  #  ${EUDSLGenomp_GENERATED_SHARDS}
-  ${EUDSLGenpdl_GENERATED_SHARDS}
-  ${EUDSLGenpdl_interp_GENERATED_SHARDS}
-  ${EUDSLGenpolynomial_GENERATED_SHARDS}
-  ${EUDSLGenptr_GENERATED_SHARDS}
-  ${EUDSLGenquant_GENERATED_SHARDS}
-  ${EUDSLGenROCDL_GENERATED_SHARDS}
-  # ${EUDSLGenscf_GENERATED_SHARDS}
-  # ${EUDSLGenshape_GENERATED_SHARDS}
-  ${EUDSLGensparse_tensor_GENERATED_SHARDS}
-  # ${EUDSLGenspirv_GENERATED_SHARDS}
-  ${EUDSLGentensor_GENERATED_SHARDS}
-  ${EUDSLGentosa_GENERATED_SHARDS}
-  ${EUDSLGentransform_GENERATED_SHARDS}
-  ${EUDSLGenub_GENERATED_SHARDS}
-  #  ${EUDSLGenvector_GENERATED_SHARDS}
-  ${EUDSLGenx86vector_GENERATED_SHARDS}
-  #  ${EUDSLGenxegpu_GENERATED_SHARDS}
 )
-add_dependencies(eudslpy_ext
-  EUDSLGenacc
+target_link_libraries(eudslpy_ext PRIVATE
+  # broken
+  # EUDSLGenirdl
+  # EUDSLGenomp
+  # EUDSLGenvector
+  # weight reduction
+  # EUDSLGenacc
+  # EUDSLGenamx
+  # EUDSLGenarm_neon
+  # EUDSLGenarm_sme
+  # EUDSLGenarm_sve
+  # EUDSLGenDLTIDialect
+  # EUDSLGenmesh
+  # EUDSLGenml_program
+  # EUDSLGenmpi
+  # EUDSLGenptr
+  # EUDSLGenquant
+  # EUDSLGensparse_tensor
+  # EUDSLGenspirv
+  # EUDSLGentransform
+  # EUDSLGenub
+  # EUDSLGenx86vector
+  # EUDSLGenxegpu
+
   EUDSLGenaffine
   EUDSLGenamdgpu
-  EUDSLGenamx
   EUDSLGenarith
-  EUDSLGenarm_neon
-  EUDSLGenarm_sme
-  EUDSLGenarm_sve
   EUDSLGenasync
   EUDSLGenbufferization
   EUDSLGencf
   EUDSLGencomplex
-  EUDSLGenDLTIDialect
-#  EUDSLGenemitc
+  EUDSLGenemitc
   EUDSLGenfunc
   EUDSLGengpu
   EUDSLGenindex
-#  EUDSLGenirdl
-#  EUDSLGenlinalg
-#  EUDSLGenLLVM
+  EUDSLGenlinalg
+  EUDSLGenLLVM
   EUDSLGenmath
   EUDSLGenmemref
-  EUDSLGenmesh
-  EUDSLGenml_program
-  EUDSLGenmpi
   EUDSLGennvgpu
   EUDSLGenNVVM
-#  EUDSLGenomp
   EUDSLGenpdl
   EUDSLGenpdl_interp
   EUDSLGenpolynomial
-  EUDSLGenptr
-  EUDSLGenquant
   EUDSLGenROCDL
-  # EUDSLGenscf
-  # EUDSLGenshape
-  EUDSLGensparse_tensor
-  # EUDSLGenspirv
+  EUDSLGenscf
+  EUDSLGenshape
   EUDSLGentensor
   EUDSLGentosa
-  EUDSLGentransform
-  EUDSLGenub
-#  EUDSLGenvector
-  EUDSLGenx86vector
-#  EUDSLGenxegpu
 )
 set_target_properties(eudslpy_ext
   PROPERTIES
@@ -503,7 +465,8 @@ target_compile_options(eudslpy_ext PRIVATE ${nanobind_options})
 target_compile_options(nanobind-static PRIVATE ${nanobind_options})
 
 # note WORKING_DIRECTORY
-set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen" --module eudslpy_ext --recursive --include-private --output-dir .)
+set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen"
+  --module eudslpy_ext --recursive --include-private --output-dir .)
 set(NB_STUBGEN_OUTPUTS "__init__.pyi")
 add_custom_command(
   OUTPUT ${NB_STUBGEN_OUTPUTS}

@@ -12,7 +12,9 @@ from eudsl.eudslpy_ext.ir import (
     StringAttr,
     Type,
     Attribute,
+    MemRefType,
 )
+from eudsl.eudslpy_ext.dialects import nvgpu
 
 
 def test_array_ref():
@@ -37,6 +39,9 @@ def test_array_ref():
     for t in tys:
         print(t)
 
+    print(SmallVector["int16"])
+    print(SmallVector["int32"])
+    print(SmallVector["int64"])
     print(SmallVector[np.int16])
     print(SmallVector[np.int32])
     print(SmallVector[np.int64])
@@ -84,6 +89,27 @@ def test_arith_dialect():
     assert mod1.verify()
 
 
+def test_types():
+    ctx = MLIRContext(Threading.DISABLED)
+    nvgpu.NVGPUDialect.insert_into_registry(ctx.dialect_registry)
+    ctx.load_all_available_dialects()
+    shape = SmallVector[np.int64]([10, 10])
+    f32_ty = Float32Type.get(ctx)
+    shape_ = ArrayRef(shape)
+    memref_ty = MemRefType.Builder(shape_, f32_ty).memref_type()
+    memref_ty.dump()
+    td = nvgpu.TensorMapDescriptorType.get(
+        ctx,
+        memref_ty,
+        nvgpu.TensorMapSwizzleKind.SWIZZLE_64B,
+        nvgpu.TensorMapL2PromoKind.L2PROMO_64B,
+        nvgpu.TensorMapOOBKind.OOB_NAN,
+        nvgpu.TensorMapInterleaveKind.INTERLEAVE_16B,
+    )
+    td.dump()
+
+
 if __name__ == "__main__":
     test_array_ref()
     test_arith_dialect()
+    test_types()

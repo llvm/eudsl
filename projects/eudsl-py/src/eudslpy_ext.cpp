@@ -1,7 +1,7 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
-#include <nanobind/stl/unique_ptr.h>
+#include <nanobind/stl/string.h>
 #include <nanobind/typing.h>
 
 #include "mlir/Bytecode/BytecodeImplementation.h"
@@ -248,21 +248,23 @@ void populateIRModule(nb::module_ &m) {
 #include "ir.cpp.inc"
 }
 
-extern void populateEUDSLGenaccModule(nb::module_ &m);
+// too big
+// extern void populateEUDSLGenaccModule(nb::module_ &m);
 
 extern void populateEUDSLGenaffineModule(nb::module_ &m);
 
 extern void populateEUDSLGenamdgpuModule(nb::module_ &m);
 
-extern void populateEUDSLGenamxModule(nb::module_ &m);
+// extern void populateEUDSLGenamxModule(nb::module_ &m);
 
 extern void populateEUDSLGenarithModule(nb::module_ &m);
 
-extern void populateEUDSLGenarm_neonModule(nb::module_ &m);
+// extern void populateEUDSLGenarm_neonModule(nb::module_ &m);
 
-extern void populateEUDSLGenarm_smeModule(nb::module_ &m);
+// too big
+// extern void populateEUDSLGenarm_smeModule(nb::module_ &m);
 
-extern void populateEUDSLGenarm_sveModule(nb::module_ &m);
+// extern void populateEUDSLGenarm_sveModule(nb::module_ &m);
 
 extern void populateEUDSLGenasyncModule(nb::module_ &m);
 
@@ -272,12 +274,9 @@ extern void populateEUDSLGencfModule(nb::module_ &m);
 
 extern void populateEUDSLGencomplexModule(nb::module_ &m);
 
-extern void populateEUDSLGenDLTIDialectModule(nb::module_ &m);
+// extern void populateEUDSLGenDLTIDialectModule(nb::module_ &m);
 
-// mlir::emitc::IfOp::elseBlock()
-// void populateEUDSLGenemitcModule(nb::module_ &m) {
-// #include "EUDSLGenemitc.cpp.inc"
-// }
+extern void populateEUDSLGenemitcModule(nb::module_ &m);
 
 extern void populateEUDSLGenfuncModule(nb::module_ &m);
 
@@ -292,26 +291,19 @@ extern void populateEUDSLGenindexModule(nb::module_ &m);
 // #include "EUDSLGenirdl.cpp.inc"
 // }
 
-// __ZN4mlir6linalg11TransposeOp12createRegionERNS_9OpBuilderERNS_14OperationStateE
-// void populateEUDSLGenlinalgModule(nb::module_ &m) {
-//   using namespace mlir;
-// #include "EUDSLGenlinalg.cpp.inc"
-// }
+extern void populateEUDSLGenlinalgModule(nb::module_ &m);
 
-// missing LLVM_TargetFeaturesAttr builder
-// void populateEUDSLGenLLVMModule(nb::module_ &m) {
-// #include "EUDSLGenLLVM.cpp.inc"
-// }
+extern void populateEUDSLGenLLVMModule(nb::module_ &m);
 
 extern void populateEUDSLGenmathModule(nb::module_ &m);
 
 extern void populateEUDSLGenmemrefModule(nb::module_ &m);
 
-extern void populateEUDSLGenmeshModule(nb::module_ &m);
+// extern void populateEUDSLGenmeshModule(nb::module_ &m);
 
-extern void populateEUDSLGenml_programModule(nb::module_ &m);
+// extern void populateEUDSLGenml_programModule(nb::module_ &m);
 
-extern void populateEUDSLGenmpiModule(nb::module_ &m);
+// extern void populateEUDSLGenmpiModule(nb::module_ &m);
 
 extern void populateEUDSLGennvgpuModule(nb::module_ &m);
 
@@ -328,22 +320,21 @@ extern void populateEUDSLGenpdl_interpModule(nb::module_ &m);
 
 extern void populateEUDSLGenpolynomialModule(nb::module_ &m);
 
-extern void populateEUDSLGenptrModule(nb::module_ &m);
+// extern void populateEUDSLGenptrModule(nb::module_ &m);
 
 extern void populateEUDSLGenquantModule(nb::module_ &m);
 
 extern void populateEUDSLGenROCDLModule(nb::module_ &m);
 
-// missing ensureLoopTerminator
-// extern void populateEUDSLGenscfModule(nb::module_ &m);
+extern void populateEUDSLGenscfModule(nb::module_ &m);
 
-// missing dim op builder
-// extern void populateEUDSLGenshapeModule(nb::module_ &m);
+extern void populateEUDSLGenshapeModule(nb::module_ &m);
 
-extern void populateEUDSLGensparse_tensorModule(nb::module_ &m);
+// extern void populateEUDSLGensparse_tensorModule(nb::module_ &m);
 
-// too big...
-// extern void populateEUDSLGenspirvModule(nb::module_ &m);
+// nb::detail::nb_func_new("get_vce_triple_attr_name"): mismatched
+// static/instance method flags in function overloads! extern void
+// populateEUDSLGenspirvModule(nb::module_ &m);
 
 extern void populateEUDSLGentensorModule(nb::module_ &m);
 
@@ -360,10 +351,7 @@ extern void populateEUDSLGenubModule(nb::module_ &m);
 
 extern void populateEUDSLGenx86vectorModule(nb::module_ &m);
 
-// missing mlir::xegpu::SGMapAttr::getChecked
-// void populateEUDSLGenxegpuModule(nb::module_ &m) {
-// #include "EUDSLGenxegpu.cpp.inc"
-// }
+// extern void populateEUDSLGenxegpuModule(nb::module_ &m);
 
 NB_MODULE(eudslpy_ext, m) {
   // nb::class_<mlir::SymbolTableCollection>(m, "SymbolTableCollection");
@@ -448,12 +436,14 @@ NB_MODULE(eudslpy_ext, m) {
       bind_array_ref<double>(m);
   auto [smallVectorOfLong, arrayRefOfLong, mutableArrayRefOfLong] =
       bind_array_ref<long>(m);
+
   auto [smallVectorOfInt16, arrayRefOfInt16, mutableArrayRefOfInt16] =
       bind_array_ref<int16_t>(m);
   auto [smallVectorOfInt32, arrayRefOfInt32, mutableArrayRefOfInt32] =
       bind_array_ref<int32_t>(m);
   auto [smallVectorOfInt64, arrayRefOfInt64, mutableArrayRefOfInt64] =
       bind_array_ref<int64_t>(m);
+
   auto [smallVectorOfUInt16, arrayRefOfUInt16, mutableArrayRefOfUInt16] =
       bind_array_ref<uint16_t>(m);
   auto [smallVectorOfUInt32, arrayRefOfUInt32, mutableArrayRefOfUInt32] =
@@ -501,44 +491,76 @@ NB_MODULE(eudslpy_ext, m) {
        smallVectorOfChar, smallVectorOfDouble,
        smallVectorOfLong](nb::type_object type) -> nb::object {
         PyTypeObject *typeObj = (PyTypeObject *)type.ptr();
+        nb::print(type);
         if (typeObj == &PyBool_Type)
           return smallVectorOfBool;
         if (typeObj == &PyLong_Type)
-          return smallVectorOfInt;
+          return smallVectorOfInt64;
         if (typeObj == &PyFloat_Type)
-          return smallVectorOfFloat;
+          return smallVectorOfDouble;
+        nb::print("Wtfbbq");
 
         auto np = nb::module_::import_("numpy");
-        auto charDType = np.attr("char");
-        auto doubleDType = np.attr("double");
-        auto longDType = np.attr("long");
-        auto int16DType = np.attr("int16");
-        auto int32DType = np.attr("int32");
-        auto int64DType = np.attr("int64");
-        auto uint16DType = np.attr("uint16");
-        auto uint32DType = np.attr("uint32");
-        auto uint64DType = np.attr("uint64");
+        auto npCharDType = np.attr("char");
+        auto npDoubleDType = np.attr("double");
+        auto npInt16DType = np.attr("int16");
+        auto npInt32DType = np.attr("int32");
+        auto npInt64DType = np.attr("int64");
+        auto npUInt16DType = np.attr("uint16");
+        auto npUInt32DType = np.attr("uint32");
+        auto npUInt64DType = np.attr("uint64");
 
-        if (type.is(charDType))
+        if (type.is(npCharDType))
           return smallVectorOfChar;
-        if (type.is(doubleDType))
+        if (type.is(npDoubleDType))
           return smallVectorOfDouble;
-        if (type.is(longDType))
-          return smallVectorOfLong;
-        if (type.is(int16DType))
+        if (type.is(npInt16DType))
           return smallVectorOfInt16;
-        if (type.is(int32DType))
+        if (type.is(npInt32DType))
           return smallVectorOfInt32;
-        if (type.is(int64DType))
+        if (type.is(npInt64DType))
           return smallVectorOfInt64;
-        if (type.is(uint16DType))
+        if (type.is(npUInt16DType))
           return smallVectorOfUInt16;
-        if (type.is(uint32DType))
+        if (type.is(npUInt32DType))
           return smallVectorOfUInt32;
-        if (type.is(uint64DType))
+        if (type.is(npUInt64DType))
           return smallVectorOfUInt64;
+
         std::string errMsg = "unsupported type for SmallVector";
         errMsg += nb::repr(type).c_str();
+        throw std::runtime_error(errMsg);
+      });
+
+  smallVector.def_static(
+      "__class_getitem__",
+      [smallVectorOfFloat, smallVectorOfInt16, smallVectorOfInt32,
+       smallVectorOfInt64, smallVectorOfUInt16, smallVectorOfUInt32,
+       smallVectorOfUInt64, smallVectorOfChar, smallVectorOfDouble,
+       smallVectorOfLong](std::string type) -> nb::object {
+        if (type == "char")
+          return smallVectorOfChar;
+        if (type == "float")
+          return smallVectorOfFloat;
+        if (type == "double")
+          return smallVectorOfDouble;
+        if (type == "long")
+          return smallVectorOfLong;
+        if (type == "int16")
+          return smallVectorOfInt16;
+        if (type == "int32")
+          return smallVectorOfInt32;
+        if (type == "int64")
+          return smallVectorOfInt64;
+        if (type == "uint16")
+          return smallVectorOfUInt16;
+        if (type == "uint32")
+          return smallVectorOfUInt32;
+        if (type == "uint64")
+          return smallVectorOfUInt64;
+
+        std::string errMsg = "unsupported type for SmallVector: ";
+        errMsg += type;
         throw std::runtime_error(errMsg);
       });
 
@@ -569,8 +591,8 @@ NB_MODULE(eudslpy_ext, m) {
   populateIRModule(irModule);
   auto dialectsModule = m.def_submodule("dialects");
 
-  auto accModule = dialectsModule.def_submodule("acc");
-  populateEUDSLGenaccModule(accModule);
+  // auto accModule = dialectsModule.def_submodule("acc");
+  // populateEUDSLGenaccModule(accModule);
 
   auto affineModule = dialectsModule.def_submodule("affine");
   populateEUDSLGenaffineModule(affineModule);
@@ -578,20 +600,20 @@ NB_MODULE(eudslpy_ext, m) {
   auto amdgpuModule = dialectsModule.def_submodule("amdgpu");
   populateEUDSLGenamdgpuModule(amdgpuModule);
 
-  auto amxModule = dialectsModule.def_submodule("amx");
-  populateEUDSLGenamxModule(amxModule);
+  // auto amxModule = dialectsModule.def_submodule("amx");
+  // populateEUDSLGenamxModule(amxModule);
 
   auto arithModule = dialectsModule.def_submodule("arith");
   populateEUDSLGenarithModule(arithModule);
 
-  auto arm_neonModule = dialectsModule.def_submodule("arm_neon");
-  populateEUDSLGenarm_neonModule(arm_neonModule);
+  // auto arm_neonModule = dialectsModule.def_submodule("arm_neon");
+  // populateEUDSLGenarm_neonModule(arm_neonModule);
 
-  auto arm_smeModule = dialectsModule.def_submodule("arm_sme");
-  populateEUDSLGenarm_smeModule(arm_smeModule);
+  // auto arm_smeModule = dialectsModule.def_submodule("arm_sme");
+  // populateEUDSLGenarm_smeModule(arm_smeModule);
 
-  auto arm_sveModule = dialectsModule.def_submodule("arm_sve");
-  populateEUDSLGenarm_sveModule(arm_sveModule);
+  // auto arm_sveModule = dialectsModule.def_submodule("arm_sve");
+  // populateEUDSLGenarm_sveModule(arm_sveModule);
 
   auto asyncModule = dialectsModule.def_submodule("async");
   populateEUDSLGenasyncModule(asyncModule);
@@ -605,11 +627,11 @@ NB_MODULE(eudslpy_ext, m) {
   auto complexModule = dialectsModule.def_submodule("complex");
   populateEUDSLGencomplexModule(complexModule);
 
-  auto DLTIDialectModule = dialectsModule.def_submodule("DLTIDialect");
-  populateEUDSLGenDLTIDialectModule(DLTIDialectModule);
+  // auto DLTIDialectModule = dialectsModule.def_submodule("DLTIDialect");
+  // populateEUDSLGenDLTIDialectModule(DLTIDialectModule);
 
-  // auto emitcModule = dialectsModule.def_submodule("emitc");
-  // populateEUDSLGenemitcModule(emitcModule);
+  auto emitcModule = dialectsModule.def_submodule("emitc");
+  populateEUDSLGenemitcModule(emitcModule);
 
   auto funcModule = dialectsModule.def_submodule("func");
   populateEUDSLGenfuncModule(funcModule);
@@ -623,11 +645,11 @@ NB_MODULE(eudslpy_ext, m) {
   // auto irdlModule = dialectsModule.def_submodule("irdl");
   // populateEUDSLGenirdlModule(irdlModule);
 
-  // auto linalgModule = dialectsModule.def_submodule("linalg");
-  // populateEUDSLGenlinalgModule(linalgModule);
+  auto linalgModule = dialectsModule.def_submodule("linalg");
+  populateEUDSLGenlinalgModule(linalgModule);
 
-  // auto LLVMModule = dialectsModule.def_submodule("LLVM");
-  // populateEUDSLGenLLVMModule(LLVMModule);
+  auto LLVMModule = dialectsModule.def_submodule("LLVM");
+  populateEUDSLGenLLVMModule(LLVMModule);
 
   auto mathModule = dialectsModule.def_submodule("math");
   populateEUDSLGenmathModule(mathModule);
@@ -635,14 +657,14 @@ NB_MODULE(eudslpy_ext, m) {
   auto memrefModule = dialectsModule.def_submodule("memref");
   populateEUDSLGenmemrefModule(memrefModule);
 
-  auto meshModule = dialectsModule.def_submodule("mesh");
-  populateEUDSLGenmeshModule(meshModule);
+  // auto meshModule = dialectsModule.def_submodule("mesh");
+  // populateEUDSLGenmeshModule(meshModule);
 
-  auto ml_programModule = dialectsModule.def_submodule("ml_program");
-  populateEUDSLGenml_programModule(ml_programModule);
+  // auto ml_programModule = dialectsModule.def_submodule("ml_program");
+  // populateEUDSLGenml_programModule(ml_programModule);
 
-  auto mpiModule = dialectsModule.def_submodule("mpi");
-  populateEUDSLGenmpiModule(mpiModule);
+  // auto mpiModule = dialectsModule.def_submodule("mpi");
+  // populateEUDSLGenmpiModule(mpiModule);
 
   auto nvgpuModule = dialectsModule.def_submodule("nvgpu");
   populateEUDSLGennvgpuModule(nvgpuModule);
@@ -662,23 +684,23 @@ NB_MODULE(eudslpy_ext, m) {
   auto polynomialModule = dialectsModule.def_submodule("polynomial");
   populateEUDSLGenpolynomialModule(polynomialModule);
 
-  auto ptrModule = dialectsModule.def_submodule("ptr");
-  populateEUDSLGenptrModule(ptrModule);
+  // auto ptrModule = dialectsModule.def_submodule("ptr");
+  // populateEUDSLGenptrModule(ptrModule);
 
-  auto quantModule = dialectsModule.def_submodule("quant");
-  populateEUDSLGenquantModule(quantModule);
+  // auto quantModule = dialectsModule.def_submodule("quant");
+  // populateEUDSLGenquantModule(quantModule);
 
   auto ROCDLModule = dialectsModule.def_submodule("ROCDL");
   populateEUDSLGenROCDLModule(ROCDLModule);
 
-  // auto scfModule = dialectsModule.def_submodule("scf");
-  // populateEUDSLGenscfModule(scfModule);
+  auto scfModule = dialectsModule.def_submodule("scf");
+  populateEUDSLGenscfModule(scfModule);
 
-  // auto shapeModule = dialectsModule.def_submodule("shape");
-  // populateEUDSLGenshapeModule(shapeModule);
+  auto shapeModule = dialectsModule.def_submodule("shape");
+  populateEUDSLGenshapeModule(shapeModule);
 
-  auto sparse_tensorModule = dialectsModule.def_submodule("sparse_tensor");
-  populateEUDSLGensparse_tensorModule(sparse_tensorModule);
+  // auto sparse_tensorModule = dialectsModule.def_submodule("sparse_tensor");
+  // populateEUDSLGensparse_tensorModule(sparse_tensorModule);
 
   // auto spirvModule = dialectsModule.def_submodule("spirv");
   // populateEUDSLGenspirvModule(spirvModule);
@@ -689,17 +711,17 @@ NB_MODULE(eudslpy_ext, m) {
   auto tosaModule = dialectsModule.def_submodule("tosa");
   populateEUDSLGentosaModule(tosaModule);
 
-  auto transformModule = dialectsModule.def_submodule("transform");
-  populateEUDSLGentransformModule(transformModule);
+  // auto transformModule = dialectsModule.def_submodule("transform");
+  // populateEUDSLGentransformModule(transformModule);
 
-  auto ubModule = dialectsModule.def_submodule("ub");
-  populateEUDSLGenubModule(ubModule);
+  // auto ubModule = dialectsModule.def_submodule("ub");
+  // populateEUDSLGenubModule(ubModule);
 
   // auto vectorModule = dialectsModule.def_submodule("vector");
   // populateEUDSLGenvectorModule(vectorModule);
 
-  auto x86vectorModule = dialectsModule.def_submodule("x86vector");
-  populateEUDSLGenx86vectorModule(x86vectorModule);
+  // auto x86vectorModule = dialectsModule.def_submodule("x86vector");
+  // populateEUDSLGenx86vectorModule(x86vectorModule);
 
   // auto xegpuModule = dialectsModule.def_submodule("xegpu");
   // populateEUDSLGenxegpuModule(xegpuModule);
