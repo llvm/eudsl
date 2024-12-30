@@ -19,6 +19,7 @@ on:
       - ".github/workflows/build_llvm.yml"
       - "build_tools/cmake/llvm_cache.cmake"
       - "build_tools/cmake/llvm_wasm_cache.cmake"
+      - "build_tools/cmake/llvm_wasm_project_include.cmake"
       - "build_tools/build_llvm.sh"
       - "build_tools/build_llvm_wasi.sh"
       - "third_party/llvm-project"
@@ -28,6 +29,7 @@ on:
     paths:
       - "build_tools/cmake/llvm_cache.cmake"
       - "build_tools/cmake/llvm_wasm_cache.cmake"
+      - "build_tools/cmake/llvm_wasm_project_include.cmake"
       - "build_tools/build_llvm.sh"
       - "build_tools/build_llvm_wasi.sh"
       - "third_party/llvm-project"
