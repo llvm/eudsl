@@ -10,7 +10,6 @@
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
-#include "clang/Frontend/FrontendActions.h"
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/Sema.h"
 #include "clang/Tooling/Tooling.h"
@@ -43,6 +42,11 @@ static llvm::cl::list<std::string>
     Defines("D", llvm::cl::desc("Name of the macro to be defined"),
             llvm::cl::value_desc("macro name"), llvm::cl::Prefix,
             llvm::cl::cat(EUDSLPYGenCat));
+
+static llvm::cl::opt<int> ShardSize("shard-size", llvm::cl::desc("Shard size"),
+                                    llvm::cl::value_desc("shard size"),
+                                    llvm::cl::cat(EUDSLPYGenCat),
+                                    llvm::cl::init(10));
 
 static bool filterInNamespace(const std::string &s) {
   if (Namespaces.empty())
@@ -540,6 +544,14 @@ struct BindingsVisitor
       (void)builder.setForceEmit();
       return true;
     }
+    if (decl->getFriendObjectKind()) {
+      clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
+          decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
+                                   clang::DiagnosticsEngine::Warning,
+                                   "friend functions not supported"));
+      (void)builder.setForceEmit();
+      return true;
+    }
     emitClassMethodOrFunction(decl, ci, outputFile);
     return true;
   }
@@ -578,6 +590,17 @@ struct BindingsVisitor
     return true;
   }
 
+  void maybeEmitShard(const clang::CXXRecordDecl *decl) {
+    clang::CXXBaseSpecifier baseClass = *decl->bases_begin();
+    std::string baseName = baseClass.getType().getAsString(getPrintingPolicy());
+    if (baseName.rfind("mlir::Op<", 0) == 0) {
+      ++opClassesSeen;
+      if (opClassesSeen % ShardSize == 0)
+        outputFile->os() << llvm::formatv("// eudslpy-gen-shard {}\n",
+                                          int(opClassesSeen / ShardSize));
+    }
+  }
+
   // implicit methods are the "last decls"
   bool shouldVisitImplicitCode() const { return true; }
 
@@ -592,6 +615,8 @@ struct BindingsVisitor
       if (visitedRecords.contains(recordDecl) && ctx->islastDecl(decl)) {
         outputFile->os() << "// " << recordDecl->getQualifiedNameAsString()
                          << "\n\n";
+        if (recordDecl->getNumBases() == 1)
+          maybeEmitShard(recordDecl);
       }
     }
     return true;
@@ -601,6 +626,7 @@ struct BindingsVisitor
   std::shared_ptr<llvm::ToolOutputFile> outputFile;
   std::unique_ptr<clang::ItaniumMangleContext> mc;
   llvm::DenseSet<clang::TagDecl *> visitedRecords;
+  int opClassesSeen{0};
 };
 
 struct ClassStructEnumConsumer : clang::ASTConsumer {

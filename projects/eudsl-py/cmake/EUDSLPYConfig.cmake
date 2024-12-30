@@ -31,7 +31,7 @@ function(add_public_eudslpygen_target target eudslpygen_output)
   set_target_properties(${target} PROPERTIES FOLDER "${subproject_title}/Eudslpygenning")
 endfunction()
 
-function(eudslpygen target inputFile outputFileName)
+function(eudslpygen target inputFile)
   set(EUDSLPYGEN_TARGET_DEFINITIONS ${inputFile})
   # Get the current set of include paths for this source file.
   cmake_parse_arguments(ARG "" "" "DEPENDS;EXTRA_INCLUDES;NAMESPACES" ${ARGN})
@@ -52,19 +52,25 @@ function(eudslpygen target inputFile outputFileName)
   # Filter out empty items before prepending each entry with -I
   list(REMOVE_ITEM eudslpygen_includes "")
   list(TRANSFORM eudslpygen_includes PREPEND -I)
+  
+  set(_gen_target_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/${target}")
+  file(MAKE_DIRECTORY ${_gen_target_dir})
+  set(fullGenFile "${_gen_target_dir}/${target}.cpp.gen")
+  file(RELATIVE_PATH fullGenFile_rel "${CMAKE_BINARY_DIR}" "${fullGenFile}")
+  set(_depfile ${fullGenFile}.d)
 
   # hack but most of the time we're loading headers that are downstream of tds anyway
   # this could be smarter by asking people to list td targets or something but that's too onerous
   file(GLOB_RECURSE global_tds "${MLIR_INCLUDE_DIR}/mlir/*.td")
   # use cc -MM  to collect all transitive headers
-  set(_depfile ${CMAKE_CURRENT_BINARY_DIR}/${outputFileName}.d)
-  file(RELATIVE_PATH outputFileName_rel
-    "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/${outputFileName}")
-  set(clang_command ${CMAKE_CXX_COMPILER} -v -xc++ "-std=c++${CMAKE_CXX_STANDARD}" -MM ${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}
-    ${eudslpygen_includes} -MT ${outputFileName_rel} -o ${_depfile})
+  set(clang_command ${CMAKE_CXX_COMPILER} -v -xc++ "-std=c++${CMAKE_CXX_STANDARD}"
+    -MM ${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}
+    -MT ${fullGenFile_rel}
+    ${eudslpygen_includes}
+    -o ${_depfile})
   execute_process(COMMAND ${clang_command} RESULT_VARIABLE had_error COMMAND_ECHO STDERR)
   if(had_error OR NOT EXISTS "${_depfile}")
-    set(additional_cmdline -o "${outputFileName_rel}")
+    set(additional_cmdline -o "${fullGenFile_rel}")
   else()
     # Use depfile instead of globbing arbitrary *.td(s) for Ninja.
     if(CMAKE_GENERATOR MATCHES "Ninja")
@@ -72,15 +78,15 @@ function(eudslpygen target inputFile outputFileName)
       # CMake emits build targets as relative paths but Ninja doesn't identify
       # absolute path (in *.d) as relative path (in build.ninja)
       # Note that eudslpygen is executed on ${CMAKE_BINARY_DIR} as working directory.
-      set(additional_cmdline -o "${outputFileName_rel}" DEPFILE "${_depfile}")
+      set(additional_cmdline -o "${fullGenFile_rel}" DEPFILE "${_depfile}")
     else()
       # the length of the first line in the depfile...
-      string(LENGTH "${outputFileName_rel}: \\" depfile_offset)
+      string(LENGTH "${fullGenFile_rel}: \\" depfile_offset)
       file(READ ${_depfile} local_headers OFFSET ${depfile_offset})
       string(REPLACE "\\" ";" local_headers "${local_headers}")
       string(REGEX REPLACE "[ \t\r\n]" "" local_headers "${local_headers}")
       list(REMOVE_ITEM local_headers "")
-      set(additional_cmdline -o "${outputFileName_rel}")
+      set(additional_cmdline -o "${fullGenFile_rel}")
     endif()
   endif()
 
@@ -106,24 +112,39 @@ function(eudslpygen target inputFile outputFileName)
   string(REPLACE " " ";" eudslpygen_defines "${LLVM_DEFINITIONS}")
   list(JOIN ARG_NAMESPACES "," namespaces)
 
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${outputFileName}
-    COMMAND ${eudslpygen_exe} ${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE} -I${CMAKE_CURRENT_SOURCE_DIR}
-    -namespaces=${namespaces}
-    ${eudslpygen_includes}
-    ${eudslpygen_defines}
-    ${additional_cmdline}
+  add_custom_command(OUTPUT ${fullGenFile}
+    COMMAND ${eudslpygen_exe} ${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}
+      -I${CMAKE_CURRENT_SOURCE_DIR}
+      -namespaces=${namespaces}
+      ${eudslpygen_includes}
+      ${eudslpygen_defines}
+      ${additional_cmdline}
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     # The file in EUDSLPYGEN_TARGET_DEFINITIONS may be not in the current
     # directory and local_headers may not contain it, so we must
     # explicitly list it here:
     DEPENDS ${ARG_DEPENDS} ${eudslpygen_depends} ${local_headers} ${global_tds}
-    COMMENT "EUDSLPY: Generating ${outputFileName}..."
+    COMMENT "EUDSLPY: Generating ${fullGenFile}..."
   )
+
+  add_custom_command(OUTPUT "${fullGenFile}.sharded.cpp"
+    COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/make_generated_registration.py
+      ${fullGenFile} -t ${target} -I ${ARG_EXTRA_INCLUDES} ${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DEPENDS ${fullGenFile}
+    COMMENT "EUDSLPY: Generating ${fullGenFile}.sharded.cpp..."
+  )
+
+  # this is the specific thing connected the dependencies...
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${fullGenFile}.sharded.cpp")
+  file(GLOB _generated_shards "${_gen_target_dir}/*.shard.*")
+  list(APPEND _generated_shards "${fullGenFile}.sharded.cpp")
+  set(${target}_GENERATED_SHARDS ${_generated_shards} PARENT_SCOPE)
 
   # `make clean' must remove all those generated files:
   # TODO(max): clean up dep files
-  set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES ${outputFileName})
-  set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/${outputFileName} PROPERTIES
+  set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES ${fullGenFile})
+  set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/${fullGenFile} PROPERTIES
     GENERATED 1)
 
   # Append the includes used for this file to the pdll_compilation_commands
@@ -134,7 +155,7 @@ function(eudslpygen target inputFile outputFileName)
     "  includes: \"${CMAKE_CURRENT_SOURCE_DIR};${eudslpygen_includes}\"\n"
   )
 
-  add_public_eudslpygen_target(${target} "${CMAKE_CURRENT_BINARY_DIR}/${outputFileName}")
+  add_public_eudslpygen_target(${target} "${fullGenFile}.sharded.cpp;${_generated_shards}")
 endfunction()
 
 macro(add_eudslpygen target project)
