@@ -1,5 +1,6 @@
 name: Auto bump LLVM
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - ".github/workflows/bump_llvm.yml"
