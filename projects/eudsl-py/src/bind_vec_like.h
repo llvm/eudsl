@@ -28,12 +28,35 @@ std::tuple<nanobind::class_<llvm::SmallVector<Element>>,
            nanobind::class_<llvm::MutableArrayRef<Element>>>
 bind_array_ref(nanobind::handle scope, Args &&...args) {
   using ArrayRef = llvm::ArrayRef<Element>;
+  using SmallVec = llvm::SmallVector<Element>;
+  using MutableArrayRef = llvm::MutableArrayRef<Element>;
   using ValueRef = Element &;
 
-  auto vecClName = "SmallVector[" + std::string(typeid(Element).name()) + "]";
+  nanobind::handle array_cl_cur = nanobind::type<ArrayRef>();
+  if (array_cl_cur.is_valid()) {
+    nanobind::handle smallvec_cl_cur = nanobind::type<SmallVec>();
+    assert(smallvec_cl_cur.is_valid() &&
+           "expected SmallVec to already have been registered");
+    nanobind::handle mutable_cl_cur = nanobind::type<MutableArrayRef>();
+    assert(mutable_cl_cur.is_valid() &&
+           "expected MutableArrayRef to already have been registered");
+    return std::make_tuple(
+        nanobind::borrow<nanobind::class_<SmallVec>>(array_cl_cur),
+        nanobind::borrow<nanobind::class_<ArrayRef>>(array_cl_cur),
+        nanobind::borrow<nanobind::class_<MutableArrayRef>>(array_cl_cur));
+  }
+
+  std::string typename_;
+  if (nanobind::type<Element>().ptr()) {
+    typename_ =
+        std::string(nanobind::type_name(nanobind::type<Element>()).c_str());
+
+  } else
+    typename_ = '"' + llvm::getTypeName<Element>().str() + '"';
+
+  std::string vecClName = "SmallVector[" + typename_ + "]";
   auto _smallVectorOfElement =
-      nanobind::bind_vector<llvm::SmallVector<Element>>(scope,
-                                                        vecClName.c_str());
+      nanobind::bind_vector<SmallVec>(scope, vecClName.c_str());
 
   smallVector.def_static(
       "__class_getitem__",
@@ -41,12 +64,12 @@ bind_array_ref(nanobind::handle scope, Args &&...args) {
         return _smallVectorOfElement;
       });
 
-  auto arrClName = "ArrayRef[" + std::string(typeid(Element).name()) + "]";
+  std::string arrClName = "ArrayRef[" + typename_ + "]";
   auto cl =
       nanobind::class_<ArrayRef>(scope, arrClName.c_str(),
                                  std::forward<Args>(args)...)
-          .def(nanobind::init<const llvm::SmallVector<Element> &>())
-          .def(nanobind::init_implicit<llvm::SmallVector<Element>>())
+          .def(nanobind::init<const SmallVec &>())
+          .def(nanobind::init_implicit<SmallVec>())
           .def("__len__", [](const ArrayRef &v) { return v.size(); })
           .def("__bool__", [](const ArrayRef &v) { return !v.empty(); })
           .def("__repr__",
@@ -71,39 +94,29 @@ bind_array_ref(nanobind::handle scope, Args &&...args) {
 
   arrayRef.def_static("__class_getitem__",
                       [cl](nanobind::type_object_t<Element>) { return cl; });
-  arrayRef.def(nanobind::new_([](const llvm::SmallVector<Element> &sv) {
-    return llvm::ArrayRef<Element>(sv);
-  }));
+  arrayRef.def(nanobind::new_([](const SmallVec &sv) { return ArrayRef(sv); }));
 
   if constexpr (nanobind::detail::is_equality_comparable_v<Element>) {
     cl.def(nanobind::self == nanobind::self,
            nanobind::sig("def __eq__(self, arg: object, /) -> bool"))
         .def(nanobind::self != nanobind::self,
              nanobind::sig("def __ne__(self, arg: object, /) -> bool"))
-
         .def("__contains__",
              [](const ArrayRef &v, const Element &x) {
                return std::find(v.begin(), v.end(), x) != v.end();
              })
-
-        .def("__contains__", // fallback for incompatible types
+        .def("__contains__",
              [](const ArrayRef &, nanobind::handle) { return false; })
-
-        .def(
-            "count",
-            [](const ArrayRef &v, const Element &x) {
-              return std::count(v.begin(), v.end(), x);
-            },
-            "Return number of occurrences of `arg`.");
+        .def("count", [](const ArrayRef &v, const Element &x) {
+          return std::count(v.begin(), v.end(), x);
+        });
   }
 
-  using MutableArrayRef = llvm::MutableArrayRef<Element>;
-  auto mutableArrClName =
-      "MutableArrayRef[" + std::string(typeid(Element).name()) + "]";
+  std::string mutableArrClName = "MutableArrayRef[" + typename_ + "]";
   auto mutableCl =
       nanobind::class_<MutableArrayRef>(scope, arrClName.c_str(),
                                         std::forward<Args>(args)...)
-          .def(nanobind::init<llvm::SmallVector<Element> &>())
+          .def(nanobind::init<SmallVec &>())
           .def("__len__", [](const MutableArrayRef &v) { return v.size(); })
           .def("__bool__", [](const MutableArrayRef &v) { return !v.empty(); })
           .def("__repr__",
@@ -136,21 +149,15 @@ bind_array_ref(nanobind::handle scope, Args &&...args) {
              nanobind::sig("def __eq__(self, arg: object, /) -> bool"))
         .def(nanobind::self != nanobind::self,
              nanobind::sig("def __ne__(self, arg: object, /) -> bool"))
-
         .def("__contains__",
              [](const MutableArrayRef &v, const Element &x) {
                return std::find(v.begin(), v.end(), x) != v.end();
              })
-
-        .def("__contains__", // fallback for incompatible types
+        .def("__contains__",
              [](const MutableArrayRef &, nanobind::handle) { return false; })
-
-        .def(
-            "count",
-            [](const MutableArrayRef &v, const Element &x) {
-              return std::count(v.begin(), v.end(), x);
-            },
-            "Return number of occurrences of `arg`.");
+        .def("count", [](const MutableArrayRef &v, const Element &x) {
+          return std::count(v.begin(), v.end(), x);
+        });
   }
 
   return {_smallVectorOfElement, cl, mutableCl};
@@ -162,17 +169,13 @@ template <typename Vector,
 nanobind::class_<Vector> bind_iter_like(nanobind::handle scope,
                                         const char *name, Args &&...args) {
   nanobind::handle cl_cur = nanobind::type<Vector>();
-  if (cl_cur.is_valid()) {
-    // Binding already exists, don't re-create
+  if (cl_cur.is_valid())
     return nanobind::borrow<nanobind::class_<Vector>>(cl_cur);
-  }
 
   auto cl =
       nanobind::class_<Vector>(scope, name, std::forward<Args>(args)...)
           .def("__len__", [](const Vector &v) -> int { return v.size(); })
-          .def(
-              "__bool__", [](const Vector &v) { return !v.empty(); },
-              "Check whether the vector is nonempty")
+          .def("__bool__", [](const Vector &v) { return !v.empty(); })
           .def("__repr__",
                [](nanobind::handle_t<Vector> h) {
                  return nanobind::steal<nanobind::str>(
@@ -212,14 +215,11 @@ nanobind::class_<Vector> bind_iter_like(nanobind::handle scope,
              [](const Vector &v, const Value &x) {
                return std::find(v.begin(), v.end(), x) != v.end();
              })
-        .def("__contains__", // fallback for incompatible types
+        .def("__contains__",
              [](const Vector &, nanobind::handle) { return false; })
-        .def(
-            "count",
-            [](const Vector &v, const Value &x) {
-              return std::count(v.begin(), v.end(), x);
-            },
-            "Return number of occurrences of `arg`.");
+        .def("count", [](const Vector &v, const Value &x) {
+          return std::count(v.begin(), v.end(), x);
+        });
   }
 
   return cl;
@@ -231,17 +231,13 @@ template <typename Vector, typename ValueRef,
 nanobind::class_<Vector> bind_iter_range(nanobind::handle scope,
                                          const char *name, Args &&...args) {
   nanobind::handle cl_cur = nanobind::type<Vector>();
-  if (cl_cur.is_valid()) {
-    // Binding already exists, don't re-create
+  if (cl_cur.is_valid())
     return nanobind::borrow<nanobind::class_<Vector>>(cl_cur);
-  }
 
   auto cl =
       nanobind::class_<Vector>(scope, name, std::forward<Args>(args)...)
           .def("__len__", [](const Vector &v) -> int { return v.size(); })
-          .def(
-              "__bool__", [](const Vector &v) { return !v.empty(); },
-              "Check whether the vector is nonempty")
+          .def("__bool__", [](const Vector &v) { return !v.empty(); })
           .def("__repr__",
                [](nanobind::handle_t<Vector> h) {
                  return nanobind::steal<nanobind::str>(
@@ -280,12 +276,9 @@ nanobind::class_<Vector> bind_iter_range(nanobind::handle scope,
              })
         .def("__contains__", // fallback for incompatible types
              [](const Vector &, nanobind::handle) { return false; })
-        .def(
-            "count",
-            [](const Vector &v, const Value &x) {
-              return std::count(v.begin(), v.end(), x);
-            },
-            "Return number of occurrences of `arg`.");
+        .def("count", [](const Vector &v, const Value &x) {
+          return std::count(v.begin(), v.end(), x);
+        });
   }
 
   return cl;

@@ -3,8 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Copyright (c) 2024.
 
-#ifndef TYPE_CASTERS_H
-#define TYPE_CASTERS_H
+#pragma once
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/optional.h>
@@ -87,5 +86,3 @@ struct nanobind::detail::type_caster<llvm::Twine> {
     return PyUnicode_FromStringAndSize(s.data(), s.size());
   }
 };
-
-#endif // TYPE_CASTERS_H

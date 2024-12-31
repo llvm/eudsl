@@ -381,6 +381,9 @@ NB_MODULE(eudslpy_ext, m) {
   nb::class_<mlir::TypeID>(m, "TypeID");
   nb::class_<mlir::detail::InterfaceMap>(m, "InterfaceMap");
 
+  auto irModule = m.def_submodule("ir");
+  populateIRModule(irModule);
+
   nb::class_<llvm::FailureOr<bool>>(m, "FailureOr[bool]");
   nb::class_<llvm::FailureOr<mlir::StringAttr>>(m, "FailureOr[StringAttr]");
   nb::class_<llvm::FailureOr<mlir::AsmResourceBlob>>(
@@ -436,8 +439,6 @@ NB_MODULE(eudslpy_ext, m) {
       bind_array_ref<char>(m);
   auto [smallVectorOfDouble, arrayRefOfDouble, mutableArrayRefOfDouble] =
       bind_array_ref<double>(m);
-  auto [smallVectorOfLong, arrayRefOfLong, mutableArrayRefOfLong] =
-      bind_array_ref<long>(m);
 
   auto [smallVectorOfInt16, arrayRefOfInt16, mutableArrayRefOfInt16] =
       bind_array_ref<int16_t>(m);
@@ -490,8 +491,8 @@ NB_MODULE(eudslpy_ext, m) {
       [smallVectorOfBool, smallVectorOfInt, smallVectorOfFloat,
        smallVectorOfInt16, smallVectorOfInt32, smallVectorOfInt64,
        smallVectorOfUInt16, smallVectorOfUInt32, smallVectorOfUInt64,
-       smallVectorOfChar, smallVectorOfDouble,
-       smallVectorOfLong](nb::type_object type) -> nb::object {
+       smallVectorOfChar,
+       smallVectorOfDouble](nb::type_object type) -> nb::object {
         PyTypeObject *typeObj = (PyTypeObject *)type.ptr();
         nb::print(type);
         if (typeObj == &PyBool_Type)
@@ -538,16 +539,14 @@ NB_MODULE(eudslpy_ext, m) {
       "__class_getitem__",
       [smallVectorOfFloat, smallVectorOfInt16, smallVectorOfInt32,
        smallVectorOfInt64, smallVectorOfUInt16, smallVectorOfUInt32,
-       smallVectorOfUInt64, smallVectorOfChar, smallVectorOfDouble,
-       smallVectorOfLong](std::string type) -> nb::object {
+       smallVectorOfUInt64, smallVectorOfChar,
+       smallVectorOfDouble](std::string type) -> nb::object {
         if (type == "char")
           return smallVectorOfChar;
         if (type == "float")
           return smallVectorOfFloat;
         if (type == "double")
           return smallVectorOfDouble;
-        if (type == "long")
-          return smallVectorOfLong;
         if (type == "int16")
           return smallVectorOfInt16;
         if (type == "int32")
@@ -589,8 +588,6 @@ NB_MODULE(eudslpy_ext, m) {
   bind_iter_like<llvm::iplist<mlir::Operation>,
                  nb::rv_policy::reference_internal>(m, "iplist[Operation]");
 
-  auto irModule = m.def_submodule("ir");
-  populateIRModule(irModule);
   auto dialectsModule = m.def_submodule("dialects");
 
   // auto accModule = dialectsModule.def_submodule("acc");

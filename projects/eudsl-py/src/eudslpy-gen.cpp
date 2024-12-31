@@ -305,12 +305,8 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
   if (decl->isTemplated()) {
     clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
         decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
-                                 clang::DiagnosticsEngine::Warning,
+                                 clang::DiagnosticsEngine::Note,
                                  "template classes not supported yet"));
-    // have to force emit because after the fatal error, no more warnings will
-    // be emitted
-    // https://github.com/llvm/llvm-project/blob/d74214cc8c03159e5d1f1168a09368cf3b23fd5f/clang/lib/Basic/DiagnosticIDs.cpp#L796
-    (void)builder.setForceEmit();
     return false;
   }
 
@@ -320,9 +316,8 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
   if (decl->getNumBases() > 1) {
     clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
         decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
-                                 clang::DiagnosticsEngine::Warning,
+                                 clang::DiagnosticsEngine::Note,
                                  "multiple base classes not supported"));
-    (void)builder.setForceEmit();
   } else if (decl->getNumBases() == 1) {
     // handle some known bases that we've already found a wap to bind
     clang::CXXBaseSpecifier baseClass = *decl->bases_begin();
@@ -351,10 +346,9 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
              "expected class template specialization");
       clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
           baseClass.getBeginLoc(), ci.getDiagnostics().getCustomDiagID(
-                                       clang::DiagnosticsEngine::Warning,
+                                       clang::DiagnosticsEngine::Note,
                                        "unknown base templated base class: "));
       builder << baseName << "\n";
-      (void)builder.setForceEmit();
     }
   }
 
@@ -494,9 +488,8 @@ struct BindingsVisitor
     if (decl->isAnonymousStructOrUnion()) {
       clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
           decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
-                                   clang::DiagnosticsEngine::Warning,
+                                   clang::DiagnosticsEngine::Note,
                                    "anon structs/union fields not supported"));
-      (void)builder.setForceEmit();
       return true;
     }
     if (decl->isBitField())
@@ -533,17 +526,15 @@ struct BindingsVisitor
         decl->isFunctionTemplateSpecialization()) {
       clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
           decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
-                                   clang::DiagnosticsEngine::Warning,
+                                   clang::DiagnosticsEngine::Note,
                                    "template methods not supported yet"));
-      (void)builder.setForceEmit();
       return true;
     }
     if (decl->getFriendObjectKind()) {
       clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
           decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
-                                   clang::DiagnosticsEngine::Warning,
+                                   clang::DiagnosticsEngine::Note,
                                    "friend functions not supported"));
-      (void)builder.setForceEmit();
       return true;
     }
     emitClassMethodOrFunction(decl, ci, outputFile);
@@ -565,9 +556,8 @@ struct BindingsVisitor
         decl->isFunctionTemplateSpecialization()) {
       clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
           decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
-                                   clang::DiagnosticsEngine::Warning,
+                                   clang::DiagnosticsEngine::Note,
                                    "template functions not supported yet"));
-      (void)builder.setForceEmit();
       return true;
     }
     emitClassMethodOrFunction(decl, ci, outputFile);
@@ -646,9 +636,7 @@ struct GenerateBindingsAction : clang::ASTFrontendAction {
   std::unique_ptr<clang::ASTConsumer>
   CreateASTConsumer(clang::CompilerInstance &compiler,
                     llvm::StringRef inFile) override {
-    // compiler.getPreprocessor().SetSuppressIncludeNotFoundError(true);
     compiler.getDiagnosticOpts().ShowLevel = true;
-    compiler.getDiagnosticOpts().IgnoreWarnings = false;
     return std::make_unique<ClassStructEnumConsumer>(compiler, outputFile);
   }
 

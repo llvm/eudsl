@@ -95,6 +95,7 @@ set(nanobind_options
   -Wno-nested-anon-types
   -Wno-zero-length-array
   -Wno-c++98-compat-extra-semi
+  -Wno-c++20-extensions
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Darwin>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>
