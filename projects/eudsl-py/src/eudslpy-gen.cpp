@@ -436,11 +436,6 @@ static bool shouldSkip(T *decl) {
     if (!decl->isCompleteDefinition())
       return true;
   }
-  // if constexpr (std::is_same_v<T, clang::FunctionDecl> ||
-  //               std::is_same_v<T, clang::CXXMethodDecl>) {
-  //   if (decl->isConstexpr())
-  //     return true;
-  // }
   if (decl->getAccess() == clang::AS_private ||
       decl->getAccess() == clang::AS_protected)
     return true;

@@ -15,7 +15,7 @@ on:
         default: false
       eudslpy_disable_compile_opt:
         type: boolean
-        description: 'use -O0 to build'
+        description: 'use -O0 to build eudsl-py'
         required: false
         default: true
   pull_request:
@@ -132,7 +132,6 @@ jobs:
         if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
           # prevent OOM on free GHA
-          # TODO(max): implement sharding instead
           export DISABLE_COMPILE_OPT="${{ inputs.debug_with_tmate }}"
           export CC=clang
           export CXX=clang++
@@ -256,6 +255,7 @@ jobs:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
+          # TODO(max): enable on windows by statically linking
           # {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
           {runs-on: "macos-13", name: "macos_x86_64", os: "macos"},
@@ -293,11 +293,7 @@ jobs:
       - name: "Test eudsl-py"
         run: |
           export TESTS_DIR="$PWD/projects/eudsl-py/tests"
-          if [ ${{ matrix.os }} == 'windows' ]; then
-            python -m pytest -s -rA $TESTS_DIR
-          else
-            python -m pytest -rA --capture=tee-sys $TESTS_DIR
-          fi
+          python -m pytest -rA --capture=tee-sys $TESTS_DIR
 
   release-eudsl-py:
 

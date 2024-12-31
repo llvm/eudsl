@@ -14,24 +14,9 @@ foreach(_lib ${MLIR_ALL_LIBS})
   set_target_properties(${_lib} PROPERTIES INTERFACE_LINK_LIBRARIES "${_interface_link_libraries}")
 endforeach()
 
-function(add_public_eudslpygen_target target eudslpygen_output)
-  if(NOT eudslpygen_output)
-    message(FATAL_ERROR "Requires eudslpygen() definitions as EUDSLPYGEN_OUTPUT.")
-  endif()
-  add_custom_target(${target}
-    DEPENDS ${eudslpygen_output})
-  if(LLVM_COMMON_DEPENDS)
-    add_dependencies(${target} ${LLVM_COMMON_DEPENDS})
-  endif()
-  get_subproject_title(subproject_title)
-  set_target_properties(${target} PROPERTIES FOLDER "${subproject_title}/Eudslpygenning")
-endfunction()
-
 function(eudslpygen target inputFile)
   set(EUDSLPYGEN_TARGET_DEFINITIONS ${inputFile})
-  # Get the current set of include paths for this source file.
   cmake_parse_arguments(ARG "" "" "DEPENDS;EXTRA_INCLUDES;NAMESPACES" ${ARGN})
-  # Build the absolute path for the current input file.
   if (IS_ABSOLUTE ${EUDSLPYGEN_TARGET_DEFINITIONS})
     set(EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE ${inputFile})
   else()
@@ -42,10 +27,8 @@ function(eudslpygen target inputFile)
     message(FATAL_ERROR "${inputFile} does not exist")
   endif()
 
-  # message(FATAL_ERROR "${CMAKE_CXX_COMPILER}")
   get_directory_property(eudslpygen_includes INCLUDE_DIRECTORIES)
   list(APPEND eudslpygen_includes ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES} ${ARG_EXTRA_INCLUDES})
-  # Filter out empty items before prepending each entry with -I
   list(REMOVE_ITEM eudslpygen_includes "")
   list(TRANSFORM eudslpygen_includes PREPEND -I)
 
@@ -196,7 +179,6 @@ macro(add_eudslpygen target project)
     set(${project}_EUDSLPYGEN "${${project}_EUDSLPYGEN_DEFAULT}" CACHE
       STRING "Native eudslpy-gen executable. Saves building one when cross-compiling.")
   else()
-    # Internal eudslpygen
     set(${project}_EUDSLPYGEN "${${project}_EUDSLPYGEN_DEFAULT}")
     set_target_properties(${target} PROPERTIES EXCLUDE_FROM_ALL ON)
   endif()

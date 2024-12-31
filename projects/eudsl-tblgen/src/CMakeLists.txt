@@ -27,7 +27,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 nanobind_add_module(eudsl_tblgen_ext NB_STATIC STABLE_ABI eudsl_tblgen_ext.cpp TGParser.cpp TGLexer.cpp)
 target_link_libraries(eudsl_tblgen_ext PRIVATE LLVMTableGenCommon LLVMTableGen)
 target_compile_options(eudsl_tblgen_ext
-  PRIVATE
+  PUBLIC
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Darwin>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>)

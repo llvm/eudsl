@@ -354,9 +354,6 @@ extern void populateEUDSLGenx86vectorModule(nb::module_ &m);
 // extern void populateEUDSLGenxegpuModule(nb::module_ &m);
 
 NB_MODULE(eudslpy_ext, m) {
-  // nb::class_<mlir::SymbolTableCollection>(m, "SymbolTableCollection");
-  // nb::class_<mlir::FallbackAsmResourceMap>(m, "FallbackAsmResourceMap");
-
   bind_array_ref_smallvector(m);
 
   nb::class_<llvm::APFloat>(m, "APFloat");

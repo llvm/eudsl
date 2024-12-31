@@ -1,4 +1,3 @@
 *.so
 *.a
 *.pyi
-eudslpy_ext.py
