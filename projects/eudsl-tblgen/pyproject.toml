@@ -1,3 +1,8 @@
+#  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+#  See https://llvm.org/LICENSE.txt for license information.
+#  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#  Copyright (c) 2024.
+
 [build-system]
 requires = ["scikit-build-core>=0.10.7", "nanobind>=2.2.0", "typing_extensions>=4.12.2"]
 build-backend = "scikit_build_core.build"

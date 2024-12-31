@@ -1,3 +1,8 @@
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2024.
+
 #pragma once
 
 #include "llvm/ADT/ArrayRef.h"
@@ -99,7 +104,6 @@ bind_array_ref(nanobind::handle scope, Args &&...args) {
       nanobind::class_<MutableArrayRef>(scope, arrClName.c_str(),
                                         std::forward<Args>(args)...)
           .def(nanobind::init<llvm::SmallVector<Element> &>())
-          // .def(nanobind::init_implicit<llvm::SmallVector<Element>>())
           .def("__len__", [](const MutableArrayRef &v) { return v.size(); })
           .def("__bool__", [](const MutableArrayRef &v) { return !v.empty(); })
           .def("__repr__",

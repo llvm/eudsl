@@ -1,3 +1,8 @@
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+# Copyright (c) 2024.
+
 # copy-pasta from AddMLIR.cmake/AddLLVM.cmake/TableGen.cmake
 
 # no clue why but with LLVM_LINK_LLVM_DYLIB even static libs depend on LLVM
