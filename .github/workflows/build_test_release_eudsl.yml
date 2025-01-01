@@ -153,6 +153,13 @@ jobs:
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
           ccache -s
 
+      - name: "Save cache"
+        uses: actions/cache/save@v3
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
+        with:
+          path: ${{ steps.setup_base.outputs.cache-dir }}
+          key: ${{ env.cache-key }}
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
