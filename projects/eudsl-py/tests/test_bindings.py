@@ -4,9 +4,9 @@
 #  Copyright (c) 2024.
 
 import numpy as np
-from eudsl.eudslpy_ext import ArrayRef, SmallVector
-from eudsl.eudslpy_ext.dialects.arith import ArithDialect, ConstantOp
-from eudsl.eudslpy_ext.ir import (
+from eudsl import ArrayRef, SmallVector
+from eudsl.dialects.arith import ArithDialect, ConstantOp
+from eudsl.ir import (
     MLIRContext,
     Threading,
     ModuleOp,
@@ -19,7 +19,7 @@ from eudsl.eudslpy_ext.ir import (
     Attribute,
     MemRefType,
 )
-from eudsl.eudslpy_ext.dialects import nvgpu
+from eudsl.dialects import nvgpu
 
 
 def test_array_ref():

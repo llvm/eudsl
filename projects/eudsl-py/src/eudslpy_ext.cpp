@@ -494,14 +494,12 @@ NB_MODULE(eudslpy_ext, m) {
        smallVectorOfChar,
        smallVectorOfDouble](nb::type_object type) -> nb::object {
         PyTypeObject *typeObj = (PyTypeObject *)type.ptr();
-        nb::print(type);
         if (typeObj == &PyBool_Type)
           return smallVectorOfBool;
         if (typeObj == &PyLong_Type)
           return smallVectorOfInt64;
         if (typeObj == &PyFloat_Type)
           return smallVectorOfDouble;
-        nb::print("Wtfbbq");
 
         auto np = nb::module_::import_("numpy");
         auto npCharDType = np.attr("char");
