@@ -95,7 +95,7 @@ jobs:
           os: ${{ matrix.os }}
           arch: ${{ matrix.arch }}
 
-      - name: "Download MLIR"
+      - name: "Download MLIR and configure build"
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -113,10 +113,17 @@ jobs:
             echo "LLVM_DIR=/host/$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
             echo "MLIR_DIR=/host/$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
             echo "Clang_DIR=/host/$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
+            echo "CCACHE_DIR=/host/$CCACHE_DIR" >> $GITHUB_ENV
           else
             echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
             echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
             echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
+          fi
+          
+          # since linux builds execute in the cibuildwheel almalinux container
+          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            echo CC=clang >> $GITHUB_ENV
+            echo CXX=clang++ >> $GITHUB_ENV
           fi
           
           # these have to match the deployment targets of the LLVM build runners
@@ -131,16 +138,20 @@ jobs:
 
       - name: "Build eudsl-tblgen"
         run: |
+          
+          ccache -z
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
+          ccache -s
 
       - name: "Build eudsl-py"
         if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
+          
           # prevent OOM on free GHA
           export DISABLE_COMPILE_OPT="${{ inputs.debug_with_tmate }}"
-          export CC=clang
-          export CXX=clang++
+          ccache -z
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
+          ccache -s
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -198,11 +209,13 @@ jobs:
 
       - name: "Install eudsl-tblgen"
         run: |
+          
           python -m pip install pytest
           python -m pip install eudsl-tblgen -f wheelhouse
 
       - name: "Test eudsl-tblgen"
         run: |
+          
           export TESTS_DIR="$PWD/projects/eudsl-tblgen/tests"
           if [ ${{ matrix.os }} == 'windows' ]; then
             python -m pytest -s -rA $TESTS_DIR
@@ -292,11 +305,13 @@ jobs:
 
       - name: "Install eudsl-py"
         run: |
+          
           python -m pip install pytest
           python -m pip install eudsl-py -f wheelhouse
 
       - name: "Test eudsl-py"
         run: |
+          
           export TESTS_DIR="$PWD/projects/eudsl-py/tests"
           python -m pytest -rA --capture=tee-sys $TESTS_DIR
 

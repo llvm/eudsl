@@ -22,8 +22,10 @@ wheel.py-api = "cp312"
 cmake.source-dir = "src"
 
 [tool.scikit-build.cmake.define]
-LLVM_DIR = {env="LLVM_DIR", default="EMPTY"}
+LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
+CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
+CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
 
 [tool.cibuildwheel]
 build-verbosity = 1
@@ -32,5 +34,34 @@ archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
 environment-pass = [
     "LLVM_DIR",
-    "CMAKE_GENERATOR"
+    "CMAKE_GENERATOR",
+    "CMAKE_PREFIX_PATH",
+    "CC",
+    "CXX",
+    # ccache
+    "CCACHE_DIR",
+    "CCACHE_MAXSIZE=700M",
+    "CCACHE_SLOPPINESS",
+    "CCACHE_CPP2",
+    "CCACHE_UMASK",
+    "CMAKE_C_COMPILER_LAUNCHER",
+    "CMAKE_CXX_COMPILER_LAUNCHER"
 ]
+before-build = [
+    "export CCACHE_DIR=$CCACHE_DIR/$(python -c 'import platform; print(platform.python_version())')",
+    "mkdir -p $CCACHE_DIR"
+]
+# uncomment to make sure ccache is working inside containers
+# test-command = "ccache -s"
+
+[tool.cibuildwheel.linux]
+before-all = [
+    "yum install -y clang",
+    # ccache
+    "curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz",
+    "tar -xf ccache-4.10.2-linux-x86_64.tar.xz",
+    "pushd ccache-4.10.2-linux-x86_64 && make install && popd"
+]
+
+[tool.cibuildwheel.windows]
+before-build = []
