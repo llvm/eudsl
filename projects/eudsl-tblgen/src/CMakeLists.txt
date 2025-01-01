@@ -1,3 +1,8 @@
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+# Copyright (c) 2024.
+
 cmake_minimum_required(VERSION 3.29)
 project(eudsl_tblgen CXX C)
 set(CMAKE_CXX_STANDARD 17)
@@ -8,7 +13,9 @@ include_directories(${LLVM_INCLUDE_DIRS})
 
 # technically we need this but our LLVM is compiled without exception handling
 # and that breaks windows
-#include(HandleLLVMOptions)
+if(NOT WIN32)
+  include(HandleLLVMOptions)
+endif()
 
 find_package(Python 3.8
   REQUIRED COMPONENTS Interpreter Development.Module

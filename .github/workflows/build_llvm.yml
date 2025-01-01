@@ -1,3 +1,8 @@
+#  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+#  See https://llvm.org/LICENSE.txt for license information.
+#  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#  Copyright (c) 2024.
+
 name: "Build LLVM and MLIR"
 
 on:
@@ -107,6 +112,7 @@ jobs:
       - name: "Build LLVM and MLIR"
         id: build
         run: |
+          
           export LLVM_SOURCE_DIR="$PWD/third_party/llvm-project"
           export LLVM_BUILD_DIR="$PWD/llvm-build"
           # double nested so that upload artifacts uploads a folder 

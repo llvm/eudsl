@@ -3,4 +3,4 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #  Copyright (c) 2024.
 
-from .eudsl_tblgen_ext import *
+from ..eudslpy_ext.dialects import *

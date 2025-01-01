@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+# Copyright (c) 2024.
+
 TD="$(cd $(dirname $0) && pwd)"
 REPO_ROOT="$(cd $TD/.. && pwd)"
 
@@ -44,6 +49,17 @@ cmake_options=(
   -DPYTHON_EXECUTABLE="$Python3_EXECUTABLE"
   -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}"
 )
+
+if [ -x "$(command -v ccache)" ]; then
+  echo 'using ccache' >&2
+  export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros
+  export CCACHE_CPP2=true
+  export CCACHE_UMASK=002
+  cmake_options+=(
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+  )
+fi
 
 # last so that C/CXX flags get set first
 cmake_options+=(-C "$TD/cmake/llvm_cache.cmake")
