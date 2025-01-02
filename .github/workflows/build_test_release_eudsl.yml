@@ -26,18 +26,13 @@ on:
   pull_request:
     paths:
       - ".github/workflows/build_test_release_eudsl.yml"
-      - "projects/eudsl-tblgen"
-      - "projects/eudsl-py"
+      - "projects/eudsl-tblgen/**"
+      - "projects/eudsl-py/**"
       - "third_party/llvm-project"
   merge_group:
   push:
     branches:
       - main
-    paths:
-      - ".github/workflows/build_test_release_eudsl.yml"
-      - "projects/eudsl-tblgen"
-      - "projects/eudsl-py"
-      - "third_party/llvm-project"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
