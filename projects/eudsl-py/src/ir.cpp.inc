@@ -177,7 +177,12 @@ auto mlir_Type = nb::class_<mlir::Type>(m, "Type")
 .def_prop_ro("abstract_type", &mlir::Type::getAbstractType)
 .def("walk_immediate_sub_elements", &mlir::Type::walkImmediateSubElements, "walk_attrs_fn"_a, "walk_types_fn"_a)
 .def("replace_immediate_sub_elements", &mlir::Type::replaceImmediateSubElements, "repl_attrs"_a, "repl_types"_a)
-;
+.def("__str__", [](mlir::Type& self){
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os);
+  return s;
+});
 
 auto mlir_AbstractAttribute = nb::class_<mlir::AbstractAttribute>(m, "AbstractAttribute")
 .def_static("lookup", [](mlir::TypeID typeID, mlir::MLIRContext * context){ return &mlir::AbstractAttribute::lookup(typeID, context); }, "type_id"_a, "context"_a, nb::rv_policy::reference_internal)
@@ -215,7 +220,12 @@ auto mlir_Attribute = nb::class_<mlir::Attribute>(m, "Attribute")
 .def_prop_ro("abstract_attribute", &mlir::Attribute::getAbstractAttribute)
 .def("walk_immediate_sub_elements", &mlir::Attribute::walkImmediateSubElements, "walk_attrs_fn"_a, "walk_types_fn"_a)
 .def("replace_immediate_sub_elements", &mlir::Attribute::replaceImmediateSubElements, "repl_attrs"_a, "repl_types"_a)
-;
+.def("__str__", [](mlir::Attribute& self){
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os, /*elideType*/false);
+  return s;
+});
 
 auto mlir_NamedAttribute = nb::class_<mlir::NamedAttribute>(m, "NamedAttribute")
 .def(nb::init<mlir::StringAttr, mlir::Attribute>(), "name"_a, "value"_a)
@@ -246,7 +256,12 @@ auto mlir_Location = nb::class_<mlir::Location>(m, "Location")
 .def("print", &mlir::Location::print, "os"_a)
 .def("dump", &mlir::Location::dump)
 .def_static("classof", &mlir::Location::classof, "attr"_a)
-;
+.def("__str__", [](mlir::Location& self){
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os);
+  return s;
+});
 
 auto mlir_CallSiteLoc = nb::class_<mlir::CallSiteLoc,  mlir::LocationAttr>(m, "CallSiteLoc")
 .def_static("get", [](mlir::Location callee, mlir::Location caller){ return mlir::CallSiteLoc::get(callee, caller); }, "callee"_a, "caller"_a)
@@ -385,7 +400,12 @@ auto mlir_Value = nb::class_<mlir::Value>(m, "Value")
 .def("dump", &mlir::Value::dump)
 .def("print_as_operand", [](mlir::Value& self, llvm::raw_ostream & os, mlir::AsmState & state){ return self.printAsOperand(os, state); }, "os"_a, "state"_a)
 .def("print_as_operand", [](mlir::Value& self, llvm::raw_ostream & os, const mlir::OpPrintingFlags & flags){ return self.printAsOperand(os, flags); }, "os"_a, "flags"_a)
-;
+.def("__str__", [](mlir::Value& self){
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os);
+  return s;
+});
 
 auto mlir_OpOperand = nb::class_<mlir::OpOperand>(m, "OpOperand")
 .def_static("get_use_list", &mlir::OpOperand::getUseList, "value"_a, nb::rv_policy::reference_internal)
@@ -503,7 +523,12 @@ auto mlir_AffineExpr = nb::class_<mlir::AffineExpr>(m, "AffineExpr")
 .def("__mod__", [](mlir::AffineExpr& self, uint64_t v){ return self.operator%(v); }, "v"_a)
 .def("__mod__", [](mlir::AffineExpr& self, mlir::AffineExpr other){ return self.operator%(other); }, "other"_a)
 .def("compose", &mlir::AffineExpr::compose, "map"_a)
-;
+.def("__str__", [](mlir::AffineExpr& self){
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os);
+  return s;
+});
 
 auto mlir_AffineBinaryOpExpr = nb::class_<mlir::AffineBinaryOpExpr, mlir::AffineExpr>(m, "AffineBinaryOpExpr")
 .def_prop_ro("lhs", &mlir::AffineBinaryOpExpr::getLHS)
@@ -587,7 +612,12 @@ auto mlir_AffineMap = nb::class_<mlir::AffineMap>(m, "AffineMap")
 .def("get_major_sub_map", &mlir::AffineMap::getMajorSubMap, "num_results"_a)
 .def("get_minor_sub_map", &mlir::AffineMap::getMinorSubMap, "num_results"_a)
 .def_prop_ro("largest_known_divisor_of_map_exprs", &mlir::AffineMap::getLargestKnownDivisorOfMapExprs)
-;
+.def("__str__", [](mlir::AffineMap& self){
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os);
+  return s;
+});
 
 auto mlir_MutableAffineMap = nb::class_<mlir::MutableAffineMap>(m, "MutableAffineMap")
 .def(nb::init<>())
@@ -865,7 +895,12 @@ auto mlir_StridedLayoutAttr = nb::class_<mlir::StridedLayoutAttr,  mlir::Attribu
 .def_prop_ro("strides", &mlir::StridedLayoutAttr::getStrides)
 .def_prop_ro("affine_map", &mlir::StridedLayoutAttr::getAffineMap)
 .def("verify_layout", &mlir::StridedLayoutAttr::verifyLayout, "shape"_a, "emit_error"_a)
-;
+.def("__str__", [](mlir::StridedLayoutAttr& self){
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os);
+  return s;
+});
 
 auto mlir_StringAttr = nb::class_<mlir::StringAttr,  mlir::Attribute>(m, "StringAttr")
 .def_prop_ro("referenced_dialect", &mlir::StringAttr::getReferencedDialect)
@@ -1277,7 +1312,12 @@ auto mlir_OperationName = nb::class_<mlir::OperationName>(m, "OperationName")
 .def("dump", &mlir::OperationName::dump)
 .def("__eq__", &mlir::OperationName::operator==, "rhs"_a)
 .def("__ne__", &mlir::OperationName::operator!=, "rhs"_a)
-;
+.def("__str__", [](mlir::OperationName& self){
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os);
+  return s;
+});
 
 auto mlir_OperationName_InterfaceConcept = nb::class_<mlir::OperationName::InterfaceConcept>(mlir_OperationName, "InterfaceConcept")
 .def("fold_hook", &mlir::OperationName::InterfaceConcept::foldHook, "_"_a, "__"_a, "___"_a)
@@ -1406,7 +1446,13 @@ auto mlir_OperationFingerPrint = nb::class_<mlir::OperationFingerPrint>(m, "Oper
 
 auto mlir_IRUnit = nb::class_<mlir::IRUnit>(m, "IRUnit")
 .def("print", &mlir::IRUnit::print, "os"_a, "flags"_a)
-;
+.def("__str__", [](mlir::IRUnit& self){
+  mlir::OpPrintingFlags flags;
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os, flags);
+  return s;
+});
 
 auto mlir_tracing_Action = nb::class_<mlir::tracing::Action>(m, "Action")
 .def_prop_ro("action_id", &mlir::tracing::Action::getActionID)
@@ -1547,7 +1593,12 @@ auto mlir_Block = nb::class_<mlir::Block>(m, "Block")
 .def("dump", &mlir::Block::dump)
 .def("print_as_operand", [](mlir::Block& self, llvm::raw_ostream & os, bool printType){ return self.printAsOperand(os, printType); }, "os"_a, "print_type"_a)
 .def("print_as_operand", [](mlir::Block& self, llvm::raw_ostream & os, mlir::AsmState & state){ return self.printAsOperand(os, state); }, "os"_a, "state"_a)
-;
+.def("__str__", [](mlir::Block& self){
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os);
+  return s;
+});
 
 auto mlir_Dialect = nb::class_<mlir::Dialect>(m, "Dialect")
 .def_static("is_valid_namespace", &mlir::Dialect::isValidNamespace, "str"_a)
@@ -1766,7 +1817,13 @@ auto mlir_Operation = nb::class_<mlir::Operation>(m, "Operation")
 .def("set_properties_from_attribute", &mlir::Operation::setPropertiesFromAttribute, "attr"_a, "emit_error"_a)
 .def("copy_properties", &mlir::Operation::copyProperties, "rhs"_a)
 .def("hash_properties", &mlir::Operation::hashProperties)
-;
+.def("__str__", [](mlir::Operation& self){
+  mlir::OpPrintingFlags flags;
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os, flags);
+  return s;
+});
 
 auto mlir_Operation_CloneOptions = nb::class_<mlir::Operation::CloneOptions>(mlir_Operation, "CloneOptions")
 .def(nb::init<>())
@@ -1808,7 +1865,13 @@ auto mlir_OpState = nb::class_<mlir::OpState>(m, "OpState")
 .def("emit_remark", &mlir::OpState::emitRemark, "message"_a)
 .def_static("get_canonicalization_patterns", &mlir::OpState::getCanonicalizationPatterns, "results"_a, "context"_a)
 .def_static("populate_default_attrs", &mlir::OpState::populateDefaultAttrs, "_"_a, "__"_a)
-;
+.def("__str__", [](mlir::OpState& self){
+  mlir::OpPrintingFlags flags;
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  self.print(os, flags);
+  return s;
+});
 
 auto mlir_OpFoldResult = nb::class_<mlir::OpFoldResult>(m, "OpFoldResult")
 .def("dump", &mlir::OpFoldResult::dump)
