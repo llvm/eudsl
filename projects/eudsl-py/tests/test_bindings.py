@@ -56,13 +56,13 @@ def test_array_ref():
     v = SmallVector[Type]([f32_ty])
     tys = ArrayRef(v)
     for t in tys:
-        t.dump()
+        print(t)
 
     attrs = [Attribute(), Attribute(), Attribute()]
     v = SmallVector[Attribute](attrs)
     tys = ArrayRef(v)
     for t in tys:
-        t.dump()
+        print(t)
 
 
 def test_arith_dialect():
@@ -90,7 +90,7 @@ def test_arith_dialect():
     op_state.add_types(v)
     op = b.create(op_state)
 
-    mod1.operation.dump()
+    print(mod1.operation)
     assert mod1.verify()
 
 
@@ -102,7 +102,7 @@ def test_types():
     f32_ty = Float32Type.get(ctx)
     shape_ = ArrayRef(shape)
     memref_ty = MemRefType.Builder(shape_, f32_ty).memref_type()
-    memref_ty.dump()
+    print(memref_ty)
     td = nvgpu.TensorMapDescriptorType.get(
         ctx,
         memref_ty,
@@ -111,7 +111,7 @@ def test_types():
         nvgpu.TensorMapOOBKind.OOB_NAN,
         nvgpu.TensorMapInterleaveKind.INTERLEAVE_16B,
     )
-    td.dump()
+    print(td)
 
 
 if __name__ == "__main__":
