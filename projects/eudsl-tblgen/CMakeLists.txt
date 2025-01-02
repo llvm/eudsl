@@ -29,7 +29,11 @@ find_package(nanobind CONFIG REQUIRED)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/eudsl_tblgen)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-nanobind_add_module(eudsl_tblgen_ext NB_STATIC STABLE_ABI eudsl_tblgen_ext.cpp TGParser.cpp TGLexer.cpp)
+nanobind_add_module(eudsl_tblgen_ext NB_STATIC STABLE_ABI
+  src/eudsl_tblgen_ext.cpp
+  src/TGParser.cpp
+  src/TGLexer.cpp
+)
 target_link_libraries(eudsl_tblgen_ext PRIVATE LLVMTableGenCommon LLVMTableGen)
 target_compile_options(eudsl_tblgen_ext
   PUBLIC

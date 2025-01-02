@@ -1,0 +1,35 @@
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+# Copyright (c) 2024.
+
+[project]
+name = "eudsl-nbgen"
+version = "0.0.1"
+requires-python = ">=3.9"
+[project.urls]
+Homepage = "https://github.com/llvm/eudsl"
+
+[build-system]
+requires = [
+    "scikit-build-core==0.10.7",
+    "nanobind==2.4.0",
+    "typing_extensions==4.12.2",
+]
+build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+minimum-version = "0.4"
+build-dir = "build/{wheel_tag}"
+# gives you a wheel tagged py3-none
+wheel.py-api = "py3"
+cmake.source-dir = "."
+
+[tool.scikit-build.cmake.define]
+LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
+Clang_DIR = { env = "Clang_DIR", default = "EMPTY" }
+CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "EMPTY" }
+CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
+CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
+CMAKE_CXX_VISIBILITY_PRESET = "hidden"
+CMAKE_VERBOSE_MAKEFILE = "ON"

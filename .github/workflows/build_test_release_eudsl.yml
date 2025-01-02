@@ -104,17 +104,6 @@ jobs:
           curl -sLO $RELEASE_URL
           tar xf $RELEASE_PREFIX*.tar.gz
           
-          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            echo "LLVM_DIR=/host/$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
-            echo "MLIR_DIR=/host/$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
-            echo "Clang_DIR=/host/$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
-            echo "CCACHE_DIR=/host/$CCACHE_DIR" >> $GITHUB_ENV
-          else
-            echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
-            echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
-            echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
-          fi
-          
           # since linux builds execute in the cibuildwheel almalinux container
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             echo CC=clang >> $GITHUB_ENV
@@ -134,19 +123,36 @@ jobs:
       - name: "Build eudsl-tblgen"
         run: |
           
-          ccache -z
+          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            export CMAKE_PREFIX_PATH="/host/$PWD/llvm-install"
+            export CCACHE_DIR="/host/$CCACHE_DIR"
+          else
+            export CMAKE_PREFIX_PATH="$PWD/llvm-install"
+          fi
+          
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
-          ccache -s
+
+      - name: "Build eudsl-nbgen"
+        run: |
+          
+          # this is not run in cibuildwheel container so its different
+          export CMAKE_PREFIX_PATH="$PWD/llvm-install"
+          $python3_command -m pip wheel "$PWD/projects/eudsl-nbgen" -w wheelhouse
 
       - name: "Build eudsl-py"
         if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
           
+          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            export CMAKE_PREFIX_PATH="/host/$PWD/llvm-install"
+            export CCACHE_DIR="/host/$CCACHE_DIR"
+          else
+            export CMAKE_PREFIX_PATH="$PWD/llvm-install"
+          fi
+          
           # prevent OOM on free GHA
           export DISABLE_COMPILE_OPT="${{ inputs.debug_with_tmate }}"
-          ccache -z
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
-          ccache -s
 
       - name: "Save cache"
         uses: actions/cache/save@v3

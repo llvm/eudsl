@@ -435,35 +435,7 @@ if ("$ENV{DISABLE_COMPILE_OPT}" MATCHES "true")
   target_compile_options(eudslpy_ext PRIVATE -O0)
 endif()
 
-# hack so we can move libMLIR and libLLVM into the wheel
-# see AddLLVM.cmake#llvm_setup_rpath
-if(APPLE OR UNIX)
-  set(_origin_prefix "\$ORIGIN")
-  if(APPLE)
-    set(_origin_prefix "@loader_path")
-  endif()
-  if (EUDSLPY_STANDALONE_BUILD)
-    get_target_property(_mlir_loc MLIR LOCATION)
-    get_target_property(_llvm_loc LLVM LOCATION)
-  else()
-    set(_mlir_loc "$<TARGET_FILE:MLIR>")
-    set(_llvm_loc "$<TARGET_FILE:LLVM>")
-  endif()
-  set(_old_rpath "${_origin_prefix}/../lib${LLVM_LIBDIR_SUFFIX}")
-  if(APPLE)
-    execute_process(COMMAND install_name_tool -rpath "${_old_rpath}" ${_origin_prefix} "${_mlir_loc}" ERROR_VARIABLE rpath_err)
-    execute_process(COMMAND install_name_tool -rpath "${_old_rpath}" ${_origin_prefix} "${_llvm_loc}" ERROR_VARIABLE rpath_err)
-    # maybe already updated...
-    if (rpath_err AND NOT rpath_err MATCHES "no LC_RPATH load command with path: ${_old_rpath}")
-      message(FATAL_ERROR "couldn't update rpath because: ${rpath_err}")
-    endif()
-  else()
-    # sneaky sneaky - undocumented
-    file(RPATH_CHANGE FILE "${_mlir_loc}" OLD_RPATH "${_old_rpath}" NEW_RPATH "${_origin_prefix}")
-    file(RPATH_CHANGE FILE "${_llvm_loc}" OLD_RPATH "${_old_rpath}" NEW_RPATH "${_origin_prefix}")
-  endif()
-  set_target_properties(eudslpy_ext PROPERTIES INSTALL_RPATH "${_origin_prefix}")
-endif()
+patch_mlir_llvm_rpath(eudslpy_ext)
 # copy libMLIR into the ext dir for wheels
 install(IMPORTED_RUNTIME_ARTIFACTS MLIR LLVM LIBRARY DESTINATION eudsl)
 
