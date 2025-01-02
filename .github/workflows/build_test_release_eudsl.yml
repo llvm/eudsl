@@ -137,7 +137,7 @@ jobs:
           
           # this is not run in cibuildwheel container so its different
           export CMAKE_PREFIX_PATH="$PWD/llvm-install"
-          $python3_command -m pip wheel "$PWD/projects/eudsl-nbgen" -w wheelhouse
+          $python3_command -m pip wheel "$PWD/projects/eudsl-nbgen" -w wheelhouse -v
 
       - name: "Build eudsl-py"
         if: ${{ ! startsWith(matrix.os, 'windows') }}
@@ -146,8 +146,10 @@ jobs:
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             export CMAKE_PREFIX_PATH="/host/$PWD/llvm-install"
             export CCACHE_DIR="/host/$CCACHE_DIR"
+            export PIP_FIND_LINKS="/host/$PWD/wheelhouse"
           else
             export CMAKE_PREFIX_PATH="$PWD/llvm-install"
+            export PIP_FIND_LINKS="$PWD/wheelhouse"
           fi
           
           # prevent OOM on free GHA

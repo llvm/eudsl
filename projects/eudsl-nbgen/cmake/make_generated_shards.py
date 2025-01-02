@@ -5,7 +5,6 @@
 
 import argparse
 import re
-import sys
 from pathlib import Path
 from textwrap import dedent
 
@@ -39,11 +38,12 @@ def make_source_shards(filename: Path, target, extra_includes, max_num_shards):
             print(shar, file=f)
             print("}", file=f)
 
-    if len(shards) > max_num_shards:
-        raise RuntimeError("expected less than 20 shards")
-    for i in range(len(shards), max_num_shards):
-        with open(f"{filename}.shard.{i}.cpp", "w") as f:
-            print(f"// dummy shard {i}", file=f)
+    if max_num_shards is not None:
+        if len(shards) > max_num_shards:
+            raise RuntimeError(f"expected less than {max_num_shards} shards")
+        for i in range(len(shards), max_num_shards):
+            with open(f"{filename}.shard.{i}.cpp", "w") as f:
+                print(f"// dummy shard {i}", file=f)
 
     with open(f"{filename}.sharded.cpp", "w") as f:
         print(
@@ -72,8 +72,10 @@ if __name__ == "__main__":
     parser.add_argument("filename")
     parser.add_argument("-t", "--target")
     parser.add_argument("-I", "--extra_includes", nargs="*")
-    parser.add_argument("-m", "--max-num-shards", type=int, default=20)
+    parser.add_argument("-m", "--max-num-shards", type=int)
     args = parser.parse_args()
+    if args.max_num_shards:
+        args.max_num_shards += 1
     make_source_shards(
-        Path(args.filename), args.target, args.extra_includes, args.max_num_shards + 1
+        Path(args.filename), args.target, args.extra_includes, args.max_num_shards
     )

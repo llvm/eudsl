@@ -8,7 +8,8 @@ requires = [
     "scikit-build-core==0.10.7",
     "nanobind==2.4.0",
     "typing_extensions==4.12.2",
-    "numpy==2.0.2"
+    "numpy==2.0.2",
+    "eudsl-nbgen"
 ]
 build-backend = "scikit_build_core.build"
 
@@ -53,6 +54,7 @@ environment-pass = [
     "DISABLE_COMPILE_OPT",
     "CC",
     "CXX",
+    "PIP_FIND_LINKS",
     # ccache
     "CCACHE_DIR",
     "CCACHE_MAXSIZE=700M",
