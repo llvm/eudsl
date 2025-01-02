@@ -33,3 +33,55 @@ CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 CMAKE_VERBOSE_MAKEFILE = "ON"
+
+[tool.cibuildwheel]
+build-verbosity = 1
+# build only one version
+build = ["cp39*"]
+skip = ["*-manylinux_i686", "*-musllinux*", "pp*", "*-win32"]
+archs = ["auto64"]
+manylinux-x86_64-image = "manylinux_2_28"
+environment-pass = [
+    "LLVM_DIR",
+    "CMAKE_GENERATOR",
+    "CMAKE_PREFIX_PATH",
+    "CC",
+    "CXX",
+    # ccache
+    "CCACHE_DIR",
+    "CCACHE_MAXSIZE=700M",
+    "CCACHE_SLOPPINESS",
+    "CCACHE_CPP2",
+    "CCACHE_UMASK",
+    "CMAKE_C_COMPILER_LAUNCHER",
+    "CMAKE_CXX_COMPILER_LAUNCHER"
+]
+before-build = [
+    "export CCACHE_DIR=$CCACHE_DIR/$(python -c 'import platform; print(platform.python_version())')",
+    "mkdir -p $CCACHE_DIR",
+    "ccache -z"
+]
+# uncomment to make sure ccache is working inside containers
+test-command = "ccache -s"
+repair-wheel-command = []
+
+[tool.cibuildwheel.linux]
+before-all = [
+    "yum install -y clang",
+    # ccache
+    "curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz",
+    "tar -xf ccache-4.10.2-linux-x86_64.tar.xz",
+    "pushd ccache-4.10.2-linux-x86_64 && make install && popd"
+]
+# synchronize TZ with host so ccache files have correct timestamp
+container-engine = { name = "docker", create-args = ["-v", "/etc/timezone:/etc/timezone:ro", "-v", "/etc/localtime:/etc/localtime:ro"] }
+
+[tool.cibuildwheel.macos]
+before-build = [
+    "ccache -z"
+]
+
+[tool.cibuildwheel.windows]
+before-build = [
+    "ccache -z"
+]

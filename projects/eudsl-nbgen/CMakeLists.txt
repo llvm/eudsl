@@ -87,6 +87,5 @@ install(
 install(
   FILES
   cmake/eudsl_nbgen-config.cmake
-  cmake/make_generated_shards.py
   DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}/cmake"
 )

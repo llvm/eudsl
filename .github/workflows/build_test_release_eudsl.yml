@@ -104,6 +104,19 @@ jobs:
           curl -sLO $RELEASE_URL
           tar xf $RELEASE_PREFIX*.tar.gz
           
+          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            echo "LLVM_DIR=/host/$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
+            echo "MLIR_DIR=/host/$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
+            echo "Clang_DIR=/host/$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
+            echo "CCACHE_DIR=/host/$CCACHE_DIR" >> $GITHUB_ENV
+            echo "PIP_FIND_LINKS=/host/$PWD/wheelhouse" >> $GITHUB_ENV
+          else
+            echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
+            echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
+            echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
+            echo "PIP_FIND_LINKS=$PWD/wheelhouse" >> $GITHUB_ENV
+          fi
+          
           # since linux builds execute in the cibuildwheel almalinux container
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             echo CC=clang >> $GITHUB_ENV
@@ -123,34 +136,17 @@ jobs:
       - name: "Build eudsl-tblgen"
         run: |
           
-          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export CMAKE_PREFIX_PATH="/host/$PWD/llvm-install"
-            export CCACHE_DIR="/host/$CCACHE_DIR"
-          else
-            export CMAKE_PREFIX_PATH="$PWD/llvm-install"
-          fi
-          
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
 
       - name: "Build eudsl-nbgen"
+        if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
           
-          # this is not run in cibuildwheel container so its different
-          export CMAKE_PREFIX_PATH="$PWD/llvm-install"
-          $python3_command -m pip wheel "$PWD/projects/eudsl-nbgen" -w wheelhouse -v
+          $python3_command -m cibuildwheel "$PWD/projects/eudsl-nbgen" --output-dir wheelhouse
 
       - name: "Build eudsl-py"
         if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
-          
-          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export CMAKE_PREFIX_PATH="/host/$PWD/llvm-install"
-            export CCACHE_DIR="/host/$CCACHE_DIR"
-            export PIP_FIND_LINKS="/host/$PWD/wheelhouse"
-          else
-            export CMAKE_PREFIX_PATH="$PWD/llvm-install"
-            export PIP_FIND_LINKS="$PWD/wheelhouse"
-          fi
           
           # prevent OOM on free GHA
           export DISABLE_COMPILE_OPT="${{ inputs.debug_with_tmate }}"
@@ -299,10 +295,22 @@ jobs:
       id-token: write
       contents: write
 
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: ["ubuntu-22.04"]
+        include: [
+          {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64"},
+          {runs-on: "ubuntu-22.04", name: "macos_arm64"},
+          {runs-on: "ubuntu-22.04", name: "macos_x86_64"},
+          {runs-on: "ubuntu-22.04", name: "windows_x86_64"},
+        ]
+
     steps:
 
       - uses: actions/download-artifact@v4
         with:
+          name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse
 
       - name: Release current commit

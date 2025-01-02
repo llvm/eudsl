@@ -5,23 +5,25 @@
 
 # copy-pasta from AddMLIR.cmake/AddLLVM.cmake/TableGen.cmake
 
-function(eudslpygen target inputFile)
-  set(EUDSLPYGEN_TARGET_DEFINITIONS ${inputFile})
+function(eudslpygen target input_file)
+  set(EUDSLPYGEN_TARGET_DEFINITIONS ${input_file})
   cmake_parse_arguments(ARG "" "" "DEPENDS;EXTRA_INCLUDES;NAMESPACES" ${ARGN})
   if (IS_ABSOLUTE ${EUDSLPYGEN_TARGET_DEFINITIONS})
-    set(EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE ${inputFile})
+    set(EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE ${input_file})
   else()
-    set(EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE ${CMAKE_CURRENT_SOURCE_DIR}/${inputFile})
+    set(EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE ${CMAKE_CURRENT_SOURCE_DIR}/${input_file})
   endif()
 
   if(NOT EXISTS "${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}")
-    message(FATAL_ERROR "${inputFile} does not exist")
+    message(FATAL_ERROR "${input_file} does not exist")
   endif()
 
   get_directory_property(eudslpygen_includes INCLUDE_DIRECTORIES)
-  list(APPEND eudslpygen_includes ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES} ${ARG_EXTRA_INCLUDES})
+  list(TRANSFORM ARG_EXTRA_INCLUDES PREPEND -I)
+  list(APPEND eudslpygen_includes ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
   list(REMOVE_ITEM eudslpygen_includes "")
   list(TRANSFORM eudslpygen_includes PREPEND -I)
+  list(APPEND eudslpygen_includes ${ARG_EXTRA_INCLUDES})
 
   set(_gen_target_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/${target}")
   file(MAKE_DIRECTORY ${_gen_target_dir})
@@ -41,7 +43,7 @@ function(eudslpygen target inputFile)
     -o ${_depfile}
   )
   execute_process(COMMAND ${clang_command} RESULT_VARIABLE _had_error_depfile
-    COMMAND_ECHO STDOUT
+    # COMMAND_ECHO STDOUT
   )
 
   if (IS_ABSOLUTE ${EUDSLPYGEN_TARGET_DEFINITIONS})
@@ -64,7 +66,7 @@ function(eudslpygen target inputFile)
       -o "${_full_gen_file}"
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     RESULT_VARIABLE _had_error_gen_cpp
-    COMMAND_ECHO STDOUT
+    # COMMAND_ECHO STDOUT
   )
   if((_had_error_gen_cpp AND NOT _had_error_gen_cpp EQUAL 0) OR NOT EXISTS "${_full_gen_file}")
     message(FATAL_ERROR "failed to create ${_full_gen_file}: ${_had_error_gen_cpp}")
@@ -72,11 +74,12 @@ function(eudslpygen target inputFile)
   # this is the specific thing connected the dependencies...
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_full_gen_file})
   execute_process(
-    COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/make_generated_shards.py
-      ${_full_gen_file} -t ${target} -I ${ARG_EXTRA_INCLUDES} ${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}
+    COMMAND ${EUDSLPY_EUDSLPYGEN_EXE} -shardify ${_full_gen_file}
+      # ARG_EXTRA_INCLUDES has already had -I prepended
+      -shard-target ${target} ${ARG_EXTRA_INCLUDES} -I ${EUDSLPYGEN_TARGET_DEFINITIONS_ABSOLUTE}
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     RESULT_VARIABLE _had_error_gen_sharded
-    COMMAND_ECHO STDOUT
+    # COMMAND_ECHO STDOUT
   )
   if((_had_error_gen_sharded AND NOT _had_error_gen_sharded EQUAL 0) OR NOT EXISTS "${_full_gen_file}.sharded.cpp")
     message(FATAL_ERROR "failed to create ${_full_gen_file}.sharded.cpp: ${_had_error_gen_sharded}")

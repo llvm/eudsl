@@ -15,7 +15,9 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/ToolOutputFile.h"
 
+#include <fstream>
 #include <regex>
+#include <sstream>
 
 static llvm::cl::OptionCategory EUDSLPYGenCat("Options for eudslpy-gen");
 static llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional,
@@ -30,7 +32,7 @@ static llvm::cl::list<std::string>
 
 static llvm::cl::opt<std::string>
     OutputFilename("o", llvm::cl::desc("Output filename"),
-                   llvm::cl::value_desc("filename"), llvm::cl::Required,
+                   llvm::cl::value_desc("filename"),
                    llvm::cl::cat(EUDSLPYGenCat));
 
 static llvm::cl::list<std::string>
@@ -46,6 +48,22 @@ static llvm::cl::opt<int> ShardSize("shard-size", llvm::cl::desc("Shard size"),
                                     llvm::cl::value_desc("shard size"),
                                     llvm::cl::cat(EUDSLPYGenCat),
                                     llvm::cl::init(10));
+
+static llvm::cl::opt<bool> Shardify("shardify",
+                                    llvm::cl::desc("Split into shards"),
+                                    llvm::cl::value_desc("shardify"),
+                                    llvm::cl::cat(EUDSLPYGenCat),
+                                    llvm::cl::init(false));
+
+static llvm::cl::opt<int>
+    MaxNumShards("max-number-shards",
+                 llvm::cl::desc("Maximum number of shards to split into"),
+                 llvm::cl::value_desc("max number shards"),
+                 llvm::cl::cat(EUDSLPYGenCat), llvm::cl::init(-1));
+
+static llvm::cl::opt<std::string> ShardTarget(
+    "shard-target", llvm::cl::desc("CMake target that is being sharded"),
+    llvm::cl::value_desc("sharding target"), llvm::cl::cat(EUDSLPYGenCat));
 
 static bool filterInNamespace(const std::string &s) {
   if (Namespaces.empty())
@@ -648,9 +666,7 @@ struct GenerateBindingsAction : clang::ASTFrontendAction {
   std::shared_ptr<llvm::ToolOutputFile> outputFile;
 };
 
-int main(int argc, char **argv) {
-  llvm::cl::ParseCommandLineOptions(argc, argv);
-
+static int generate() {
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
       llvm::MemoryBuffer::getFileOrSTDIN(InputFilename);
   if (std::error_code ec = fileOrErr.getError()) {
@@ -717,6 +733,133 @@ int main(int argc, char **argv) {
   }
 
   outputFile->keep();
+
+  return 0;
+}
+
+static int makeSourceShards() {
+  // Ensure the filename ends with ".cpp.gen"
+  if (InputFilename.substr(InputFilename.size() - 8) != ".cpp.gen") {
+    llvm::errs() << "expected .cpp.gen file\n";
+    return -1;
+  }
+
+  std::ifstream file(InputFilename);
+  if (!file.is_open()) {
+    llvm::errs() << "Failed to open file\n";
+    return -1;
+  }
+
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  std::string source = buffer.str();
+
+  // Split source by regex pattern
+  std::regex re("// eudslpy-gen-shard \\d+");
+  std::sregex_token_iterator iter(source.begin(), source.end(), re, -1);
+  std::sregex_token_iterator end;
+
+  std::vector<std::string> shards;
+  while (iter != end)
+    shards.push_back(*iter++);
+
+  std::string finalTarget =
+      ShardTarget.empty()
+          ? InputFilename.substr(0, InputFilename.find_last_of("."))
+          : ShardTarget;
+
+  // Generate shard files
+
+  for (size_t i = 0; i < shards.size(); ++i) {
+    std::ofstream shardFile(InputFilename.getValue() + ".shard." +
+                            std::to_string(i) + ".cpp");
+    if (!shardFile.is_open()) {
+      llvm::errs() << "Failed to create shard file";
+      return -1;
+    }
+
+    if (!IncludeDirs.empty()) {
+      for (const std::string &inc : IncludeDirs)
+        shardFile << "#include \"" << inc << "\"" << std::endl;
+    }
+
+    // clang-format off
+    shardFile << R"(
+#include <nanobind/nanobind.h>
+namespace nb = nanobind;
+using namespace nb::literals;
+using namespace mlir;
+using namespace llvm;
+#include "type_casters.h"
+
+void populate)" << finalTarget << i << R"(Module(nb::module_ &m) {
+)";
+    // clang-format on
+    shardFile << shards[i] << std::endl;
+    shardFile << "}" << std::endl;
+    shardFile.flush();
+    shardFile.close();
+  }
+
+  // Handle max number of shards
+  if (MaxNumShards != -1 && shards.size() > static_cast<size_t>(MaxNumShards)) {
+    llvm::errs() << "expected less than " + std::to_string(MaxNumShards) +
+                        " shards";
+    return -1;
+  }
+  if (MaxNumShards == -1)
+    MaxNumShards = shards.size();
+
+  for (size_t i = shards.size(); i < static_cast<size_t>(MaxNumShards); ++i) {
+    std::ofstream dummyShardFile(InputFilename.getValue() + ".shard." +
+                                 std::to_string(i) + ".cpp");
+    if (!dummyShardFile.is_open()) {
+      llvm::errs() << "Failed to create dummy shard file";
+      return -1;
+    }
+    dummyShardFile << "// dummy shard " << i << std::endl;
+    dummyShardFile.flush();
+    dummyShardFile.close();
+  }
+
+  // Generate the final sharded cpp file
+  std::ofstream finalShardedFile(InputFilename.getValue() + ".sharded.cpp");
+  if (!finalShardedFile.is_open()) {
+    llvm::errs() << "Failed to create final sharded file";
+    return -1;
+  }
+
+  // clang-format off
+  finalShardedFile << R"(
+#include <nanobind/nanobind.h>
+namespace nb = nanobind;
+using namespace nb::literals;
+
+void populate)" << finalTarget << R"(Module(nb::module_ &m) {
+)";
+  // clang-format on
+
+  for (size_t i = 0; i < shards.size(); ++i)
+    finalShardedFile << "extern void populate" << finalTarget << i
+                     << "Module(nb::module_ &m);" << std::endl;
+
+  for (size_t i = 0; i < shards.size(); ++i)
+    finalShardedFile << "populate" << finalTarget << i << "Module(m);"
+                     << std::endl;
+
+  finalShardedFile << "}" << std::endl;
+  finalShardedFile.flush();
+  finalShardedFile.close();
+
+  return 0;
+}
+
+int main(int argc, char **argv) {
+  llvm::cl::ParseCommandLineOptions(argc, argv);
+
+  if (Shardify)
+    return makeSourceShards();
+  return generate();
 
   return 0;
 }
