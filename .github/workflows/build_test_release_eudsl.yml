@@ -149,7 +149,7 @@ jobs:
         run: |
           
           # prevent OOM on free GHA
-          export DISABLE_COMPILE_OPT="${{ inputs.debug_with_tmate }}"
+          export EUDSLPY_DISABLE_COMPILE_OPT="${{ inputs.eudslpy_disable_compile_opt == 'true' && 'ON' || 'OFF' }}"
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
 
       - name: "Save cache"
