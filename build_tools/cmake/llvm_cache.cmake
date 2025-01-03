@@ -117,11 +117,7 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     mlir-cmake-exports
     mlir-headers
     mlir-libraries
-    mlir-opt
     mlir-python-sources
-    mlir-reduce
-    mlir-tblgen
-    mlir-translate
     CACHE STRING "")
 
 get_cmake_property(_variableNames VARIABLES)
