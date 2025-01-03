@@ -17,19 +17,22 @@ set(LLVM_INCLUDE_TOOLS ON CACHE BOOL "")
 set(LLVM_INSTALL_UTILS ON CACHE BOOL "")
 
 set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
-# All the tools will use libllvm shared library
-# (but doesn't work on windows)
-if (NOT WIN32)
-  set(LLVM_LINK_LLVM_DYLIB ON CACHE BOOL "")
-  set(MLIR_LINK_MLIR_DYLIB ON CACHE BOOL "")
+if (WIN32)
+  set(LLVM_BUILD_LLVM_DYLIB_VIS ON CACHE BOOL "")
 endif()
+set(LLVM_LINK_LLVM_DYLIB ON CACHE BOOL "")
+set(MLIR_LINK_MLIR_DYLIB ON CACHE BOOL "")
 
 # useful things
 set(LLVM_ENABLE_ASSERTIONS ON CACHE BOOL "")
 set(LLVM_ENABLE_WARNINGS ON CACHE BOOL "")
 set(LLVM_FORCE_ENABLE_STATS ON CACHE BOOL "")
-# because AMD target td files are insane...
-set(LLVM_OPTIMIZED_TABLEGEN ON CACHE BOOL "")
+# on windows this breaks because mlir/IR/BuiltinLocationAttributes.h.inc
+# isn't generated in the right order for mlir-reduce to compile
+if (NOT WIN32)
+  # because AMD target td files are insane...
+  set(LLVM_OPTIMIZED_TABLEGEN ON CACHE BOOL "")
+endif()
 set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 
 # MLIR options
@@ -117,16 +120,8 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     mlir-cmake-exports
     mlir-headers
     mlir-libraries
-    mlir-opt
     mlir-python-sources
-    mlir-reduce
-    mlir-tblgen
-    mlir-translate
     CACHE STRING "")
-
-if (NOT WIN32)
-  list(APPEND LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS LLVM MLIR)
-endif()
 
 get_cmake_property(_variableNames VARIABLES)
 list(SORT _variableNames)
