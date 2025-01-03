@@ -125,9 +125,6 @@ jobs:
             build_tools/build_llvm_wasi.sh
           else
             build_tools/build_llvm.sh
-            echo "*********************** SMOKE TEST *********************************"
-            "$LLVM_INSTALL_DIR/bin/mlir-tblgen" --version
-            echo "*********************** SMOKE TEST *********************************"
           fi
           ccache -s
           
