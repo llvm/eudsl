@@ -104,9 +104,6 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     llvm-headers
     llvm-libraries
 
-    LLVM
-    MLIR
-
     FileCheck
     not
     MLIRPythonModules
