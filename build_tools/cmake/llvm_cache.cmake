@@ -125,7 +125,7 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     CACHE STRING "")
 
 if (NOT WIN32)
-  list(APPEND LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS LLVM MLIR)
+  list(APPEND LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS)
 endif()
 
 get_cmake_property(_variableNames VARIABLES)
