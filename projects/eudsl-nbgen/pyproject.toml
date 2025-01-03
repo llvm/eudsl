@@ -1,34 +1,43 @@
-#  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-#  See https://llvm.org/LICENSE.txt for license information.
-#  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-#  Copyright (c) 2024.
-
-[build-system]
-requires = ["scikit-build-core>=0.10.7", "nanobind>=2.2.0", "typing_extensions>=4.12.2"]
-build-backend = "scikit_build_core.build"
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+# Copyright (c) 2024.
 
 [project]
-name = "eudsl-tblgen"
+name = "eudsl-nbgen"
 version = "0.0.1"
 requires-python = ">=3.9"
-
 [project.urls]
 Homepage = "https://github.com/llvm/eudsl"
+
+[build-system]
+requires = [
+    "scikit-build-core==0.10.7",
+    "nanobind==2.4.0",
+    "typing_extensions==4.12.2",
+]
+build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
 minimum-version = "0.4"
 build-dir = "build/{wheel_tag}"
+# gives you a wheel tagged py3-none
+wheel.py-api = "py3"
 cmake.source-dir = "."
 
 [tool.scikit-build.cmake.define]
 LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
-CMAKE_CXX_VISIBILITY_PRESET = "hidden"
+Clang_DIR = { env = "Clang_DIR", default = "EMPTY" }
+CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "EMPTY" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
-CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
+CMAKE_CXX_VISIBILITY_PRESET = "hidden"
+CMAKE_VERBOSE_MAKEFILE = "ON"
 
 [tool.cibuildwheel]
 build-verbosity = 1
+# build only one version
+build = ["cp39*"]
 skip = ["*-manylinux_i686", "*-musllinux*", "pp*", "*-win32"]
 archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
@@ -54,6 +63,7 @@ before-build = [
 ]
 # uncomment to make sure ccache is working inside containers
 test-command = "ccache -s"
+repair-wheel-command = []
 
 [tool.cibuildwheel.linux]
 before-all = [

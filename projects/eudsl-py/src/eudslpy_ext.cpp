@@ -254,109 +254,109 @@ void populateIRModule(nb::module_ &m) {
 }
 
 // too big
-// extern void populateEUDSLGenaccModule(nb::module_ &m);
+// extern void populateEUDSLGen_accModule(nb::module_ &m);
 
-extern void populateEUDSLGenaffineModule(nb::module_ &m);
+extern void populateEUDSLGen_affineModule(nb::module_ &m);
 
-extern void populateEUDSLGenamdgpuModule(nb::module_ &m);
+extern void populateEUDSLGen_amdgpuModule(nb::module_ &m);
 
-// extern void populateEUDSLGenamxModule(nb::module_ &m);
+// extern void populateEUDSLGen_amxModule(nb::module_ &m);
 
-extern void populateEUDSLGenarithModule(nb::module_ &m);
+extern void populateEUDSLGen_arithModule(nb::module_ &m);
 
-// extern void populateEUDSLGenarm_neonModule(nb::module_ &m);
+// extern void populateEUDSLGen_arm_neonModule(nb::module_ &m);
 
 // too big
-// extern void populateEUDSLGenarm_smeModule(nb::module_ &m);
+// extern void populateEUDSLGen_arm_smeModule(nb::module_ &m);
 
-// extern void populateEUDSLGenarm_sveModule(nb::module_ &m);
+// extern void populateEUDSLGen_arm_sveModule(nb::module_ &m);
 
-extern void populateEUDSLGenasyncModule(nb::module_ &m);
+extern void populateEUDSLGen_asyncModule(nb::module_ &m);
 
-extern void populateEUDSLGenbufferizationModule(nb::module_ &m);
+extern void populateEUDSLGen_bufferizationModule(nb::module_ &m);
 
-extern void populateEUDSLGencfModule(nb::module_ &m);
+extern void populateEUDSLGen_cfModule(nb::module_ &m);
 
-extern void populateEUDSLGencomplexModule(nb::module_ &m);
+extern void populateEUDSLGen_complexModule(nb::module_ &m);
 
-// extern void populateEUDSLGenDLTIDialectModule(nb::module_ &m);
+// extern void populateEUDSLGen_DLTIDialectModule(nb::module_ &m);
 
-extern void populateEUDSLGenemitcModule(nb::module_ &m);
+extern void populateEUDSLGen_emitcModule(nb::module_ &m);
 
-extern void populateEUDSLGenfuncModule(nb::module_ &m);
+extern void populateEUDSLGen_funcModule(nb::module_ &m);
 
-extern void populateEUDSLGengpuModule(nb::module_ &m);
+extern void populateEUDSLGen_gpuModule(nb::module_ &m);
 
-extern void populateEUDSLGenindexModule(nb::module_ &m);
+extern void populateEUDSLGen_indexModule(nb::module_ &m);
 
 // error: use of class template 'ArrayRef' requires template arguments; argument
 // deduction not allowed in conversion function type void
-// populateEUDSLGenirdlModule(nb::module_ &m) {
+// populateEUDSLGen_irdlModule(nb::module_ &m) {
 //   using namespace llvm;
-// #include "EUDSLGenirdl.cpp.inc"
+// #include "EUDSLGen_irdl.cpp.inc"
 // }
 
-extern void populateEUDSLGenlinalgModule(nb::module_ &m);
+extern void populateEUDSLGen_linalgModule(nb::module_ &m);
 
-extern void populateEUDSLGenLLVMModule(nb::module_ &m);
+extern void populateEUDSLGen_LLVMModule(nb::module_ &m);
 
-extern void populateEUDSLGenmathModule(nb::module_ &m);
+extern void populateEUDSLGen_mathModule(nb::module_ &m);
 
-extern void populateEUDSLGenmemrefModule(nb::module_ &m);
+extern void populateEUDSLGen_memrefModule(nb::module_ &m);
 
-// extern void populateEUDSLGenmeshModule(nb::module_ &m);
+// extern void populateEUDSLGen_meshModule(nb::module_ &m);
 
-// extern void populateEUDSLGenml_programModule(nb::module_ &m);
+// extern void populateEUDSLGen_ml_programModule(nb::module_ &m);
 
-// extern void populateEUDSLGenmpiModule(nb::module_ &m);
+// extern void populateEUDSLGen_mpiModule(nb::module_ &m);
 
-extern void populateEUDSLGennvgpuModule(nb::module_ &m);
+extern void populateEUDSLGen_nvgpuModule(nb::module_ &m);
 
-extern void populateEUDSLGenNVVMModule(nb::module_ &m);
+extern void populateEUDSLGen_NVVMModule(nb::module_ &m);
 
 // mlir::omp::TaskloopOp::getEffects(llvm::SmallVectorImpl<mlir::SideEffects::EffectInstance<mlir::MemoryEffects::Effect>>&)
-// void populateEUDSLGenompModule(nb::module_ &m) {
-// #include "EUDSLGenomp.cpp.inc"
+// void populateEUDSLGen_ompModule(nb::module_ &m) {
+// #include "EUDSLGen_omp.cpp.inc"
 // }
 
-extern void populateEUDSLGenpdlModule(nb::module_ &m);
+extern void populateEUDSLGen_pdlModule(nb::module_ &m);
 
-extern void populateEUDSLGenpdl_interpModule(nb::module_ &m);
+extern void populateEUDSLGen_pdl_interpModule(nb::module_ &m);
 
-extern void populateEUDSLGenpolynomialModule(nb::module_ &m);
+extern void populateEUDSLGen_polynomialModule(nb::module_ &m);
 
-// extern void populateEUDSLGenptrModule(nb::module_ &m);
+// extern void populateEUDSLGen_ptrModule(nb::module_ &m);
 
-extern void populateEUDSLGenquantModule(nb::module_ &m);
+extern void populateEUDSLGen_quantModule(nb::module_ &m);
 
-extern void populateEUDSLGenROCDLModule(nb::module_ &m);
+extern void populateEUDSLGen_ROCDLModule(nb::module_ &m);
 
-extern void populateEUDSLGenscfModule(nb::module_ &m);
+extern void populateEUDSLGen_scfModule(nb::module_ &m);
 
-extern void populateEUDSLGenshapeModule(nb::module_ &m);
+extern void populateEUDSLGen_shapeModule(nb::module_ &m);
 
-// extern void populateEUDSLGensparse_tensorModule(nb::module_ &m);
+// extern void populateEUDSLGen_sparse_tensorModule(nb::module_ &m);
 
 // nb::detail::nb_func_new("get_vce_triple_attr_name"): mismatched
 // static/instance method flags in function overloads! extern void
-// populateEUDSLGenspirvModule(nb::module_ &m);
+// populateEUDSLGen_spirvModule(nb::module_ &m);
 
-extern void populateEUDSLGentensorModule(nb::module_ &m);
+extern void populateEUDSLGen_tensorModule(nb::module_ &m);
 
-extern void populateEUDSLGentosaModule(nb::module_ &m);
+extern void populateEUDSLGen_tosaModule(nb::module_ &m);
 
-extern void populateEUDSLGentransformModule(nb::module_ &m);
+extern void populateEUDSLGen_transformModule(nb::module_ &m);
 
-extern void populateEUDSLGenubModule(nb::module_ &m);
+extern void populateEUDSLGen_ubModule(nb::module_ &m);
 
 // can't cast std::pair<VectorDim, VectorDim>
-// void populateEUDSLGenvectorModule(nb::module_ &m) {
-// #include "EUDSLGenvector.cpp.inc"
+// void populateEUDSLGen_vectorModule(nb::module_ &m) {
+// #include "EUDSLGen_vector.cpp.inc"
 // }
 
-extern void populateEUDSLGenx86vectorModule(nb::module_ &m);
+extern void populateEUDSLGen_x86vectorModule(nb::module_ &m);
 
-// extern void populateEUDSLGenxegpuModule(nb::module_ &m);
+// extern void populateEUDSLGen_xegpuModule(nb::module_ &m);
 
 NB_MODULE(eudslpy_ext, m) {
   bind_array_ref_smallvector(m);
@@ -589,137 +589,137 @@ NB_MODULE(eudslpy_ext, m) {
   auto dialectsModule = m.def_submodule("dialects");
 
   // auto accModule = dialectsModule.def_submodule("acc");
-  // populateEUDSLGenaccModule(accModule);
+  // populateEUDSLGen_accModule(accModule);
 
   auto affineModule = dialectsModule.def_submodule("affine");
-  populateEUDSLGenaffineModule(affineModule);
+  populateEUDSLGen_affineModule(affineModule);
 
   auto amdgpuModule = dialectsModule.def_submodule("amdgpu");
-  populateEUDSLGenamdgpuModule(amdgpuModule);
+  populateEUDSLGen_amdgpuModule(amdgpuModule);
 
   // auto amxModule = dialectsModule.def_submodule("amx");
-  // populateEUDSLGenamxModule(amxModule);
+  // populateEUDSLGen_amxModule(amxModule);
 
   auto arithModule = dialectsModule.def_submodule("arith");
-  populateEUDSLGenarithModule(arithModule);
+  populateEUDSLGen_arithModule(arithModule);
 
   // auto arm_neonModule = dialectsModule.def_submodule("arm_neon");
-  // populateEUDSLGenarm_neonModule(arm_neonModule);
+  // populateEUDSLGen_arm_neonModule(arm_neonModule);
 
   // auto arm_smeModule = dialectsModule.def_submodule("arm_sme");
-  // populateEUDSLGenarm_smeModule(arm_smeModule);
+  // populateEUDSLGen_arm_smeModule(arm_smeModule);
 
   // auto arm_sveModule = dialectsModule.def_submodule("arm_sve");
-  // populateEUDSLGenarm_sveModule(arm_sveModule);
+  // populateEUDSLGen_arm_sveModule(arm_sveModule);
 
   auto asyncModule = dialectsModule.def_submodule("async");
-  populateEUDSLGenasyncModule(asyncModule);
+  populateEUDSLGen_asyncModule(asyncModule);
 
   auto bufferizationModule = dialectsModule.def_submodule("bufferization");
-  populateEUDSLGenbufferizationModule(bufferizationModule);
+  populateEUDSLGen_bufferizationModule(bufferizationModule);
 
   auto cfModule = dialectsModule.def_submodule("cf");
-  populateEUDSLGencfModule(cfModule);
+  populateEUDSLGen_cfModule(cfModule);
 
   auto complexModule = dialectsModule.def_submodule("complex");
-  populateEUDSLGencomplexModule(complexModule);
+  populateEUDSLGen_complexModule(complexModule);
 
   // auto DLTIDialectModule = dialectsModule.def_submodule("DLTIDialect");
-  // populateEUDSLGenDLTIDialectModule(DLTIDialectModule);
+  // populateEUDSLGen_DLTIDialectModule(DLTIDialectModule);
 
   auto emitcModule = dialectsModule.def_submodule("emitc");
-  populateEUDSLGenemitcModule(emitcModule);
+  populateEUDSLGen_emitcModule(emitcModule);
 
   auto funcModule = dialectsModule.def_submodule("func");
-  populateEUDSLGenfuncModule(funcModule);
+  populateEUDSLGen_funcModule(funcModule);
 
   auto gpuModule = dialectsModule.def_submodule("gpu");
-  populateEUDSLGengpuModule(gpuModule);
+  populateEUDSLGen_gpuModule(gpuModule);
 
   auto indexModule = dialectsModule.def_submodule("index");
-  populateEUDSLGenindexModule(indexModule);
+  populateEUDSLGen_indexModule(indexModule);
 
   // auto irdlModule = dialectsModule.def_submodule("irdl");
-  // populateEUDSLGenirdlModule(irdlModule);
+  // populateEUDSLGen_irdlModule(irdlModule);
 
   auto linalgModule = dialectsModule.def_submodule("linalg");
-  populateEUDSLGenlinalgModule(linalgModule);
+  populateEUDSLGen_linalgModule(linalgModule);
 
   auto LLVMModule = dialectsModule.def_submodule("LLVM");
-  populateEUDSLGenLLVMModule(LLVMModule);
+  populateEUDSLGen_LLVMModule(LLVMModule);
 
   auto mathModule = dialectsModule.def_submodule("math");
-  populateEUDSLGenmathModule(mathModule);
+  populateEUDSLGen_mathModule(mathModule);
 
   auto memrefModule = dialectsModule.def_submodule("memref");
-  populateEUDSLGenmemrefModule(memrefModule);
+  populateEUDSLGen_memrefModule(memrefModule);
 
   // auto meshModule = dialectsModule.def_submodule("mesh");
-  // populateEUDSLGenmeshModule(meshModule);
+  // populateEUDSLGen_meshModule(meshModule);
 
   // auto ml_programModule = dialectsModule.def_submodule("ml_program");
-  // populateEUDSLGenml_programModule(ml_programModule);
+  // populateEUDSLGen_ml_programModule(ml_programModule);
 
   // auto mpiModule = dialectsModule.def_submodule("mpi");
-  // populateEUDSLGenmpiModule(mpiModule);
+  // populateEUDSLGen_mpiModule(mpiModule);
 
   auto nvgpuModule = dialectsModule.def_submodule("nvgpu");
-  populateEUDSLGennvgpuModule(nvgpuModule);
+  populateEUDSLGen_nvgpuModule(nvgpuModule);
 
   auto NVVMModule = dialectsModule.def_submodule("NVVM");
-  populateEUDSLGenNVVMModule(NVVMModule);
+  populateEUDSLGen_NVVMModule(NVVMModule);
 
   // auto ompModule = dialectsModule.def_submodule("omp");
-  // populateEUDSLGenompModule(ompModule);
+  // populateEUDSLGen_ompModule(ompModule);
 
   auto pdlModule = dialectsModule.def_submodule("pdl");
-  populateEUDSLGenpdlModule(pdlModule);
+  populateEUDSLGen_pdlModule(pdlModule);
 
   auto pdl_interpModule = dialectsModule.def_submodule("pdl_interp");
-  populateEUDSLGenpdl_interpModule(pdl_interpModule);
+  populateEUDSLGen_pdl_interpModule(pdl_interpModule);
 
   auto polynomialModule = dialectsModule.def_submodule("polynomial");
-  populateEUDSLGenpolynomialModule(polynomialModule);
+  populateEUDSLGen_polynomialModule(polynomialModule);
 
   // auto ptrModule = dialectsModule.def_submodule("ptr");
-  // populateEUDSLGenptrModule(ptrModule);
+  // populateEUDSLGen_ptrModule(ptrModule);
 
   // auto quantModule = dialectsModule.def_submodule("quant");
-  // populateEUDSLGenquantModule(quantModule);
+  // populateEUDSLGen_quantModule(quantModule);
 
   auto ROCDLModule = dialectsModule.def_submodule("ROCDL");
-  populateEUDSLGenROCDLModule(ROCDLModule);
+  populateEUDSLGen_ROCDLModule(ROCDLModule);
 
   auto scfModule = dialectsModule.def_submodule("scf");
-  populateEUDSLGenscfModule(scfModule);
+  populateEUDSLGen_scfModule(scfModule);
 
   auto shapeModule = dialectsModule.def_submodule("shape");
-  populateEUDSLGenshapeModule(shapeModule);
+  populateEUDSLGen_shapeModule(shapeModule);
 
   // auto sparse_tensorModule = dialectsModule.def_submodule("sparse_tensor");
-  // populateEUDSLGensparse_tensorModule(sparse_tensorModule);
+  // populateEUDSLGen_sparse_tensorModule(sparse_tensorModule);
 
   // auto spirvModule = dialectsModule.def_submodule("spirv");
-  // populateEUDSLGenspirvModule(spirvModule);
+  // populateEUDSLGen_spirvModule(spirvModule);
 
   auto tensorModule = dialectsModule.def_submodule("tensor");
-  populateEUDSLGentensorModule(tensorModule);
+  populateEUDSLGen_tensorModule(tensorModule);
 
   auto tosaModule = dialectsModule.def_submodule("tosa");
-  populateEUDSLGentosaModule(tosaModule);
+  populateEUDSLGen_tosaModule(tosaModule);
 
   // auto transformModule = dialectsModule.def_submodule("transform");
-  // populateEUDSLGentransformModule(transformModule);
+  // populateEUDSLGen_transformModule(transformModule);
 
   // auto ubModule = dialectsModule.def_submodule("ub");
-  // populateEUDSLGenubModule(ubModule);
+  // populateEUDSLGen_ubModule(ubModule);
 
   // auto vectorModule = dialectsModule.def_submodule("vector");
-  // populateEUDSLGenvectorModule(vectorModule);
+  // populateEUDSLGen_vectorModule(vectorModule);
 
   // auto x86vectorModule = dialectsModule.def_submodule("x86vector");
-  // populateEUDSLGenx86vectorModule(x86vectorModule);
+  // populateEUDSLGen_x86vectorModule(x86vectorModule);
 
   // auto xegpuModule = dialectsModule.def_submodule("xegpu");
-  // populateEUDSLGenxegpuModule(xegpuModule);
+  // populateEUDSLGen_xegpuModule(xegpuModule);
 }

@@ -108,11 +108,12 @@ jobs:
             echo "LLVM_DIR=/host/$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
             echo "MLIR_DIR=/host/$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
             echo "Clang_DIR=/host/$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
-            echo "CCACHE_DIR=/host/$CCACHE_DIR" >> $GITHUB_ENV
+            echo "PIP_FIND_LINKS=/host/$PWD/wheelhouse" >> $GITHUB_ENV
           else
             echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
             echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
             echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
+            echo "PIP_FIND_LINKS=$PWD/wheelhouse" >> $GITHUB_ENV
           fi
           
           # since linux builds execute in the cibuildwheel almalinux container
@@ -129,24 +130,46 @@ jobs:
             echo MACOSX_DEPLOYMENT_TARGET=13.7 >> $GITHUB_ENV
           fi
           
+          # prevent OOM on free GHA
+          echo "EUDSLPY_DISABLE_COMPILE_OPT=${{ inputs.eudslpy_disable_compile_opt == 'true' && 'ON' || 'OFF' }}" >> $GITHUB_ENV
+          
           pip install cibuildwheel
 
       - name: "Build eudsl-tblgen"
         run: |
           
-          ccache -z
+          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            export CCACHE_DIR=/host/$CCACHE_DIR
+          fi
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
-          ccache -s
+
+      - name: "Build eudsl-nbgen"
+        run: |
+          
+          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            export CCACHE_DIR=/host/$CCACHE_DIR
+          fi
+          $python3_command -m cibuildwheel "$PWD/projects/eudsl-nbgen" --output-dir wheelhouse
 
       - name: "Build eudsl-py"
         if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
           
-          # prevent OOM on free GHA
-          export DISABLE_COMPILE_OPT="${{ inputs.debug_with_tmate }}"
-          ccache -z
+          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            export CCACHE_DIR=/host/$CCACHE_DIR
+          fi
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
-          ccache -s
+
+      # just to/make sure total build continues to work
+      - name: "Build all of eudsl"
+        run: |
+          
+          pip install -r requirements.txt
+          cmake -B $PWD/eudsl-build -S $PWD \
+            -DCMAKE_PREFIX_PATH=$PWD/llvm-install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$PWD/eudsl-install
+          cmake --build "$PWD/eudsl-build" --target install
 
       - name: "Save cache"
         uses: actions/cache/save@v3
@@ -187,7 +210,7 @@ jobs:
 
     runs-on: ${{ matrix.runs-on }}
 
-    name: "Test eudsl ${{ matrix.name }}"
+    name: "Test eudsl-tblgen ${{ matrix.name }}"
 
     defaults:
       run:
@@ -291,10 +314,22 @@ jobs:
       id-token: write
       contents: write
 
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: ["ubuntu-22.04"]
+        include: [
+          {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64"},
+          {runs-on: "ubuntu-22.04", name: "macos_arm64"},
+          {runs-on: "ubuntu-22.04", name: "macos_x86_64"},
+          {runs-on: "ubuntu-22.04", name: "windows_x86_64"},
+        ]
+
     steps:
 
       - uses: actions/download-artifact@v4
         with:
+          name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse
 
       - name: Release current commit

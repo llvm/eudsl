@@ -8,7 +8,8 @@ requires = [
     "scikit-build-core==0.10.7",
     "nanobind==2.4.0",
     "typing_extensions==4.12.2",
-    "numpy==2.0.2"
+    "numpy==2.0.2",
+    "eudsl-nbgen"
 ]
 build-backend = "scikit_build_core.build"
 
@@ -33,9 +34,10 @@ cmake.source-dir = "."
 LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
 MLIR_DIR = { env = "MLIR_DIR", default = "EMPTY" }
 Clang_DIR = { env = "Clang_DIR", default = "EMPTY" }
-CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "EMPTY" }
+CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
+EUDSLPY_DISABLE_COMPILE_OPT = { env = "EUDSLPY_DISABLE_COMPILE_OPT", default = "ON" }
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 CMAKE_VERBOSE_MAKEFILE = "ON"
 
@@ -53,6 +55,7 @@ environment-pass = [
     "DISABLE_COMPILE_OPT",
     "CC",
     "CXX",
+    "PIP_FIND_LINKS",
     # ccache
     "CCACHE_DIR",
     "CCACHE_MAXSIZE=700M",
@@ -64,10 +67,11 @@ environment-pass = [
 ]
 before-build = [
     "export CCACHE_DIR=$CCACHE_DIR/$(python -c 'import platform; print(platform.python_version())')",
-    "mkdir -p $CCACHE_DIR"
+    "mkdir -p $CCACHE_DIR",
+    "ccache -z"
 ]
 # uncomment to make sure ccache is working inside containers
-# test-command = "ccache -s"
+test-command = "ccache -s"
 
 [tool.cibuildwheel.linux]
 before-all = [
@@ -77,6 +81,15 @@ before-all = [
     "tar -xf ccache-4.10.2-linux-x86_64.tar.xz",
     "pushd ccache-4.10.2-linux-x86_64 && make install && popd"
 ]
+# synchronize TZ with host so ccache files have correct timestamp
+container-engine = { name = "docker", create-args = ["-v", "/etc/timezone:/etc/timezone:ro", "-v", "/etc/localtime:/etc/localtime:ro"] }
+
+[tool.cibuildwheel.macos]
+before-build = [
+    "ccache -z"
+]
 
 [tool.cibuildwheel.windows]
-before-build = []
+before-build = [
+    "ccache -z"
+]
