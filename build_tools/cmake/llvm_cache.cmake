@@ -108,6 +108,9 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     llvm-headers
     llvm-libraries
 
+    LLVM
+    MLIR
+
     FileCheck
     not
     MLIRPythonModules
@@ -123,10 +126,6 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     mlir-tblgen
     mlir-translate
     CACHE STRING "")
-
-if (NOT WIN32)
-  list(APPEND LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS)
-endif()
 
 get_cmake_property(_variableNames VARIABLES)
 list(SORT _variableNames)
