@@ -17,12 +17,8 @@ set(LLVM_INCLUDE_TOOLS ON CACHE BOOL "")
 set(LLVM_INSTALL_UTILS ON CACHE BOOL "")
 
 set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
-# All the tools will use libllvm shared library
-# (but doesn't work on windows)
-if (NOT WIN32)
-  set(LLVM_LINK_LLVM_DYLIB ON CACHE BOOL "")
-  set(MLIR_LINK_MLIR_DYLIB ON CACHE BOOL "")
-endif()
+set(LLVM_LINK_LLVM_DYLIB ON CACHE BOOL "")
+set(MLIR_LINK_MLIR_DYLIB ON CACHE BOOL "")
 
 # useful things
 set(LLVM_ENABLE_ASSERTIONS ON CACHE BOOL "")
