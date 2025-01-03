@@ -30,25 +30,7 @@ if(EUDSL_NBGEN_STANDALONE_BUILD)
   include(TableGen)
   include(AddLLVM)
   include(AddClang)
-  # TODO(max): probably don't need this anymore after landing the nanobind fix?
-  # technically we need this on windows too but our LLVM is compiled without exception handling
-  # and that breaks windows
-  if(NOT WIN32)
-    include(HandleLLVMOptions)
-  endif()
-else()
-  # turning LLVM -DLLVM_OPTIMIZED_TABLEGEN=ON builds some stuff in the NATIVE dir
-  # but not everything so LLVM_BINARY_DIR isn't correct
-  string(REPLACE "NATIVE" "" LLVM_BINARY_DIR "${LLVM_BINARY_DIR}")
-  # Build via external projects mechanism
-  set(LLVM_INCLUDE_DIR ${LLVM_MAIN_SRC_DIR}/include)
-  set(LLVM_GENERATED_INCLUDE_DIR ${LLVM_BINARY_DIR}/include)
-  set(LLVM_INCLUDE_DIRS "${LLVM_INCLUDE_DIR};${LLVM_GENERATED_INCLUDE_DIR}")
-
-  set(CLANG_MAIN_SRC_DIR ${LLVM_MAIN_SRC_DIR}/../clang)
-  set(CLANG_INCLUDE_DIR ${CLANG_MAIN_SRC_DIR}/include)
-  set(CLANG_GENERATED_INCLUDE_DIR ${LLVM_BINARY_DIR}/tools/clang/include)
-  set(CLANG_INCLUDE_DIRS "${CLANG_INCLUDE_DIR};${CLANG_GENERATED_INCLUDE_DIR}")
+  include(HandleLLVMOptions)
 endif()
 
 include_directories(${LLVM_INCLUDE_DIRS})
@@ -72,13 +54,25 @@ target_link_libraries(eudsl-nbgen
 )
 
 string(TOLOWER ${LLVM_SUBPROJECT_TITLE} EUDSL_NBGEN_INSTALL_DATADIR)
-# https://github.com/scikit-build/scikit-build-core/blob/a887a9b6c057b4ce9d3cfd53ae24e73caf1395a2/docs/build.md?plain=1#L139-L148
-# actually installs to venv/bin
-install(TARGETS eudsl-nbgen RUNTIME DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}.data/scripts")
-# this actually installs into venv/lib
-install(IMPORTED_RUNTIME_ARTIFACTS LLVM LIBRARY DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}.data/data/lib")
+if (NOT "$ENV{PIP_BUILD_TRACKER}" STREQUAL "")
+  # pip install
+  # actually installs to venv/bin
+  # https://github.com/scikit-build/scikit-build-core/blob/a887a9b6c057b4ce9d3cfd53ae24e73caf1395a2/docs/build.md?plain=1#L139-L148
+  install(TARGETS eudsl-nbgen RUNTIME DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}.data/scripts")
+  if (NOT WIN32)
+    # this actually installs into venv/lib
+    install(IMPORTED_RUNTIME_ARTIFACTS LLVM LIBRARY DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}.data/data/lib")
+  endif()
+else()
+  # pip cmake install
+  install(TARGETS eudsl-nbgen RUNTIME DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}/bin")
+  if (NOT WIN32)
+    install(IMPORTED_RUNTIME_ARTIFACTS LLVM LIBRARY DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}/lib")
+  endif()
+endif()
 
 install(
+  # the slash is load-bearing...
   DIRECTORY src/
   DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}"
   FILES_MATCHING PATTERN "*\.py"

@@ -16,8 +16,10 @@
 #include "llvm/Support/ToolOutputFile.h"
 
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <sstream>
+#include <string>
 
 static llvm::cl::OptionCategory EUDSLPYGenCat("Options for eudslpy-gen");
 static llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional,
@@ -737,6 +739,14 @@ static int generate() {
   return 0;
 }
 
+// cannot fathom why but std::to_string is return ascii characters
+template <typename T>
+static std::string numberToString(T number) {
+  std::ostringstream ss;
+  ss << number;
+  return ss.str();
+}
+
 static int makeSourceShards() {
   // Ensure the filename ends with ".cpp.gen"
   if (InputFilename.substr(InputFilename.size() - 8) != ".cpp.gen") {
@@ -769,10 +779,9 @@ static int makeSourceShards() {
           : ShardTarget;
 
   // Generate shard files
-
   for (size_t i = 0; i < shards.size(); ++i) {
     std::ofstream shardFile(InputFilename.getValue() + ".shard." +
-                            std::to_string(i) + ".cpp");
+                            numberToString(i) + ".cpp");
     if (!shardFile.is_open()) {
       llvm::errs() << "Failed to create shard file";
       return -1;
@@ -803,16 +812,19 @@ void populate)" << finalTarget << i << R"(Module(nb::module_ &m) {
 
   // Handle max number of shards
   if (MaxNumShards != -1 && shards.size() > static_cast<size_t>(MaxNumShards)) {
-    llvm::errs() << "expected less than " + std::to_string(MaxNumShards) +
-                        " shards";
+    llvm::errs() << "expected less than " +
+                        numberToString(MaxNumShards.getValue()) + " shards";
     return -1;
   }
   if (MaxNumShards == -1)
     MaxNumShards = shards.size();
+  else
+    // _max_num_shards in cmake counts +1
+    MaxNumShards.getValue() += 1;
 
   for (size_t i = shards.size(); i < static_cast<size_t>(MaxNumShards); ++i) {
     std::ofstream dummyShardFile(InputFilename.getValue() + ".shard." +
-                                 std::to_string(i) + ".cpp");
+                                 numberToString(i) + ".cpp");
     if (!dummyShardFile.is_open()) {
       llvm::errs() << "Failed to create dummy shard file";
       return -1;
