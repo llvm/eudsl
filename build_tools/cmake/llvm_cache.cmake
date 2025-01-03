@@ -24,8 +24,12 @@ set(MLIR_LINK_MLIR_DYLIB ON CACHE BOOL "")
 set(LLVM_ENABLE_ASSERTIONS ON CACHE BOOL "")
 set(LLVM_ENABLE_WARNINGS ON CACHE BOOL "")
 set(LLVM_FORCE_ENABLE_STATS ON CACHE BOOL "")
-# because AMD target td files are insane...
-set(LLVM_OPTIMIZED_TABLEGEN ON CACHE BOOL "")
+# on windows this breaks because mlir/IR/BuiltinLocationAttributes.h.inc
+# isn't generated in the right order for mlir-reduce to compile
+if (NOT WIN32)
+  # because AMD target td files are insane...
+  set(LLVM_OPTIMIZED_TABLEGEN ON CACHE BOOL "")
+endif()
 set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 
 # MLIR options
