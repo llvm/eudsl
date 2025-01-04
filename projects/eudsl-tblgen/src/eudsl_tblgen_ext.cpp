@@ -114,20 +114,95 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("DagRecTyKind", RecTy::RecTyKind::DagRecTyKind)
       .value("RecordRecTyKind", RecTy::RecTyKind::RecordRecTyKind);
 
-  recty.def("get_rec_ty_kind", &RecTy::getRecTyKind)
-      .def("get_record_keeper", &RecTy::getRecordKeeper,
+  recty.def("get_rec_ty_kind", &llvm::RecTy::getRecTyKind)
+      .def("get_record_keeper", &llvm::RecTy::getRecordKeeper,
            nb::rv_policy::reference_internal)
-      .def("get_as_string", &RecTy::getAsString)
+      .def("get_as_string", &llvm::RecTy::getAsString)
       .def("__str__", &RecTy::getAsString)
-      .def("type_is_a", &RecTy::typeIsA, "rhs"_a)
-      .def("type_is_convertible_to", &RecTy::typeIsConvertibleTo, "rhs"_a);
+      .def("print", &llvm::RecTy::print, "os"_a)
+      .def("dump", &llvm::RecTy::dump)
+      .def("type_is_convertible_to", &llvm::RecTy::typeIsConvertibleTo, "rhs"_a)
+      .def("type_is_a", &llvm::RecTy::typeIsA, "rhs"_a)
+      .def("get_list_ty", &llvm::RecTy::getListTy,
+           nb::rv_policy::reference_internal);
 
-  nb::class_<RecordRecTy, RecTy>(m, "RecordRecTy")
+  nb::class_<llvm::BitRecTy, llvm::RecTy>(m, "BitRecTy")
+      .def_static("classof", &llvm::BitRecTy::classof, "rt"_a)
+      .def_static("get", &llvm::BitRecTy::get, "rk"_a,
+                  nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::BitRecTy::getAsString)
+      .def("__str__", &BitRecTy::getAsString)
+      .def("type_is_convertible_to", &llvm::BitRecTy::typeIsConvertibleTo,
+           "rhs"_a);
+
+  nb::class_<llvm::IntRecTy, llvm::RecTy>(m, "IntRecTy")
+      .def_static("classof", &llvm::IntRecTy::classof, "rt"_a)
+      .def_static("get", &llvm::IntRecTy::get, "rk"_a,
+                  nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::IntRecTy::getAsString)
+      .def("__str__", &llvm::IntRecTy::getAsString)
+      .def("type_is_convertible_to", &llvm::IntRecTy::typeIsConvertibleTo,
+           "rhs"_a);
+
+  nb::class_<llvm::StringRecTy, llvm::RecTy>(m, "StringRecTy")
+      .def_static("classof", &llvm::StringRecTy::classof, "rt"_a)
+      .def_static("get", &llvm::StringRecTy::get, "rk"_a,
+                  nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::StringRecTy::getAsString)
+      .def("__init__", &llvm::StringRecTy::getAsString)
+      .def("type_is_convertible_to", &llvm::StringRecTy::typeIsConvertibleTo,
+           "rhs"_a);
+
+  nb::class_<llvm::ListRecTy, llvm::RecTy>(m, "ListRecTy")
+      .def_static("classof", &llvm::ListRecTy::classof, "rt"_a)
+      .def_static("get", &llvm::ListRecTy::get, "t"_a,
+                  nb::rv_policy::reference_internal)
+      .def("get_element_type", &llvm::ListRecTy::getElementType,
+           nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::ListRecTy::getAsString)
+      .def("__init__", &llvm::ListRecTy::getAsString)
+      .def("type_is_convertible_to", &llvm::ListRecTy::typeIsConvertibleTo,
+           "rhs"_a)
+      .def("type_is_a", &llvm::ListRecTy::typeIsA, "rhs"_a);
+
+  nb::class_<llvm::DagRecTy, llvm::RecTy>(m, "DagRecTy")
+      .def_static("classof", &llvm::DagRecTy::classof, "rt"_a)
+      .def_static("get", &llvm::DagRecTy::get, "rk"_a,
+                  nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::DagRecTy::getAsString)
+      .def("__init__", &llvm::DagRecTy::getAsString);
+
+  nb::class_<llvm::RecordRecTy, RecTy>(m, "RecordRecTy")
+      .def_static("classof", &llvm::RecordRecTy::classof, "rt"_a)
+      .def_static(
+          "get",
+          [](llvm::RecordKeeper &RK,
+             llvm::ArrayRef<const llvm::Record *> Classes)
+              -> const llvm::RecordRecTy * {
+            return llvm::RecordRecTy::get(RK, Classes);
+          },
+          "rk"_a, "classes"_a, nb::rv_policy::reference_internal)
+      .def_static(
+          "get",
+          [](const llvm::Record *Class) -> const llvm::RecordRecTy * {
+            return llvm::RecordRecTy::get(Class);
+          },
+          "class"_a, nb::rv_policy::reference_internal)
+      .def("profile", &llvm::RecordRecTy::Profile, "id"_a)
       .def("get_classes",
            coerceReturn<std::vector<const Record *>>(&RecordRecTy::getClasses,
                                                      nb::const_),
            nb::rv_policy::reference_internal)
-      .def("is_sub_class_of", &RecordRecTy::isSubClassOf, "class_"_a);
+      .def("classes_begin", &llvm::RecordRecTy::classes_begin,
+           nb::rv_policy::reference_internal)
+      .def("classes_end", &llvm::RecordRecTy::classes_end,
+           nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::RecordRecTy::getAsString)
+      .def("__str__", &llvm::RecordRecTy::getAsString)
+      .def("is_sub_class_of", &llvm::RecordRecTy::isSubClassOf, "class"_a)
+      .def("type_is_convertible_to", &llvm::RecordRecTy::typeIsConvertibleTo,
+           "rhs"_a)
+      .def("type_is_a", &llvm::RecordRecTy::typeIsA, "rhs"_a);
 
   nb::enum_<HackInit::InitKind>(m, "InitKind")
       .value("IK_FirstTypedInit", HackInit::InitKind::IK_FirstTypedInit)
@@ -156,84 +231,242 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("IK_UnsetInit", HackInit::InitKind::IK_UnsetInit)
       .value("IK_ArgumentInit", HackInit::InitKind::IK_ArgumentInit);
 
-  nb::class_<Init>(m, "Init")
-      .def("get_kind", &Init::getKind)
-      .def("get_as_string", &Init::getAsUnquotedString)
+  nb::class_<llvm::Init>(m, "Init")
+      .def("get_kind", &llvm::Init::getKind)
+      .def("get_record_keeper", &llvm::Init::getRecordKeeper,
+           nb::rv_policy::reference_internal)
+      .def("is_complete", &llvm::Init::isComplete)
+      .def("is_concrete", &llvm::Init::isConcrete)
+      .def("print", &llvm::Init::print, "os"_a)
+      .def("get_as_string", &llvm::Init::getAsString)
       .def("__str__", &Init::getAsUnquotedString)
-      .def("is_complete", &Init::isComplete)
-      .def("is_concrete", &Init::isConcrete)
-      .def("get_field_type", &Init::getFieldType, "field_name"_a,
+      .def("get_as_unquoted_string", &llvm::Init::getAsUnquotedString)
+      .def("dump", &llvm::Init::dump)
+      .def("get_cast_to", &llvm::Init::getCastTo, "ty"_a,
            nb::rv_policy::reference_internal)
-      .def("get_bit", &Init::getBit, "bit"_a,
+      .def("convert_initializer_to", &llvm::Init::convertInitializerTo, "ty"_a,
+           nb::rv_policy::reference_internal)
+      .def("convert_initializer_bit_range",
+           &llvm::Init::convertInitializerBitRange, "bits"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_field_type", &llvm::Init::getFieldType, "field_name"_a,
+           nb::rv_policy::reference_internal)
+      .def("resolve_references", &llvm::Init::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_bit", &llvm::Init::getBit, "bit"_a,
            nb::rv_policy::reference_internal);
 
-  nb::class_<TypedInit, Init>(m, "TypedInit")
-      .def("get_record_keeper", &TypedInit::getRecordKeeper,
+  nb::class_<llvm::TypedInit, llvm::Init>(m, "TypedInit")
+      .def_static("classof", &llvm::TypedInit::classof, "i"_a)
+      .def("get_type", &llvm::TypedInit::getType,
            nb::rv_policy::reference_internal)
-      .def("get_type", &TypedInit::getType, nb::rv_policy::reference_internal);
-
-  nb::class_<UnsetInit, Init>(m, "UnsetInit");
-
-  nb::class_<ArgumentInit, Init>(m, "ArgumentInit")
-      .def("is_positional", &ArgumentInit::isPositional)
-      .def("is_named", &ArgumentInit::isNamed)
-      .def("get_value", &ArgumentInit::getValue,
+      .def("get_record_keeper", &llvm::TypedInit::getRecordKeeper,
            nb::rv_policy::reference_internal)
-      .def("get_index", &ArgumentInit::getIndex)
-      .def("get_name", &ArgumentInit::getName,
+      .def("get_cast_to", &llvm::TypedInit::getCastTo, "ty"_a,
+           nb::rv_policy::reference_internal)
+      .def("convert_initializer_to", &llvm::TypedInit::convertInitializerTo,
+           "ty"_a, nb::rv_policy::reference_internal)
+      .def("convert_initializer_bit_range",
+           &llvm::TypedInit::convertInitializerBitRange, "bits"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_field_type", &llvm::TypedInit::getFieldType, "field_name"_a,
            nb::rv_policy::reference_internal);
 
-  nb::class_<BitInit, TypedInit>(m, "BitInit")
-      .def("get_value", &BitInit::getValue)
-      .def("__bool__", &BitInit::getValue);
+  nb::class_<llvm::UnsetInit, llvm::Init>(m, "UnsetInit")
+      .def_static("classof", &llvm::UnsetInit::classof, "i"_a)
+      .def_static("get", &llvm::UnsetInit::get, "rk"_a,
+                  nb::rv_policy::reference_internal)
+      .def("get_record_keeper", &llvm::UnsetInit::getRecordKeeper,
+           nb::rv_policy::reference_internal)
+      .def("get_cast_to", &llvm::UnsetInit::getCastTo, "ty"_a,
+           nb::rv_policy::reference_internal)
+      .def("convert_initializer_to", &llvm::UnsetInit::convertInitializerTo,
+           "ty"_a, nb::rv_policy::reference_internal)
+      .def("get_bit", &llvm::UnsetInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal)
+      .def("is_complete", &llvm::UnsetInit::isComplete)
+      .def("is_concrete", &llvm::UnsetInit::isConcrete)
+      .def("get_as_string", &llvm::UnsetInit::getAsString)
+      .def("__str__", &llvm::UnsetInit::getAsString);
 
-  nb::class_<BitsInit, TypedInit>(m, "BitsInit")
-      .def("get_num_bits", &BitsInit::getNumBits)
-      .def("all_incomplete", &BitsInit::allInComplete);
+  auto llvm_ArgumentInit = nb::class_<llvm::ArgumentInit>(m, "ArgumentInit");
 
-  nb::class_<IntInit, TypedInit>(m, "IntInit")
-      .def("get_value", &IntInit::getValue);
+  nb::enum_<llvm::ArgumentInit::Kind>(llvm_ArgumentInit, "Kind")
+      .value("Positional", llvm::ArgumentInit::Positional)
+      .value("Named", llvm::ArgumentInit::Named);
 
-  nb::class_<AnonymousNameInit, TypedInit>(m, "AnonymousNameInit")
-      .def("get_value", &AnonymousNameInit::getValue)
-      .def("get_name_init", &AnonymousNameInit::getNameInit,
+  llvm_ArgumentInit.def_static("classof", &llvm::ArgumentInit::classof, "i"_a)
+      .def("get_record_keeper", &llvm::ArgumentInit::getRecordKeeper,
+           nb::rv_policy::reference_internal)
+      .def_static("get", &llvm::ArgumentInit::get, "value"_a, "aux"_a,
+                  nb::rv_policy::reference_internal)
+      .def("is_positional", &llvm::ArgumentInit::isPositional)
+      .def("is_named", &llvm::ArgumentInit::isNamed)
+      .def("get_value", &llvm::ArgumentInit::getValue,
+           nb::rv_policy::reference_internal)
+      .def("get_index", &llvm::ArgumentInit::getIndex)
+      .def("get_name", &llvm::ArgumentInit::getName,
+           nb::rv_policy::reference_internal)
+      .def("clone_with_value", &llvm::ArgumentInit::cloneWithValue, "value"_a,
+           nb::rv_policy::reference_internal)
+      .def("profile", &llvm::ArgumentInit::Profile, "id"_a)
+      .def("resolve_references", &llvm::ArgumentInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::ArgumentInit::getAsString)
+      .def("__str__", &llvm::ArgumentInit::getAsString)
+      .def("is_complete", &llvm::ArgumentInit::isComplete)
+      .def("is_concrete", &llvm::ArgumentInit::isConcrete)
+      .def("get_bit", &llvm::ArgumentInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_cast_to", &llvm::ArgumentInit::getCastTo, "ty"_a,
+           nb::rv_policy::reference_internal)
+      .def("convert_initializer_to", &llvm::ArgumentInit::convertInitializerTo,
+           "ty"_a, nb::rv_policy::reference_internal);
+
+  nb::class_<llvm::BitInit, llvm::TypedInit>(m, "BitInit")
+      .def_static("classof", &llvm::BitInit::classof, "i"_a)
+      .def_static("get", &llvm::BitInit::get, "rk"_a, "v"_a,
+                  nb::rv_policy::reference_internal)
+      .def("get_value", &llvm::BitInit::getValue)
+      .def("__bool__", &llvm::BitInit::getValue)
+      .def("convert_initializer_to", &llvm::BitInit::convertInitializerTo,
+           "ty"_a, nb::rv_policy::reference_internal)
+      .def("get_bit", &llvm::BitInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal)
+      .def("is_concrete", &llvm::BitInit::isConcrete)
+      .def("get_as_string", &llvm::BitInit::getAsString)
+      .def("__str__", &llvm::BitInit::getAsString);
+
+  nb::class_<llvm::BitsInit, TypedInit>(m, "BitsInit")
+      .def_static("classof", &llvm::BitsInit::classof, "i"_a)
+      .def_static("get", &llvm::BitsInit::get, "rk"_a, "range"_a,
+                  nb::rv_policy::reference_internal)
+      .def("profile", &llvm::BitsInit::Profile, "id"_a)
+      .def("get_num_bits", &llvm::BitsInit::getNumBits)
+      .def("convert_initializer_to", &llvm::BitsInit::convertInitializerTo,
+           "ty"_a, nb::rv_policy::reference_internal)
+      .def("convert_initializer_bit_range",
+           &llvm::BitsInit::convertInitializerBitRange, "bits"_a,
+           nb::rv_policy::reference_internal)
+      .def("convert_initializer_to_int",
+           &llvm::BitsInit::convertInitializerToInt)
+      .def("is_complete", &llvm::BitsInit::isComplete)
+      .def("all_in_complete", &llvm::BitsInit::allInComplete)
+      .def("is_concrete", &llvm::BitsInit::isConcrete)
+      .def("get_as_string", &llvm::BitsInit::getAsString)
+      .def("__str__", &llvm::BitsInit::getAsString)
+      .def("resolve_references", &llvm::BitsInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_bit", &llvm::BitsInit::getBit, "bit"_a,
            nb::rv_policy::reference_internal);
 
-  auto stringInit = nb::class_<StringInit, TypedInit>(m, "StringInit");
-
-  nb::enum_<StringInit::StringFormat>(m, "StringFormat")
-      .value("SF_String", StringInit::StringFormat::SF_String)
-      .value("SF_Code", StringInit::StringFormat::SF_Code);
-
-  stringInit.def("get_value", &StringInit::getValue)
-      .def("get_format", &StringInit::getFormat)
-      .def("has_code_format", &StringInit::hasCodeFormat);
-
-  nb::class_<ListInit, TypedInit>(m, "ListInit")
-      .def("__len__", [](const ListInit &v) { return v.size(); })
-      .def("__bool__", [](const ListInit &v) { return !v.empty(); })
-      .def(
-          "__iter__",
-          [](ListInit &v) {
-            return nb::make_iterator<nb::rv_policy::reference_internal>(
-                nb::type<ListInit>(), "Iterator", v.begin(), v.end());
-          },
-          nb::keep_alive<0, 1>())
-      .def(
-          "__getitem__",
-          [](ListInit &v, Py_ssize_t i) {
-            return v.getElement(nb::detail::wrap(i, v.size()));
-          },
-          nb::rv_policy::reference_internal)
-      .def("get_element_type", &ListInit::getElementType,
+  nb::class_<llvm::IntInit, llvm::TypedInit>(m, "IntInit")
+      .def_static("classof", &llvm::IntInit::classof, "i"_a)
+      .def_static("get", &llvm::IntInit::get, "rk"_a, "v"_a,
+                  nb::rv_policy::reference_internal)
+      .def("get_value", &llvm::IntInit::getValue)
+      .def("__int__", &llvm::IntInit::getValue)
+      .def("convert_initializer_to", &llvm::IntInit::convertInitializerTo,
+           "ty"_a, nb::rv_policy::reference_internal)
+      .def("convert_initializer_bit_range",
+           &llvm::IntInit::convertInitializerBitRange, "bits"_a,
            nb::rv_policy::reference_internal)
-      .def("get_element_as_record", &ListInit::getElementAsRecord, "i"_a,
-           nb::rv_policy::reference_internal)
-      .def("get_values", coerceReturn<std::vector<const Init *>>(
-                             &ListInit::getValues, nb::const_));
+      .def("is_concrete", &llvm::IntInit::isConcrete)
+      .def("get_as_string", &llvm::IntInit::getAsString)
+      .def("__str__", &llvm::IntInit::getAsString)
+      .def("get_bit", &llvm::IntInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal);
 
-  nb::class_<OpInit, TypedInit>(m, "OpInit")
-      .def("bit", &OpInit::getBit, "bit"_a, nb::rv_policy::reference_internal);
+  nb::class_<llvm::AnonymousNameInit, llvm::TypedInit>(m, "AnonymousNameInit")
+      .def_static("classof", &llvm::AnonymousNameInit::classof, "i"_a)
+      .def_static("get", &llvm::AnonymousNameInit::get, "rk"_a, "__"_a,
+                  nb::rv_policy::reference_internal)
+      .def("get_value", &llvm::AnonymousNameInit::getValue)
+      .def("get_name_init", &llvm::AnonymousNameInit::getNameInit,
+           nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::AnonymousNameInit::getAsString)
+      .def("__str__", &llvm::AnonymousNameInit::getAsString)
+      .def("resolve_references", &llvm::AnonymousNameInit::resolveReferences,
+           "r"_a, nb::rv_policy::reference_internal)
+      .def("get_bit", &llvm::AnonymousNameInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal);
+
+  auto llvm_StringInit =
+      nb::class_<llvm::StringInit, llvm::TypedInit>(m, "StringInit");
+  nb::enum_<llvm::StringInit::StringFormat>(llvm_StringInit, "StringFormat")
+      .value("SF_String", llvm::StringInit::SF_String)
+      .value("SF_Code", llvm::StringInit::SF_Code);
+
+  llvm_StringInit.def_static("classof", &llvm::StringInit::classof, "i"_a)
+      .def_static("get", &llvm::StringInit::get, "rk"_a, "__"_a, "fmt"_a,
+                  nb::rv_policy::reference_internal)
+      .def_static("determine_format", &llvm::StringInit::determineFormat,
+                  "fmt1"_a, "fmt2"_a)
+      .def("get_value", &llvm::StringInit::getValue)
+      .def("get_format", &llvm::StringInit::getFormat)
+      .def("has_code_format", &llvm::StringInit::hasCodeFormat)
+      .def("convert_initializer_to", &llvm::StringInit::convertInitializerTo,
+           "ty"_a, nb::rv_policy::reference_internal)
+      .def("is_concrete", &llvm::StringInit::isConcrete)
+      .def("get_as_string", &llvm::StringInit::getAsString)
+      .def("__str__", &llvm::StringInit::getAsUnquotedString)
+      .def("get_as_unquoted_string", &llvm::StringInit::getAsUnquotedString)
+      .def("get_bit", &llvm::StringInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal);
+
+  auto llvm_ListInit =
+      nb::class_<llvm::ListInit, TypedInit>(m, "ListInit")
+          .def_static("classof", &llvm::ListInit::classof, "i"_a)
+          .def_static("get", &llvm::ListInit::get, "range"_a, "elt_ty"_a,
+                      nb::rv_policy::reference_internal)
+          .def("profile", &llvm::ListInit::Profile, "id"_a)
+          .def("get_element", &llvm::ListInit::getElement, "i"_a,
+               nb::rv_policy::reference_internal)
+          .def("get_element_type", &llvm::ListInit::getElementType,
+               nb::rv_policy::reference_internal)
+          .def("get_element_as_record", &llvm::ListInit::getElementAsRecord,
+               "i"_a, nb::rv_policy::reference_internal)
+          .def("convert_initializer_to", &llvm::ListInit::convertInitializerTo,
+               "ty"_a, nb::rv_policy::reference_internal)
+          .def("resolve_references", &llvm::ListInit::resolveReferences, "r"_a,
+               nb::rv_policy::reference_internal)
+          .def("is_complete", &llvm::ListInit::isComplete)
+          .def("is_concrete", &llvm::ListInit::isConcrete)
+          .def("get_as_string", &llvm::ListInit::getAsString)
+          .def("begin", &llvm::ListInit::begin,
+               nb::rv_policy::reference_internal)
+          .def("end", &llvm::ListInit::end, nb::rv_policy::reference_internal)
+          .def("size", &llvm::ListInit::size)
+          .def("empty", &llvm::ListInit::empty)
+          .def("get_bit", &llvm::ListInit::getBit, "bit"_a,
+               nb::rv_policy::reference_internal)
+          .def("__len__", [](const ListInit &v) { return v.size(); })
+          .def("__bool__", [](const ListInit &v) { return !v.empty(); })
+          .def(
+              "__iter__",
+              [](ListInit &v) {
+                return nb::make_iterator<nb::rv_policy::reference_internal>(
+                    nb::type<ListInit>(), "Iterator", v.begin(), v.end());
+              },
+              nb::rv_policy::reference_internal)
+          .def(
+              "__getitem__",
+              [](ListInit &v, Py_ssize_t i) {
+                return v.getElement(nb::detail::wrap(i, v.size()));
+              },
+              nb::rv_policy::reference_internal)
+          .def("get_values", coerceReturn<std::vector<const Init *>>(
+                                 &ListInit::getValues, nb::const_));
+
+  auto llvm_OpInit = nb::class_<llvm::OpInit, llvm::TypedInit>(m, "OpInit")
+                         .def_static("classof", &llvm::OpInit::classof, "i"_a)
+                         .def("clone", &llvm::OpInit::clone, "operands"_a,
+                              nb::rv_policy::reference_internal)
+                         .def("get_num_operands", &llvm::OpInit::getNumOperands)
+                         .def("get_operand", &llvm::OpInit::getOperand, "i"_a,
+                              nb::rv_policy::reference_internal)
+                         .def("get_bit", &llvm::OpInit::getBit, "bit"_a,
+                              nb::rv_policy::reference_internal);
 
   auto unaryOpInit = nb::class_<UnOpInit, OpInit>(m, "UnOpInit");
   nb::enum_<UnOpInit::UnaryOp>(m, "UnaryOp")
@@ -249,7 +482,33 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("LOG2", UnOpInit::UnaryOp::LOG2)
       .value("REPR", UnOpInit::UnaryOp::REPR)
       .value("LISTFLATTEN", UnOpInit::UnaryOp::LISTFLATTEN);
-  unaryOpInit.def("get_opcode", &UnOpInit::getOpcode);
+
+  unaryOpInit.def_static("classof", &llvm::UnOpInit::classof, "i"_a)
+      .def_static("get", &llvm::UnOpInit::get, "opc"_a, "lhs"_a, "type"_a,
+                  nb::rv_policy::reference_internal)
+      .def("profile", &llvm::UnOpInit::Profile, "id"_a)
+      .def("clone", &llvm::UnOpInit::clone, "operands"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_num_operands", &llvm::UnOpInit::getNumOperands)
+      .def(
+          "get_operand",
+          [](llvm::UnOpInit &self, unsigned int i) -> const llvm::Init * {
+            return self.getOperand(i);
+          },
+          "i"_a, nb::rv_policy::reference_internal)
+      .def("get_opcode", &llvm::UnOpInit::getOpcode)
+      .def(
+          "get_operand",
+          [](llvm::UnOpInit &self) -> const llvm::Init * {
+            return self.getOperand();
+          },
+          nb::rv_policy::reference_internal)
+      .def("fold", &llvm::UnOpInit::Fold, "cur_rec"_a, "is_final"_a,
+           nb::rv_policy::reference_internal)
+      .def("resolve_references", &llvm::UnOpInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::UnOpInit::getAsString)
+      .def("__str__", &llvm::UnOpInit::getAsUnquotedString);
 
   auto binaryOpInit = nb::class_<BinOpInit, OpInit>(m, "BinOpInit");
   nb::enum_<BinOpInit::BinaryOp>(m, "BinaryOp")
@@ -281,9 +540,33 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("GETDAGARG", BinOpInit::BinaryOp::GETDAGARG)
       .value("GETDAGNAME", BinOpInit::BinaryOp::GETDAGNAME)
       .value("SETDAGOP", BinOpInit::BinaryOp::SETDAGOP);
-  binaryOpInit.def("get_opcode", &BinOpInit::getOpcode)
-      .def("get_lhs", &BinOpInit::getLHS, nb::rv_policy::reference_internal)
-      .def("get_rhs", &BinOpInit::getRHS, nb::rv_policy::reference_internal);
+
+  binaryOpInit.def_static("classof", &llvm::BinOpInit::classof, "i"_a)
+      .def_static("get", &llvm::BinOpInit::get, "opc"_a, "lhs"_a, "rhs"_a,
+                  "type"_a, nb::rv_policy::reference_internal)
+      .def_static("get_str_concat", &llvm::BinOpInit::getStrConcat, "lhs"_a,
+                  "rhs"_a, nb::rv_policy::reference_internal)
+      .def_static("get_list_concat", &llvm::BinOpInit::getListConcat, "lhs"_a,
+                  "rhs"_a, nb::rv_policy::reference_internal)
+      .def("profile", &llvm::BinOpInit::Profile, "id"_a)
+      .def("clone", &llvm::BinOpInit::clone, "operands"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_num_operands", &llvm::BinOpInit::getNumOperands)
+      .def("get_operand", &llvm::BinOpInit::getOperand, "i"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_opcode", &llvm::BinOpInit::getOpcode)
+      .def("get_lhs", &llvm::BinOpInit::getLHS,
+           nb::rv_policy::reference_internal)
+      .def("get_rhs", &llvm::BinOpInit::getRHS,
+           nb::rv_policy::reference_internal)
+      .def("compare_init", &llvm::BinOpInit::CompareInit, "opc"_a, "lhs"_a,
+           "rhs"_a)
+      .def("fold", &llvm::BinOpInit::Fold, "cur_rec"_a,
+           nb::rv_policy::reference_internal)
+      .def("resolve_references", &llvm::BinOpInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::BinOpInit::getAsString)
+      .def("__str__", &llvm::BinOpInit::getAsUnquotedString);
 
   auto ternaryOpInit = nb::class_<TernOpInit, OpInit>(m, "TernOpInit");
   nb::enum_<TernOpInit::TernaryOp>(m, "TernaryOp")
@@ -297,35 +580,183 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("FIND", TernOpInit::TernaryOp::FIND)
       .value("SETDAGARG", TernOpInit::TernaryOp::SETDAGARG)
       .value("SETDAGNAME", TernOpInit::TernaryOp::SETDAGNAME);
-  ternaryOpInit.def("get_opcode", &TernOpInit::getOpcode)
-      .def("get_lhs", &TernOpInit::getLHS, nb::rv_policy::reference_internal)
-      .def("get_mhs", &TernOpInit::getMHS, nb::rv_policy::reference_internal)
-      .def("get_rhs", &TernOpInit::getRHS, nb::rv_policy::reference_internal);
 
-  nb::class_<CondOpInit, TypedInit>(m, "CondOpInit");
-  nb::class_<FoldOpInit, TypedInit>(m, "FoldOpInit");
-  nb::class_<IsAOpInit, TypedInit>(m, "IsAOpInit");
-  nb::class_<ExistsOpInit, TypedInit>(m, "ExistsOpInit");
-
-  nb::class_<VarInit, TypedInit>(m, "VarInit")
-      .def("get_name", &VarInit::getName, nb::rv_policy::reference_internal)
-      .def("get_name_init", &VarInit::getNameInit,
+  ternaryOpInit.def_static("classof", &llvm::TernOpInit::classof, "i"_a)
+      .def_static("get", &llvm::TernOpInit::get, "opc"_a, "lhs"_a, "mhs"_a,
+                  "rhs"_a, "type"_a, nb::rv_policy::reference_internal)
+      .def("profile", &llvm::TernOpInit::Profile, "id"_a)
+      .def("clone", &llvm::TernOpInit::clone, "operands"_a,
            nb::rv_policy::reference_internal)
-      .def("get_name_init_as_string", &VarInit::getNameInitAsString,
+      .def("get_num_operands", &llvm::TernOpInit::getNumOperands)
+      .def("get_operand", &llvm::TernOpInit::getOperand, "i"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_opcode", &llvm::TernOpInit::getOpcode)
+      .def("get_lhs", &llvm::TernOpInit::getLHS,
+           nb::rv_policy::reference_internal)
+      .def("get_mhs", &llvm::TernOpInit::getMHS,
+           nb::rv_policy::reference_internal)
+      .def("get_rhs", &llvm::TernOpInit::getRHS,
+           nb::rv_policy::reference_internal)
+      .def("fold", &llvm::TernOpInit::Fold, "cur_rec"_a,
+           nb::rv_policy::reference_internal)
+      .def("is_complete", &llvm::TernOpInit::isComplete)
+      .def("resolve_references", &llvm::TernOpInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::TernOpInit::getAsString)
+      .def("__str__", &llvm::TernOpInit::getAsUnquotedString);
+
+  nb::class_<CondOpInit, TypedInit>(m, "CondOpInit")
+      .def_static("classof", &llvm::CondOpInit::classof, "i"_a)
+      .def_static("get", &llvm::CondOpInit::get, "c"_a, "v"_a, "type"_a,
+                  nb::rv_policy::reference_internal)
+      .def("profile", &llvm::CondOpInit::Profile, "id"_a)
+      .def("get_val_type", &llvm::CondOpInit::getValType,
+           nb::rv_policy::reference_internal)
+      .def("get_num_conds", &llvm::CondOpInit::getNumConds)
+      .def("get_cond", &llvm::CondOpInit::getCond, "num"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_val", &llvm::CondOpInit::getVal, "num"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_conds", &llvm::CondOpInit::getConds)
+      .def("get_vals", &llvm::CondOpInit::getVals)
+      .def("fold", &llvm::CondOpInit::Fold, "cur_rec"_a,
+           nb::rv_policy::reference_internal)
+      .def("resolve_references", &llvm::CondOpInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("is_concrete", &llvm::CondOpInit::isConcrete)
+      .def("is_complete", &llvm::CondOpInit::isComplete)
+      .def("get_as_string", &llvm::CondOpInit::getAsString)
+      .def("__str__", &llvm::CondOpInit::getAsUnquotedString)
+      .def("arg_begin", &llvm::CondOpInit::arg_begin,
+           nb::rv_policy::reference_internal)
+      .def("arg_end", &llvm::CondOpInit::arg_end,
+           nb::rv_policy::reference_internal)
+      .def("case_size", &llvm::CondOpInit::case_size)
+      .def("case_empty", &llvm::CondOpInit::case_empty)
+      .def("name_begin", &llvm::CondOpInit::name_begin,
+           nb::rv_policy::reference_internal)
+      .def("name_end", &llvm::CondOpInit::name_end,
+           nb::rv_policy::reference_internal)
+      .def("val_size", &llvm::CondOpInit::val_size)
+      .def("val_empty", &llvm::CondOpInit::val_empty)
+      .def("get_bit", &llvm::CondOpInit::getBit, "bit"_a,
            nb::rv_policy::reference_internal);
 
-  nb::class_<VarBitInit, TypedInit>(m, "VarBitInit")
-      .def("get_bit_var", &VarBitInit::getBitVar,
+  nb::class_<FoldOpInit, TypedInit>(m, "FoldOpInit")
+      .def_static("classof", &llvm::FoldOpInit::classof, "i"_a)
+      .def_static("get", &llvm::FoldOpInit::get, "start"_a, "list"_a, "a"_a,
+                  "b"_a, "expr"_a, "type"_a, nb::rv_policy::reference_internal)
+      .def("profile", &llvm::FoldOpInit::Profile, "id"_a)
+      .def("fold", &llvm::FoldOpInit::Fold, "cur_rec"_a,
            nb::rv_policy::reference_internal)
-      .def("get_bit_num", &VarBitInit::getBitNum);
+      .def("is_complete", &llvm::FoldOpInit::isComplete)
+      .def("resolve_references", &llvm::FoldOpInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_bit", &llvm::FoldOpInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::FoldOpInit::getAsString)
+      .def("__str__", &llvm::FoldOpInit::getAsString);
+
+  nb::class_<IsAOpInit, TypedInit>(m, "IsAOpInit")
+      .def_static("classof", &llvm::IsAOpInit::classof, "i"_a)
+      .def_static("get", &llvm::IsAOpInit::get, "check_type"_a, "expr"_a,
+                  nb::rv_policy::reference_internal)
+      .def("profile", &llvm::IsAOpInit::Profile, "id"_a)
+      .def("fold", &llvm::IsAOpInit::Fold, nb::rv_policy::reference_internal)
+      .def("is_complete", &llvm::IsAOpInit::isComplete)
+      .def("resolve_references", &llvm::IsAOpInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_bit", &llvm::IsAOpInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal)
+      .def("__str__", &llvm::IsAOpInit::getAsString)
+      .def("get_as_string", &llvm::IsAOpInit::getAsString);
+
+  nb::class_<ExistsOpInit, TypedInit>(m, "ExistsOpInit")
+      .def_static("classof", &llvm::ExistsOpInit::classof, "i"_a)
+      .def_static("get", &llvm::ExistsOpInit::get, "check_type"_a, "expr"_a,
+                  nb::rv_policy::reference_internal)
+      .def("profile", &llvm::ExistsOpInit::Profile, "id"_a)
+      .def("fold", &llvm::ExistsOpInit::Fold, "cur_rec"_a, "is_final"_a,
+           nb::rv_policy::reference_internal)
+      .def("is_complete", &llvm::ExistsOpInit::isComplete)
+      .def("resolve_references", &llvm::ExistsOpInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_bit", &llvm::ExistsOpInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::ExistsOpInit::getAsString)
+      .def("__str__", &llvm::ExistsOpInit::getAsUnquotedString);
+
+  nb::class_<VarInit, TypedInit>(m, "VarInit")
+      .def_static("classof", &llvm::VarInit::classof, "i"_a)
+      .def_static(
+          "get",
+          [](llvm::StringRef VN, const llvm::RecTy *T)
+              -> const llvm::VarInit * { return llvm::VarInit::get(VN, T); },
+          "vn"_a, "t"_a, nb::rv_policy::reference_internal)
+      .def_static(
+          "get",
+          [](const llvm::Init *VN, const llvm::RecTy *T)
+              -> const llvm::VarInit * { return llvm::VarInit::get(VN, T); },
+          "vn"_a, "t"_a, nb::rv_policy::reference_internal)
+      .def("get_name", &llvm::VarInit::getName)
+      .def("get_name_init", &llvm::VarInit::getNameInit,
+           nb::rv_policy::reference_internal)
+      .def("get_name_init_as_string", &llvm::VarInit::getNameInitAsString)
+      .def("resolve_references", &llvm::VarInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_bit", &llvm::VarInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::VarInit::getAsString)
+      .def("__str__", &llvm::VarInit::getAsUnquotedString);
+
+  nb::class_<VarBitInit, TypedInit>(m, "VarBitInit")
+      .def_static("classof", &llvm::VarBitInit::classof, "i"_a)
+      .def_static("get", &llvm::VarBitInit::get, "t"_a, "b"_a,
+                  nb::rv_policy::reference_internal)
+      .def("get_bit_var", &llvm::VarBitInit::getBitVar,
+           nb::rv_policy::reference_internal)
+      .def("get_bit_num", &llvm::VarBitInit::getBitNum)
+      .def("get_as_string", &llvm::VarBitInit::getAsString)
+      .def("__str__", &llvm::VarBitInit::getAsUnquotedString)
+      .def("resolve_references", &llvm::VarBitInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_bit", &llvm::VarBitInit::getBit, "b"_a,
+           nb::rv_policy::reference_internal);
 
   nb::class_<DefInit, TypedInit>(m, "DefInit")
-      .def("get_def_", &DefInit::getDef, nb::rv_policy::reference_internal);
+      .def_static("classof", &llvm::DefInit::classof, "i"_a)
+      .def("convert_initializer_to", &llvm::DefInit::convertInitializerTo,
+           "ty"_a, nb::rv_policy::reference_internal)
+      .def("get_def", &llvm::DefInit::getDef, nb::rv_policy::reference_internal)
+      .def("get_field_type", &llvm::DefInit::getFieldType, "field_name"_a,
+           nb::rv_policy::reference_internal)
+      .def("is_concrete", &llvm::DefInit::isConcrete)
+      .def("get_as_string", &llvm::DefInit::getAsString)
+      .def("__str__", &llvm::DefInit::getAsUnquotedString)
+      .def("get_bit", &llvm::DefInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal);
 
   nb::class_<VarDefInit, TypedInit>(m, "VarDefInit")
-      .def("get_arg", &VarDefInit::getArg, "i"_a,
+      .def_static("classof", &llvm::VarDefInit::classof, "i"_a)
+      .def_static("get", &llvm::VarDefInit::get, "loc"_a, "class"_a, "args"_a,
+                  nb::rv_policy::reference_internal)
+      .def("profile", &llvm::VarDefInit::Profile, "id"_a)
+      .def("resolve_references", &llvm::VarDefInit::resolveReferences, "r"_a,
            nb::rv_policy::reference_internal)
-      .def("get_args",
+      .def("fold", &llvm::VarDefInit::Fold, nb::rv_policy::reference_internal)
+      .def("get_as_string", &llvm::VarDefInit::getAsString)
+      .def("__str__", &llvm::VarDefInit::getAsUnquotedString)
+      .def("get_arg", &llvm::VarDefInit::getArg, "i"_a,
+           nb::rv_policy::reference_internal)
+      .def("args_begin", &llvm::VarDefInit::args_begin,
+           nb::rv_policy::reference_internal)
+      .def("args_end", &llvm::VarDefInit::args_end,
+           nb::rv_policy::reference_internal)
+      .def("args_size", &llvm::VarDefInit::args_size)
+      .def("args_empty", &llvm::VarDefInit::args_empty)
+      .def("get_bit", &llvm::VarDefInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal)
+      .def("args",
            coerceReturn<std::vector<const ArgumentInit *>>(&VarDefInit::args,
                                                            nb::const_),
            nb::rv_policy::reference_internal)
@@ -338,7 +769,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                 nb::type<VarDefInit>(), "Iterator", v.args_begin(),
                 v.args_end());
           },
-          nb::keep_alive<0, 1>())
+          nb::rv_policy::reference_internal)
       .def(
           "__getitem__",
           [](VarDefInit &v, Py_ssize_t i) {
@@ -347,26 +778,58 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           nb::rv_policy::reference_internal);
 
   nb::class_<FieldInit, TypedInit>(m, "FieldInit")
-      .def("get_record", &FieldInit::getRecord,
+      .def_static("classof", &llvm::FieldInit::classof, "i"_a)
+      .def_static("get", &llvm::FieldInit::get, "r"_a, "fn"_a,
+                  nb::rv_policy::reference_internal)
+      .def("get_record", &llvm::FieldInit::getRecord,
            nb::rv_policy::reference_internal)
-      .def("get_field_name", &FieldInit::getFieldName,
-           nb::rv_policy::reference_internal);
+      .def("get_field_name", &llvm::FieldInit::getFieldName,
+           nb::rv_policy::reference_internal)
+      .def("get_bit", &llvm::FieldInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal)
+      .def("resolve_references", &llvm::FieldInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("fold", &llvm::FieldInit::Fold, "cur_rec"_a,
+           nb::rv_policy::reference_internal)
+      .def("is_concrete", &llvm::FieldInit::isConcrete)
+      .def("get_as_string", &llvm::FieldInit::getAsString)
+      .def("__str__", &llvm::FieldInit::getAsUnquotedString);
 
   nb::class_<DagInit, TypedInit>(m, "DagInit")
-      .def("get_operator", &DagInit::getOperator,
+      .def("profile", &llvm::DagInit::Profile, "id"_a)
+      .def("get_operator", &llvm::DagInit::getOperator,
            nb::rv_policy::reference_internal)
-      .def("get_name_init", &DagInit::getName,
+      .def("get_operator_as_def", &llvm::DagInit::getOperatorAsDef, "loc"_a,
            nb::rv_policy::reference_internal)
-      .def("get_name_str", &DagInit::getNameStr,
+      .def("get_name", &llvm::DagInit::getName,
            nb::rv_policy::reference_internal)
-      .def("get_num_args", &DagInit::getNumArgs)
-      .def("get_arg", &DagInit::getArg, "num"_a,
+      .def("get_name_str", &llvm::DagInit::getNameStr)
+      .def("get_num_args", &llvm::DagInit::getNumArgs)
+      .def("get_arg", &llvm::DagInit::getArg, "num"_a,
            nb::rv_policy::reference_internal)
-      .def("get_arg_no", &DagInit::getArgNo, "name"_a)
-      .def("get_arg_name_init", &DagInit::getArgName, "num"_a,
+      .def("get_arg_no", &llvm::DagInit::getArgNo, "name"_a)
+      .def("get_arg_name", &llvm::DagInit::getArgName, "num"_a,
            nb::rv_policy::reference_internal)
-      .def("get_arg_name_str", &DagInit::getArgNameStr, "num"_a)
-      .def("get_arg_name_inits",
+      .def("get_arg_name_str", &llvm::DagInit::getArgNameStr, "num"_a)
+      .def("resolve_references", &llvm::DagInit::resolveReferences, "r"_a,
+           nb::rv_policy::reference_internal)
+      .def("is_concrete", &llvm::DagInit::isConcrete)
+      .def("get_as_string", &llvm::DagInit::getAsString)
+      .def("arg_begin", &llvm::DagInit::arg_begin,
+           nb::rv_policy::reference_internal)
+      .def("arg_end", &llvm::DagInit::arg_end,
+           nb::rv_policy::reference_internal)
+      .def("arg_size", &llvm::DagInit::arg_size)
+      .def("arg_empty", &llvm::DagInit::arg_empty)
+      .def("name_begin", &llvm::DagInit::name_begin,
+           nb::rv_policy::reference_internal)
+      .def("name_end", &llvm::DagInit::name_end,
+           nb::rv_policy::reference_internal)
+      .def("name_size", &llvm::DagInit::name_size)
+      .def("name_empty", &llvm::DagInit::name_empty)
+      .def("get_bit", &llvm::DagInit::getBit, "bit"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_arg_names",
            coerceReturn<std::vector<const StringInit *>>(&DagInit::getArgNames,
                                                          nb::const_),
            nb::rv_policy::reference_internal)
@@ -382,7 +845,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
             return nb::make_iterator<nb::rv_policy::reference_internal>(
                 nb::type<DagInit>(), "Iterator", v.arg_begin(), v.arg_end());
           },
-          nb::keep_alive<0, 1>())
+          nb::rv_policy::reference_internal)
       .def(
           "__getitem__",
           [](DagInit &v, Py_ssize_t i) {
@@ -390,17 +853,45 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           },
           nb::rv_policy::reference_internal);
 
-  nb::class_<RecordVal>(m, "RecordVal")
-      .def("dump", &RecordVal::dump)
-      .def("get_name", &RecordVal::getName, nb::rv_policy::reference_internal)
-      .def("get_name_init_as_string", &RecordVal::getNameInitAsString)
-      .def("get_print_type", &RecordVal::getPrintType)
-      .def("get_record_keeper", &RecordVal::getRecordKeeper,
+  auto llvm_RecordVal = nb::class_<llvm::RecordVal>(m, "RecordVal");
+  nb::enum_<llvm::RecordVal::FieldKind>(llvm_RecordVal, "FieldKind")
+      .value("FK_Normal", llvm::RecordVal::FK_Normal)
+      .value("FK_NonconcreteOK", llvm::RecordVal::FK_NonconcreteOK)
+      .value("FK_TemplateArg", llvm::RecordVal::FK_TemplateArg);
+
+  llvm_RecordVal
+      .def("get_record_keeper", &llvm::RecordVal::getRecordKeeper,
            nb::rv_policy::reference_internal)
-      .def("get_type", &RecordVal::getType, nb::rv_policy::reference_internal)
-      .def("is_nonconcrete_ok", &RecordVal::isNonconcreteOK)
-      .def("is_template_arg", &RecordVal::isTemplateArg)
-      .def("get_value", &RecordVal::getValue, nb::rv_policy::reference_internal)
+      .def("get_name", &llvm::RecordVal::getName)
+      .def("get_name_init", &llvm::RecordVal::getNameInit,
+           nb::rv_policy::reference_internal)
+      .def("get_name_init_as_string", &llvm::RecordVal::getNameInitAsString)
+      .def("get_loc", &llvm::RecordVal::getLoc,
+           nb::rv_policy::reference_internal)
+      .def("is_nonconcrete_ok", &llvm::RecordVal::isNonconcreteOK)
+      .def("is_template_arg", &llvm::RecordVal::isTemplateArg)
+      .def("get_type", &llvm::RecordVal::getType,
+           nb::rv_policy::reference_internal)
+      .def("get_print_type", &llvm::RecordVal::getPrintType)
+      .def("get_value", &llvm::RecordVal::getValue,
+           nb::rv_policy::reference_internal)
+      .def(
+          "set_value",
+          [](llvm::RecordVal &self, const llvm::Init *V) -> bool {
+            return self.setValue(V);
+          },
+          "v"_a)
+      .def(
+          "set_value",
+          [](llvm::RecordVal &self, const llvm::Init *V,
+             llvm::SMLoc NewLoc) -> bool { return self.setValue(V, NewLoc); },
+          "v"_a, "new_loc"_a)
+      .def("add_reference_loc", &llvm::RecordVal::addReferenceLoc, "loc"_a)
+      .def("get_reference_locs", &llvm::RecordVal::getReferenceLocs)
+      .def("set_used", &llvm::RecordVal::setUsed, "used"_a)
+      .def("is_used", &llvm::RecordVal::isUsed)
+      .def("dump", &llvm::RecordVal::dump)
+      .def("print", &llvm::RecordVal::print, "os"_a, "print_sem"_a)
       .def("__str__",
            [](const RecordVal &self) {
              return self.getValue() ? self.getValue()->getAsUnquotedString()
@@ -632,14 +1123,14 @@ NB_MODULE(eudsl_tblgen_ext, m) {
             return nb::make_key_iterator<nb::rv_policy::reference>(
                 nb::type<RecordMap>(), "KeyIterator", m.begin(), m.end());
           },
-          nb::keep_alive<0, 1>())
+          nb::rv_policy::reference_internal)
       .def(
           "keys",
           [](RecordMap &m) {
             return nb::make_key_iterator<nb::rv_policy::reference>(
                 nb::type<RecordMap>(), "KeyIterator", m.begin(), m.end());
           },
-          nb::keep_alive<0, 1>())
+          nb::rv_policy::reference_internal)
       .def(
           "__getitem__",
           [](RecordMap &m, const std::string &k) {
