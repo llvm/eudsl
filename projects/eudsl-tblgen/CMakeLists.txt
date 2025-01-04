@@ -54,7 +54,7 @@ set(EUDSL_TBLGEN_SRC_DIR "${EUDSL_TBLGEN_SRC_DIR}/src")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${EUDSL_TBLGEN_SRC_DIR}/eudsl_tblgen)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-nanobind_add_module(eudsl_tblgen_ext NB_STATIC STABLE_ABI
+nanobind_add_module(eudsl_tblgen_ext NB_STATIC
   src/eudsl_tblgen_ext.cpp
   src/TGParser.cpp
   src/TGLexer.cpp

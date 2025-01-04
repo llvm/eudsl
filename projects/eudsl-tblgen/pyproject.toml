@@ -41,6 +41,7 @@ CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 CMAKE_VISIBILITY_INLINES_HIDDEN = "ON"
 CMAKE_VERBOSE_MAKEFILE = "ON"
 LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
+MLIR_DIR = { env = "MLIR_DIR", default = "EMPTY" }
 LLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN = "ON"
 
 [tool.cibuildwheel]
@@ -59,6 +60,7 @@ environment-pass = [
     "CC",
     "CXX",
     "LLVM_DIR",
+    "MLIR_DIR",
     # ccache
     "CCACHE_DIR",
     "CCACHE_MAXSIZE=700M",

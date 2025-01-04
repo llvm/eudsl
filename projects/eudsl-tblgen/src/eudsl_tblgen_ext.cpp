@@ -114,16 +114,19 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("DagRecTyKind", RecTy::RecTyKind::DagRecTyKind)
       .value("RecordRecTyKind", RecTy::RecTyKind::RecordRecTyKind);
 
-  recty.def_prop_ro("rec_ty_kind", &RecTy::getRecTyKind)
-      .def_prop_ro("record_keeper", &RecTy::getRecordKeeper)
-      .def_prop_ro("as_string", &RecTy::getAsString)
+  recty.def("get_rec_ty_kind", &RecTy::getRecTyKind)
+      .def("get_record_keeper", &RecTy::getRecordKeeper,
+           nb::rv_policy::reference_internal)
+      .def("get_as_string", &RecTy::getAsString)
       .def("__str__", &RecTy::getAsString)
       .def("type_is_a", &RecTy::typeIsA, "rhs"_a)
       .def("type_is_convertible_to", &RecTy::typeIsConvertibleTo, "rhs"_a);
 
   nb::class_<RecordRecTy, RecTy>(m, "RecordRecTy")
-      .def_prop_ro("classes", coerceReturn<std::vector<const Record *>>(
-                                  &RecordRecTy::getClasses, nb::const_))
+      .def("get_classes",
+           coerceReturn<std::vector<const Record *>>(&RecordRecTy::getClasses,
+                                                     nb::const_),
+           nb::rv_policy::reference_internal)
       .def("is_sub_class_of", &RecordRecTy::isSubClassOf, "class_"_a);
 
   nb::enum_<HackInit::InitKind>(m, "InitKind")
@@ -154,8 +157,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("IK_ArgumentInit", HackInit::InitKind::IK_ArgumentInit);
 
   nb::class_<Init>(m, "Init")
-      .def_prop_ro("kind", &Init::getKind)
-      .def_prop_ro("as_string", &Init::getAsUnquotedString)
+      .def("get_kind", &Init::getKind)
+      .def("get_as_string", &Init::getAsUnquotedString)
       .def("__str__", &Init::getAsUnquotedString)
       .def("is_complete", &Init::isComplete)
       .def("is_concrete", &Init::isConcrete)
@@ -165,32 +168,36 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            nb::rv_policy::reference_internal);
 
   nb::class_<TypedInit, Init>(m, "TypedInit")
-      .def_prop_ro("record_keeper", &TypedInit::getRecordKeeper)
-      .def_prop_ro("type", &TypedInit::getType);
+      .def("get_record_keeper", &TypedInit::getRecordKeeper,
+           nb::rv_policy::reference_internal)
+      .def("get_type", &TypedInit::getType, nb::rv_policy::reference_internal);
 
   nb::class_<UnsetInit, Init>(m, "UnsetInit");
 
   nb::class_<ArgumentInit, Init>(m, "ArgumentInit")
       .def("is_positional", &ArgumentInit::isPositional)
       .def("is_named", &ArgumentInit::isNamed)
-      .def_prop_ro("value", &ArgumentInit::getValue)
-      .def_prop_ro("index", &ArgumentInit::getIndex)
-      .def_prop_ro("name", &ArgumentInit::getName);
+      .def("get_value", &ArgumentInit::getValue,
+           nb::rv_policy::reference_internal)
+      .def("get_index", &ArgumentInit::getIndex)
+      .def("get_name", &ArgumentInit::getName,
+           nb::rv_policy::reference_internal);
 
   nb::class_<BitInit, TypedInit>(m, "BitInit")
-      .def_prop_ro("value", &BitInit::getValue)
+      .def("get_value", &BitInit::getValue)
       .def("__bool__", &BitInit::getValue);
 
   nb::class_<BitsInit, TypedInit>(m, "BitsInit")
-      .def_prop_ro("num_bits", &BitsInit::getNumBits)
+      .def("get_num_bits", &BitsInit::getNumBits)
       .def("all_incomplete", &BitsInit::allInComplete);
 
   nb::class_<IntInit, TypedInit>(m, "IntInit")
-      .def_prop_ro("value", &IntInit::getValue);
+      .def("get_value", &IntInit::getValue);
 
   nb::class_<AnonymousNameInit, TypedInit>(m, "AnonymousNameInit")
-      .def_prop_ro("value", &AnonymousNameInit::getValue)
-      .def_prop_ro("name_init", &AnonymousNameInit::getNameInit);
+      .def("get_value", &AnonymousNameInit::getValue)
+      .def("get_name_init", &AnonymousNameInit::getNameInit,
+           nb::rv_policy::reference_internal);
 
   auto stringInit = nb::class_<StringInit, TypedInit>(m, "StringInit");
 
@@ -198,8 +205,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("SF_String", StringInit::StringFormat::SF_String)
       .value("SF_Code", StringInit::StringFormat::SF_Code);
 
-  stringInit.def_prop_ro("value", &StringInit::getValue)
-      .def_prop_ro("format", &StringInit::getFormat)
+  stringInit.def("get_value", &StringInit::getValue)
+      .def("get_format", &StringInit::getFormat)
       .def("has_code_format", &StringInit::hasCodeFormat);
 
   nb::class_<ListInit, TypedInit>(m, "ListInit")
@@ -218,11 +225,12 @@ NB_MODULE(eudsl_tblgen_ext, m) {
             return v.getElement(nb::detail::wrap(i, v.size()));
           },
           nb::rv_policy::reference_internal)
-      .def_prop_ro("element_type", &ListInit::getElementType)
+      .def("get_element_type", &ListInit::getElementType,
+           nb::rv_policy::reference_internal)
       .def("get_element_as_record", &ListInit::getElementAsRecord, "i"_a,
            nb::rv_policy::reference_internal)
-      .def_prop_ro("values", coerceReturn<std::vector<const Init *>>(
-                                 &ListInit::getValues, nb::const_));
+      .def("get_values", coerceReturn<std::vector<const Init *>>(
+                             &ListInit::getValues, nb::const_));
 
   nb::class_<OpInit, TypedInit>(m, "OpInit")
       .def("bit", &OpInit::getBit, "bit"_a, nb::rv_policy::reference_internal);
@@ -241,7 +249,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("LOG2", UnOpInit::UnaryOp::LOG2)
       .value("REPR", UnOpInit::UnaryOp::REPR)
       .value("LISTFLATTEN", UnOpInit::UnaryOp::LISTFLATTEN);
-  unaryOpInit.def_prop_ro("opcode", &UnOpInit::getOpcode);
+  unaryOpInit.def("get_opcode", &UnOpInit::getOpcode);
 
   auto binaryOpInit = nb::class_<BinOpInit, OpInit>(m, "BinOpInit");
   nb::enum_<BinOpInit::BinaryOp>(m, "BinaryOp")
@@ -273,9 +281,9 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("GETDAGARG", BinOpInit::BinaryOp::GETDAGARG)
       .value("GETDAGNAME", BinOpInit::BinaryOp::GETDAGNAME)
       .value("SETDAGOP", BinOpInit::BinaryOp::SETDAGOP);
-  binaryOpInit.def_prop_ro("opcode", &BinOpInit::getOpcode)
-      .def_prop_ro("lhs", &BinOpInit::getLHS)
-      .def_prop_ro("rhs", &BinOpInit::getRHS);
+  binaryOpInit.def("get_opcode", &BinOpInit::getOpcode)
+      .def("get_lhs", &BinOpInit::getLHS, nb::rv_policy::reference_internal)
+      .def("get_rhs", &BinOpInit::getRHS, nb::rv_policy::reference_internal);
 
   auto ternaryOpInit = nb::class_<TernOpInit, OpInit>(m, "TernOpInit");
   nb::enum_<TernOpInit::TernaryOp>(m, "TernaryOp")
@@ -289,10 +297,10 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("FIND", TernOpInit::TernaryOp::FIND)
       .value("SETDAGARG", TernOpInit::TernaryOp::SETDAGARG)
       .value("SETDAGNAME", TernOpInit::TernaryOp::SETDAGNAME);
-  ternaryOpInit.def_prop_ro("opcode", &TernOpInit::getOpcode)
-      .def_prop_ro("lhs", &TernOpInit::getLHS)
-      .def_prop_ro("mhs", &TernOpInit::getMHS)
-      .def_prop_ro("rhs", &TernOpInit::getRHS);
+  ternaryOpInit.def("get_opcode", &TernOpInit::getOpcode)
+      .def("get_lhs", &TernOpInit::getLHS, nb::rv_policy::reference_internal)
+      .def("get_mhs", &TernOpInit::getMHS, nb::rv_policy::reference_internal)
+      .def("get_rhs", &TernOpInit::getRHS, nb::rv_policy::reference_internal);
 
   nb::class_<CondOpInit, TypedInit>(m, "CondOpInit");
   nb::class_<FoldOpInit, TypedInit>(m, "FoldOpInit");
@@ -300,22 +308,27 @@ NB_MODULE(eudsl_tblgen_ext, m) {
   nb::class_<ExistsOpInit, TypedInit>(m, "ExistsOpInit");
 
   nb::class_<VarInit, TypedInit>(m, "VarInit")
-      .def_prop_ro("name", &VarInit::getName)
-      .def_prop_ro("name_init", &VarInit::getNameInit)
-      .def_prop_ro("name_init_as_string", &VarInit::getNameInitAsString);
+      .def("get_name", &VarInit::getName, nb::rv_policy::reference_internal)
+      .def("get_name_init", &VarInit::getNameInit,
+           nb::rv_policy::reference_internal)
+      .def("get_name_init_as_string", &VarInit::getNameInitAsString,
+           nb::rv_policy::reference_internal);
 
   nb::class_<VarBitInit, TypedInit>(m, "VarBitInit")
-      .def_prop_ro("bit_var", &VarBitInit::getBitVar)
-      .def_prop_ro("bit_num", &VarBitInit::getBitNum);
+      .def("get_bit_var", &VarBitInit::getBitVar,
+           nb::rv_policy::reference_internal)
+      .def("get_bit_num", &VarBitInit::getBitNum);
 
   nb::class_<DefInit, TypedInit>(m, "DefInit")
-      .def_prop_ro("def_", &DefInit::getDef);
+      .def("get_def_", &DefInit::getDef, nb::rv_policy::reference_internal);
 
   nb::class_<VarDefInit, TypedInit>(m, "VarDefInit")
       .def("get_arg", &VarDefInit::getArg, "i"_a,
            nb::rv_policy::reference_internal)
-      .def_prop_ro("args", coerceReturn<std::vector<const ArgumentInit *>>(
-                               &VarDefInit::args, nb::const_))
+      .def("get_args",
+           coerceReturn<std::vector<const ArgumentInit *>>(&VarDefInit::args,
+                                                           nb::const_),
+           nb::rv_policy::reference_internal)
       .def("__len__", [](const VarDefInit &v) { return v.args_size(); })
       .def("__bool__", [](const VarDefInit &v) { return !v.args_empty(); })
       .def(
@@ -334,14 +347,19 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           nb::rv_policy::reference_internal);
 
   nb::class_<FieldInit, TypedInit>(m, "FieldInit")
-      .def_prop_ro("record", &FieldInit::getRecord)
-      .def_prop_ro("field_name", &FieldInit::getFieldName);
+      .def("get_record", &FieldInit::getRecord,
+           nb::rv_policy::reference_internal)
+      .def("get_field_name", &FieldInit::getFieldName,
+           nb::rv_policy::reference_internal);
 
   nb::class_<DagInit, TypedInit>(m, "DagInit")
-      .def_prop_ro("operator", &DagInit::getOperator)
-      .def_prop_ro("name_init", &DagInit::getName)
-      .def_prop_ro("name_str", &DagInit::getNameStr)
-      .def_prop_ro("num_args", &DagInit::getNumArgs)
+      .def("get_operator", &DagInit::getOperator,
+           nb::rv_policy::reference_internal)
+      .def("get_name_init", &DagInit::getName,
+           nb::rv_policy::reference_internal)
+      .def("get_name_str", &DagInit::getNameStr,
+           nb::rv_policy::reference_internal)
+      .def("get_num_args", &DagInit::getNumArgs)
       .def("get_arg", &DagInit::getArg, "num"_a,
            nb::rv_policy::reference_internal)
       .def("get_arg_no", &DagInit::getArgNo, "name"_a)
@@ -374,81 +392,76 @@ NB_MODULE(eudsl_tblgen_ext, m) {
 
   nb::class_<RecordVal>(m, "RecordVal")
       .def("dump", &RecordVal::dump)
-      .def_prop_ro("name", &RecordVal::getName)
-      .def_prop_ro("name_init_as_string", &RecordVal::getNameInitAsString)
-      .def_prop_ro("print_type", &RecordVal::getPrintType)
-      .def_prop_ro("record_keeper", &RecordVal::getRecordKeeper)
-      .def_prop_ro("type", &RecordVal::getType)
-      .def_prop_ro("is_nonconcrete_ok", &RecordVal::isNonconcreteOK)
-      .def_prop_ro("is_template_arg", &RecordVal::isTemplateArg)
-      .def_prop_ro("value", &RecordVal::getValue)
+      .def("get_name", &RecordVal::getName, nb::rv_policy::reference_internal)
+      .def("get_name_init_as_string", &RecordVal::getNameInitAsString)
+      .def("get_print_type", &RecordVal::getPrintType)
+      .def("get_record_keeper", &RecordVal::getRecordKeeper,
+           nb::rv_policy::reference_internal)
+      .def("get_type", &RecordVal::getType, nb::rv_policy::reference_internal)
+      .def("is_nonconcrete_ok", &RecordVal::isNonconcreteOK)
+      .def("is_template_arg", &RecordVal::isTemplateArg)
+      .def("get_value", &RecordVal::getValue, nb::rv_policy::reference_internal)
       .def("__str__",
            [](const RecordVal &self) {
-             return self.getValue()->getAsUnquotedString();
+             return self.getValue() ? self.getValue()->getAsUnquotedString()
+                                    : "<<NULL>>";
            })
-      .def_prop_ro("is_used", &RecordVal::isUsed);
+      .def("is_used", &RecordVal::isUsed);
 
   struct RecordValues {};
   nb::class_<RecordValues>(m, "RecordValues", nb::dynamic_attr())
-      .def("__repr__", [](const nb::object &self) {
-        nb::str s{"RecordValues("};
-        auto dic = nb::cast<nb::dict>(nb::getattr(self, "__dict__"));
-        int i = 0;
-        for (auto [key, value] : dic) {
-          s += key + nb::str("=") +
-               nb::str(nb::cast<RecordVal>(value)
-                           .getValue()
-                           ->getAsUnquotedString()
-                           .c_str());
-          if (i < dic.size() - 1)
-            s += nb::str(", ");
-          ++i;
-        }
-        s += nb::str(")");
-        return s;
-      });
+      .def("__repr__",
+           [](const nb::object &self) {
+             nb::str s{"RecordValues("};
+             auto dic = nb::cast<nb::dict>(nb::getattr(self, "__dict__"));
+             int i = 0;
+             for (auto [key, value] : dic) {
+               s += key + nb::str("=") +
+                    nb::str(nb::cast<RecordVal>(value)
+                                .getValue()
+                                ->getAsUnquotedString()
+                                .c_str());
+               if (i < dic.size() - 1)
+                 s += nb::str(", ");
+               ++i;
+             }
+             s += nb::str(")");
+             return s;
+           })
+      .def(
+          "__iter__",
+          [](const nb::object &self) {
+            return nb::iter(getattr(self, "__dict__"));
+          },
+          nb::rv_policy::reference_internal)
+      .def(
+          "keys",
+          [](const nb::object &self) {
+            return getattr(getattr(self, "__dict__"), "keys")();
+          },
+          nb::rv_policy::reference_internal)
+      .def(
+          "values",
+          [](const nb::object &self) {
+            return getattr(getattr(self, "__dict__"), "values")();
+          },
+          nb::rv_policy::reference_internal)
+      .def(
+          "items",
+          [](const nb::object &self) {
+            return getattr(getattr(self, "__dict__"), "items")();
+          },
+          nb::rv_policy::reference_internal);
 
   nb::class_<Record>(m, "Record")
-      .def_prop_ro("direct_super_classes",
-                   [](const Record &self) -> std::vector<const Record *> {
-                     SmallVector<const Record *> Classes;
-                     self.getDirectSuperClasses(Classes);
-                     return {Classes.begin(), Classes.end()};
-                   })
-      .def_prop_ro("id", &Record::getID)
-      .def_prop_ro("name", &Record::getName)
-      .def_prop_ro("name_init_as_string", &Record::getNameInitAsString)
-      .def_prop_ro("records", &Record::getRecords)
-      .def_prop_ro("type", &Record::getType)
-      .def("get_value", nb::overload_cast<StringRef>(&Record::getValue),
-           "name"_a, nb::rv_policy::reference_internal)
-      .def("get_value_as_bit", &Record::getValueAsBit, "field_name"_a)
-      .def("get_value_as_def", &Record::getValueAsDef, "field_name"_a)
-      .def("get_value_as_int", &Record::getValueAsInt, "field_name"_a)
-      .def("get_value_as_list_of_defs", &Record::getValueAsListOfDefs,
-           "field_name"_a, nb::rv_policy::reference_internal)
-      .def("get_value_as_list_of_ints", &Record::getValueAsListOfInts,
-           "field_name"_a)
-      .def("get_value_as_list_of_strings", &Record::getValueAsListOfStrings,
-           "field_name"_a)
-      .def("get_value_as_optional_def", &Record::getValueAsOptionalDef,
-           "field_name"_a, nb::rv_policy::reference_internal)
-      .def("get_value_as_optional_string", &Record::getValueAsOptionalString,
-           nb::sig("def get_value_as_optional_string(self, field_name: str, /) "
-                   "-> Optional[str]"))
-      .def("get_value_as_string", &Record::getValueAsString, "field_name"_a)
-      .def("get_value_as_bit_or_unset", &Record::getValueAsBitOrUnset,
-           "field_name"_a, "unset"_a)
-      .def("get_value_as_bits_init", &Record::getValueAsBitsInit,
-           "field_name"_a, nb::rv_policy::reference_internal)
-      .def("get_value_as_dag", &Record::getValueAsDag, "field_name"_a,
-           nb::rv_policy::reference_internal)
-      .def("get_value_as_list_init", &Record::getValueAsListInit,
-           "field_name"_a, nb::rv_policy::reference_internal)
-      .def("get_value_init", &Record::getValueInit, "field_name"_a,
-           nb::rv_policy::reference_internal)
-      .def_prop_ro(
-          "values",
+      .def("get_direct_super_classes",
+           [](const Record &self) -> std::vector<const Record *> {
+             SmallVector<const Record *> Classes;
+             self.getDirectSuperClasses(Classes);
+             return {Classes.begin(), Classes.end()};
+           })
+      .def(
+          "get_values",
           [](Record &self) {
             // you can't just call the class_->operator()
             nb::handle recordValsInstTy = nb::type<RecordValues>();
@@ -465,24 +478,141 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                           nb::borrow(nb::cast(recordVal)));
             }
             return recordValsInst;
-          })
-      .def("has_direct_super_class", &Record::hasDirectSuperClass,
+          },
+          nb::rv_policy::reference_internal)
+      .def("get_template_args",
+           coerceReturn<std::vector<const Init *>>(&Record::getTemplateArgs,
+                                                   nb::const_),
+           nb::rv_policy::reference_internal)
+      .def_static("get_new_uid", &llvm::Record::getNewUID, "rk"_a)
+      .def("get_id", &llvm::Record::getID)
+      .def("get_name", &llvm::Record::getName)
+      .def("get_name_init", &llvm::Record::getNameInit,
+           nb::rv_policy::reference_internal)
+      .def("get_name_init_as_string", &llvm::Record::getNameInitAsString)
+      .def("set_name", &llvm::Record::setName, "name"_a)
+      .def("get_loc", &llvm::Record::getLoc)
+      .def("append_loc", &llvm::Record::appendLoc, "loc"_a)
+      .def("get_forward_declaration_locs",
+           &llvm::Record::getForwardDeclarationLocs)
+      .def("append_reference_loc", &llvm::Record::appendReferenceLoc, "loc"_a)
+      .def("get_reference_locs", &llvm::Record::getReferenceLocs)
+      .def("update_class_loc", &llvm::Record::updateClassLoc, "loc"_a)
+      .def("get_type", &llvm::Record::getType,
+           nb::rv_policy::reference_internal)
+      .def("get_def_init", &llvm::Record::getDefInit,
+           nb::rv_policy::reference_internal)
+      .def("is_class", &llvm::Record::isClass)
+      .def("is_multi_class", &llvm::Record::isMultiClass)
+      .def("is_anonymous", &llvm::Record::isAnonymous)
+      .def("get_template_args", &llvm::Record::getTemplateArgs)
+      .def("get_assertions", &llvm::Record::getAssertions)
+      .def("get_dumps", &llvm::Record::getDumps)
+      .def("get_super_classes", &llvm::Record::getSuperClasses)
+      .def("has_direct_super_class", &llvm::Record::hasDirectSuperClass,
            "super_class"_a)
-      .def_prop_ro("is_anonymous", &Record::isAnonymous)
-      .def_prop_ro("is_class", &Record::isClass)
-      .def_prop_ro("is_multi_class", &Record::isMultiClass)
-      .def("is_sub_class_of",
-           nb::overload_cast<const Record *>(&Record::isSubClassOf, nb::const_),
-           "r"_a)
-      .def("is_sub_class_of",
-           nb::overload_cast<StringRef>(&Record::isSubClassOf, nb::const_),
-           "name"_a)
-      .def("is_value_unset", &Record::isValueUnset, "field_name"_a)
-      .def_prop_ro("def_init", &Record::getDefInit)
-      .def_prop_ro("name_init", &Record::getNameInit)
-      .def_prop_ro("template_args", coerceReturn<std::vector<const Init *>>(
-                                        &Record::getTemplateArgs, nb::const_))
-      .def("is_template_arg", &Record::isTemplateArg, "name"_a);
+      .def("is_template_arg", &llvm::Record::isTemplateArg, "name"_a)
+      .def(
+          "get_value",
+          [](llvm::Record &self, const llvm::Init *Name)
+              -> const llvm::RecordVal * { return self.getValue(Name); },
+          "name"_a, nb::rv_policy::reference_internal)
+      .def(
+          "get_value",
+          [](llvm::Record &self, llvm::StringRef Name)
+              -> const llvm::RecordVal * { return self.getValue(Name); },
+          "name"_a, nb::rv_policy::reference_internal)
+      .def(
+          "get_value",
+          [](llvm::Record &self, const llvm::Init *Name) -> llvm::RecordVal * {
+            return self.getValue(Name);
+          },
+          "name"_a, nb::rv_policy::reference_internal)
+      .def(
+          "get_value",
+          [](llvm::Record &self, llvm::StringRef Name) -> llvm::RecordVal * {
+            return self.getValue(Name);
+          },
+          "name"_a, nb::rv_policy::reference_internal)
+      .def("add_template_arg", &llvm::Record::addTemplateArg, "name"_a)
+      .def("add_value", &llvm::Record::addValue, "rv"_a)
+      .def(
+          "remove_value",
+          [](llvm::Record &self, const llvm::Init *Name) -> void {
+            return self.removeValue(Name);
+          },
+          "name"_a)
+      .def(
+          "remove_value",
+          [](llvm::Record &self, llvm::StringRef Name) -> void {
+            return self.removeValue(Name);
+          },
+          "name"_a)
+      .def("add_assertion", &llvm::Record::addAssertion, "loc"_a, "condition"_a,
+           "message"_a)
+      .def("add_dump", &llvm::Record::addDump, "loc"_a, "message"_a)
+      .def("append_assertions", &llvm::Record::appendAssertions, "rec"_a)
+      .def("append_dumps", &llvm::Record::appendDumps, "rec"_a)
+      .def("check_record_assertions", &llvm::Record::checkRecordAssertions)
+      .def("emit_record_dumps", &llvm::Record::emitRecordDumps)
+      .def("check_unused_template_args", &llvm::Record::checkUnusedTemplateArgs)
+      .def(
+          "is_sub_class_of",
+          [](llvm::Record &self, const llvm::Record *R) -> bool {
+            return self.isSubClassOf(R);
+          },
+          "r"_a)
+      .def(
+          "is_sub_class_of",
+          [](llvm::Record &self, llvm::StringRef Name) -> bool {
+            return self.isSubClassOf(Name);
+          },
+          "name"_a)
+      .def("add_super_class", &llvm::Record::addSuperClass, "r"_a, "range"_a)
+      .def(
+          "resolve_references",
+          [](llvm::Record &self, const llvm::Init *NewName) -> void {
+            return self.resolveReferences(NewName);
+          },
+          "new_name"_a)
+      .def(
+          "resolve_references",
+          [](llvm::Record &self, llvm::Resolver &R,
+             const llvm::RecordVal *SkipVal) -> void {
+            return self.resolveReferences(R, SkipVal);
+          },
+          "r"_a, "skip_val"_a)
+      .def("get_records", &llvm::Record::getRecords,
+           nb::rv_policy::reference_internal)
+      .def("dump", [](llvm::Record &self) { self.dump(); })
+      .def("get_field_loc", &llvm::Record::getFieldLoc, "field_name"_a)
+      .def("get_value_init", &llvm::Record::getValueInit, "field_name"_a,
+           nb::rv_policy::reference_internal)
+      .def("is_value_unset", &llvm::Record::isValueUnset, "field_name"_a)
+      .def("get_value_as_string", &llvm::Record::getValueAsString,
+           "field_name"_a)
+      .def("get_value_as_optional_string",
+           &llvm::Record::getValueAsOptionalString, "field_name"_a)
+      .def("get_value_as_bits_init", &llvm::Record::getValueAsBitsInit,
+           "field_name"_a, nb::rv_policy::reference_internal)
+      .def("get_value_as_list_init", &llvm::Record::getValueAsListInit,
+           "field_name"_a, nb::rv_policy::reference_internal)
+      .def("get_value_as_list_of_defs", &llvm::Record::getValueAsListOfDefs,
+           "field_name"_a)
+      .def("get_value_as_list_of_ints", &llvm::Record::getValueAsListOfInts,
+           "field_name"_a)
+      .def("get_value_as_list_of_strings",
+           &llvm::Record::getValueAsListOfStrings, "field_name"_a)
+      .def("get_value_as_def", &llvm::Record::getValueAsDef, "field_name"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_value_as_optional_def", &llvm::Record::getValueAsOptionalDef,
+           "field_name"_a, nb::rv_policy::reference_internal)
+      .def("get_value_as_bit", &llvm::Record::getValueAsBit, "field_name"_a)
+      .def("get_value_as_bit_or_unset", &llvm::Record::getValueAsBitOrUnset,
+           "field_name"_a, "unset"_a)
+      .def("get_value_as_int", &llvm::Record::getValueAsInt, "field_name"_a)
+      .def("get_value_as_dag", &llvm::Record::getValueAsDag, "field_name"_a,
+           nb::rv_policy::reference_internal);
 
   using RecordMap = std::map<std::string, std::unique_ptr<Record>, std::less<>>;
   using GlobalMap = std::map<std::string, const Init *, std::less<>>;
@@ -549,10 +679,37 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           "input_filename"_a, "include_dirs"_a = nb::list(),
           "macro_names"_a = nb::list(),
           "no_warn_on_unused_template_args"_a = true)
-      .def_prop_ro("input_filename", &RecordKeeper::getInputFilename)
-      .def_prop_ro("classes", &RecordKeeper::getClasses)
-      .def_prop_ro("defs", &RecordKeeper::getDefs)
-      .def_prop_ro("globals", &RecordKeeper::getGlobals)
+      .def("get_input_filename", &llvm::RecordKeeper::getInputFilename)
+      .def("get_classes", &llvm::RecordKeeper::getClasses,
+           nb::rv_policy::reference_internal)
+      .def("get_defs", &llvm::RecordKeeper::getDefs,
+           nb::rv_policy::reference_internal)
+      .def("get_globals", &llvm::RecordKeeper::getGlobals,
+           nb::rv_policy::reference_internal)
+      .def("get_class", &llvm::RecordKeeper::getClass, "name"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_def", &llvm::RecordKeeper::getDef, "name"_a,
+           nb::rv_policy::reference_internal)
+      .def("get_global", &llvm::RecordKeeper::getGlobal, "name"_a,
+           nb::rv_policy::reference_internal)
+      .def("save_input_filename", &llvm::RecordKeeper::saveInputFilename,
+           "filename"_a)
+      .def("add_class", &llvm::RecordKeeper::addClass, "r"_a)
+      .def("add_def", &llvm::RecordKeeper::addDef, "r"_a)
+      .def("add_extra_global", &llvm::RecordKeeper::addExtraGlobal, "name"_a,
+           "i"_a)
+      .def("get_new_anonymous_name", &llvm::RecordKeeper::getNewAnonymousName,
+           nb::rv_policy::reference_internal)
+      .def(
+          "get_all_derived_definitions",
+          [](llvm::RecordKeeper &self,
+             const llvm::ArrayRef<llvm::StringRef> ClassNames)
+              -> std::vector<const llvm::Record *,
+                             std::allocator<const llvm::Record *>> {
+            return self.getAllDerivedDefinitions(ClassNames);
+          },
+          "class_names"_a)
+      .def("dump", &llvm::RecordKeeper::dump)
       .def(
           "get_all_derived_definitions",
           [](RecordKeeper &self,
@@ -2038,37 +2195,22 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def("get_var_name",
                &mlir::tblgen::SymbolInfoMap::SymbolInfo::getVarName, "name"_a);
 
+  using SymbolInfoMapBaseT =
+      std::unordered_multimap<std::string,
+                              mlir::tblgen::SymbolInfoMap::SymbolInfo>;
   mlir_tblgen_SymbolInfoMap
-      .def(
-          "begin",
-          [](mlir::tblgen::SymbolInfoMap &self)
-              -> std::__hash_map_iterator<std::__hash_iterator<std::__hash_node<
-                  std::__hash_value_type<
-                      std::string, mlir::tblgen::SymbolInfoMap::SymbolInfo>,
-                  void *> *>> { return self.begin(); })
-      .def(
-          "end",
-          [](mlir::tblgen::SymbolInfoMap &self)
-              -> std::__hash_map_iterator<std::__hash_iterator<std::__hash_node<
-                  std::__hash_value_type<
-                      std::string, mlir::tblgen::SymbolInfoMap::SymbolInfo>,
-                  void *> *>> { return self.end(); })
-      .def(
-          "begin",
-          [](mlir::tblgen::SymbolInfoMap &self)
-              -> std::__hash_map_const_iterator<
-                  std::__hash_const_iterator<std::__hash_node<
-                      std::__hash_value_type<
-                          std::string, mlir::tblgen::SymbolInfoMap::SymbolInfo>,
-                      void *> *>> { return self.begin(); })
-      .def(
-          "end",
-          [](mlir::tblgen::SymbolInfoMap &self)
-              -> std::__hash_map_const_iterator<
-                  std::__hash_const_iterator<std::__hash_node<
-                      std::__hash_value_type<
-                          std::string, mlir::tblgen::SymbolInfoMap::SymbolInfo>,
-                      void *> *>> { return self.end(); })
+      .def("begin",
+           [](mlir::tblgen::SymbolInfoMap &self)
+               -> SymbolInfoMapBaseT::iterator { return self.begin(); })
+      .def("end",
+           [](mlir::tblgen::SymbolInfoMap &self)
+               -> SymbolInfoMapBaseT::iterator { return self.end(); })
+      .def("cbegin",
+           [](mlir::tblgen::SymbolInfoMap &self)
+               -> SymbolInfoMapBaseT::const_iterator { return self.begin(); })
+      .def("cend",
+           [](mlir::tblgen::SymbolInfoMap &self)
+               -> SymbolInfoMapBaseT::const_iterator { return self.end(); })
       .def("bind_op_argument", &mlir::tblgen::SymbolInfoMap::bindOpArgument,
            "node"_a, "symbol"_a, "op"_a, "arg_index"_a, "variadic_sub_index"_a)
       .def("bind_op_result", &mlir::tblgen::SymbolInfoMap::bindOpResult,
@@ -2087,11 +2229,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           [](mlir::tblgen::SymbolInfoMap &self, llvm::StringRef key,
              mlir::tblgen::DagNode node, const mlir::tblgen::Operator &op,
              int argIndex, std::optional<int> variadicSubIndex)
-              -> std::__hash_map_const_iterator<
-                  std::__hash_const_iterator<std::__hash_node<
-                      std::__hash_value_type<
-                          std::string, mlir::tblgen::SymbolInfoMap::SymbolInfo>,
-                      void *> *>> {
+              -> SymbolInfoMapBaseT::const_iterator {
             return self.findBoundSymbol(key, node, op, argIndex,
                                         variadicSubIndex);
           },
@@ -2100,11 +2238,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           "find_bound_symbol",
           [](mlir::tblgen::SymbolInfoMap &self, llvm::StringRef key,
              const mlir::tblgen::SymbolInfoMap::SymbolInfo &symbolInfo)
-              -> std::__hash_map_const_iterator<
-                  std::__hash_const_iterator<std::__hash_node<
-                      std::__hash_value_type<
-                          std::string, mlir::tblgen::SymbolInfoMap::SymbolInfo>,
-                      void *> *>> {
+              -> SymbolInfoMapBaseT::const_iterator {
             return self.findBoundSymbol(key, symbolInfo);
           },
           "key"_a, "symbol_info"_a)
