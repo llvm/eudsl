@@ -22,6 +22,7 @@ cmake.source-dir = "."
 
 [tool.scikit-build.cmake.define]
 LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
+MLIR_DIR = { env = "MLIR_DIR", default = "EMPTY" }
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
@@ -34,6 +35,7 @@ archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
 environment-pass = [
     "LLVM_DIR",
+    "MLIR_DIR",
     "CMAKE_GENERATOR",
     "CMAKE_PREFIX_PATH",
     "CC",
