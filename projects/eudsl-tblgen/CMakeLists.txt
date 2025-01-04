@@ -15,24 +15,24 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_LIST_DIR)
   message("Building ${LLVM_SUBPROJECT_TITLE} as a standalone project.")
   project(${LLVM_SUBPROJECT_TITLE} CXX C)
   find_package(LLVM REQUIRED CONFIG)
+  find_package(MLIR REQUIRED CONFIG)
 
   message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+  message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 
   set(LLVM_RUNTIME_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/bin)
   set(LLVM_LIBRARY_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/lib)
 
   list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+  list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 
   include(TableGen)
   include(AddLLVM)
-  # TODO(max): probably don't need this anymore after landing the nanobind fix?
-  # technically we need this on windows too but our LLVM is compiled without exception handling
-  # and that breaks windows
-  if(NOT WIN32)
-    include(HandleLLVMOptions)
-  endif()
+  include(AddMLIR)
+  include(HandleLLVMOptions)
 endif()
 
+include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
@@ -50,6 +50,7 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_DIR)
 find_package(nanobind CONFIG REQUIRED)
 
+set(EUDSL_TBLGEN_SRC_DIR "${EUDSL_TBLGEN_SRC_DIR}/src")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${EUDSL_TBLGEN_SRC_DIR}/eudsl_tblgen)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
@@ -58,7 +59,8 @@ nanobind_add_module(eudsl_tblgen_ext NB_STATIC STABLE_ABI
   src/TGParser.cpp
   src/TGLexer.cpp
 )
-set(eudsl_tblgen_ext_libs LLVMTableGenCommon LLVMTableGen LLVMCore)
+set(eudsl_tblgen_ext_libs
+  LLVMTableGenCommon LLVMTableGen LLVMCore MLIRTableGen)
 if(APPLE)
   list(APPEND eudsl_tblgen_ext_libs ${LLVM_AVAILABLE_LIBS})
   list(REMOVE_ITEM eudsl_tblgen_ext_libs Remarks LTO LLVM)
