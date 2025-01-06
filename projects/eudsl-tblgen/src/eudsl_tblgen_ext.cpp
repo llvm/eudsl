@@ -34,91 +34,41 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_map.h>
-#include <nanobind/stl/bind_vector.h>
+// ReSharper disable once CppUnusedIncludeDirective
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/unique_ptr.h>
+// ReSharper disable once CppUnusedIncludeDirective
 #include <nanobind/stl/vector.h>
 
-using namespace llvm;
+#include "eudsl/util.h"
+// ReSharper disable once CppUnusedIncludeDirective
+#include "eudsl/type_casters.h"
 
 namespace nb = nanobind;
 using namespace nb::literals;
 
-template <typename NewReturn, typename Return, typename... Args>
-constexpr auto coerceReturn(Return (*pf)(Args...)) noexcept {
-  return [&pf](Args &&...args) -> NewReturn {
-    return pf(std::forward<Args>(args)...);
-  };
-}
-
-template <typename NewReturn, typename Return, typename Class, typename... Args>
-constexpr auto coerceReturn(Return (Class::*pmf)(Args...),
-                            std::false_type = {}) noexcept {
-  return [&pmf](Class *cls, Args &&...args) -> NewReturn {
-    return (cls->*pmf)(std::forward<Args>(args)...);
-  };
-}
-
-/*
- * If you get
- * ```
- * Called object type 'void(MyClass::*)(vector<Item>&,int)' is not a function or
- * function pointer
- * ```
- * it's because you're calling a member function without
- * passing the `this` pointer as the first arg
- */
-template <typename NewReturn, typename Return, typename Class, typename... Args>
-constexpr auto coerceReturn(Return (Class::*pmf)(Args...) const,
-                            std::true_type) noexcept {
-  // copy the *pmf, not capture by ref
-  return [pmf](const Class &cls, Args &&...args) -> NewReturn {
-    return (cls.*pmf)(std::forward<Args>(args)...);
-  };
-}
-
-template <>
-struct nb::detail::type_caster<StringRef> {
-  NB_TYPE_CASTER(StringRef, const_name("str"))
-
-  bool from_python(handle src, uint8_t, cleanup_list *) noexcept {
-    Py_ssize_t size;
-    const char *str = PyUnicode_AsUTF8AndSize(src.ptr(), &size);
-    if (!str) {
-      PyErr_Clear();
-      return false;
-    }
-    value = StringRef(str, (size_t)size);
-    return true;
-  }
-
-  static handle from_cpp(StringRef value, rv_policy, cleanup_list *) noexcept {
-    return PyUnicode_FromStringAndSize(value.data(), value.size());
-  }
-};
-
 // hack to expose protected Init::InitKind
-struct HackInit : public Init {
+struct HackInit : public llvm::Init {
   using InitKind = Init::InitKind;
 };
 
 NB_MODULE(eudsl_tblgen_ext, m) {
-  auto recty = nb::class_<RecTy>(m, "RecTy");
+  auto recty = nb::class_<llvm::RecTy>(m, "RecTy");
 
-  nb::enum_<RecTy::RecTyKind>(m, "RecTyKind")
-      .value("BitRecTyKind", RecTy::RecTyKind::BitRecTyKind)
-      .value("BitsRecTyKind", RecTy::RecTyKind::BitsRecTyKind)
-      .value("IntRecTyKind", RecTy::RecTyKind::IntRecTyKind)
-      .value("StringRecTyKind", RecTy::RecTyKind::StringRecTyKind)
-      .value("ListRecTyKind", RecTy::RecTyKind::ListRecTyKind)
-      .value("DagRecTyKind", RecTy::RecTyKind::DagRecTyKind)
-      .value("RecordRecTyKind", RecTy::RecTyKind::RecordRecTyKind);
+  nb::enum_<llvm::RecTy::RecTyKind>(m, "RecTyKind")
+      .value("BitRecTyKind", llvm::RecTy::RecTyKind::BitRecTyKind)
+      .value("BitsRecTyKind", llvm::RecTy::RecTyKind::BitsRecTyKind)
+      .value("IntRecTyKind", llvm::RecTy::RecTyKind::IntRecTyKind)
+      .value("StringRecTyKind", llvm::RecTy::RecTyKind::StringRecTyKind)
+      .value("ListRecTyKind", llvm::RecTy::RecTyKind::ListRecTyKind)
+      .value("DagRecTyKind", llvm::RecTy::RecTyKind::DagRecTyKind)
+      .value("RecordRecTyKind", llvm::RecTy::RecTyKind::RecordRecTyKind);
 
   recty.def("get_rec_ty_kind", &llvm::RecTy::getRecTyKind)
       .def("get_record_keeper", &llvm::RecTy::getRecordKeeper,
            nb::rv_policy::reference_internal)
       .def("get_as_string", &llvm::RecTy::getAsString)
-      .def("__str__", &RecTy::getAsString)
+      .def("__str__", &llvm::RecTy::getAsString)
       .def("print", &llvm::RecTy::print, "os"_a)
       .def("dump", &llvm::RecTy::dump)
       .def("type_is_convertible_to", &llvm::RecTy::typeIsConvertibleTo, "rhs"_a)
@@ -131,7 +81,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_static("get", &llvm::BitRecTy::get, "rk"_a,
                   nb::rv_policy::reference_internal)
       .def("get_as_string", &llvm::BitRecTy::getAsString)
-      .def("__str__", &BitRecTy::getAsString)
+      .def("__str__", &llvm::BitRecTy::getAsString)
       .def("type_is_convertible_to", &llvm::BitRecTy::typeIsConvertibleTo,
            "rhs"_a);
 
@@ -172,7 +122,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_as_string", &llvm::DagRecTy::getAsString)
       .def("__init__", &llvm::DagRecTy::getAsString);
 
-  nb::class_<llvm::RecordRecTy, RecTy>(m, "RecordRecTy")
+  nb::class_<llvm::RecordRecTy, llvm::RecTy>(m, "RecordRecTy")
       .def_static("classof", &llvm::RecordRecTy::classof, "rt"_a)
       .def_static(
           "get",
@@ -190,8 +140,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           "class"_a, nb::rv_policy::reference_internal)
       .def("profile", &llvm::RecordRecTy::Profile, "id"_a)
       .def("get_classes",
-           coerceReturn<std::vector<const Record *>>(&RecordRecTy::getClasses,
-                                                     nb::const_),
+           eudsl::coerceReturn<std::vector<const llvm::Record *>>(
+               &llvm::RecordRecTy::getClasses, nb::const_),
            nb::rv_policy::reference_internal)
       .def("classes_begin", &llvm::RecordRecTy::classes_begin,
            nb::rv_policy::reference_internal)
@@ -239,7 +189,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("is_concrete", &llvm::Init::isConcrete)
       .def("print", &llvm::Init::print, "os"_a)
       .def("get_as_string", &llvm::Init::getAsString)
-      .def("__str__", &Init::getAsUnquotedString)
+      .def("__str__", &llvm::Init::getAsUnquotedString)
       .def("get_as_unquoted_string", &llvm::Init::getAsUnquotedString)
       .def("dump", &llvm::Init::dump)
       .def("get_cast_to", &llvm::Init::getCastTo, "ty"_a,
@@ -337,7 +287,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_as_string", &llvm::BitInit::getAsString)
       .def("__str__", &llvm::BitInit::getAsString);
 
-  nb::class_<llvm::BitsInit, TypedInit>(m, "BitsInit")
+  nb::class_<llvm::BitsInit, llvm::TypedInit>(m, "BitsInit")
       .def_static("classof", &llvm::BitsInit::classof, "i"_a)
       .def_static("get", &llvm::BitsInit::get, "rk"_a, "range"_a,
                   nb::rv_policy::reference_internal)
@@ -415,7 +365,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            nb::rv_policy::reference_internal);
 
   auto llvm_ListInit =
-      nb::class_<llvm::ListInit, TypedInit>(m, "ListInit")
+      nb::class_<llvm::ListInit, llvm::TypedInit>(m, "ListInit")
           .def_static("classof", &llvm::ListInit::classof, "i"_a)
           .def_static("get", &llvm::ListInit::get, "range"_a, "elt_ty"_a,
                       nb::rv_policy::reference_internal)
@@ -440,23 +390,24 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def("empty", &llvm::ListInit::empty)
           .def("get_bit", &llvm::ListInit::getBit, "bit"_a,
                nb::rv_policy::reference_internal)
-          .def("__len__", [](const ListInit &v) { return v.size(); })
-          .def("__bool__", [](const ListInit &v) { return !v.empty(); })
+          .def("__len__", [](const llvm::ListInit &v) { return v.size(); })
+          .def("__bool__", [](const llvm::ListInit &v) { return !v.empty(); })
           .def(
               "__iter__",
-              [](ListInit &v) {
+              [](llvm::ListInit &v) {
                 return nb::make_iterator<nb::rv_policy::reference_internal>(
-                    nb::type<ListInit>(), "Iterator", v.begin(), v.end());
+                    nb::type<llvm::ListInit>(), "Iterator", v.begin(), v.end());
               },
               nb::rv_policy::reference_internal)
           .def(
               "__getitem__",
-              [](ListInit &v, Py_ssize_t i) {
-                return v.getElement(nb::detail::wrap(i, v.size()));
+              [](llvm::ListInit &v, Py_ssize_t i) {
+                return v.getElement(eudsl::wrap(i, v.size()));
               },
               nb::rv_policy::reference_internal)
-          .def("get_values", coerceReturn<std::vector<const Init *>>(
-                                 &ListInit::getValues, nb::const_));
+          .def("get_values",
+               eudsl::coerceReturn<std::vector<const llvm::Init *>>(
+                   &llvm::ListInit::getValues, nb::const_));
 
   auto llvm_OpInit = nb::class_<llvm::OpInit, llvm::TypedInit>(m, "OpInit")
                          .def_static("classof", &llvm::OpInit::classof, "i"_a)
@@ -468,20 +419,20 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                          .def("get_bit", &llvm::OpInit::getBit, "bit"_a,
                               nb::rv_policy::reference_internal);
 
-  auto unaryOpInit = nb::class_<UnOpInit, OpInit>(m, "UnOpInit");
-  nb::enum_<UnOpInit::UnaryOp>(m, "UnaryOp")
-      .value("TOLOWER", UnOpInit::UnaryOp::TOLOWER)
-      .value("TOUPPER", UnOpInit::UnaryOp::TOUPPER)
-      .value("CAST", UnOpInit::UnaryOp::CAST)
-      .value("NOT", UnOpInit::UnaryOp::NOT)
-      .value("HEAD", UnOpInit::UnaryOp::HEAD)
-      .value("TAIL", UnOpInit::UnaryOp::TAIL)
-      .value("SIZE", UnOpInit::UnaryOp::SIZE)
-      .value("EMPTY", UnOpInit::UnaryOp::EMPTY)
-      .value("GETDAGOP", UnOpInit::UnaryOp::GETDAGOP)
-      .value("LOG2", UnOpInit::UnaryOp::LOG2)
-      .value("REPR", UnOpInit::UnaryOp::REPR)
-      .value("LISTFLATTEN", UnOpInit::UnaryOp::LISTFLATTEN);
+  auto unaryOpInit = nb::class_<llvm::UnOpInit, llvm::OpInit>(m, "UnOpInit");
+  nb::enum_<llvm::UnOpInit::UnaryOp>(m, "UnaryOp")
+      .value("TOLOWER", llvm::UnOpInit::UnaryOp::TOLOWER)
+      .value("TOUPPER", llvm::UnOpInit::UnaryOp::TOUPPER)
+      .value("CAST", llvm::UnOpInit::UnaryOp::CAST)
+      .value("NOT", llvm::UnOpInit::UnaryOp::NOT)
+      .value("HEAD", llvm::UnOpInit::UnaryOp::HEAD)
+      .value("TAIL", llvm::UnOpInit::UnaryOp::TAIL)
+      .value("SIZE", llvm::UnOpInit::UnaryOp::SIZE)
+      .value("EMPTY", llvm::UnOpInit::UnaryOp::EMPTY)
+      .value("GETDAGOP", llvm::UnOpInit::UnaryOp::GETDAGOP)
+      .value("LOG2", llvm::UnOpInit::UnaryOp::LOG2)
+      .value("REPR", llvm::UnOpInit::UnaryOp::REPR)
+      .value("LISTFLATTEN", llvm::UnOpInit::UnaryOp::LISTFLATTEN);
 
   unaryOpInit.def_static("classof", &llvm::UnOpInit::classof, "i"_a)
       .def_static("get", &llvm::UnOpInit::get, "opc"_a, "lhs"_a, "type"_a,
@@ -510,36 +461,36 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_as_string", &llvm::UnOpInit::getAsString)
       .def("__str__", &llvm::UnOpInit::getAsUnquotedString);
 
-  auto binaryOpInit = nb::class_<BinOpInit, OpInit>(m, "BinOpInit");
-  nb::enum_<BinOpInit::BinaryOp>(m, "BinaryOp")
-      .value("ADD", BinOpInit::BinaryOp::ADD)
-      .value("SUB", BinOpInit::BinaryOp::SUB)
-      .value("MUL", BinOpInit::BinaryOp::MUL)
-      .value("DIV", BinOpInit::BinaryOp::DIV)
-      .value("AND", BinOpInit::BinaryOp::AND)
-      .value("OR", BinOpInit::BinaryOp::OR)
-      .value("XOR", BinOpInit::BinaryOp::XOR)
-      .value("SHL", BinOpInit::BinaryOp::SHL)
-      .value("SRA", BinOpInit::BinaryOp::SRA)
-      .value("SRL", BinOpInit::BinaryOp::SRL)
-      .value("LISTCONCAT", BinOpInit::BinaryOp::LISTCONCAT)
-      .value("LISTSPLAT", BinOpInit::BinaryOp::LISTSPLAT)
-      .value("LISTREMOVE", BinOpInit::BinaryOp::LISTREMOVE)
-      .value("LISTELEM", BinOpInit::BinaryOp::LISTELEM)
-      .value("LISTSLICE", BinOpInit::BinaryOp::LISTSLICE)
-      .value("RANGEC", BinOpInit::BinaryOp::RANGEC)
-      .value("STRCONCAT", BinOpInit::BinaryOp::STRCONCAT)
-      .value("INTERLEAVE", BinOpInit::BinaryOp::INTERLEAVE)
-      .value("CONCAT", BinOpInit::BinaryOp::CONCAT)
-      .value("EQ", BinOpInit::BinaryOp::EQ)
-      .value("NE", BinOpInit::BinaryOp::NE)
-      .value("LE", BinOpInit::BinaryOp::LE)
-      .value("LT", BinOpInit::BinaryOp::LT)
-      .value("GE", BinOpInit::BinaryOp::GE)
-      .value("GT", BinOpInit::BinaryOp::GT)
-      .value("GETDAGARG", BinOpInit::BinaryOp::GETDAGARG)
-      .value("GETDAGNAME", BinOpInit::BinaryOp::GETDAGNAME)
-      .value("SETDAGOP", BinOpInit::BinaryOp::SETDAGOP);
+  auto binaryOpInit = nb::class_<llvm::BinOpInit, llvm::OpInit>(m, "BinOpInit");
+  nb::enum_<llvm::BinOpInit::BinaryOp>(m, "BinaryOp")
+      .value("ADD", llvm::BinOpInit::BinaryOp::ADD)
+      .value("SUB", llvm::BinOpInit::BinaryOp::SUB)
+      .value("MUL", llvm::BinOpInit::BinaryOp::MUL)
+      .value("DIV", llvm::BinOpInit::BinaryOp::DIV)
+      .value("AND", llvm::BinOpInit::BinaryOp::AND)
+      .value("OR", llvm::BinOpInit::BinaryOp::OR)
+      .value("XOR", llvm::BinOpInit::BinaryOp::XOR)
+      .value("SHL", llvm::BinOpInit::BinaryOp::SHL)
+      .value("SRA", llvm::BinOpInit::BinaryOp::SRA)
+      .value("SRL", llvm::BinOpInit::BinaryOp::SRL)
+      .value("LISTCONCAT", llvm::BinOpInit::BinaryOp::LISTCONCAT)
+      .value("LISTSPLAT", llvm::BinOpInit::BinaryOp::LISTSPLAT)
+      .value("LISTREMOVE", llvm::BinOpInit::BinaryOp::LISTREMOVE)
+      .value("LISTELEM", llvm::BinOpInit::BinaryOp::LISTELEM)
+      .value("LISTSLICE", llvm::BinOpInit::BinaryOp::LISTSLICE)
+      .value("RANGEC", llvm::BinOpInit::BinaryOp::RANGEC)
+      .value("STRCONCAT", llvm::BinOpInit::BinaryOp::STRCONCAT)
+      .value("INTERLEAVE", llvm::BinOpInit::BinaryOp::INTERLEAVE)
+      .value("CONCAT", llvm::BinOpInit::BinaryOp::CONCAT)
+      .value("EQ", llvm::BinOpInit::BinaryOp::EQ)
+      .value("NE", llvm::BinOpInit::BinaryOp::NE)
+      .value("LE", llvm::BinOpInit::BinaryOp::LE)
+      .value("LT", llvm::BinOpInit::BinaryOp::LT)
+      .value("GE", llvm::BinOpInit::BinaryOp::GE)
+      .value("GT", llvm::BinOpInit::BinaryOp::GT)
+      .value("GETDAGARG", llvm::BinOpInit::BinaryOp::GETDAGARG)
+      .value("GETDAGNAME", llvm::BinOpInit::BinaryOp::GETDAGNAME)
+      .value("SETDAGOP", llvm::BinOpInit::BinaryOp::SETDAGOP);
 
   binaryOpInit.def_static("classof", &llvm::BinOpInit::classof, "i"_a)
       .def_static("get", &llvm::BinOpInit::get, "opc"_a, "lhs"_a, "rhs"_a,
@@ -568,18 +519,19 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_as_string", &llvm::BinOpInit::getAsString)
       .def("__str__", &llvm::BinOpInit::getAsUnquotedString);
 
-  auto ternaryOpInit = nb::class_<TernOpInit, OpInit>(m, "TernOpInit");
-  nb::enum_<TernOpInit::TernaryOp>(m, "TernaryOp")
-      .value("SUBST", TernOpInit::TernaryOp::SUBST)
-      .value("FOREACH", TernOpInit::TernaryOp::FOREACH)
-      .value("FILTER", TernOpInit::TernaryOp::FILTER)
-      .value("IF", TernOpInit::TernaryOp::IF)
-      .value("DAG", TernOpInit::TernaryOp::DAG)
-      .value("RANGE", TernOpInit::TernaryOp::RANGE)
-      .value("SUBSTR", TernOpInit::TernaryOp::SUBSTR)
-      .value("FIND", TernOpInit::TernaryOp::FIND)
-      .value("SETDAGARG", TernOpInit::TernaryOp::SETDAGARG)
-      .value("SETDAGNAME", TernOpInit::TernaryOp::SETDAGNAME);
+  auto ternaryOpInit =
+      nb::class_<llvm::TernOpInit, llvm::OpInit>(m, "TernOpInit");
+  nb::enum_<llvm::TernOpInit::TernaryOp>(m, "TernaryOp")
+      .value("SUBST", llvm::TernOpInit::TernaryOp::SUBST)
+      .value("FOREACH", llvm::TernOpInit::TernaryOp::FOREACH)
+      .value("FILTER", llvm::TernOpInit::TernaryOp::FILTER)
+      .value("IF", llvm::TernOpInit::TernaryOp::IF)
+      .value("DAG", llvm::TernOpInit::TernaryOp::DAG)
+      .value("RANGE", llvm::TernOpInit::TernaryOp::RANGE)
+      .value("SUBSTR", llvm::TernOpInit::TernaryOp::SUBSTR)
+      .value("FIND", llvm::TernOpInit::TernaryOp::FIND)
+      .value("SETDAGARG", llvm::TernOpInit::TernaryOp::SETDAGARG)
+      .value("SETDAGNAME", llvm::TernOpInit::TernaryOp::SETDAGNAME);
 
   ternaryOpInit.def_static("classof", &llvm::TernOpInit::classof, "i"_a)
       .def_static("get", &llvm::TernOpInit::get, "opc"_a, "lhs"_a, "mhs"_a,
@@ -605,7 +557,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_as_string", &llvm::TernOpInit::getAsString)
       .def("__str__", &llvm::TernOpInit::getAsUnquotedString);
 
-  nb::class_<CondOpInit, TypedInit>(m, "CondOpInit")
+  nb::class_<llvm::CondOpInit, llvm::TypedInit>(m, "CondOpInit")
       .def_static("classof", &llvm::CondOpInit::classof, "i"_a)
       .def_static("get", &llvm::CondOpInit::get, "c"_a, "v"_a, "type"_a,
                   nb::rv_policy::reference_internal)
@@ -642,7 +594,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_bit", &llvm::CondOpInit::getBit, "bit"_a,
            nb::rv_policy::reference_internal);
 
-  nb::class_<FoldOpInit, TypedInit>(m, "FoldOpInit")
+  nb::class_<llvm::FoldOpInit, llvm::TypedInit>(m, "FoldOpInit")
       .def_static("classof", &llvm::FoldOpInit::classof, "i"_a)
       .def_static("get", &llvm::FoldOpInit::get, "start"_a, "list"_a, "a"_a,
                   "b"_a, "expr"_a, "type"_a, nb::rv_policy::reference_internal)
@@ -657,7 +609,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_as_string", &llvm::FoldOpInit::getAsString)
       .def("__str__", &llvm::FoldOpInit::getAsString);
 
-  nb::class_<IsAOpInit, TypedInit>(m, "IsAOpInit")
+  nb::class_<llvm::IsAOpInit, llvm::TypedInit>(m, "IsAOpInit")
       .def_static("classof", &llvm::IsAOpInit::classof, "i"_a)
       .def_static("get", &llvm::IsAOpInit::get, "check_type"_a, "expr"_a,
                   nb::rv_policy::reference_internal)
@@ -671,7 +623,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("__str__", &llvm::IsAOpInit::getAsString)
       .def("get_as_string", &llvm::IsAOpInit::getAsString);
 
-  nb::class_<ExistsOpInit, TypedInit>(m, "ExistsOpInit")
+  nb::class_<llvm::ExistsOpInit, llvm::TypedInit>(m, "ExistsOpInit")
       .def_static("classof", &llvm::ExistsOpInit::classof, "i"_a)
       .def_static("get", &llvm::ExistsOpInit::get, "check_type"_a, "expr"_a,
                   nb::rv_policy::reference_internal)
@@ -686,7 +638,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_as_string", &llvm::ExistsOpInit::getAsString)
       .def("__str__", &llvm::ExistsOpInit::getAsUnquotedString);
 
-  nb::class_<VarInit, TypedInit>(m, "VarInit")
+  nb::class_<llvm::VarInit, llvm::TypedInit>(m, "VarInit")
       .def_static("classof", &llvm::VarInit::classof, "i"_a)
       .def_static(
           "get",
@@ -709,7 +661,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_as_string", &llvm::VarInit::getAsString)
       .def("__str__", &llvm::VarInit::getAsUnquotedString);
 
-  nb::class_<VarBitInit, TypedInit>(m, "VarBitInit")
+  nb::class_<llvm::VarBitInit, llvm::TypedInit>(m, "VarBitInit")
       .def_static("classof", &llvm::VarBitInit::classof, "i"_a)
       .def_static("get", &llvm::VarBitInit::get, "t"_a, "b"_a,
                   nb::rv_policy::reference_internal)
@@ -723,7 +675,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_bit", &llvm::VarBitInit::getBit, "b"_a,
            nb::rv_policy::reference_internal);
 
-  nb::class_<DefInit, TypedInit>(m, "DefInit")
+  nb::class_<llvm::DefInit, llvm::TypedInit>(m, "DefInit")
       .def_static("classof", &llvm::DefInit::classof, "i"_a)
       .def("convert_initializer_to", &llvm::DefInit::convertInitializerTo,
            "ty"_a, nb::rv_policy::reference_internal)
@@ -736,7 +688,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_bit", &llvm::DefInit::getBit, "bit"_a,
            nb::rv_policy::reference_internal);
 
-  nb::class_<VarDefInit, TypedInit>(m, "VarDefInit")
+  nb::class_<llvm::VarDefInit, llvm::TypedInit>(m, "VarDefInit")
       .def_static("classof", &llvm::VarDefInit::classof, "i"_a)
       .def_static("get", &llvm::VarDefInit::get, "loc"_a, "class"_a, "args"_a,
                   nb::rv_policy::reference_internal)
@@ -757,27 +709,28 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_bit", &llvm::VarDefInit::getBit, "bit"_a,
            nb::rv_policy::reference_internal)
       .def("args",
-           coerceReturn<std::vector<const ArgumentInit *>>(&VarDefInit::args,
-                                                           nb::const_),
+           eudsl::coerceReturn<std::vector<const llvm::ArgumentInit *>>(
+               &llvm::VarDefInit::args, nb::const_),
            nb::rv_policy::reference_internal)
-      .def("__len__", [](const VarDefInit &v) { return v.args_size(); })
-      .def("__bool__", [](const VarDefInit &v) { return !v.args_empty(); })
+      .def("__len__", [](const llvm::VarDefInit &v) { return v.args_size(); })
+      .def("__bool__",
+           [](const llvm::VarDefInit &v) { return !v.args_empty(); })
       .def(
           "__iter__",
-          [](VarDefInit &v) {
+          [](llvm::VarDefInit &v) {
             return nb::make_iterator<nb::rv_policy::reference_internal>(
-                nb::type<VarDefInit>(), "Iterator", v.args_begin(),
+                nb::type<llvm::VarDefInit>(), "Iterator", v.args_begin(),
                 v.args_end());
           },
           nb::rv_policy::reference_internal)
       .def(
           "__getitem__",
-          [](VarDefInit &v, Py_ssize_t i) {
-            return v.getArg(nb::detail::wrap(i, v.args_size()));
+          [](llvm::VarDefInit &v, Py_ssize_t i) {
+            return v.getArg(eudsl::wrap(i, v.args_size()));
           },
           nb::rv_policy::reference_internal);
 
-  nb::class_<FieldInit, TypedInit>(m, "FieldInit")
+  nb::class_<llvm::FieldInit, llvm::TypedInit>(m, "FieldInit")
       .def_static("classof", &llvm::FieldInit::classof, "i"_a)
       .def_static("get", &llvm::FieldInit::get, "r"_a, "fn"_a,
                   nb::rv_policy::reference_internal)
@@ -795,7 +748,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_as_string", &llvm::FieldInit::getAsString)
       .def("__str__", &llvm::FieldInit::getAsUnquotedString);
 
-  nb::class_<DagInit, TypedInit>(m, "DagInit")
+  nb::class_<llvm::DagInit, llvm::TypedInit>(m, "DagInit")
       .def("profile", &llvm::DagInit::Profile, "id"_a)
       .def("get_operator", &llvm::DagInit::getOperator,
            nb::rv_policy::reference_internal)
@@ -830,26 +783,27 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_bit", &llvm::DagInit::getBit, "bit"_a,
            nb::rv_policy::reference_internal)
       .def("get_arg_names",
-           coerceReturn<std::vector<const StringInit *>>(&DagInit::getArgNames,
-                                                         nb::const_),
+           eudsl::coerceReturn<std::vector<const llvm::StringInit *>>(
+               &llvm::DagInit::getArgNames, nb::const_),
            nb::rv_policy::reference_internal)
       .def("get_args",
-           coerceReturn<std::vector<const Init *>>(&DagInit::getArgs,
-                                                   nb::const_),
+           eudsl::coerceReturn<std::vector<const llvm::Init *>>(
+               &llvm::DagInit::getArgs, nb::const_),
            nb::rv_policy::reference_internal)
-      .def("__len__", [](const DagInit &v) { return v.arg_size(); })
-      .def("__bool__", [](const DagInit &v) { return !v.arg_empty(); })
+      .def("__len__", [](const llvm::DagInit &v) { return v.arg_size(); })
+      .def("__bool__", [](const llvm::DagInit &v) { return !v.arg_empty(); })
       .def(
           "__iter__",
-          [](DagInit &v) {
+          [](llvm::DagInit &v) {
             return nb::make_iterator<nb::rv_policy::reference_internal>(
-                nb::type<DagInit>(), "Iterator", v.arg_begin(), v.arg_end());
+                nb::type<llvm::DagInit>(), "Iterator", v.arg_begin(),
+                v.arg_end());
           },
           nb::rv_policy::reference_internal)
       .def(
           "__getitem__",
-          [](DagInit &v, Py_ssize_t i) {
-            return v.getArg(nb::detail::wrap(i, v.arg_size()));
+          [](llvm::DagInit &v, Py_ssize_t i) {
+            return v.getArg(eudsl::wrap(i, v.arg_size()));
           },
           nb::rv_policy::reference_internal);
 
@@ -893,11 +847,11 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("dump", &llvm::RecordVal::dump)
       .def("print", &llvm::RecordVal::print, "os"_a, "print_sem"_a)
       .def("__str__",
-           [](const RecordVal &self) {
+           [](const llvm::RecordVal &self) {
              return self.getValue() ? self.getValue()->getAsUnquotedString()
                                     : "<<NULL>>";
            })
-      .def("is_used", &RecordVal::isUsed);
+      .def("is_used", &llvm::RecordVal::isUsed);
 
   struct RecordValues {};
   nb::class_<RecordValues>(m, "RecordValues", nb::dynamic_attr())
@@ -908,7 +862,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
              int i = 0;
              for (auto [key, value] : dic) {
                s += key + nb::str("=") +
-                    nb::str(nb::cast<RecordVal>(value)
+                    nb::str(nb::cast<llvm::RecordVal>(value)
                                 .getValue()
                                 ->getAsUnquotedString()
                                 .c_str());
@@ -944,16 +898,16 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           },
           nb::rv_policy::reference_internal);
 
-  nb::class_<Record>(m, "Record")
+  nb::class_<llvm::Record>(m, "Record")
       .def("get_direct_super_classes",
-           [](const Record &self) -> std::vector<const Record *> {
-             SmallVector<const Record *> Classes;
+           [](const llvm::Record &self) -> std::vector<const llvm::Record *> {
+             llvm::SmallVector<const llvm::Record *> Classes;
              self.getDirectSuperClasses(Classes);
              return {Classes.begin(), Classes.end()};
            })
       .def(
           "get_values",
-          [](Record &self) {
+          [](llvm::Record &self) {
             // you can't just call the class_->operator()
             nb::handle recordValsInstTy = nb::type<RecordValues>();
             assert(recordValsInstTy.is_valid() &&
@@ -963,8 +917,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                    recordValsInst.type().is(recordValsInstTy) &&
                    !nb::inst_ready(recordValsInst));
 
-            std::vector<RecordVal> values = self.getValues();
-            for (const RecordVal &recordVal : values) {
+            std::vector<llvm::RecordVal> values = self.getValues();
+            for (const llvm::RecordVal &recordVal : values) {
               nb::setattr(recordValsInst, recordVal.getName().str().c_str(),
                           nb::borrow(nb::cast(recordVal)));
             }
@@ -972,8 +926,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           },
           nb::rv_policy::reference_internal)
       .def("get_template_args",
-           coerceReturn<std::vector<const Init *>>(&Record::getTemplateArgs,
-                                                   nb::const_),
+           eudsl::coerceReturn<std::vector<const llvm::Init *>>(
+               &llvm::Record::getTemplateArgs, nb::const_),
            nb::rv_policy::reference_internal)
       .def_static("get_new_uid", &llvm::Record::getNewUID, "rk"_a)
       .def("get_id", &llvm::Record::getID)
@@ -1105,8 +1059,9 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_value_as_dag", &llvm::Record::getValueAsDag, "field_name"_a,
            nb::rv_policy::reference_internal);
 
-  using RecordMap = std::map<std::string, std::unique_ptr<Record>, std::less<>>;
-  using GlobalMap = std::map<std::string, const Init *, std::less<>>;
+  using RecordMap =
+      std::map<std::string, std::unique_ptr<llvm::Record>, std::less<>>;
+  using GlobalMap = std::map<std::string, const llvm::Init *, std::less<>>;
   nb::bind_map<GlobalMap, nb::rv_policy::reference_internal>(m, "GlobalMap");
 
   nb::class_<RecordMap>(m, "RecordMap")
@@ -1142,26 +1097,27 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           },
           nb::rv_policy::reference_internal);
 
-  nb::class_<RecordKeeper>(m, "RecordKeeper")
+  nb::class_<llvm::RecordKeeper>(m, "RecordKeeper")
       .def(nb::init<>())
       .def(
           "parse_td",
-          [](RecordKeeper &self, const std::string &inputFilename,
+          [](llvm::RecordKeeper &self, const std::string &inputFilename,
              const std::vector<std::string> &includeDirs,
              const std::vector<std::string> &macroNames,
              bool noWarnOnUnusedTemplateArgs) {
-            ErrorOr<std::unique_ptr<MemoryBuffer>> fileOrErr =
-                MemoryBuffer::getFileOrSTDIN(inputFilename, /*IsText=*/true);
+            llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
+                llvm::MemoryBuffer::getFileOrSTDIN(inputFilename,
+                                                   /*IsText=*/true);
             if (std::error_code EC = fileOrErr.getError())
               throw std::runtime_error("Could not open input file '" +
                                        inputFilename + "': " + EC.message() +
                                        "\n");
             self.saveInputFilename(inputFilename);
-            SourceMgr srcMgr;
+            llvm::SourceMgr srcMgr;
             srcMgr.setIncludeDirs(includeDirs);
-            srcMgr.AddNewSourceBuffer(std::move(*fileOrErr), SMLoc());
-            TGParser tgParser(srcMgr, macroNames, self,
-                              noWarnOnUnusedTemplateArgs);
+            srcMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
+            llvm::TGParser tgParser(srcMgr, macroNames, self,
+                                    noWarnOnUnusedTemplateArgs);
             if (tgParser.ParseFile())
               throw std::runtime_error("Could not parse file '" +
                                        inputFilename);
@@ -1203,8 +1159,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("dump", &llvm::RecordKeeper::dump)
       .def(
           "get_all_derived_definitions",
-          [](RecordKeeper &self,
-             const std::string &className) -> std::vector<const Record *> {
+          [](llvm::RecordKeeper &self, const std::string &className)
+              -> std::vector<const llvm::Record *> {
             return self.getAllDerivedDefinitions(className);
           },
           "class_name"_a, nb::rv_policy::reference_internal);

@@ -30,6 +30,8 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_LIST_DIR)
   include(AddLLVM)
   include(AddMLIR)
   include(HandleLLVMOptions)
+
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/../common)
 endif()
 
 include_directories(${MLIR_INCLUDE_DIRS})
@@ -59,6 +61,7 @@ nanobind_add_module(eudsl_tblgen_ext NB_STATIC
   src/TGParser.cpp
   src/TGLexer.cpp
 )
+set_property(TARGET eudsl_tblgen_ext PROPERTY POSITION_INDEPENDENT_CODE ON)
 set(eudsl_tblgen_ext_libs
   LLVMTableGenCommon LLVMTableGen LLVMCore MLIRTableGen)
 if(APPLE)

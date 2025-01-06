@@ -6,6 +6,7 @@
 #pragma once
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/Support/TypeName.h"
 
 #include <algorithm>
 #include <nanobind/make_iterator.h>
@@ -13,7 +14,9 @@
 #include <nanobind/operators.h>
 #include <nanobind/stl/bind_vector.h>
 #include <nanobind/stl/detail/traits.h>
+#include <nanobind/typing.h>
 
+namespace eudsl {
 struct _ArrayRef {};
 struct _MutableArrayRef {};
 struct _SmallVector {};
@@ -283,3 +286,18 @@ nanobind::class_<Vector> bind_iter_range(nanobind::handle scope,
 
   return cl;
 }
+
+inline void bind_array_ref_smallvector(nanobind::handle scope) {
+  scope.attr("T") = nanobind::type_var("T");
+  arrayRef =
+      nanobind::class_<_ArrayRef>(scope, "ArrayRef", nanobind::is_generic(),
+                                  nanobind::sig("class ArrayRef[T]"));
+  mutableArrayRef = nanobind::class_<_MutableArrayRef>(
+      scope, "MutableArrayRef", nanobind::is_generic(),
+      nanobind::sig("class MutableArrayRef[T]"));
+  smallVector = nanobind::class_<_SmallVector>(
+      scope, "SmallVector", nanobind::is_generic(),
+      nanobind::sig("class SmallVector[T]"));
+}
+
+} // namespace eudsl

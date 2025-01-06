@@ -93,6 +93,7 @@ static std::string getPyClassName(const std::string &qualifiedNameAsString) {
   s = std::regex_replace(s, std::regex(R"(\*)"), "");
   s = std::regex_replace(s, std::regex("<"), "[");
   s = std::regex_replace(s, std::regex(">"), "]");
+  s = std::regex_replace(s, std::regex("::"), ".");
   return s;
 }
 
@@ -100,7 +101,6 @@ static std::string snakeCase(const std::string &name) {
   std::string s = name;
   s = std::regex_replace(s, std::regex(R"(([A-Z]+)([A-Z][a-z]))"), "$1_$2");
   s = std::regex_replace(s, std::regex(R"(([a-z\d])([A-Z]))"), "$1_$2");
-  s = std::regex_replace(s, std::regex("-"), "_");
   std::transform(s.begin(), s.end(), s.begin(),
                  [](unsigned char c) { return std::tolower(c); });
   return s;
@@ -143,20 +143,26 @@ static llvm::SmallPtrSet<T *, 1> findOverloads(clang::FunctionDecl *decl,
   return results;
 }
 
-// TODO(max): split this into two functions (one for names and one for types)
-static std::string sanitizeNameOrType(std::string nameOrType,
-                                      int emptyIdx = 0) {
-  if (nameOrType == "from")
-    nameOrType = "from_";
-  else if (nameOrType == "except")
-    nameOrType = "except_";
-  else if (nameOrType == "")
-    nameOrType = std::string(emptyIdx + 1, '_');
-  else if (nameOrType.rfind("ArrayRef", 0) == 0)
-    nameOrType = "llvm::" + nameOrType;
-  if (std::regex_search(nameOrType, std::regex(R"(std::__1)")))
-    nameOrType = std::regex_replace(nameOrType, std::regex("std::__1"), "std");
-  return nameOrType;
+static std::string sanitizeName(std::string name, int emptyIdx = 0) {
+  if (name == "def")
+    name = "def_";
+  if (name == "from")
+    name = "from_";
+  else if (name == "except")
+    name = "except_";
+  else if (name == "")
+    name = std::string(emptyIdx + 1, '_');
+  return name;
+}
+
+static std::string sanitizeType(std::string type) {
+  if (type.rfind("ArrayRef", 0) == 0)
+    type = "llvm::" + type;
+  if (std::regex_search(type, std::regex(R"(std::__1)")))
+    type = std::regex_replace(type, std::regex("std::__1"), "std");
+  if (std::regex_search(type, std::regex(R"(std::__cxx11)")))
+    type = std::regex_replace(type, std::regex("std::__cxx11"), "std");
+  return type;
 }
 
 // emit a lambda body to disambiguate/break ties amongst overloads
@@ -187,12 +193,21 @@ std::string emitNBLambdaBody(clang::FunctionDecl *decl,
       n = llvm::formatv("std::move({0})", n);
   }
   std::string newParamNamesStr = llvm::join(newParamNames, ", ");
+  std::string return_;
+  auto returnTypeT = decl->getReturnType();
+  if (!returnTypeT->isVoidType())
+    return_ = "return";
+
+  bool canonical = true;
+  if (std::regex_search(returnTypeT.getAsString(), std::regex(R"(_t\b)")))
+    canonical = false;
+  std::string returnType =
+      sanitizeType(returnTypeT.getAsString(getPrintingPolicy(canonical)));
+
   std::string funcRef;
-  std::string returnType = sanitizeNameOrType(
-      decl->getReturnType().getAsString(getPrintingPolicy()));
   if (decl->isStatic() || !decl->isCXXClassMember()) {
-    funcRef = llvm::formatv("\n  []({0}) -> {1} {{\n    return {2}({3});\n  }",
-                            typedParamsStr, returnType,
+    funcRef = llvm::formatv("\n  []({0}) -> {1} {{\n    {2} {3}({4});\n  }",
+                            typedParamsStr, returnType, return_,
                             decl->getQualifiedNameAsString(), newParamNamesStr);
   } else {
     assert(decl->isCXXClassMember() && "expected class member");
@@ -200,14 +215,74 @@ std::string emitNBLambdaBody(clang::FunctionDecl *decl,
       typedParamsStr = llvm::formatv("self, {0}", typedParamsStr);
     else
       typedParamsStr = "self";
+    std::string methName = decl->getNameAsString();
+    if (llvm::isa<clang::CXXConversionDecl>(decl))
+      methName = "operator " + returnType;
     const clang::CXXRecordDecl *parentRecord =
         llvm::cast<clang::CXXRecordDecl>(decl->getParent());
-    funcRef = llvm::formatv(
-        "\n  []({0}& {1}) -> {2} {{\n    return self.{3}({4});\n  }",
-        parentRecord->getQualifiedNameAsString(), typedParamsStr, returnType,
-        decl->getNameAsString(), newParamNamesStr);
+    funcRef =
+        llvm::formatv("\n  []({0}& {1}) -> {2} {{\n    {3} self.{4}({5});\n  }",
+                      parentRecord->getQualifiedNameAsString(), typedParamsStr,
+                      returnType, return_, methName, newParamNamesStr);
   }
   return funcRef;
+}
+
+static std::string
+processOperator(const std::string &fnName,
+                const llvm::SmallVector<std::string> &argNames) {
+  std::string newFnName = fnName;
+  if (fnName == "operator!=") {
+    newFnName = "__ne__";
+  } else if (fnName == "operator==") {
+    newFnName = "__eq__";
+  } else if (fnName == "operator-") {
+    newFnName = "__neg__";
+  } else if (fnName == "operator[]") {
+    newFnName = "__getitem__";
+  } else if (fnName == "operator<") {
+    newFnName = "__lt__";
+  } else if (fnName == "operator<=") {
+    newFnName = "__le__";
+  } else if (fnName == "operator>") {
+    newFnName = "__gt__";
+  } else if (fnName == "operator>=") {
+    newFnName = "__ge__";
+  } else if (fnName == "operator%") {
+    newFnName = "__mod__";
+  } else if (fnName == "operator*") {
+    if (!argNames.empty()) {
+      newFnName = "__mul__";
+    } else {
+      // operator* not supported
+    }
+  } else if (fnName == "operator+" && !argNames.empty()) {
+    newFnName = "__add__";
+  } else if (fnName == "operator->") {
+    // operator-> not supported
+  } else if (fnName == "operator!") {
+    // operator! not supported
+  } else if (fnName == "operator<<") {
+    // operator<< not supported
+  }
+
+  return newFnName;
+}
+
+static std::string getCppClass(const clang::CXXRecordDecl *decl) {
+  std::string className;
+  if (const clang::ClassTemplateSpecializationDecl *t =
+          llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(decl)) {
+    // TODO(max): this emits unnecessary default template args, like
+    // mlir::detail::TypeIDResolver<void, void>
+    // auto td = t->getTypeForDecl();
+    className = t->getTypeForDecl()->getCanonicalTypeInternal().getAsString(
+        getPrintingPolicy());
+  } else {
+    className = decl->getQualifiedNameAsString();
+  }
+
+  return sanitizeType(className);
 }
 
 static bool
@@ -227,8 +302,8 @@ emitClassMethodOrFunction(clang::FunctionDecl *decl,
     if (std::regex_search(t.getAsString(), std::regex(R"(_t\b)")))
       canonical = false;
     std::string paramType = t.getAsString(getPrintingPolicy(canonical));
-    paramTypes.push_back(sanitizeNameOrType(paramType));
-    paramNames.push_back(sanitizeNameOrType(name, i));
+    paramTypes.push_back(sanitizeType(paramType));
+    paramNames.push_back(sanitizeName(name, i));
   }
 
   llvm::SmallPtrSet<clang::FunctionDecl *, 1> funcOverloads =
@@ -237,21 +312,20 @@ emitClassMethodOrFunction(clang::FunctionDecl *decl,
       findOverloads<clang::FunctionTemplateDecl>(decl, ci.getSema());
   std::string funcRef, nbFnName;
 
-  if (auto ctor = llvm::dyn_cast<clang::CXXConstructorDecl>(decl)) {
+  if (clang::CXXConstructorDecl *ctor =
+          llvm::dyn_cast<clang::CXXConstructorDecl>(decl)) {
     if (ctor->isDeleted())
       return false;
     funcRef = llvm::formatv("nb::init<{0}>()", llvm::join(paramTypes, ", "));
   } else {
-    if (funcOverloads.size() == 1 && funcTemplOverloads.empty()) {
+    if (funcOverloads.size() == 1 && funcTemplOverloads.empty())
       funcRef = llvm::formatv("&{0}", decl->getQualifiedNameAsString());
-    } else {
+    else
       funcRef = emitNBLambdaBody(decl, paramNames, paramTypes);
-    }
-
     nbFnName = snakeCase(decl->getNameAsString());
-    if (decl->isOverloadedOperator()) {
-      // TODO(max): handle overloaded operators
-      // nbFnName = nbFnName;
+    if (decl->isOverloadedOperator() ||
+        llvm::isa<clang::CXXConversionDecl>(decl)) {
+      nbFnName = processOperator(nbFnName, paramNames);
     } else if (decl->isStatic() && funcOverloads.size() > 1 &&
                llvm::any_of(funcOverloads, [](clang::FunctionDecl *m) {
                  return !m->isStatic();
@@ -299,7 +373,7 @@ emitClassMethodOrFunction(clang::FunctionDecl *decl,
   if (decl->isCXXClassMember()) {
     const clang::CXXRecordDecl *parentRecord =
         llvm::cast<clang::CXXRecordDecl>(decl->getParent());
-    scope = getNBBindClassName(parentRecord->getQualifiedNameAsString());
+    scope = getNBBindClassName(getCppClass(parentRecord));
   }
 
   outputFile->os() << llvm::formatv("{0}.{1}({2}{3}{4}{5}{6});\n", scope,
@@ -309,13 +383,12 @@ emitClassMethodOrFunction(clang::FunctionDecl *decl,
   return true;
 }
 
-std::string getNBScope(clang::TagDecl *decl) {
+static std::string getNBScope(clang::TagDecl *decl) {
   std::string scope = "m";
   const clang::DeclContext *declContext = decl->getDeclContext();
-  if (declContext->isRecord()) {
-    const clang::CXXRecordDecl *ctx =
-        llvm::cast<clang::CXXRecordDecl>(declContext);
-    scope = getNBBindClassName(ctx->getQualifiedNameAsString());
+  if (const clang::CXXRecordDecl *ctx =
+          llvm::dyn_cast<clang::CXXRecordDecl>(declContext)) {
+    scope = getNBBindClassName(getCppClass(ctx));
   }
   return scope;
 }
@@ -330,9 +403,9 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
     return false;
   }
 
-  std::string scope = getNBScope(decl);
   std::string additional = "";
-  std::string className = decl->getQualifiedNameAsString();
+  std::string cppClass = getCppClass(decl);
+  std::string autoVar = llvm::formatv("auto {0}", getNBBindClassName(cppClass));
   if (decl->getNumBases() > 1) {
     clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
         decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
@@ -341,25 +414,27 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
   } else if (decl->getNumBases() == 1) {
     // handle some known bases that we've already found a wap to bind
     clang::CXXBaseSpecifier baseClass = *decl->bases_begin();
-    std::string baseName = baseClass.getType().getAsString(getPrintingPolicy());
+    clang::QualType baseType = baseClass.getType();
+    std::string baseName = getCppClass(baseType->getAsCXXRecordDecl());
     // TODO(max): these could be lookups on the corresponding recorddecls using
     // sema...
     if (baseName.rfind("mlir::Op<", 0) == 0) {
-      className = llvm::formatv("{0}, mlir::OpState", className);
+      cppClass = llvm::formatv("{0}, mlir::OpState", cppClass);
     } else if (baseName.rfind("mlir::detail::StorageUserBase<", 0) == 0) {
       llvm::SmallVector<llvm::StringRef, 2> templParams;
       llvm::StringRef{baseName}.split(templParams, ",");
-      className = llvm::formatv("{0}, {1}", className, templParams[1]);
+      // TODO(max): this needs to use getCppClass not templParams[1], which is a
+      // string
+      cppClass = llvm::formatv("{0}, {1}", cppClass, templParams[1]);
     } else if (baseName.rfind("mlir::Dialect", 0) == 0 &&
-               className.rfind("mlir::ExtensibleDialect") ==
-                   std::string::npos) {
+               cppClass.rfind("mlir::ExtensibleDialect") == std::string::npos) {
       // clang-format off
-      additional += llvm::formatv("\n  .def_static(\"insert_into_registry\", [](mlir::DialectRegistry &registry) {{ registry.insert<{0}>(); })", className);
-      additional += llvm::formatv("\n  .def_static(\"load_into_context\", [](mlir::MLIRContext &context) {{ return context.getOrLoadDialect<{0}>(); })", className);
+      additional += llvm::formatv("\n  .def_static(\"insert_into_registry\", [](mlir::DialectRegistry &registry) {{ registry.insert<{0}>(); })", cppClass);
+      additional += llvm::formatv("\n  .def_static(\"load_into_context\", [](mlir::MLIRContext &context) {{ return context.getOrLoadDialect<{0}>(); })", cppClass);
       // clang-format on
     } else if (!llvm::isa<clang::ClassTemplateSpecializationDecl>(
                    baseClass.getType()->getAsCXXRecordDecl())) {
-      className = llvm::formatv("{0}, {1}", className, baseName);
+      cppClass = llvm::formatv("{0}, {1}", cppClass, baseName);
     } else {
       assert(llvm::isa<clang::ClassTemplateSpecializationDecl>(
                  baseClass.getType()->getAsCXXRecordDecl()) &&
@@ -372,12 +447,11 @@ static bool emitClass(clang::CXXRecordDecl *decl, clang::CompilerInstance &ci,
     }
   }
 
-  std::string autoVar = llvm::formatv(
-      "auto {0}", getNBBindClassName(decl->getQualifiedNameAsString()));
-
+  std::string scope = getNBScope(decl);
+  std::string pyClassName = getPyClassName(decl->getNameAsString());
   outputFile->os() << llvm::formatv(
-      "\n{0} = nb::class_<{1}>({2}, \"{3}\"){4};\n", autoVar, className, scope,
-      getPyClassName(decl->getNameAsString()), additional);
+      "\n{0} = nb::class_<{1}>({2}, \"{3}\"){4};\n", autoVar, cppClass, scope,
+      pyClassName, additional);
 
   return true;
 }
@@ -396,10 +470,9 @@ static bool emitEnum(clang::EnumDecl *decl, clang::CompilerInstance &ci,
                                       cstDecl->getQualifiedNameAsString());
     if (i++ < nDecls - 1)
       outputFile->os() << "\n";
-    else
-      outputFile->os() << ";\n";
   }
-  outputFile->os() << "\n";
+
+  outputFile->os() << ";\n";
   return true;
 }
 
@@ -422,8 +495,7 @@ static bool emitField(clang::DeclaratorDecl *field, clang::CompilerInstance &ci,
   if (field->getType()->hasPointerRepresentation())
     refInternal = ", nb::rv_policy::reference_internal";
 
-  std::string scope =
-      getNBBindClassName(parentRecord->getQualifiedNameAsString());
+  std::string scope = getNBBindClassName(getCppClass(parentRecord));
   std::string nbFnName =
       llvm::formatv("\"{0}\"", snakeCase(field->getNameAsString()));
   outputFile->os() << llvm::formatv("{0}.{1}({2}, &{3}{4});\n", scope, defStr,
@@ -433,7 +505,7 @@ static bool emitField(clang::DeclaratorDecl *field, clang::CompilerInstance &ci,
 }
 
 template <typename T>
-static bool shouldSkip(T *decl) {
+static bool shouldSkip(T *decl, clang::CompilerInstance &ci) {
   auto *encl = llvm::dyn_cast<clang::NamespaceDecl>(
       decl->getEnclosingNamespaceContext());
   if (!encl)
@@ -441,6 +513,8 @@ static bool shouldSkip(T *decl) {
   // this isn't redundant - filter might be empty but we still don't want to
   // bind std::
   if (encl->isStdNamespace() || encl->isInStdNamespace())
+    return true;
+  if (ci.getSema().getSourceManager().isInSystemHeader(decl->getLocation()))
     return true;
   if (!filterInNamespace(encl->getQualifiedNameAsString()))
     return true;
@@ -474,7 +548,9 @@ struct BindingsVisitor
                                                ci.getDiagnostics())) {}
 
   bool VisitCXXRecordDecl(clang::CXXRecordDecl *decl) {
-    if (shouldSkip(decl))
+    if (shouldSkip(decl, ci))
+      return true;
+    if (decl->isAbstract())
       return true;
     if (decl->isClass() || decl->isStruct()) {
       if (emitClass(decl, ci, outputFile))
@@ -537,8 +613,10 @@ struct BindingsVisitor
     return true;
   }
 
+  // TODO(max): skip definitions somehow? like FloatType::getFloat4E2M1FN which
+  // has both the decl and the impl in a header?
   bool VisitCXXMethodDecl(clang::CXXMethodDecl *decl) {
-    if (shouldSkip(decl) || llvm::isa<clang::CXXDestructorDecl>(decl) ||
+    if (shouldSkip(decl, ci) || llvm::isa<clang::CXXDestructorDecl>(decl) ||
         !visitedRecords.contains(decl->getParent()))
       return true;
     if (decl->isOverloadedOperator() &&
@@ -560,12 +638,18 @@ struct BindingsVisitor
                                    "friend functions not supported"));
       return true;
     }
+    if (decl->isCopyAssignmentOperator() || decl->isMoveAssignmentOperator())
+      return true;
+    if (decl->isDeleted())
+      return true;
+
     emitClassMethodOrFunction(decl, ci, outputFile);
+
     return true;
   }
 
   bool VisitFunctionDecl(clang::FunctionDecl *decl) {
-    if (shouldSkip(decl) || decl->isCXXClassMember())
+    if (shouldSkip(decl, ci) || decl->isCXXClassMember())
       return true;
     // clang-format off
     // this
@@ -583,12 +667,19 @@ struct BindingsVisitor
                                    "template functions not supported yet"));
       return true;
     }
+    if (decl->getFriendObjectKind()) {
+      clang::DiagnosticBuilder builder = ci.getDiagnostics().Report(
+          decl->getLocation(), ci.getDiagnostics().getCustomDiagID(
+                                   clang::DiagnosticsEngine::Note,
+                                   "friend functions not supported"));
+      return true;
+    }
     emitClassMethodOrFunction(decl, ci, outputFile);
     return true;
   }
 
   bool VisitEnumDecl(clang::EnumDecl *decl) {
-    if (shouldSkip(decl))
+    if (shouldSkip(decl, ci))
       return true;
     if (decl->getQualifiedNameAsString().rfind("unnamed enum") !=
         std::string::npos)
@@ -613,6 +704,8 @@ struct BindingsVisitor
 
   // TODO(max): this is a hack and not stable
   bool VisitDecl(clang::Decl *decl) {
+    if (ci.getSema().getSourceManager().isInSystemHeader(decl->getLocation()))
+      return true;
     const clang::DeclContext *declContext = decl->getDeclContext();
     HackDeclContext *ctx =
         static_cast<HackDeclContext *>(decl->getDeclContext());
@@ -804,10 +897,12 @@ using namespace mlir;
 using namespace llvm;
 #include "eudsl/type_casters.h"
 
+namespace eudsl {
 void populate)" << finalTarget << i << R"(Module(nb::module_ &m) {
 )";
     // clang-format on
     shardFile << shards[i] << std::endl;
+    shardFile << "}" << std::endl;
     shardFile << "}" << std::endl;
     shardFile.flush();
     shardFile.close();
@@ -850,6 +945,7 @@ void populate)" << finalTarget << i << R"(Module(nb::module_ &m) {
 namespace nb = nanobind;
 using namespace nb::literals;
 
+namespace eudsl {
 void populate)" << finalTarget << R"(Module(nb::module_ &m) {
 )";
   // clang-format on
@@ -862,6 +958,7 @@ void populate)" << finalTarget << R"(Module(nb::module_ &m) {
     finalShardedFile << "populate" << finalTarget << i << "Module(m);"
                      << std::endl;
 
+  finalShardedFile << "}" << std::endl;
   finalShardedFile << "}" << std::endl;
   finalShardedFile.flush();
   finalShardedFile.close();

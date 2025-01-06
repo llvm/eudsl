@@ -1,14 +1,20 @@
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-// Copyright (c) 2024.
+// Copyright (c) 2024-2025.
 
 #pragma once
 
 #include <nanobind/nanobind.h>
-#include <nanobind/stl/optional.h>
+// ReSharper disable once CppUnusedIncludeDirective
 #include <nanobind/stl/pair.h>
+#include <nanobind/stl/string.h>
+// ReSharper disable once CppUnusedIncludeDirective
 #include <nanobind/stl/unique_ptr.h>
+// ReSharper disable once CppUnusedIncludeDirective
+#include <nanobind/stl/optional.h>
+// ReSharper disable once CppUnusedIncludeDirective
+#include "eudsl/bind_vec_like.h"
 
 template <>
 struct nanobind::detail::type_caster<llvm::StringRef> {

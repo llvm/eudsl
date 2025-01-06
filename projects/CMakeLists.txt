@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 # Copyright (c) 2024.
 
+include_directories(common)
+
 if(NOT WIN32)
   add_subdirectory(eudsl-py)
 endif()

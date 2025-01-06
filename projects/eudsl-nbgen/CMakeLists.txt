@@ -31,6 +31,8 @@ if(EUDSL_NBGEN_STANDALONE_BUILD)
   include(AddLLVM)
   include(AddClang)
   include(HandleLLVMOptions)
+
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/../common)
 endif()
 
 include_directories(${LLVM_INCLUDE_DIRS})
