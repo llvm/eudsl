@@ -420,7 +420,9 @@ set(STANDALONE)
 if(EUDSLPY_STANDALONE_BUILD OR EUDSL_STANDALONE_BUILD)
   set(STANDALONE STANDALONE)
 endif()
-patch_mlir_llvm_rpath(eudslpy_ext ${STANDALONE})
+patch_llvm_rpath(MLIR ${STANDALONE})
+patch_llvm_rpath(LLVM ${STANDALONE})
+set_install_rpath_origin(eudslpy_ext)
 # copy libMLIR into the ext dir for wheels
 install(IMPORTED_RUNTIME_ARTIFACTS MLIR LLVM LIBRARY DESTINATION eudsl)
 

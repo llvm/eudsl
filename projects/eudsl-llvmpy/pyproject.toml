@@ -1,0 +1,70 @@
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+# Copyright (c) 2024.
+
+[project]
+name = "eudsl-llvmpy"
+version = "0.0.1"
+requires-python = ">=3.10,<3.13"
+[project.urls]
+Homepage = "https://github.com/llvm/eudsl"
+
+[build-system]
+requires = [
+    "scikit-build-core==0.10.7",
+    "nanobind==2.4.0",
+    "typing_extensions==4.12.2",
+    "litgen @ git+https://github.com/pthom/litgen@f5d154c6f7679e755baa1047563d7c340309bc00"
+]
+build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+minimum-version = "0.4"
+build-dir = "build/{wheel_tag}"
+cmake.source-dir = "."
+
+[tool.scikit-build.cmake.define]
+LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
+CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
+CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
+CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
+CMAKE_CXX_VISIBILITY_PRESET = "hidden"
+CMAKE_VERBOSE_MAKEFILE = "ON"
+
+[tool.cibuildwheel]
+build-verbosity = 1
+skip = ["*-manylinux_i686", "*-musllinux*", "pp*", "*-win32"]
+archs = ["auto64"]
+manylinux-x86_64-image = "manylinux_2_28"
+environment-pass = [
+    "LLVM_DIR",
+    "CMAKE_GENERATOR",
+    "CMAKE_PREFIX_PATH",
+    "DISABLE_COMPILE_OPT",
+    "CC",
+    "CXX",
+    "PIP_FIND_LINKS",
+    # ccache
+    "CCACHE_DIR",
+    "CCACHE_MAXSIZE=700M",
+    "CCACHE_SLOPPINESS",
+    "CCACHE_CPP2",
+    "CCACHE_UMASK",
+    "CMAKE_C_COMPILER_LAUNCHER",
+    "CMAKE_CXX_COMPILER_LAUNCHER"
+]
+# uncomment to make sure ccache is working inside containers
+test-command = "ccache -sv"
+
+[tool.cibuildwheel.linux]
+before-all = [
+    "yum install -y clang",
+    # ccache
+    "curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz",
+    "tar -xf ccache-4.10.2-linux-x86_64.tar.xz",
+    "pushd ccache-4.10.2-linux-x86_64 && make install && popd",
+    "ccache -z"
+]
+# synchronize TZ with host so ccache files have correct timestamp
+container-engine = { name = "docker", create-args = ["-v", "/etc/timezone:/etc/timezone:ro", "-v", "/etc/localtime:/etc/localtime:ro"] }
