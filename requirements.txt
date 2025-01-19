@@ -1,2 +1,3 @@
 nanobind==2.4.0
 numpy==2.0.2
+litgen @ git+https://github.com/pthom/litgen@f5d154c6f7679e755baa1047563d7c340309bc00
