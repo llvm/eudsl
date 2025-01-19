@@ -54,9 +54,6 @@ jobs:
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
-          - name: "macos_x86_64"
-            runs-on: "macos-13"
-            os: "macos"
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -126,8 +123,6 @@ jobs:
           # ld: warning: object file (libLLVMTableGen.a[3](Error.cpp.o)) was built for newer 'macOS' version (13.7) than being linked (10.13)
           if [[ "${{ matrix.runs-on }}" == "macos-14" ]]; then
             echo MACOSX_DEPLOYMENT_TARGET=14.0 >> $GITHUB_ENV
-          elif [[ "${{ matrix.runs-on }}" == "macos-13" ]]; then
-            echo MACOSX_DEPLOYMENT_TARGET=13.7 >> $GITHUB_ENV
           fi
           
           # prevent OOM on free GHA
@@ -136,7 +131,7 @@ jobs:
           pip install cibuildwheel
 
       - name: "Build eudsl-llvmpy"
-        if: ${{ ! startsWith(matrix.os, 'windows') && ! startsWith(matrix.runs-on, 'macos-13') }}
+        if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
           
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
@@ -208,13 +203,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: ["ubuntu-22.04", "macos-14", "macos-13", "windows-2019"]
+        runs-on: ["ubuntu-22.04", "macos-14", "windows-2019"]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
           {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
-          {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
-          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"},
+          {runs-on: "macos-14", name: "macos_arm64", os: "macos"}
         ]
 
     runs-on: ${{ matrix.runs-on }}
@@ -264,16 +258,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: ["ubuntu-22.04", "macos-14", "macos-13",
-                  # "windows-2019"
+        runs-on: [
+          "ubuntu-22.04", 
+          "macos-14"
+          # "windows-2019"
         ]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
           # TODO(max): enable on windows by statically linking
           # {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
-          {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
-          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"},
+          {runs-on: "macos-14", name: "macos_arm64", os: "macos"}
         ]
 
     runs-on: ${{ matrix.runs-on }}
@@ -320,8 +315,8 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [
-          "ubuntu-22.04", "macos-14",
-          # "macos-13",
+          "ubuntu-22.04", 
+          "macos-14",
           # "windows-2019"
         ]
         python-version: ["3.10", "3.11", "3.12"]
@@ -330,8 +325,6 @@ jobs:
           # TODO(max): enable on windows by statically linking
           # {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
-          # TODO(max): no xcode on macos-13 runners???
-          # {runs-on: "macos-13", name: "macos_x86_64", os: "macos"},
         ]
 
     runs-on: ${{ matrix.runs-on }}
@@ -391,7 +384,6 @@ jobs:
         name: [
          "ubuntu_x86_64",
          "macos_arm64",
-         "macos_x86_64",
          "windows_x86_64"
         ]
 
