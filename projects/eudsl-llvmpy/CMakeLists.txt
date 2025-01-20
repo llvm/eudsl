@@ -107,7 +107,11 @@ include_directories(${EUDSLLLVM_SRC_DIR})
 execute_process(
   COMMAND "${Python_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/eudsl-llvmpy-generate.py"
                                  ${LLVM_INCLUDE_DIRS}/llvm-c "${EUDSLLLVM_BINARY_DIR}/generated"
+  RESULT_VARIABLE _has_err_generate
 )
+if (_has_err_generate AND NOT _has_err_generate EQUAL 0)
+  message(FATAL_ERROR "couldn't generate sources: ${_has_err_generate}")
+endif()
 include_directories("${EUDSLLLVM_BINARY_DIR}/generated")
 file(GLOB _gen_src CONFIGURE_DEPENDS "${EUDSLLLVM_BINARY_DIR}/generated/*.cpp")
 
