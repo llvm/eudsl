@@ -5,6 +5,7 @@
 
 if(NOT WIN32)
   add_subdirectory(eudsl-py)
+  add_subdirectory(eudsl-llvmpy)
 endif()
 add_subdirectory(eudsl-nbgen)
 add_subdirectory(eudsl-tblgen)
