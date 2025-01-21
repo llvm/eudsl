@@ -201,9 +201,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                                  &ListInit::getValues, nb::const_));
 
   nb::class_<OpInit, TypedInit>(m, "OpInit")
-      .def_prop_ro("num_operands", &OpInit::getNumOperands)
-      .def("operand", &OpInit::getOperand, "i"_a,
-           nb::rv_policy::reference_internal);
+      .def("bit", &OpInit::getBit, "bit"_a, nb::rv_policy::reference_internal);
 
   auto unaryOpInit = nb::class_<UnOpInit, OpInit>(m, "UnOpInit");
   nb::enum_<UnOpInit::UnaryOp>(m, "UnaryOp")

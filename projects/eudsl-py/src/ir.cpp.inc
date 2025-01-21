@@ -1884,17 +1884,17 @@ auto mlir_Builder = nb::class_<mlir::Builder>(m, "Builder")
 .def_prop_ro("context", &mlir::Builder::getContext)
 .def_prop_ro("unknown_loc", &mlir::Builder::getUnknownLoc)
 .def("get_fused_loc", &mlir::Builder::getFusedLoc, "locs"_a, "metadata"_a)
-.def_prop_ro("float4_e2_m1_fn_type", &mlir::Builder::getFloat4E2M1FNType)
-.def_prop_ro("float6_e2_m3_fn_type", &mlir::Builder::getFloat6E2M3FNType)
-.def_prop_ro("float6_e3_m2_fn_type", &mlir::Builder::getFloat6E3M2FNType)
-.def_prop_ro("float8_e5_m2_type", &mlir::Builder::getFloat8E5M2Type)
-.def_prop_ro("float8_e4_m3_type", &mlir::Builder::getFloat8E4M3Type)
-.def_prop_ro("float8_e4_m3_fn_type", &mlir::Builder::getFloat8E4M3FNType)
-.def_prop_ro("float8_e5_m2_fnuz_type", &mlir::Builder::getFloat8E5M2FNUZType)
-.def_prop_ro("float8_e4_m3_fnuz_type", &mlir::Builder::getFloat8E4M3FNUZType)
-.def_prop_ro("float8_e4_m3_b11_fnuz_type", &mlir::Builder::getFloat8E4M3B11FNUZType)
-.def_prop_ro("float8_e3_m4_type", &mlir::Builder::getFloat8E3M4Type)
-.def_prop_ro("float8_e8_m0_fnu_type", &mlir::Builder::getFloat8E8M0FNUType)
+.def_prop_ro("float4_e2_m1_fn_type", &mlir::Builder::getType<Float4E2M1FNType>)
+.def_prop_ro("float6e2m3fn_type", &mlir::Builder::getType<Float6E2M3FNType>)
+.def_prop_ro("float6e3m2fn_type", &mlir::Builder::getType<Float6E3M2FNType>)
+.def_prop_ro("float8e5m2_type", &mlir::Builder::getType<Float8E5M2Type>)
+.def_prop_ro("float8e4m3_type", &mlir::Builder::getType<Float8E4M3Type>)
+.def_prop_ro("float8e4m3fn_type", &mlir::Builder::getType<Float8E4M3FNType>)
+.def_prop_ro("float8e5m2fnuz_type", &mlir::Builder::getType<Float8E5M2FNUZType>)
+.def_prop_ro("float8e4m3fnuz_type", &mlir::Builder::getType<Float8E4M3FNUZType>)
+.def_prop_ro("float8e4m3b11fnuz_type", &mlir::Builder::getType<Float8E4M3B11FNUZType>)
+.def_prop_ro("float8e3m4_type", &mlir::Builder::getType<Float8E3M4Type>)
+.def_prop_ro("float8e8m0fnu_type", &mlir::Builder::getType<Float8E8M0FNUType>)
 .def_prop_ro("bf16_type", &mlir::Builder::getBF16Type)
 .def_prop_ro("f16_type", &mlir::Builder::getF16Type)
 .def_prop_ro("tf32_type", &mlir::Builder::getTF32Type)
@@ -2061,24 +2061,6 @@ auto mlir_detail_DialectInterfaceCollectionBase = nb::class_<mlir::detail::Diale
 ;
 
 auto mlir_FloatType = nb::class_<mlir::FloatType, mlir::Type>(m, "FloatType")
-.def_static("get_bf16", &mlir::FloatType::getBF16, "ctx"_a)
-.def_static("get_f16", &mlir::FloatType::getF16, "ctx"_a)
-.def_static("get_f32", &mlir::FloatType::getF32, "ctx"_a)
-.def_static("get_tf32", &mlir::FloatType::getTF32, "ctx"_a)
-.def_static("get_f64", &mlir::FloatType::getF64, "ctx"_a)
-.def_static("get_f80", &mlir::FloatType::getF80, "ctx"_a)
-.def_static("get_f128", &mlir::FloatType::getF128, "ctx"_a)
-.def_static("get_float8_e5_m2", &mlir::FloatType::getFloat8E5M2, "ctx"_a)
-.def_static("get_float8_e4_m3", &mlir::FloatType::getFloat8E4M3, "ctx"_a)
-.def_static("get_float8_e4_m3_fn", &mlir::FloatType::getFloat8E4M3FN, "ctx"_a)
-.def_static("get_float8_e5_m2_fnuz", &mlir::FloatType::getFloat8E5M2FNUZ, "ctx"_a)
-.def_static("get_float8_e4_m3_fnuz", &mlir::FloatType::getFloat8E4M3FNUZ, "ctx"_a)
-.def_static("get_float8_e4_m3_b11_fnuz", &mlir::FloatType::getFloat8E4M3B11FNUZ, "ctx"_a)
-.def_static("get_float8_e3_m4", &mlir::FloatType::getFloat8E3M4, "ctx"_a)
-.def_static("get_float4_e2_m1_fn", &mlir::FloatType::getFloat4E2M1FN, "ctx"_a)
-.def_static("get_float6_e2_m3_fn", &mlir::FloatType::getFloat6E2M3FN, "ctx"_a)
-.def_static("get_float6_e3_m2_fn", &mlir::FloatType::getFloat6E3M2FN, "ctx"_a)
-.def_static("get_float8_e8_m0_fnu", &mlir::FloatType::getFloat8E8M0FNU, "ctx"_a)
 .def_static("classof", &mlir::FloatType::classof, "type"_a)
 .def_prop_ro("width", &mlir::FloatType::getWidth)
 .def_prop_ro("fp_mantissa_width", &mlir::FloatType::getFPMantissaWidth)
@@ -2116,75 +2098,75 @@ auto mlir_ComplexType = nb::class_<mlir::ComplexType,  mlir::Type>(m, "ComplexTy
 .def_prop_ro("element_type", &mlir::ComplexType::getElementType)
 ;
 
-auto mlir_Float8E5M2Type = nb::class_<mlir::Float8E5M2Type,  mlir::FloatType>(m, "Float8E5M2Type")
-.def_static("get", &mlir::Float8E5M2Type::get, "context"_a)
+auto mlir_Float8E5M2Type = nb::class_<mlir::Float8E5M2Type,  mlir::Type>(m, "Float8E5M2Type")
+.def_static("get", [](MLIRContext *ctx){ return mlir::Float8E5M2Type::get(ctx);}, "context"_a)
 ;
 
-auto mlir_Float8E4M3Type = nb::class_<mlir::Float8E4M3Type,  mlir::FloatType>(m, "Float8E4M3Type")
-.def_static("get", &mlir::Float8E4M3Type::get, "context"_a)
+auto mlir_Float8E4M3Type = nb::class_<mlir::Float8E4M3Type,  mlir::Type>(m, "Float8E4M3Type")
+.def_static("get", [](MLIRContext *ctx){ return mlir::Float8E4M3Type::get(ctx);}, "context"_a)
 ;
 
-auto mlir_Float8E4M3FNType = nb::class_<mlir::Float8E4M3FNType,  mlir::FloatType>(m, "Float8E4M3FNType")
-.def_static("get", &mlir::Float8E4M3FNType::get, "context"_a)
+auto mlir_Float8E4M3FNType = nb::class_<mlir::Float8E4M3FNType,  mlir::Type>(m, "Float8E4M3FNType")
+.def_static("get", [](MLIRContext *ctx){ return mlir::Float8E4M3FNType::get(ctx);}, "context"_a)
 ;
 
-auto mlir_Float8E5M2FNUZType = nb::class_<mlir::Float8E5M2FNUZType,  mlir::FloatType>(m, "Float8E5M2FNUZType")
-.def_static("get", &mlir::Float8E5M2FNUZType::get, "context"_a)
+auto mlir_Float8E5M2FNUZType = nb::class_<mlir::Float8E5M2FNUZType,  mlir::Type>(m, "Float8E5M2FNUZType")
+.def_static("get", [](MLIRContext *ctx){ return mlir::Float8E5M2FNUZType::get(ctx);}, "context"_a)
 ;
 
-auto mlir_Float8E4M3FNUZType = nb::class_<mlir::Float8E4M3FNUZType,  mlir::FloatType>(m, "Float8E4M3FNUZType")
-.def_static("get", &mlir::Float8E4M3FNUZType::get, "context"_a)
+auto mlir_Float8E4M3FNUZType = nb::class_<mlir::Float8E4M3FNUZType,  mlir::Type>(m, "Float8E4M3FNUZType")
+.def_static("get", [](MLIRContext *ctx){ return mlir::Float8E4M3FNUZType::get(ctx);}, "context"_a)
 ;
 
-auto mlir_Float8E4M3B11FNUZType = nb::class_<mlir::Float8E4M3B11FNUZType,  mlir::FloatType>(m, "Float8E4M3B11FNUZType")
-.def_static("get", &mlir::Float8E4M3B11FNUZType::get, "context"_a)
+auto mlir_Float8E4M3B11FNUZType = nb::class_<mlir::Float8E4M3B11FNUZType,  mlir::Type>(m, "Float8E4M3B11FNUZType")
+.def_static("get", [](MLIRContext *ctx){ return mlir::Float8E4M3B11FNUZType::get(ctx);}, "context"_a)
 ;
 
-auto mlir_Float8E3M4Type = nb::class_<mlir::Float8E3M4Type,  mlir::FloatType>(m, "Float8E3M4Type")
-.def_static("get", &mlir::Float8E3M4Type::get, "context"_a)
+auto mlir_Float8E3M4Type = nb::class_<mlir::Float8E3M4Type,  mlir::Type>(m, "Float8E3M4Type")
+.def_static("get", [](MLIRContext *ctx){ return mlir::Float8E3M4Type::get(ctx);}, "context"_a)
 ;
 
-auto mlir_Float4E2M1FNType = nb::class_<mlir::Float4E2M1FNType,  mlir::FloatType>(m, "Float4E2M1FNType")
-.def_static("get", &mlir::Float4E2M1FNType::get, "context"_a)
+auto mlir_Float4E2M1FNType = nb::class_<mlir::Float4E2M1FNType,  mlir::Type>(m, "Float4E2M1FNType")
+.def_static("get", [](MLIRContext *ctx){ return mlir::Float4E2M1FNType::get(ctx);}, "context"_a)
 ;
 
-auto mlir_Float6E2M3FNType = nb::class_<mlir::Float6E2M3FNType,  mlir::FloatType>(m, "Float6E2M3FNType")
-.def_static("get", &mlir::Float6E2M3FNType::get, "context"_a)
+auto mlir_Float6E2M3FNType = nb::class_<mlir::Float6E2M3FNType,  mlir::Type>(m, "Float6E2M3FNType")
+.def_static("get", [](MLIRContext *ctx){ return mlir::Float6E2M3FNType::get(ctx);}, "context"_a)
 ;
 
-auto mlir_Float6E3M2FNType = nb::class_<mlir::Float6E3M2FNType,  mlir::FloatType>(m, "Float6E3M2FNType")
-.def_static("get", &mlir::Float6E3M2FNType::get, "context"_a)
+auto mlir_Float6E3M2FNType = nb::class_<mlir::Float6E3M2FNType,  mlir::Type>(m, "Float6E3M2FNType")
+.def_static("get", [](MLIRContext *ctx){ return mlir::Float6E3M2FNType::get(ctx);}, "context"_a)
 ;
 
-auto mlir_Float8E8M0FNUType = nb::class_<mlir::Float8E8M0FNUType,  mlir::FloatType>(m, "Float8E8M0FNUType")
-.def_static("get", &mlir::Float8E8M0FNUType::get, "context"_a)
+auto mlir_Float8E8M0FNUType = nb::class_<mlir::Float8E8M0FNUType,  mlir::Type>(m, "Float8E8M0FNUType")
+.def_static("get", [](MLIRContext *ctx){ return mlir::Float8E8M0FNUType::get(ctx);}, "context"_a)
 ;
 
-auto mlir_BFloat16Type = nb::class_<mlir::BFloat16Type,  mlir::FloatType>(m, "BFloat16Type")
+auto mlir_BFloat16Type = nb::class_<mlir::BFloat16Type,  mlir::Type>(m, "BFloat16Type")
 .def_static("get", &mlir::BFloat16Type::get, "context"_a)
 ;
 
-auto mlir_Float16Type = nb::class_<mlir::Float16Type,  mlir::FloatType>(m, "Float16Type")
+auto mlir_Float16Type = nb::class_<mlir::Float16Type,  mlir::Type>(m, "Float16Type")
 .def_static("get", &mlir::Float16Type::get, "context"_a)
 ;
 
-auto mlir_FloatTF32Type = nb::class_<mlir::FloatTF32Type,  mlir::FloatType>(m, "FloatTF32Type")
+auto mlir_FloatTF32Type = nb::class_<mlir::FloatTF32Type,  mlir::Type>(m, "FloatTF32Type")
 .def_static("get", &mlir::FloatTF32Type::get, "context"_a)
 ;
 
-auto mlir_Float32Type = nb::class_<mlir::Float32Type,  mlir::FloatType>(m, "Float32Type")
+auto mlir_Float32Type = nb::class_<mlir::Float32Type,  mlir::Type>(m, "Float32Type")
 .def_static("get", &mlir::Float32Type::get, "context"_a)
 ;
 
-auto mlir_Float64Type = nb::class_<mlir::Float64Type,  mlir::FloatType>(m, "Float64Type")
+auto mlir_Float64Type = nb::class_<mlir::Float64Type,  mlir::Type>(m, "Float64Type")
 .def_static("get", &mlir::Float64Type::get, "context"_a)
 ;
 
-auto mlir_Float80Type = nb::class_<mlir::Float80Type,  mlir::FloatType>(m, "Float80Type")
+auto mlir_Float80Type = nb::class_<mlir::Float80Type,  mlir::Type>(m, "Float80Type")
 .def_static("get", &mlir::Float80Type::get, "context"_a)
 ;
 
-auto mlir_Float128Type = nb::class_<mlir::Float128Type,  mlir::FloatType>(m, "Float128Type")
+auto mlir_Float128Type = nb::class_<mlir::Float128Type,  mlir::Type>(m, "Float128Type")
 .def_static("get", &mlir::Float128Type::get, "context"_a)
 ;
 

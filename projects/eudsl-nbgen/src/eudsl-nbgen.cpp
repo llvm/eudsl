@@ -541,6 +541,9 @@ struct BindingsVisitor
     if (shouldSkip(decl) || llvm::isa<clang::CXXDestructorDecl>(decl) ||
         !visitedRecords.contains(decl->getParent()))
       return true;
+    if (decl->isOverloadedOperator() &&
+        decl->getNameAsString().rfind("operator=", 0) == 0)
+      return true;
     if (decl->isTemplated() || decl->isTemplateDecl() ||
         decl->isTemplateInstantiation() ||
         decl->isFunctionTemplateSpecialization()) {
