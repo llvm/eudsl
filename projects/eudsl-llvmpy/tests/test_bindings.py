@@ -4,28 +4,10 @@
 #  Copyright (c) 2024.
 from textwrap import dedent
 
-from llvm import (
-    ContextRef,
-    MemoryBufferRef,
-    ModuleRef,
-    context_create,
-    parse_ir_in_context,
-    create_memory_buffer_with_memory_range,
-    ModuleRef,
-    dump_module,
-    print_module_to_string,
-    create_builder,
-    int32_type,
-    function_type,
-    add_function,
-    append_basic_block,
-    position_builder_at_end,
-    get_param,
-    build_add,
-    build_ret,
-    dispose_builder,
-    module_create_with_name_in_context,
-)
+from llvm import types_ as T
+from llvm.context import context
+from llvm.function import function
+from llvm.instructions import add, ret
 
 
 def test_smoke():
@@ -50,45 +32,24 @@ def test_smoke():
     }                                                              
     """
     )
-    ctx = context_create()
-    buf = create_memory_buffer_with_memory_range(src, len(src), "<src>", True)
-    mod = ModuleRef()
-    parse_ir_in_context(ctx, buf, mod)
-    print(print_module_to_string(mod))
+    with context(src=src, buffer_name="test_smoke") as ctx:
+        print(ctx)
 
 
 def test_builder():
-    ctx = context_create()
-    mod = module_create_with_name_in_context("demo", ctx)
+    with context(mod_name="test_builder") as ctx:
 
-    # Add a "sum" function":
-    #  - Create the function type and function instance.
-    param_types = [int32_type(), int32_type()]
-    sum_function_type = function_type(int32_type(), param_types, 2, 0)
-    sum_function = add_function(mod, "sum", sum_function_type)
+        @function
+        def bob(a: T.int32, b: T.int32) -> T.int32: ...
 
-    #  - Add a basic block to the function.
-    entry_bb = append_basic_block(sum_function, "entry")
+        @function(emit=True)
+        def sum(a: T.int32, b: T.int32) -> T.int32:
+            result = add(a, b)
+            ret(result)
 
-    #  - Add an IR builder and point it at the end of the basic block.
-    builder = create_builder()
-    position_builder_at_end(builder, entry_bb)
-
-    #  - Get the two function arguments and use them co construct an "add"
-    #    instruction.
-    sum_arg_0 = get_param(sum_function, 0)
-    sum_arg_1 = get_param(sum_function, 1)
-    result = build_add(builder, sum_arg_0, sum_arg_1, "result")
-
-    #  - Build the return instruction.
-    build_ret(builder, result)
-
-    #  - Free the builder.
-    dispose_builder(builder)
-
-    print(print_module_to_string(mod))
+        print(ctx)
 
 
 if __name__ == "__main__":
-    # test_smoke()
+    test_smoke()
     test_builder()

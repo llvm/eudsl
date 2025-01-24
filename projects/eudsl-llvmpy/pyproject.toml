@@ -23,6 +23,10 @@ build-backend = "scikit_build_core.build"
 minimum-version = "0.4"
 build-dir = "build/{wheel_tag}"
 cmake.source-dir = "."
+wheel.packages = ["src/llvm"]
+editable.mode = "inplace"
+editable.verbose = true
+editable.rebuild = false
 
 [tool.scikit-build.cmake.define]
 LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
