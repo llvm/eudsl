@@ -8,6 +8,7 @@ from llvm import types_ as T
 from llvm.context import context
 from llvm.function import function
 from llvm.instructions import add, ret
+import llvm.amdgcn
 
 
 def test_smoke():
@@ -39,15 +40,34 @@ def test_smoke():
 def test_builder():
     with context(mod_name="test_builder") as ctx:
 
-        @function
-        def bob(a: T.int32, b: T.int32) -> T.int32: ...
-
         @function(emit=True)
         def sum(a: T.int32, b: T.int32) -> T.int32:
-            result = add(a, b)
+            c = llvm.amdgcn.cvt_pk_i16(a, b)
+            result = add(c, c)
             ret(result)
 
-        print(ctx)
+        mod_str = str(ctx)
+
+    correct = dedent(
+        """\
+    ; ModuleID = 'test_builder'
+    source_filename = "test_builder"
+
+    define i32 @sum(i32 %0, i32 %1) {
+    entry:
+      %2 = call <2 x i16> @llvm.amdgcn.cvt.pk.i16(i32 %0, i32 %1)
+      %3 = add <2 x i16> %2, %2
+      ret <2 x i16> %3
+    }
+
+    ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+    declare <2 x i16> @llvm.amdgcn.cvt.pk.i16(i32, i32) #0
+
+    attributes #0 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
+    """
+    )
+
+    assert correct == mod_str
 
 
 if __name__ == "__main__":

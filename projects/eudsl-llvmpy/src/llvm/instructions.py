@@ -229,8 +229,8 @@ def br(dest: BasicBlockRef):
     return build_br(current_context().builder, dest)
 
 
-def call(param_1: TypeRef, fn: ValueRef, args: ValueRef, num_args: int, name: str = ""):
-    return build_call2(current_context().builder, param_1, fn, args, num_args, name)
+def call(param_1: TypeRef, fn: ValueRef, args: list[ValueRef], name: str = ""):
+    return build_call2(current_context().builder, param_1, fn, args, name)
 
 
 def call_br(

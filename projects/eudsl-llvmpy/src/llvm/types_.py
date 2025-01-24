@@ -62,7 +62,7 @@ def function(
     param_types: Sequence[TypeRef],
     is_var_arg: bool = False,
 ):
-    return function_type(return_type, param_types, len(param_types), is_var_arg)
+    return function_type(return_type, param_types, is_var_arg)
 
 
 def half():
@@ -123,7 +123,7 @@ def scalable_vector(element_type: TypeRef, element_count: int):
 
 def struct(element_types: Sequence[TypeRef], packed: bool):
     return struct_type_in_context(
-        current_context().context, element_types, len(element_types), packed
+        current_context().context, element_types, packed
     )
 
 

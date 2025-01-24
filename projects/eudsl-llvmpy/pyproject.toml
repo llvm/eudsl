@@ -15,7 +15,8 @@ requires = [
     "scikit-build-core==0.10.7",
     "nanobind==2.4.0",
     "typing_extensions==4.12.2",
-    "litgen @ git+https://github.com/pthom/litgen@f5d154c6f7679e755baa1047563d7c340309bc00"
+    "litgen @ git+https://github.com/pthom/litgen@f5d154c6f7679e755baa1047563d7c340309bc00",
+    "eudsl-tblgen"
 ]
 build-backend = "scikit_build_core.build"
 
@@ -56,7 +57,8 @@ environment-pass = [
     "CCACHE_CPP2",
     "CCACHE_UMASK",
     "CMAKE_C_COMPILER_LAUNCHER",
-    "CMAKE_CXX_COMPILER_LAUNCHER"
+    "CMAKE_CXX_COMPILER_LAUNCHER",
+    "PIP_FIND_LINKS"
 ]
 # uncomment to make sure ccache is working inside containers
 test-command = "ccache -sv"

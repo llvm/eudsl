@@ -130,15 +130,6 @@ jobs:
           
           pip install cibuildwheel
 
-      - name: "Build eudsl-llvmpy"
-        if: ${{ ! startsWith(matrix.os, 'windows') }}
-        run: |
-          
-          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export CCACHE_DIR=/host/$CCACHE_DIR
-          fi
-          $python3_command -m cibuildwheel "$PWD/projects/eudsl-llvmpy" --output-dir wheelhouse
-
       - name: "Build eudsl-tblgen"
         run: |
 
@@ -146,6 +137,17 @@ jobs:
             export CCACHE_DIR=/host/$CCACHE_DIR
           fi
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
+
+      - name: "Build eudsl-llvmpy"
+        if: ${{ ! startsWith(matrix.os, 'windows') }}
+        run: |
+          
+          export PIP_FIND_LINKS=$PWD/wheelhouse
+          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            export CCACHE_DIR=/host/$CCACHE_DIR
+            export PIP_FIND_LINKS=/host/$PIP_FIND_LINKS
+          fi
+          $python3_command -m cibuildwheel "$PWD/projects/eudsl-llvmpy" --output-dir wheelhouse
 
       - name: "Build eudsl-nbgen"
         run: |
@@ -169,6 +171,7 @@ jobs:
         run: |
 
           pip install -r requirements.txt
+          pip install eudsl-tblgen -f wheelhouse
           cmake -B $PWD/eudsl-build -S $PWD \
             -DCMAKE_PREFIX_PATH=$PWD/llvm-install \
             -DCMAKE_BUILD_TYPE=Release \

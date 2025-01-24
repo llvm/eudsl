@@ -15,8 +15,8 @@ from . import (
     TypeRef,
     type_of,
     get_param,
+    types_,
 )
-from . import types_ as T
 from .context import current_context
 
 
@@ -85,7 +85,7 @@ class FuncOp:
         ctx = current_context()
         if len(call_args) == 0:
             input_types = self.input_types[:]
-            locals = {"T": T}
+            locals = {"T": types_}
             for i, v in enumerate(input_types):
                 if isinstance(v, TypeVar):
                     v = v.__name__
@@ -102,7 +102,7 @@ class FuncOp:
         if inspect.isfunction(return_type):
             return_type = return_type()
 
-        function_ty = T.function(return_type, input_types)
+        function_ty = types_.function(return_type, input_types)
         function = add_function(ctx.module, self.func_name, function_ty)
         if self._is_decl():
             return
