@@ -161,21 +161,28 @@ jobs:
         if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
 
-          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export CCACHE_DIR=/host/$CCACHE_DIR
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+              export CCACHE_DIR=/host/$CCACHE_DIR
+            fi
+            $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
+          else
+            export CMAKE_PREFIX_PATH=$PWD/llvm-install
+            export PIP_FIND_LINKS=$PWD/wheelhouse
+            $python3_command -m pip wheel "$PWD/projects/eudsl-py" -w wheelhouse -v
           fi
-          $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
 
       # just to/make sure total build continues to work
       - name: "Build all of eudsl"
         run: |
 
-          pip install -r requirements.txt
-          pip install eudsl-tblgen -f wheelhouse
+          $python3_command -m pip install -r requirements.txt
+          $python3_command -m pip install eudsl-tblgen -f wheelhouse
           cmake -B $PWD/eudsl-build -S $PWD \
             -DCMAKE_PREFIX_PATH=$PWD/llvm-install \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=$PWD/eudsl-install
+            -DCMAKE_INSTALL_PREFIX=$PWD/eudsl-install \
+            -DPython3_EXECUTABLE=$(which $python3_command)
           cmake --build "$PWD/eudsl-build" --target install
 
       - name: "Save cache"
@@ -266,7 +273,9 @@ jobs:
           "macos-14"
           # "windows-2019"
         ]
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: [
+          # "3.9", "3.10", "3.11",
+          "3.12"]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
           # TODO(max): enable on windows by statically linking

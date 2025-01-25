@@ -72,8 +72,6 @@ if(EUDSLLLVM_STANDALONE_BUILD)
   endfunction()
 
   include(AddLLVM)
-else()
-  set(ENV{PYTHONPATH} "${CMAKE_CURRENT_LIST_DIR}/../eudsl-tblgen/src")
 endif()
 
 include_directories(${LLVM_INCLUDE_DIRS})
@@ -115,12 +113,7 @@ execute_process(
   COMMAND_ECHO STDOUT
 )
 if (_has_err_generate AND NOT _has_err_generate EQUAL 0)
-  if(EUDSLLLVM_STANDALONE_BUILD)
-    set(LEVEL FATAL_ERROR)
-  else()
-    set(LEVEL WARNING)
-  endif()
-  message(${LEVEL} "couldn't generate sources: ${_has_err_generate}")
+  message(FATAL_ERROR "couldn't generate sources: ${_has_err_generate}")
 endif()
 include_directories("${EUDSLLLVM_BINARY_DIR}/generated")
 file(GLOB _gen_src CONFIGURE_DEPENDS "${EUDSLLLVM_BINARY_DIR}/generated/*.cpp")
