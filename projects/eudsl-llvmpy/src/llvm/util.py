@@ -14,10 +14,16 @@ from . import (
 from .context import current_context
 
 
-def call_intrinsic(intr_name, *args, **kwargs):
-    intr_id = lookup_intrinsic_id(intr_name, len(intr_name))
+def call_intrinsic(*args, **kwargs):
+    intr_id = kwargs.pop("intr_id", None)
+    if intr_id is None:
+        intr_name = kwargs.pop("intr_name")
+        intr_id = lookup_intrinsic_id(intr_name, len(intr_name))
+    is_overloaded = kwargs.pop("is_overloaded", None)
+    if is_overloaded is None:
+        is_overloaded = intrinsic_is_overloaded(intr_id)
     types = [type_of(a) for a in args]
-    if intrinsic_is_overloaded(intr_id):
+    if is_overloaded:
         intr_decl_fn = get_intrinsic_declaration(
             current_context().module, intr_id, types
         )

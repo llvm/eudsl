@@ -4,6 +4,7 @@
 // Copyright (c) 2024.
 
 #include "TGParser.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/TableGen/Record.h"
@@ -533,4 +534,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            coerceReturn<std::vector<const Record *>, ArrayRef<const Record *>>(
                &RecordKeeper::getAllDerivedDefinitions, nb::const_),
            "class_name"_a, nb::rv_policy::reference_internal);
+
+  m.def("lookup_intrinsic_id", Intrinsic::lookupIntrinsicID, nb::arg("name"));
+  m.def("intrinsic_is_overloaded", Intrinsic::isOverloaded, nb::arg("id"));
 }
