@@ -58,7 +58,8 @@ nanobind_add_module(eudsl_tblgen_ext NB_STATIC STABLE_ABI
   src/TGParser.cpp
   src/TGLexer.cpp
 )
-target_link_libraries(eudsl_tblgen_ext PRIVATE LLVMTableGenCommon LLVMTableGen)
+target_link_libraries(eudsl_tblgen_ext
+  PRIVATE LLVMTableGenCommon LLVMTableGen LLVMCore)
 target_compile_options(eudsl_tblgen_ext
   PUBLIC
   -Wno-cast-qual

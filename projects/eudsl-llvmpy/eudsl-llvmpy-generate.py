@@ -4,7 +4,7 @@ from pathlib import Path
 from textwrap import dedent
 
 import litgen
-from eudsl_tblgen import RecordKeeper
+from eudsl_tblgen import RecordKeeper, lookup_intrinsic_id, intrinsic_is_overloaded
 
 
 def preprocess_code(code: str, here, header_f) -> str:
@@ -312,6 +312,8 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
 
             intr_name = d.replace("int_amdgcn_", "")
             llvm_intr_name = f"llvm.amdgcn.{intr_name.replace('_', '.')}"
+            intr_id = lookup_intrinsic_id(llvm_intr_name)
+            is_overloaded = intrinsic_is_overloaded(intr_id)
             arg_names = "abcdefghijklmnopqrstuvwxyz"[: len(arg_types)]
             fn_args_str = ", ".join([f"{n}: {t}" for n, t in zip(arg_names, arg_types)])
             call_args_str = ", ".join(arg_names)
@@ -325,7 +327,7 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
                 dedent(
                     f"""
                 def {intr_name}({fn_args_str}name=""):
-                    {ret_str}call_intrinsic("{llvm_intr_name}", {call_args_str}name=name)
+                    {ret_str}call_intrinsic({call_args_str}{intr_id=}, {is_overloaded=}, name=name)
             """
                 ),
                 file=amdgcn_f,

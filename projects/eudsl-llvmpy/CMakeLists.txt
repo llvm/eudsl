@@ -104,6 +104,7 @@ set(EUDSLLLVM_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/src")
 include_directories(${EUDSLLLVM_BINARY_DIR})
 include_directories(${EUDSLLLVM_SRC_DIR})
 
+#set(ENV{PYTHONPATH} "${CMAKE_CURRENT_LIST_DIR}/../eudsl-tblgen/src")
 execute_process(
   COMMAND "${Python_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/eudsl-llvmpy-generate.py"
                                  ${LLVM_INCLUDE_DIRS}
