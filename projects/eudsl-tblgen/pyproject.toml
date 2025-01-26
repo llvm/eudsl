@@ -19,6 +19,7 @@ Homepage = "https://github.com/llvm/eudsl"
 minimum-version = "0.4"
 build-dir = "build/{wheel_tag}"
 cmake.source-dir = "."
+wheel.packages = ["src/eudsl_tblgen"]
 
 [tool.scikit-build.cmake.define]
 LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }

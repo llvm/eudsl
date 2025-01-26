@@ -53,7 +53,7 @@ NB_MODULE(eudslllvm_ext, m) {
   populate_TargetMachine(m);
   extern void populate_Error(nb::module_ & m);
   populate_Error(m);
-  extern void populate_lto(nb::module_ &m);
+  extern void populate_lto(nb::module_ & m);
   populate_lto(m);
   extern void populate_OrcEE(nb::module_ & m);
   populate_OrcEE(m);
@@ -74,12 +74,11 @@ NB_MODULE(eudslllvm_ext, m) {
   m.def(
       "function_type",
       [](LLVMTypeRef ReturnType, std::vector<LLVMTypeRef> ParamTypes,
-         unsigned ParamCount, LLVMBool IsVarArg) {
-        return LLVMFunctionType(ReturnType, ParamTypes.data(), ParamCount,
-                                IsVarArg);
+         LLVMBool IsVarArg) {
+        return LLVMFunctionType(ReturnType, ParamTypes.data(),
+                                ParamTypes.size(), IsVarArg);
       },
-      nb::arg("return_type"), nb::arg("param_types"), nb::arg("param_count"),
-      nb::arg("is_var_arg"),
+      nb::arg("return_type"), nb::arg("param_types"), nb::arg("is_var_arg"),
       " * Obtain a function type consisting of a specified signature.\n *\n "
       "* The function is defined as a tuple of a return Type, a list of\n * "
       "parameter types, and whether the function is variadic.");
@@ -101,116 +100,118 @@ NB_MODULE(eudslllvm_ext, m) {
   m.def(
       "struct_type_in_context",
       [](LLVMContextRef C, std::vector<LLVMTypeRef> ElementTypes,
-         unsigned ElementCount, LLVMBool Packed) {
-        return LLVMStructTypeInContext(C, ElementTypes.data(), ElementCount,
-                                       Packed);
+         LLVMBool Packed) {
+        return LLVMStructTypeInContext(C, ElementTypes.data(),
+                                       ElementTypes.size(), Packed);
       },
-      nb::arg("c"), nb::arg("element_types"), nb::arg("element_count"),
-      nb::arg("packed"),
+      nb::arg("c"), nb::arg("element_types"), nb::arg("packed"),
       " * Create a new structure type in a context.\n *\n * A structure is "
       "specified by a list of inner elements/types and\n * whether these can "
       "be packed together.\n *\n * @see llvm::StructType::create()");
 
   m.def(
       "struct_type",
-      [](std::vector<LLVMTypeRef> ElementTypes, unsigned ElementCount,
-         LLVMBool Packed) {
-        return LLVMStructType(ElementTypes.data(), ElementCount, Packed);
+      [](std::vector<LLVMTypeRef> ElementTypes, LLVMBool Packed) {
+        return LLVMStructType(ElementTypes.data(), ElementTypes.size(), Packed);
       },
-      nb::arg("element_types"), nb::arg("element_count"), nb::arg("packed"),
+      nb::arg("element_types"), nb::arg("packed"),
       " * Create a new structure type in the global context.\n *\n * @see "
       "llvm::StructType::create()");
 
   m.def(
       "struct_set_body",
       [](LLVMTypeRef StructTy, std::vector<LLVMTypeRef> ElementTypes,
-         unsigned ElementCount, LLVMBool Packed) {
-        LLVMStructSetBody(StructTy, ElementTypes.data(), ElementCount, Packed);
+         LLVMBool Packed) {
+        LLVMStructSetBody(StructTy, ElementTypes.data(), ElementTypes.size(),
+                          Packed);
       },
-      nb::arg("struct_ty"), nb::arg("element_types"), nb::arg("element_count"),
-      nb::arg("packed"),
+      nb::arg("struct_ty"), nb::arg("element_types"), nb::arg("packed"),
       " * Set the contents of a structure type.\n *\n * @see "
       "llvm::StructType::setBody()");
 
   m.def(
       "const_gep2",
       [](LLVMTypeRef Ty, LLVMValueRef ConstantVal,
-         std::vector<LLVMValueRef> ConstantIndices, unsigned NumIndices) {
+         std::vector<LLVMValueRef> ConstantIndices) {
         return LLVMConstGEP2(Ty, ConstantVal, ConstantIndices.data(),
-                             NumIndices);
+                             ConstantIndices.size());
       },
-      nb::arg("ty"), nb::arg("constant_val"), nb::arg("constant_indices"),
-      nb::arg("num_indices"));
+      nb::arg("ty"), nb::arg("constant_val"), nb::arg("constant_indices"));
 
   m.def(
       "const_in_bounds_gep2",
       [](LLVMTypeRef Ty, LLVMValueRef ConstantVal,
-         std::vector<LLVMValueRef> ConstantIndices, unsigned NumIndices) {
+         std::vector<LLVMValueRef> ConstantIndices) {
         return LLVMConstInBoundsGEP2(Ty, ConstantVal, ConstantIndices.data(),
-                                     NumIndices);
+                                     ConstantIndices.size());
       },
-      nb::arg("ty"), nb::arg("constant_val"), nb::arg("constant_indices"),
-      nb::arg("num_indices"));
+      nb::arg("ty"), nb::arg("constant_val"), nb::arg("constant_indices"));
 
   m.def(
       "const_gep_with_no_wrap_flags",
       [](LLVMTypeRef Ty, LLVMValueRef ConstantVal,
-         std::vector<LLVMValueRef> ConstantIndices, unsigned NumIndices,
+         std::vector<LLVMValueRef> ConstantIndices,
          LLVMGEPNoWrapFlags NoWrapFlags) {
-        return LLVMConstGEPWithNoWrapFlags(
-            Ty, ConstantVal, ConstantIndices.data(), NumIndices, NoWrapFlags);
+        return LLVMConstGEPWithNoWrapFlags(Ty, ConstantVal,
+                                           ConstantIndices.data(),
+                                           ConstantIndices.size(), NoWrapFlags);
       },
       nb::arg("ty"), nb::arg("constant_val"), nb::arg("constant_indices"),
-      nb::arg("num_indices"), nb::arg("no_wrap_flags"));
+      nb::arg("no_wrap_flags"));
 
   m.def(
       "get_intrinsic_declaration",
-      [](LLVMModuleRef Mod, unsigned ID, std::vector<LLVMTypeRef> ParamTypes,
-         size_t ParamCount) {
+      [](LLVMModuleRef Mod, unsigned ID, std::vector<LLVMTypeRef> ParamTypes) {
         return LLVMGetIntrinsicDeclaration(Mod, ID, ParamTypes.data(),
-                                           ParamCount);
+                                           ParamTypes.size());
       },
       nb::arg("mod"), nb::arg("id"), nb::arg("param_types"),
-      nb::arg("param_count"),
       " * Get or insert the declaration of an intrinsic.  For overloaded "
       "intrinsics,\n * parameter types must be provided to uniquely identify "
       "an overload.\n *\n * @see llvm::Intrinsic::getOrInsertDeclaration()");
 
   m.def(
       "intrinsic_get_type",
-      [](LLVMContextRef Ctx, unsigned ID, std::vector<LLVMTypeRef> ParamTypes,
-         size_t ParamCount) {
-        return LLVMIntrinsicGetType(Ctx, ID, ParamTypes.data(), ParamCount);
+      [](LLVMContextRef Ctx, unsigned ID, std::vector<LLVMTypeRef> ParamTypes) {
+        return LLVMIntrinsicGetType(Ctx, ID, ParamTypes.data(),
+                                    ParamTypes.size());
       },
       nb::arg("ctx"), nb::arg("id"), nb::arg("param_types"),
-      nb::arg("param_count"),
       " * Retrieves the type of an intrinsic.  For overloaded intrinsics, "
       "parameter\n * types must be provided to uniquely identify an "
       "overload.\n *\n * @see llvm::Intrinsic::getType()");
 
   m.def(
       "intrinsic_copy_overloaded_name",
-      [](unsigned ID, std::vector<LLVMTypeRef> ParamTypes, size_t ParamCount,
-         size_t *NameLength) {
+      [](unsigned ID, std::vector<LLVMTypeRef> ParamTypes, size_t *NameLength) {
         return LLVMIntrinsicCopyOverloadedName(ID, ParamTypes.data(),
-                                               ParamCount, NameLength);
+                                               ParamTypes.size(), NameLength);
       },
-      nb::arg("id"), nb::arg("param_types"), nb::arg("param_count"),
-      nb::arg("name_length"),
+      nb::arg("id"), nb::arg("param_types"), nb::arg("name_length"),
       "Deprecated: Use LLVMIntrinsicCopyOverloadedName2 instead.");
 
   m.def(
       "intrinsic_copy_overloaded_name2",
       [](LLVMModuleRef Mod, unsigned ID, std::vector<LLVMTypeRef> ParamTypes,
-         size_t ParamCount, size_t *NameLength) {
+         size_t *NameLength) {
         return LLVMIntrinsicCopyOverloadedName2(Mod, ID, ParamTypes.data(),
-                                                ParamCount, NameLength);
+                                                ParamTypes.size(), NameLength);
       },
       nb::arg("mod"), nb::arg("id"), nb::arg("param_types"),
-      nb::arg("param_count"), nb::arg("name_length"),
+      nb::arg("name_length"),
       " * Copies the name of an overloaded intrinsic identified by a given "
       "list of\n * parameter types.\n *\n * Unlike LLVMIntrinsicGetName, the "
       "caller is responsible for freeing the\n * returned string.\n *\n * "
       "This version also supports unnamed types.\n *\n * @see "
       "llvm::Intrinsic::getName()");
+
+  m.def(
+      "build_call2",
+      [](LLVMBuilderRef builder, LLVMTypeRef fn_type, LLVMValueRef Fn,
+         std::vector<LLVMValueRef> Args, const char *Name) {
+        return LLVMBuildCall2(builder, fn_type, Fn, Args.data(), Args.size(),
+                              Name);
+      },
+      nb::arg("param_0"), nb::arg("fn_type"), nb::arg("fn"), nb::arg("args"),
+      nb::arg("name"));
 }

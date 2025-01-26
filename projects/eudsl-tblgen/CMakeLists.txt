@@ -9,6 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(LLVM_SUBPROJECT_TITLE "EUDSL_TBLGEN")
 set(EUDSL_TBLGEN_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
+set(EUDSL_TBLGEN_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/src")
 
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_LIST_DIR)
   message("Building ${LLVM_SUBPROJECT_TITLE} as a standalone project.")
@@ -49,7 +50,7 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_DIR)
 find_package(nanobind CONFIG REQUIRED)
 
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/eudsl_tblgen)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${EUDSL_TBLGEN_SRC_DIR}/eudsl_tblgen)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 nanobind_add_module(eudsl_tblgen_ext NB_STATIC STABLE_ABI
@@ -65,26 +66,25 @@ target_compile_options(eudsl_tblgen_ext
   $<$<PLATFORM_ID:Darwin>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>)
 
-nanobind_add_stub(
-  eudsl_tblgen_ext_stub
-  MODULE eudsl_tblgen_ext
-  OUTPUT ${CMAKE_CURRENT_LIST_DIR}/eudsl_tblgen/eudsl_tblgen_ext.pyi
-  PYTHON_PATH $<TARGET_FILE_DIR:eudsl_tblgen_ext>
+# note WORKING_DIRECTORY
+set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen"
+  --module eudsl_tblgen_ext --recursive --include-private --output-dir .)
+set(NB_STUBGEN_OUTPUTS "eudsl_tblgen_ext.pyi")
+add_custom_command(
+  OUTPUT ${NB_STUBGEN_OUTPUTS}
+  COMMAND ${NB_STUBGEN_CMD}
+  WORKING_DIRECTORY "${EUDSL_TBLGEN_SRC_DIR}/eudsl_tblgen"
   DEPENDS eudsl_tblgen_ext
 )
-nanobind_add_stub(
-  eudsl_tblgen_stub
-  MODULE eudsl_tblgen
-  OUTPUT ${CMAKE_CURRENT_LIST_DIR}/eudsl_tblgen/__init__.pyi
-  PYTHON_PATH ${CMAKE_CURRENT_LIST_DIR}
-  DEPENDS eudsl_tblgen_ext
-)
+add_custom_target(eudsl_tblgen_ext_stub ALL DEPENDS ${NB_STUBGEN_OUTPUTS})
 
 install(TARGETS eudsl_tblgen_ext LIBRARY DESTINATION eudsl_tblgen)
 install(
-  DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/eudsl_tblgen
+  DIRECTORY "${EUDSL_TBLGEN_SRC_DIR}/eudsl_tblgen"
   DESTINATION ${CMAKE_INSTALL_PREFIX}
+  PATTERN "*.pyc" EXCLUDE
   PATTERN "*.so" EXCLUDE
   PATTERN "*.a" EXCLUDE
+  PATTERN "__pycache__" EXCLUDE
   PATTERN ".gitignore" EXCLUDE
 )

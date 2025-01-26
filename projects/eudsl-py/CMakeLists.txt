@@ -432,7 +432,7 @@ target_compile_options(nanobind-static PRIVATE ${nanobind_options})
 # note WORKING_DIRECTORY
 set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen"
   --module eudslpy_ext --recursive --include-private --output-dir .)
-set(NB_STUBGEN_OUTPUTS "__init__.pyi")
+set(NB_STUBGEN_OUTPUTS "eudslpy_ext.pyi")
 add_custom_command(
   OUTPUT ${NB_STUBGEN_OUTPUTS}
   COMMAND ${NB_STUBGEN_CMD}
