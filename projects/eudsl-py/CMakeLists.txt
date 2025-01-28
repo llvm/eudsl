@@ -185,6 +185,7 @@ eudsl_nbgen(EUDSLGen_gpu
   EXTRA_INCLUDES
     mlir/Target/LLVMIR/ModuleTranslation.h
     llvm/IR/IRBuilder.h
+    llvm/IR/DebugInfoMetadata.h
 )
 
 eudsl_nbgen(EUDSLGen_index
@@ -208,6 +209,8 @@ eudsl_nbgen(EUDSLGen_linalg
 eudsl_nbgen(EUDSLGen_LLVM
   ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
   NAMESPACES mlir::LLVM mlir::LLVM::detail
+  EXTRA_INCLUDES
+    llvm/IR/DebugInfoMetadata.h
 )
 
 eudsl_nbgen(EUDSLGen_math
@@ -357,6 +360,8 @@ nanobind_add_module(eudslpy_ext
   src/eudslpy_ext.cpp
 )
 target_link_libraries(eudslpy_ext PRIVATE
+  MLIR
+  LLVM
   # broken
   # EUDSLGen_irdl
   # EUDSLGen_omp
