@@ -318,12 +318,16 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
     int_regex = re.compile(r"_i(\d+)")
     fp_regex = re.compile(r"_f(\d+)")
 
-    for d in intrins.defs:
-        intr = intrins.defs[d]
-        if intr.name.startswith("int_amdgcn") and intr.type.as_string != "ClangBuiltin":
+    defs = intrins.get_defs()
+    for d in defs:
+        intr = defs[d]
+        if (
+            intr.get_name().startswith("int_amdgcn")
+            and intr.get_type().get_as_string() != "ClangBuiltin"
+        ):
             arg_types = []
             ret_types = []
-            for p in intr.values.ParamTypes.value:
+            for p in intr.get_values().ParamTypes.value:
                 p_s = p.as_string
                 if p_s.startswith("anon"):
                     p_s = p.type.as_string
@@ -343,7 +347,7 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
                     p_s = "pointer"
 
                 arg_types.append(p_s)
-            for p in intr.values.RetTypes.value:
+            for p in intr.get_values().RetTypes.value:
                 ret_types.append(p.as_string)
 
             ret_str = ""

@@ -411,11 +411,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
 
   auto llvm_OpInit = nb::class_<llvm::OpInit, llvm::TypedInit>(m, "OpInit")
                          .def_static("classof", &llvm::OpInit::classof, "i"_a)
-                         .def("clone", &llvm::OpInit::clone, "operands"_a,
-                              nb::rv_policy::reference_internal)
-                         .def("get_num_operands", &llvm::OpInit::getNumOperands)
-                         .def("get_operand", &llvm::OpInit::getOperand, "i"_a,
-                              nb::rv_policy::reference_internal)
                          .def("get_bit", &llvm::OpInit::getBit, "bit"_a,
                               nb::rv_policy::reference_internal);
 
@@ -438,15 +433,12 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_static("get", &llvm::UnOpInit::get, "opc"_a, "lhs"_a, "type"_a,
                   nb::rv_policy::reference_internal)
       .def("profile", &llvm::UnOpInit::Profile, "id"_a)
-      .def("clone", &llvm::UnOpInit::clone, "operands"_a,
-           nb::rv_policy::reference_internal)
-      .def("get_num_operands", &llvm::UnOpInit::getNumOperands)
       .def(
           "get_operand",
-          [](llvm::UnOpInit &self, unsigned int i) -> const llvm::Init * {
-            return self.getOperand(i);
+          [](llvm::UnOpInit &self) -> const llvm::Init * {
+            return self.getOperand();
           },
-          "i"_a, nb::rv_policy::reference_internal)
+          nb::rv_policy::reference_internal)
       .def("get_opcode", &llvm::UnOpInit::getOpcode)
       .def(
           "get_operand",
@@ -500,11 +492,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_static("get_list_concat", &llvm::BinOpInit::getListConcat, "lhs"_a,
                   "rhs"_a, nb::rv_policy::reference_internal)
       .def("profile", &llvm::BinOpInit::Profile, "id"_a)
-      .def("clone", &llvm::BinOpInit::clone, "operands"_a,
-           nb::rv_policy::reference_internal)
-      .def("get_num_operands", &llvm::BinOpInit::getNumOperands)
-      .def("get_operand", &llvm::BinOpInit::getOperand, "i"_a,
-           nb::rv_policy::reference_internal)
       .def("get_opcode", &llvm::BinOpInit::getOpcode)
       .def("get_lhs", &llvm::BinOpInit::getLHS,
            nb::rv_policy::reference_internal)
@@ -537,11 +524,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_static("get", &llvm::TernOpInit::get, "opc"_a, "lhs"_a, "mhs"_a,
                   "rhs"_a, "type"_a, nb::rv_policy::reference_internal)
       .def("profile", &llvm::TernOpInit::Profile, "id"_a)
-      .def("clone", &llvm::TernOpInit::clone, "operands"_a,
-           nb::rv_policy::reference_internal)
-      .def("get_num_operands", &llvm::TernOpInit::getNumOperands)
-      .def("get_operand", &llvm::TernOpInit::getOperand, "i"_a,
-           nb::rv_policy::reference_internal)
       .def("get_opcode", &llvm::TernOpInit::getOpcode)
       .def("get_lhs", &llvm::TernOpInit::getLHS,
            nb::rv_policy::reference_internal)
@@ -2773,6 +2755,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
   mlir_tblgen_SideEffectTrait.def_static(
       "classof", &mlir::tblgen::SideEffectTrait::classof, "t"_a);
 
-  m.def("lookup_intrinsic_id", Intrinsic::lookupIntrinsicID, nb::arg("name"));
-  m.def("intrinsic_is_overloaded", Intrinsic::isOverloaded, nb::arg("id"));
+  m.def("lookup_intrinsic_id", llvm::Intrinsic::lookupIntrinsicID,
+        nb::arg("name"));
+  m.def("intrinsic_is_overloaded", llvm::Intrinsic::isOverloaded,
+        nb::arg("id"));
 }
