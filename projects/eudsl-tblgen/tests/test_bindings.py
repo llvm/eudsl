@@ -6,7 +6,12 @@
 from pathlib import Path
 
 import pytest
-from eudsl_tblgen import RecordKeeper, get_requested_op_definitions
+from eudsl_tblgen import (
+    RecordKeeper,
+    get_requested_op_definitions,
+    get_all_type_constraints,
+    collect_all_defs,
+)
 
 
 @pytest.fixture(scope="function")
@@ -174,7 +179,7 @@ def test_init_complex(record_keeper_test_dialect):
 
     assert (
         repr(op.get_values())
-        == "RecordValues(opDialect=Test_Dialect, opName=types, cppNamespace=test, summary=, description=, opDocGroup=?, arguments=(ins I32:$a, SI64:$b, UI8:$c, Index:$d, F32:$e, NoneType:$f, anonymous_347), results=(outs), regions=(region), successors=(successor), builders=?, skipDefaultBuilders=0, assemblyFormat=?, hasCustomAssemblyFormat=0, hasVerifier=0, hasRegionVerifier=0, hasCanonicalizer=0, hasCanonicalizeMethod=0, hasFolder=0, useCustomPropertiesEncoding=0, traits=[], extraClassDeclaration=?, extraClassDefinition=?)"
+        == "RecordValues(opDialect=Test_Dialect, opName=types, cppNamespace=test, summary=, description=, opDocGroup=?, arguments=(ins I32:$a, SI64:$b, UI8:$c, Index:$d, F32:$e, NoneType:$f, anonymous_348), results=(outs), regions=(region), successors=(successor), builders=?, skipDefaultBuilders=0, assemblyFormat=?, hasCustomAssemblyFormat=0, hasVerifier=0, hasRegionVerifier=0, hasCanonicalizer=0, hasCanonicalizeMethod=0, hasFolder=0, useCustomPropertiesEncoding=0, traits=[], extraClassDeclaration=?, extraClassDefinition=?)"
     )
 
     arguments = op.get_values().arguments
@@ -193,7 +198,7 @@ def test_init_complex(record_keeper_test_dialect):
     assert str(arguments.get_value()[5]) == "NoneType"
 
     attr = record_keeper_test_dialect.get_defs()["Test_TestAttr"]
-    assert str(attr.get_values().predicate) == "anonymous_334"
+    assert str(attr.get_values().predicate) == "anonymous_335"
     assert str(attr.get_values().storageType) == "test::TestAttr"
     assert str(attr.get_values().returnType) == "test::TestAttr"
     assert (
@@ -228,4 +233,15 @@ def test_init_complex(record_keeper_test_dialect):
 
 def test_mlir_tblgen(record_keeper_test_dialect):
     for op in get_requested_op_definitions(record_keeper_test_dialect):
-        op.dump()
+        print(op.get_name())
+    for constraint in get_all_type_constraints(record_keeper_test_dialect):
+        print(constraint.get_def_name())
+        print(constraint.get_summary())
+
+    all_defs = collect_all_defs(record_keeper_test_dialect)
+    for d in all_defs:
+        print(d.get_name())
+
+    all_defs = collect_all_defs(record_keeper_test_dialect, "test")
+    for d in all_defs:
+        print(d.get_name())

@@ -918,7 +918,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            nb::rv_policy::reference_internal)
       .def("get_name_init_as_string", &llvm::Record::getNameInitAsString)
       .def("set_name", &llvm::Record::setName, "name"_a)
-      .def("get_loc", &llvm::Record::getLoc)
+      .def("get_loc", eudsl::coerceReturn<std::vector<llvm::SMLoc>>(
+                          &llvm::Record::getLoc, nb::const_))
       .def("append_loc", &llvm::Record::appendLoc, "loc"_a)
       .def("get_forward_declaration_locs",
            &llvm::Record::getForwardDeclarationLocs)
@@ -1088,8 +1089,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
              const std::vector<std::string> &macroNames,
              bool noWarnOnUnusedTemplateArgs) {
             llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
-                llvm::MemoryBuffer::getFileOrSTDIN(inputFilename,
-                                                   /*IsText=*/true);
+                llvm::MemoryBuffer::getFile(inputFilename,
+                                            /*IsText=*/true);
             if (std::error_code EC = fileOrErr.getError())
               throw std::runtime_error("Could not open input file '" +
                                        inputFilename + "': " + EC.message() +
@@ -1144,6 +1145,13 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           [](llvm::RecordKeeper &self, const std::string &className)
               -> std::vector<const llvm::Record *> {
             return self.getAllDerivedDefinitions(className);
+          },
+          "class_name"_a, nb::rv_policy::reference_internal)
+      .def(
+          "get_all_derived_definitions_if_defined",
+          [](llvm::RecordKeeper &self, const std::string &className)
+              -> std::vector<const llvm::Record *> {
+            return self.getAllDerivedDefinitionsIfDefined(className);
           },
           "class_name"_a, nb::rv_policy::reference_internal);
 
@@ -1239,6 +1247,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def("get_kind", &mlir::tblgen::Constraint::getKind)
           .def("get_def", &mlir::tblgen::Constraint::getDef,
                nb::rv_policy::reference_internal);
+
   nb::enum_<mlir::tblgen::Constraint::Kind>(mlir_tblgen_Constraint, "Kind")
       .value("CK_Attr", mlir::tblgen::Constraint::CK_Attr)
       .value("CK_Region", mlir::tblgen::Constraint::CK_Region)
