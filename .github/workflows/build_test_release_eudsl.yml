@@ -48,6 +48,11 @@ jobs:
           - name: "ubuntu_x86_64"
             runs-on: "ubuntu-22.04"
             os: "ubuntu"
+            arch: "x86_64"
+          - name: "ubuntu_aarch64"
+            runs-on: "ubuntu-22.04-arm"
+            os: "ubuntu"
+            arch: "aarch64"
           - name: "windows_x86_64"
             runs-on: "windows-2019"
             os: "windows"
@@ -93,7 +98,7 @@ jobs:
         run: |
           
           if [[ "${{ matrix.os }}" == "almalinux" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export RELEASE_PREFIX="mlir_manylinux_x86_64"
+            export RELEASE_PREFIX="mlir_manylinux_${{ matrix.arch }}"
           else
             export RELEASE_PREFIX="mlir_${{ matrix.name }}"
           fi
@@ -128,7 +133,11 @@ jobs:
           # prevent OOM on free GHA
           echo "EUDSLPY_DISABLE_COMPILE_OPT=${{ inputs.eudslpy_disable_compile_opt == 'true' && 'ON' || 'OFF' }}" >> $GITHUB_ENV
           
-          pip install cibuildwheel
+          $python3_command -m pip install cibuildwheel
+          if [[ "${{ matrix.os }}" == "ubuntu" ]] && [[ "${{ matrix.arch }}" == "aarch64" ]]; then
+            sudo apt-get install libarchive-dev antlr libxml2-dev libxslt-dev libcurl4-openssl-dev
+          fi
+          $python3_command -m pip install -r requirements-dev.txt
 
       - name: "Build eudsl-tblgen"
         run: |
@@ -141,7 +150,7 @@ jobs:
           else
             export CMAKE_PREFIX_PATH=$PWD/llvm-install
             export PIP_FIND_LINKS=$PWD/wheelhouse
-            $python3_command -m pip wheel "$PWD/projects/eudsl-tblgen" -w wheelhouse -v
+            $python3_command -m pip wheel "$PWD/projects/eudsl-tblgen" -w wheelhouse -v --no-build-isolation
           fi
 
       - name: "Build eudsl-llvmpy"
@@ -156,7 +165,8 @@ jobs:
           else
             export CMAKE_PREFIX_PATH=$PWD/llvm-install
             export PIP_FIND_LINKS=$PWD/wheelhouse
-            $python3_command -m pip wheel "$PWD/projects/eudsl-llvmpy" -w wheelhouse -v
+            $python3_command -m pip install eudsl-tblgen -f wheelhouse
+            $python3_command -m pip wheel "$PWD/projects/eudsl-llvmpy" -w wheelhouse -v --no-build-isolation
           fi
 
       - name: "Build eudsl-nbgen"
@@ -170,7 +180,7 @@ jobs:
           else
             export CMAKE_PREFIX_PATH=$PWD/llvm-install
             export PIP_FIND_LINKS=$PWD/wheelhouse
-            $python3_command -m pip wheel "$PWD/projects/eudsl-nbgen" -w wheelhouse -v
+            $python3_command -m pip wheel "$PWD/projects/eudsl-nbgen" -w wheelhouse -v --no-build-isolation
           fi
 
       - name: "Build eudsl-py"
@@ -185,14 +195,15 @@ jobs:
           else
             export CMAKE_PREFIX_PATH=$PWD/llvm-install
             export PIP_FIND_LINKS=$PWD/wheelhouse
-            $python3_command -m pip wheel "$PWD/projects/eudsl-py" -w wheelhouse -v
+            $python3_command -m pip install eudsl-nbgen -f wheelhouse
+            $python3_command -m pip wheel "$PWD/projects/eudsl-py" -w wheelhouse -v --no-build-isolation
           fi
 
       # just to/make sure total build continues to work
       - name: "Build all of eudsl"
+        if: ${{ github.event_name == 'pull_request' }}
         run: |
 
-          $python3_command -m pip install -r requirements.txt
           $python3_command -m pip install eudsl-tblgen -f wheelhouse
           cmake -B $PWD/eudsl-build -S $PWD \
             -DCMAKE_PREFIX_PATH=$PWD/llvm-install \
@@ -229,13 +240,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: ["ubuntu-22.04", "macos-14", "windows-2019"]
+        runs-on: ["ubuntu-22.04", "ubuntu-22.04-arm", "macos-14", "windows-2019"]
         python-version: [
           # "3.9", "3.10", "3.11",
           "3.12"
         ]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
+          {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
           {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"}
         ]
@@ -288,7 +300,8 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [
-          "ubuntu-22.04", 
+          "ubuntu-22.04",
+          "ubuntu-22.04-arm",
           "macos-14"
           # "windows-2019"
         ]
@@ -297,6 +310,7 @@ jobs:
           "3.12"]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
+          {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
           # TODO(max): enable on windows by statically linking
           # {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"}
@@ -346,7 +360,8 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [
-          "ubuntu-22.04", 
+          "ubuntu-22.04",
+          "ubuntu-22.04-arm",
           "macos-14",
           # "windows-2019"
         ]
@@ -356,6 +371,7 @@ jobs:
         ]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
+          {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
           # TODO(max): enable on windows by statically linking
           # {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
@@ -417,6 +433,7 @@ jobs:
       matrix:
         name: [
          "ubuntu_x86_64",
+         "ubuntu_aarch64",
          "macos_arm64",
          "windows_x86_64"
         ]

@@ -33,6 +33,7 @@ build-verbosity = 1
 skip = ["*-manylinux_i686", "*-musllinux*", "pp*", "*-win32"]
 archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_34"
 environment-pass = [
     "LLVM_DIR",
     "CMAKE_GENERATOR",

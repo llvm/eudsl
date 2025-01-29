@@ -72,16 +72,29 @@ runs:
     - name: "Install OS deps"
       shell: bash
       run: |
+        
         if [[ "${{ inputs.os }}" == "almalinux" ]]; then
           dnf install -y epel-release 
           dnf install -y sudo ncurses-compat-libs tmate python3-pip git
+        
           # install ccache
-          curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz
-          tar -xf ccache-4.10.2-linux-x86_64.tar.xz
-          pushd ccache-4.10.2-linux-x86_64 && make install && popd
+          if [[ "${{ inputs.arch }}" == "x86_64" ]]; then
+            curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz
+            tar -xf ccache-4.10.2-linux-x86_64.tar.xz
+            pushd ccache-4.10.2-linux-x86_64 && make install && popd
+          elif [[ "${{ inputs.arch }}" == "aarch64" ]]; then
+            dnf install -y ccache
+          fi
+        
           # install gh-cli
-          curl -sLO https://github.com/cli/cli/releases/download/v2.61.0/gh_2.61.0_linux_amd64.rpm
-          rpm -i gh_2.61.0_linux_amd64.rpm
+          if [[ "${{ inputs.arch }}" == "x86_64" ]]; then
+            rpm_arch=amd64
+          elif [[ "${{ inputs.arch }}" == "aarch64" ]]; then
+            rpm_arch=arm64
+          fi
+          curl -sLO https://github.com/cli/cli/releases/download/v2.61.0/gh_2.61.0_linux_${rpm_arch}.rpm
+          rpm -i gh_2.61.0_linux_${rpm_arch}.rpm
+        
           # lol: failed to run git: fatal: detected dubious ownership in repository at '/__w/eudsl/eudsl'
           git config --global --add safe.directory /__w/eudsl/eudsl
         elif [[ "${{ inputs.os }}" == macos* ]]; then
