@@ -41,9 +41,10 @@ def test_builder():
     with context(mod_name="test_builder") as ctx:
 
         @function(emit=True)
-        def sum(a: T.int32, b: T.int32) -> T.int32:
-            c = llvm.amdgcn.cvt_pk_i16(a, b)
-            result = add(c, c)
+        def sum(a: T.int32, b: T.int32, c: T.float) -> T.int32:
+            e = llvm.amdgcn.cvt_pk_i16(a, b)
+            f = llvm.amdgcn.frexp_mant(c)
+            result = add(a, b)
             ret(result)
 
         mod_str = str(ctx)
@@ -53,15 +54,19 @@ def test_builder():
     ; ModuleID = 'test_builder'
     source_filename = "test_builder"
 
-    define i32 @sum(i32 %0, i32 %1) {
+    define i32 @sum(i32 %0, i32 %1, float %2) {
     entry:
-      %2 = call <2 x i16> @llvm.amdgcn.cvt.pk.i16(i32 %0, i32 %1)
-      %3 = add <2 x i16> %2, %2
-      ret <2 x i16> %3
+      %3 = call <2 x i16> @llvm.amdgcn.cvt.pk.i16(i32 %0, i32 %1)
+      %4 = call float @llvm.amdgcn.frexp.mant.f32(float %2)
+      %5 = add i32 %0, %1
+      ret i32 %5
     }
 
     ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
     declare <2 x i16> @llvm.amdgcn.cvt.pk.i16(i32, i32) #0
+
+    ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+    declare float @llvm.amdgcn.frexp.mant.f32(float) #0
 
     attributes #0 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
     """
