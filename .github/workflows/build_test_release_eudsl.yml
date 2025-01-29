@@ -48,6 +48,11 @@ jobs:
           - name: "ubuntu_x86_64"
             runs-on: "ubuntu-22.04"
             os: "ubuntu"
+            arch: "x86_64"
+          - name: "ubuntu_aarch64"
+            runs-on: "ubuntu-22.04-arm"
+            os: "ubuntu"
+            arch: "aarch64"
           - name: "windows_x86_64"
             runs-on: "windows-2019"
             os: "windows"
@@ -93,7 +98,7 @@ jobs:
         run: |
           
           if [[ "${{ matrix.os }}" == "almalinux" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export RELEASE_PREFIX="mlir_manylinux_x86_64"
+            export RELEASE_PREFIX="mlir_manylinux_${{ matrix.arch }}"
           else
             export RELEASE_PREFIX="mlir_${{ matrix.name }}"
           fi
@@ -148,6 +153,9 @@ jobs:
         if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
           
+          if [[ "${{ matrix.os }}" == "ubuntu" ]] && [[ "${{ matrix.arch }}" == "aarch64" ]]; then
+            sudo apt-get install libarchive-dev antlr libxml2-dev libxslt-dev libcurl4-openssl-dev
+          fi
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
               export CCACHE_DIR=/host/$CCACHE_DIR
@@ -236,6 +244,7 @@ jobs:
         ]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
+          {runs-on: "ubuntu-22.04", name: "ubuntu_aarch64", os: "ubuntu"},
           {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"}
         ]
@@ -297,6 +306,7 @@ jobs:
           "3.12"]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
+          {runs-on: "ubuntu-22.04", name: "ubuntu_aarch64", os: "ubuntu"},
           # TODO(max): enable on windows by statically linking
           # {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"}
@@ -356,6 +366,7 @@ jobs:
         ]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
+          {runs-on: "ubuntu-22.04", name: "ubuntu_aarch64", os: "ubuntu"},
           # TODO(max): enable on windows by statically linking
           # {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
@@ -417,6 +428,7 @@ jobs:
       matrix:
         name: [
          "ubuntu_x86_64",
+         "ubuntu_aarch64",
          "macos_arm64",
          "windows_x86_64"
         ]
