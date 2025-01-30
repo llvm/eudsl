@@ -162,6 +162,7 @@ runs:
         echo "CCACHE_MAXSIZE=700M" >> $GITHUB_ENV
         echo "CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros" >> $GITHUB_ENV
         echo "CCACHE_CPP2=true" >> $GITHUB_ENV
+        echo "CCACHE_NOHASHDIR=true" >> $GITHUB_ENV
         echo "CCACHE_UMASK=002" >> $GITHUB_ENV
         
         ccache -z
