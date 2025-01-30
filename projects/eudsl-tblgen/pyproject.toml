@@ -27,6 +27,7 @@ CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
 CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
+LLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN = "ON"
 
 [tool.cibuildwheel]
 build-verbosity = 1

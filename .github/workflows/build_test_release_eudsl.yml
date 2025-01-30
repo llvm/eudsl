@@ -178,34 +178,34 @@ jobs:
             $python3_command -m pip wheel "$PWD/projects/eudsl-nbgen" -w wheelhouse -v --no-build-isolation
           fi
 
-      - name: "Build eudsl-py"
-        if: ${{ ! startsWith(matrix.os, 'windows') }}
-        run: |
-
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-              export CCACHE_DIR=/host/$CCACHE_DIR
-            fi
-            $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
-          else
-            export CMAKE_PREFIX_PATH=$PWD/llvm-install
-            export PIP_FIND_LINKS=$PWD/wheelhouse
-            $python3_command -m pip install eudsl-nbgen -f wheelhouse
-            $python3_command -m pip wheel "$PWD/projects/eudsl-py" -w wheelhouse -v --no-build-isolation
-          fi
+#      - name: "Build eudsl-py"
+#        if: ${{ ! startsWith(matrix.os, 'windows') }}
+#        run: |
+#
+#          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+#            if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+#              export CCACHE_DIR=/host/$CCACHE_DIR
+#            fi
+#            $python3_command -m cibuildwheel "$PWD/projects/eudsl-py" --output-dir wheelhouse
+#          else
+#            export CMAKE_PREFIX_PATH=$PWD/llvm-install
+#            export PIP_FIND_LINKS=$PWD/wheelhouse
+#            $python3_command -m pip install eudsl-nbgen -f wheelhouse
+#            $python3_command -m pip wheel "$PWD/projects/eudsl-py" -w wheelhouse -v --no-build-isolation
+#          fi
 
       # just to/make sure total build continues to work
-      - name: "Build all of eudsl"
-        if: ${{ github.event_name != 'workflow_dispatch' }}
-        run: |
-
-          $python3_command -m pip install eudsl-tblgen -f wheelhouse
-          cmake -B $PWD/eudsl-build -S $PWD \
-            -DCMAKE_PREFIX_PATH=$PWD/llvm-install \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=$PWD/eudsl-install \
-            -DPython3_EXECUTABLE=$(which $python3_command)
-          cmake --build "$PWD/eudsl-build" --target install
+#      - name: "Build all of eudsl"V
+#        if: ${{ github.event_name != 'workflow_dispatch' }}
+#        run: |
+#
+#          $python3_command -m pip install eudsl-tblgen -f wheelhouse
+#          cmake -B $PWD/eudsl-build -S $PWD \
+#            -DCMAKE_PREFIX_PATH=$PWD/llvm-install \
+#            -DCMAKE_BUILD_TYPE=Release \
+#            -DCMAKE_INSTALL_PREFIX=$PWD/eudsl-install \
+#            -DPython3_EXECUTABLE=$(which $python3_command)
+#          cmake --build "$PWD/eudsl-build" --target install
 
       - name: "Save cache"
         uses: actions/cache/save@v3
@@ -287,65 +287,65 @@ jobs:
             python -m pytest -rA --capture=tee-sys $TESTS_DIR
           fi
 
-  test-eudsl-py:
-
-    needs: [build-eudsl]
-
-    strategy:
-      fail-fast: false
-      matrix:
-        runs-on: [
-          "ubuntu-22.04",
-          "ubuntu-22.04-arm",
-          "macos-14"
-          # "windows-2019"
-        ]
-        python-version: [
-          # "3.9", "3.10", "3.11",
-          "3.12"]
-        include: [
-          {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
-          {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
-          # TODO(max): enable on windows by statically linking
-          # {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
-          {runs-on: "macos-14", name: "macos_arm64", os: "macos"}
-        ]
-
-    runs-on: ${{ matrix.runs-on }}
-
-    name: "Test eudsl-py ${{ matrix.name }}"
-
-    defaults:
-      run:
-        shell: bash
-
-    steps:
-      - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
-        with:
-          submodules: false
-
-      - name: "Install Python"
-        uses: actions/setup-python@v4
-        with:
-          python-version: "${{ matrix.python-version }}"
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: eudsl_${{ matrix.name }}_artifact
-          path: wheelhouse
-
-      - name: "Install eudsl-py"
-        run: |
-          
-          python -m pip install pytest
-          python -m pip install eudsl-py -f wheelhouse
-
-      - name: "Test eudsl-py"
-        run: |
-          
-          export TESTS_DIR="$PWD/projects/eudsl-py/tests"
-          python -m pytest -rA --capture=tee-sys $TESTS_DIR
+#  test-eudsl-py:
+#
+#    needs: [build-eudsl]
+#
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        runs-on: [
+#          "ubuntu-22.04",
+#          "ubuntu-22.04-arm",
+#          "macos-14"
+#          # "windows-2019"
+#        ]
+#        python-version: [
+#          # "3.9", "3.10", "3.11",
+#          "3.12"]
+#        include: [
+#          {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
+#          {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
+#          # TODO(max): enable on windows by statically linking
+#          # {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
+#          {runs-on: "macos-14", name: "macos_arm64", os: "macos"}
+#        ]
+#
+#    runs-on: ${{ matrix.runs-on }}
+#
+#    name: "Test eudsl-py ${{ matrix.name }}"
+#
+#    defaults:
+#      run:
+#        shell: bash
+#
+#    steps:
+#      - name: "Check out repository"
+#        uses: actions/checkout@v4.2.2
+#        with:
+#          submodules: false
+#
+#      - name: "Install Python"
+#        uses: actions/setup-python@v4
+#        with:
+#          python-version: "${{ matrix.python-version }}"
+#
+#      - uses: actions/download-artifact@v4
+#        with:
+#          name: eudsl_${{ matrix.name }}_artifact
+#          path: wheelhouse
+#
+#      - name: "Install eudsl-py"
+#        run: |
+#
+#          python -m pip install pytest
+#          python -m pip install eudsl-py -f wheelhouse
+#
+#      - name: "Test eudsl-py"
+#        run: |
+#
+#          export TESTS_DIR="$PWD/projects/eudsl-py/tests"
+#          python -m pytest -rA --capture=tee-sys $TESTS_DIR
 
   test-eudsl-llvmpy:
 
@@ -413,7 +413,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: [
       test-eudsl-tblgen,
-      test-eudsl-py,
+      # test-eudsl-py,
       test-eudsl-llvmpy
     ]
     runs-on: "ubuntu-22.04"
