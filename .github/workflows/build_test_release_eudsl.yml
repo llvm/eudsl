@@ -18,11 +18,6 @@ on:
         description: 'Run the build with a tmate session ONLY in case of failure'
         required: false
         default: false
-      eudslpy_disable_compile_opt:
-        type: boolean
-        description: 'use -O0 to build eudsl-py'
-        required: false
-        default: true
   pull_request:
     paths:
       - ".github/workflows/build_test_release_eudsl.yml"
@@ -129,9 +124,6 @@ jobs:
           if [[ "${{ matrix.runs-on }}" == "macos-14" ]]; then
             echo MACOSX_DEPLOYMENT_TARGET=14.0 >> $GITHUB_ENV
           fi
-          
-          # prevent OOM on free GHA
-          echo "EUDSLPY_DISABLE_COMPILE_OPT=${{ inputs.eudslpy_disable_compile_opt == 'true' && 'ON' || 'OFF' }}" >> $GITHUB_ENV
           
           $python3_command -m pip install cibuildwheel
           if [[ "${{ matrix.os }}" == "ubuntu" ]] && [[ "${{ matrix.arch }}" == "aarch64" ]]; then
