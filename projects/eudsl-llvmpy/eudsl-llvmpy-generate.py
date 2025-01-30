@@ -36,7 +36,7 @@ def preprocess_code(code: str, here, header_f) -> str:
     transformed_code = re.sub(pattern, replacement, transformed_code)
 
     pattern = r'#include "llvm-c/(\w+).h"'
-    replacement = rf'#include "{here}/\1.h"'
+    replacement = rf'#include "{here.as_posix()}/\1.h"'
     transformed_code = re.sub(pattern, replacement, transformed_code)
 
     transformed_code = transformed_code.replace(
@@ -341,6 +341,8 @@ def generate_nb_bindings(header_root: Path, output_root: Path):
     pp_dir = output_root / "pp"
     pp_dir.mkdir(parents=True, exist_ok=True)
     for header_f in header_root.rglob("*.h"):
+        if header_f.name == "lto.h":
+            continue
         with open(header_f) as ff:
             orig_code = ff.read()
         pp_header_f = pp_dir / header_f.name
@@ -354,7 +356,7 @@ def generate_nb_bindings(header_root: Path, output_root: Path):
             ff.write(
                 dedent(
                     f"""
-            #include "{pp_header_f}"
+            #include "{pp_header_f.as_posix()}"
             #include "types.h"
             #include <nanobind/nanobind.h>
             #include <nanobind/ndarray.h>

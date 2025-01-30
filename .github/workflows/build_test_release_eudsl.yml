@@ -22,7 +22,9 @@ on:
     paths:
       - ".github/workflows/build_test_release_eudsl.yml"
       - "projects/eudsl-tblgen/**"
+      - "projects/eudsl-nbgen/**"
       - "projects/eudsl-py/**"
+      - "projects/eudsl-llvmpy/**"
       - "third_party/llvm-project"
   merge_group:
   push:
@@ -129,6 +131,10 @@ jobs:
           if [[ "${{ matrix.os }}" == "ubuntu" ]] && [[ "${{ matrix.arch }}" == "aarch64" ]]; then
             sudo apt-get install libarchive-dev antlr libxml2-dev libxslt-dev libcurl4-openssl-dev
           fi
+          if [[ "${{ matrix.os }}" == "macos" ]]; then
+            brew install antlr boost
+          fi
+          
           $python3_command -m pip install -r requirements-dev.txt
 
       - name: "Build eudsl-tblgen"
@@ -141,7 +147,6 @@ jobs:
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
 
       - name: "Build eudsl-llvmpy"
-        if: ${{ ! startsWith(matrix.os, 'windows') }}
         run: |
           
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -350,7 +355,7 @@ jobs:
           "ubuntu-22.04",
           "ubuntu-22.04-arm",
           "macos-14",
-          # "windows-2019"
+          "windows-2019"
         ]
         python-version: [
           # "3.10", "3.11",
@@ -360,7 +365,7 @@ jobs:
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
           {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
           # TODO(max): enable on windows by statically linking
-          # {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
+          {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
         ]
 

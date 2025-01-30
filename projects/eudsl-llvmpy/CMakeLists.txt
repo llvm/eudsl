@@ -125,21 +125,34 @@ nanobind_add_module(eudslllvm_ext
   src/eudslllvm_ext.cpp
   ${_gen_src}
 )
-target_link_libraries(eudslllvm_ext PRIVATE LLVM LTO)
+set(eudslllvm_ext_libs
+  PRIVATE
+  LLVMCore
+  LLVMExecutionEngine
+  LLVMOrcJIT
+  LLVMOrcDebugging
+  LLVMInterpreter
+  LLVMMCDisassembler
+  LLVMMCJIT)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES x86_64)
+  list(APPEND eudslllvm_ext_libs
+    LLVMX86Info
+    LLVMX86CodeGen
+    LLVMX86AsmParser
+    LLVMX86Disassembler)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+  list(APPEND eudslllvm_ext_libs
+    LLVMAArch64Info
+    LLVMAArch64Desc
+    LLVMAArch64CodeGen
+    LLVMAArch64AsmParser
+    LLVMAArch64Disassembler)
+endif()
+target_link_libraries(eudslllvm_ext PRIVATE ${eudslllvm_ext_libs})
 set_target_properties(eudslllvm_ext
   PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${EUDSLLLVM_SRC_DIR}/llvm"
 )
-
-set(STANDALONE)
-if(EUDSLLLVM_STANDALONE_BUILD OR EUDSL_STANDALONE_BUILD)
-  set(STANDALONE STANDALONE)
-endif()
-patch_llvm_rpath(LLVM ${STANDALONE})
-patch_llvm_rpath(LTO ${STANDALONE})
-set_install_rpath_origin(eudslllvm_ext)
-# copy libLLVM into the ext dir for wheels
-install(IMPORTED_RUNTIME_ARTIFACTS LLVM LTO LIBRARY DESTINATION llvm)
 
 target_compile_options(eudslllvm_ext PRIVATE ${nanobind_options})
 target_compile_options(nanobind-static PRIVATE ${nanobind_options})
