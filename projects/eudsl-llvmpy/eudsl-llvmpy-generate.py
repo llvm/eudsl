@@ -1,4 +1,5 @@
 import argparse
+import platform
 import re
 from pathlib import Path
 from textwrap import dedent
@@ -82,7 +83,39 @@ def generate_header_bindings(cpp_code):
     options.python_strip_empty_comment_lines = True
     options.postprocess_pydef_function = postprocess
     # options.comments_exclude = True
-    options.fn_exclude_by_name__regex = "LLVMDisposeMessage|LLVMContextGetDiagnosticHandler|LLVMDisasmInstruction|LLVMDisposeErrorMessage|LLVMOrcCreateStaticLibrarySearchGeneratorForPath|LLVMRemarkVersion"
+    excludes = [
+        "LLVMContextGetDiagnosticHandler",
+        "LLVMDisasmInstruction",
+        "LLVMDisposeErrorMessage",
+        "LLVMDisposeMessage",
+        "LLVMOrcCreateStaticLibrarySearchGeneratorForPath",
+        "LLVMRemarkVersion",
+    ]
+
+    # APIs with callbacks that nanobind can't deduce/compile correctly
+    if platform.system() == "Windows":
+        excludes += [
+            "LLVMContextSetDiagnosticHandler",
+            "LLVMContextSetYieldCallback",
+            "LLVMCreateDisasm",
+            "LLVMCreateDisasmCPU",
+            "LLVMCreateDisasmCPUFeatures",
+            "LLVMCreateSimpleMCJITMemoryManager",
+            "LLVMInstallFatalErrorHandler",
+            "LLVMOrcCreateCustomCAPIDefinitionGenerator",
+            "LLVMOrcCreateCustomMaterializationUnit",
+            "LLVMOrcCreateDynamicLibrarySearchGeneratorForPath",
+            "LLVMOrcCreateDynamicLibrarySearchGeneratorForProcess",
+            "LLVMOrcCreateRTDyldObjectLinkingLayerWithMCJITMemoryManagerLikeCallbacks",
+            "LLVMOrcExecutionSessionLookup",
+            "LLVMOrcExecutionSessionSetErrorReporter",
+            "LLVMOrcIRTransformLayerSetTransform",
+            "LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator",
+            "LLVMOrcObjectTransformLayerSetTransform",
+            "LLVMOrcThreadSafeModuleWithModuleDo",
+        ]
+
+    options.fn_exclude_by_name__regex = "|".join(excludes)
     generated_code = litgen.generate_code(options, cpp_code)
     return generated_code.pydef_code
 

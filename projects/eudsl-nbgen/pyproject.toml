@@ -26,13 +26,17 @@ wheel.py-api = "py3"
 cmake.source-dir = "."
 
 [tool.scikit-build.cmake.define]
-LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
-Clang_DIR = { env = "Clang_DIR", default = "EMPTY" }
-CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "EMPTY" }
+CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
+CMAKE_C_FLAGS = { env = "CMAKE_C_FLAGS", default = "" }
+CMAKE_CXX_FLAGS = { env = "CMAKE_CXX_FLAGS", default = "" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
+CMAKE_C_VISIBILITY_PRESET = "hidden"
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
+CMAKE_VISIBILITY_INLINES_HIDDEN = "ON"
 CMAKE_VERBOSE_MAKEFILE = "ON"
+LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
+Clang_DIR = { env = "Clang_DIR", default = "EMPTY" }
 LLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN = "ON"
 
 [tool.cibuildwheel]
@@ -44,9 +48,14 @@ archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "quay.io/pypa/manylinux_2_34_aarch64"
 environment-pass = [
-    "LLVM_DIR",
-    "CMAKE_GENERATOR",
     "CMAKE_PREFIX_PATH",
+    "CMAKE_C_FLAGS",
+    "CMAKE_CXX_FLAGS",
+    "CMAKE_C_COMPILER_LAUNCHER",
+    "CMAKE_CXX_COMPILER_LAUNCHER",
+    "CMAKE_GENERATOR",
+    "LLVM_DIR",
+    "Clang_DIR",
     "CC",
     "CXX",
     # ccache
@@ -55,8 +64,8 @@ environment-pass = [
     "CCACHE_SLOPPINESS",
     "CCACHE_CPP2",
     "CCACHE_UMASK",
-    "CMAKE_C_COMPILER_LAUNCHER",
-    "CMAKE_CXX_COMPILER_LAUNCHER"
+    "CCACHE_NOHASHDIR",
+    "PIP_FIND_LINKS",
 ]
 before-build = [
     "export CCACHE_DIR=$CCACHE_DIR/$(python -c 'import platform; print(platform.python_version())')",

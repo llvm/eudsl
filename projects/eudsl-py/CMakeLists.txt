@@ -415,11 +415,6 @@ set_target_properties(eudslpy_ext
   PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${EUDSLPY_SRC_DIR}/eudsl"
 )
-# hack - on GHA, linux, the build OOMs
-set(EUDSLPY_DISABLE_COMPILE_OPT ON CACHE BOOL "")
-if (EUDSLPY_DISABLE_COMPILE_OPT)
-  target_compile_options(eudslpy_ext PRIVATE -O0)
-endif()
 
 set(STANDALONE)
 if(EUDSLPY_STANDALONE_BUILD OR EUDSL_STANDALONE_BUILD)

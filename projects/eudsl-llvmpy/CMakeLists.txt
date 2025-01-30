@@ -134,7 +134,7 @@ set(eudslllvm_ext_libs
   LLVMInterpreter
   LLVMMCDisassembler
   LLVMMCJIT)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES x86_64)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   list(APPEND eudslllvm_ext_libs
     LLVMX86Info
     LLVMX86CodeGen

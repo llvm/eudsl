@@ -56,6 +56,11 @@ jobs:
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
+            arch: "aarch64"
+          - name: "macos_x86_64"
+            runs-on: "macos-13"
+            os: "macos"
+            arch: "x86_64"
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -115,16 +120,15 @@ jobs:
             echo "PIP_FIND_LINKS=$PWD/wheelhouse" >> $GITHUB_ENV
           fi
           
-          # since linux builds execute in the cibuildwheel almalinux container
-          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            echo CC=clang >> $GITHUB_ENV
-            echo CXX=clang++ >> $GITHUB_ENV
-          fi
-          
           # these have to match the deployment targets of the LLVM build runners
           # ld: warning: object file (libLLVMTableGen.a[3](Error.cpp.o)) was built for newer 'macOS' version (13.7) than being linked (10.13)
           if [[ "${{ matrix.runs-on }}" == "macos-14" ]]; then
             echo MACOSX_DEPLOYMENT_TARGET=14.0 >> $GITHUB_ENV
+          fi
+          # https://github.com/wjakob/nanobind/issues/433
+          # i don't know why i need this here but the llvm build doesn't?
+          if [[ "${{ matrix.runs-on }}" == "macos-13" ]]; then
+            echo CMAKE_CXX_FLAGS="-fno-aligned-allocation" >> $GITHUB_ENV
           fi
           
           $python3_command -m pip install cibuildwheel
@@ -139,10 +143,12 @@ jobs:
 
       - name: "Build eudsl-tblgen"
         run: |
-
+          
           # this one is different from the rest as a smoketest re cibuildwheel
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             export CCACHE_DIR=/host/$CCACHE_DIR
+            export CC=clang
+            export CXX=clang++
           fi
           $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
 
@@ -152,6 +158,8 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
               export CCACHE_DIR=/host/$CCACHE_DIR
+              export CC=clang
+              export CXX=clang++
             fi
             $python3_command -m cibuildwheel "$PWD/projects/eudsl-llvmpy" --output-dir wheelhouse
           else
@@ -167,6 +175,8 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
               export CCACHE_DIR=/host/$CCACHE_DIR
+              export CC=clang
+              export CXX=clang++
             fi
             $python3_command -m cibuildwheel "$PWD/projects/eudsl-nbgen" --output-dir wheelhouse
           else
@@ -232,7 +242,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: ["ubuntu-22.04", "ubuntu-22.04-arm", "macos-14", "windows-2019"]
+        runs-on: ["ubuntu-22.04", "ubuntu-22.04-arm", "macos-13", "macos-14", "windows-2019"]
         python-version: [
           # "3.9", "3.10", "3.11",
           "3.12"
@@ -241,7 +251,8 @@ jobs:
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
           {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
           {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
-          {runs-on: "macos-14", name: "macos_arm64", os: "macos"}
+          {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
+          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
         ]
 
     runs-on: ${{ matrix.runs-on }}
@@ -355,6 +366,7 @@ jobs:
           "ubuntu-22.04",
           "ubuntu-22.04-arm",
           "macos-14",
+          "macos-13",
           "windows-2019"
         ]
         python-version: [
@@ -364,9 +376,9 @@ jobs:
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
           {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
-          # TODO(max): enable on windows by statically linking
           {runs-on: "windows-2019", name: "windows_x86_64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
+          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
         ]
 
     runs-on: ${{ matrix.runs-on }}
@@ -407,7 +419,7 @@ jobs:
 
   release-eudsl:
 
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'main' }}
     needs: [
       test-eudsl-tblgen,
       # test-eudsl-py,
@@ -427,6 +439,7 @@ jobs:
          "ubuntu_x86_64",
          "ubuntu_aarch64",
          "macos_arm64",
+         "macos_x86_64",
          "windows_x86_64"
         ]
 

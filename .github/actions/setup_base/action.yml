@@ -117,6 +117,13 @@ runs:
         ccache: ${{ startsWith(inputs.os, 'windows') || startsWith(inputs.os, 'ubuntu') }}
         vcvarsall: ${{ startsWith(inputs.os, 'windows') }}
 
+    # https://github.com/actions/runner-images/issues/10035
+    - name: Use the Command Line Tools
+      shell: bash
+      if: ${{ startsWith(inputs.os, 'macos') &&  inputs.arch == 'x86_64' }}
+      run: |
+        sudo xcode-select -s /Library/Developer/CommandLineTools
+
     - name: "Set CC/CXX"
       shell: bash
       run: |
