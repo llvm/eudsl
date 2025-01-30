@@ -142,16 +142,11 @@ jobs:
       - name: "Build eudsl-tblgen"
         run: |
 
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-              export CCACHE_DIR=/host/$CCACHE_DIR
-            fi
-            $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
-          else
-            export CMAKE_PREFIX_PATH=$PWD/llvm-install
-            export PIP_FIND_LINKS=$PWD/wheelhouse
-            $python3_command -m pip wheel "$PWD/projects/eudsl-tblgen" -w wheelhouse -v --no-build-isolation
+          # this one is different from the rest as a smoketest re cibuildwheel
+          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            export CCACHE_DIR=/host/$CCACHE_DIR
           fi
+          $python3_command -m cibuildwheel "$PWD/projects/eudsl-tblgen" --output-dir wheelhouse
 
       - name: "Build eudsl-llvmpy"
         if: ${{ ! startsWith(matrix.os, 'windows') }}
@@ -201,7 +196,7 @@ jobs:
 
       # just to/make sure total build continues to work
       - name: "Build all of eudsl"
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         run: |
 
           $python3_command -m pip install eudsl-tblgen -f wheelhouse
