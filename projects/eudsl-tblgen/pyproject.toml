@@ -33,7 +33,7 @@ build-verbosity = 1
 skip = ["*-manylinux_i686", "*-musllinux*", "pp*", "*-win32"]
 archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
-manylinux-aarch64-image = "manylinux_2_34"
+manylinux-aarch64-image = "quay.io/pypa/manylinux_2_34_aarch64"
 environment-pass = [
     "LLVM_DIR",
     "CMAKE_GENERATOR",
@@ -59,11 +59,12 @@ test-command = "ccache -s"
 
 [tool.cibuildwheel.linux]
 before-all = [
+    "set -x",
     "yum install -y clang",
     # ccache
-    "curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz",
-    "tar -xf ccache-4.10.2-linux-x86_64.tar.xz",
-    "pushd ccache-4.10.2-linux-x86_64 && make install && popd"
+    "echo $(if [ \"$(arch)\" == \"x86_64\" ]; then curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz && tar -xf ccache-4.10.2-linux-x86_64.tar.xz && pushd ccache-4.10.2-linux-x86_64 && make install && popd; fi)",
+    "echo $(if [ \"$(arch)\" == \"aarch64\" ]; then dnf install -y ccache; fi)",
+    "ccache -z"
 ]
 # synchronize TZ with host so ccache files have correct timestamp
 container-engine = { name = "docker", create-args = ["-v", "/etc/timezone:/etc/timezone:ro", "-v", "/etc/localtime:/etc/localtime:ro"] }
