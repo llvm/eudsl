@@ -58,8 +58,16 @@ nanobind_add_module(eudsl_tblgen_ext NB_STATIC STABLE_ABI
   src/TGParser.cpp
   src/TGLexer.cpp
 )
-target_link_libraries(eudsl_tblgen_ext
-  PRIVATE LLVMTableGenCommon LLVMTableGen LLVMCore)
+set(eudsl_tblgen_ext_libs LLVMTableGenCommon LLVMTableGen LLVMCore)
+if(APPLE)
+  list(APPEND eudsl_tblgen_ext_libs ${LLVM_AVAILABLE_LIBS})
+  list(REMOVE_ITEM eudsl_tblgen_ext_libs Remarks LTO LLVM)
+  list(REMOVE_DUPLICATES eudsl_tblgen_ext_libs)
+  target_link_directories(eudsl_tblgen_ext PRIVATE "${LLVM_LIBRARY_DIR}")
+  list(TRANSFORM eudsl_tblgen_ext_libs PREPEND "-Wl,-hidden-l")
+endif()
+target_link_libraries(eudsl_tblgen_ext PRIVATE ${eudsl_tblgen_ext_libs})
+
 set(nanobind_options
   -Wno-cast-qual
   -Wno-deprecated-literal-operator
