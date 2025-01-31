@@ -9,7 +9,7 @@ from llvm.context import context
 from llvm.function import function
 from llvm.instructions import add, ret
 import llvm.amdgcn
-from mlirv import ir
+from mlir import ir
 
 
 def test_smoke():
