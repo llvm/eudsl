@@ -25,7 +25,7 @@ dependencies = [
 Homepage = "https://github.com/llvm/eudsl"
 
 [tool.scikit-build]
-minimum-version = "0.4"
+minimum-version = "0.10"
 build-dir = "build/{wheel_tag}"
 wheel.py-api = "cp312"
 cmake.source-dir = "."
@@ -36,6 +36,10 @@ CMAKE_C_FLAGS = { env = "CMAKE_C_FLAGS", default = "" }
 CMAKE_CXX_FLAGS = { env = "CMAKE_CXX_FLAGS", default = "" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
+CMAKE_EXE_LINKER_FLAGS_INIT = { env = "CMAKE_EXE_LINKER_FLAGS_INIT", default = "" }
+CMAKE_SHARED_LINKER_FLAGS_INIT = { env = "CMAKE_SHARED_LINKER_FLAGS_INIT", default = "" }
+CMAKE_MODULE_LINKER_FLAGS_INIT = { env = "CMAKE_MODULE_LINKER_FLAGS_INIT", default = "" }
+CMAKE_OSX_DEPLOYMENT_TARGET = { env = "CMAKE_OSX_DEPLOYMENT_TARGET", default = "11.0" }
 CMAKE_C_VISIBILITY_PRESET = "hidden"
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 CMAKE_VISIBILITY_INLINES_HIDDEN = "ON"

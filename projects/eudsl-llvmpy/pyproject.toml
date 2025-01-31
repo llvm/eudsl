@@ -12,19 +12,21 @@ Homepage = "https://github.com/llvm/eudsl"
 
 [build-system]
 requires = [
+    "ninja",
     "scikit-build-core==0.10.7",
     "nanobind==2.4.0",
     "typing_extensions==4.12.2",
     "litgen @ git+https://github.com/pthom/litgen@f5d154c6f7679e755baa1047563d7c340309bc00",
-    "eudsl-tblgen"
+    "eudsl-tblgen",
 ]
 build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
-minimum-version = "0.4"
+minimum-version = "0.10"
 build-dir = "build/{wheel_tag}"
 cmake.source-dir = "."
 wheel.packages = ["src/llvm"]
+wheel.py-api = "cp312"
 editable.mode = "inplace"
 editable.verbose = true
 editable.rebuild = false
@@ -35,6 +37,10 @@ CMAKE_C_FLAGS = { env = "CMAKE_C_FLAGS", default = "" }
 CMAKE_CXX_FLAGS = { env = "CMAKE_CXX_FLAGS", default = "" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
+CMAKE_EXE_LINKER_FLAGS_INIT = { env = "CMAKE_EXE_LINKER_FLAGS_INIT", default = "" }
+CMAKE_SHARED_LINKER_FLAGS_INIT = { env = "CMAKE_SHARED_LINKER_FLAGS_INIT", default = "" }
+CMAKE_MODULE_LINKER_FLAGS_INIT = { env = "CMAKE_MODULE_LINKER_FLAGS_INIT", default = "" }
+CMAKE_OSX_DEPLOYMENT_TARGET = { env = "CMAKE_OSX_DEPLOYMENT_TARGET", default = "11.0" }
 CMAKE_C_VISIBILITY_PRESET = "hidden"
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 CMAKE_VISIBILITY_INLINES_HIDDEN = "ON"
@@ -80,3 +86,8 @@ before-all = [
 ]
 # synchronize TZ with host so ccache files have correct timestamp
 container-engine = { name = "docker", create-args = ["-v", "/etc/timezone:/etc/timezone:ro", "-v", "/etc/localtime:/etc/localtime:ro"] }
+
+[tool.cibuildwheel.macos]
+before-build = [
+    "ccache -z",
+]

@@ -355,7 +355,7 @@ eudsl_nbgen(EUDSLGen_tosa
 #)
 
 nanobind_add_module(eudslpy_ext
-  NB_STATIC
+  NB_STATIC STABLE_ABI
   NB_DOMAIN eudsl
   src/eudslpy_ext.cpp
 )
@@ -427,7 +427,13 @@ set_install_rpath_origin(eudslpy_ext)
 install(IMPORTED_RUNTIME_ARTIFACTS MLIR LLVM LIBRARY DESTINATION eudsl)
 
 target_compile_options(eudslpy_ext PRIVATE ${nanobind_options})
-target_compile_options(nanobind-static PRIVATE ${nanobind_options})
+set(_nanobind_tgt)
+if(TARGET nanobind-static)
+  set(_nanobind_tgt nanobind-static)
+elseif(TARGET nanobind-static-abi3)
+  set(_nanobind_tgt nanobind-static-abi3)
+endif()
+target_compile_options(${_nanobind_tgt} PRIVATE ${nanobind_options})
 
 # note WORKING_DIRECTORY
 set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen"

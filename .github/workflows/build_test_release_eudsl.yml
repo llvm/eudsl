@@ -120,26 +120,24 @@ jobs:
             echo "PIP_FIND_LINKS=$PWD/wheelhouse" >> $GITHUB_ENV
           fi
           
-          # these have to match the deployment targets of the LLVM build runners
-          # ld: warning: object file (libLLVMTableGen.a[3](Error.cpp.o)) was built for newer 'macOS' version (13.7) than being linked (10.13)
-          if [[ "${{ matrix.runs-on }}" == "macos-14" ]]; then
-            echo MACOSX_DEPLOYMENT_TARGET=14.0 >> $GITHUB_ENV
-          fi
-          # https://github.com/wjakob/nanobind/issues/433
-          # i don't know why i need this here but the llvm build doesn't?
-          if [[ "${{ matrix.runs-on }}" == "macos-13" ]]; then
-            echo CMAKE_CXX_FLAGS="-fno-aligned-allocation" >> $GITHUB_ENV
-          fi
-          
           $python3_command -m pip install cibuildwheel
+          
           if [[ "${{ matrix.os }}" == "ubuntu" ]] && [[ "${{ matrix.arch }}" == "aarch64" ]]; then
             sudo apt-get install libarchive-dev antlr libxml2-dev libxslt-dev libcurl4-openssl-dev
           fi
           if [[ "${{ matrix.os }}" == "macos" ]]; then
-            brew install antlr boost
+            brew install antlr boost libarchive
+          fi
+          if [[ "${{ matrix.runs-on }}" == "macos-13" ]]; then
+            sudo xcode-select -s /Library/Developer/CommandLineTools
+            echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
+            # https://github.com/pthom/srcml_caller/blob/a6431edf9ae4ab2aa19b78b5a4682ae3510b199c/setup.py#L38
+            # very dumb
+            cibw_dir="$(dirname $($python3_command -c "import cibuildwheel; import inspect; print(inspect.getfile(cibuildwheel))"))"
+            sed -i.bak 's/CIBUILDWHEEL/__CIBUILDWHEEL__/g' "$cibw_dir/__main__.py"
           fi
           
-          $python3_command -m pip install -r requirements-dev.txt
+          $python3_command -m pip install -r requirements-dev.txt -v
 
       - name: "Build eudsl-tblgen"
         run: |
@@ -245,7 +243,7 @@ jobs:
         runs-on: ["ubuntu-22.04", "ubuntu-22.04-arm", "macos-13", "macos-14", "windows-2019"]
         python-version: [
           # "3.9", "3.10", "3.11",
-          "3.12"
+          "3.12", "3.13"
         ]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
@@ -257,7 +255,7 @@ jobs:
 
     runs-on: ${{ matrix.runs-on }}
 
-    name: "Test eudsl-tblgen ${{ matrix.name }}"
+    name: "Test tblgen ${{ matrix.name }} ${{ matrix.python-version }}"
 
     defaults:
       run:
@@ -371,7 +369,7 @@ jobs:
         ]
         python-version: [
           # "3.10", "3.11",
-          "3.12"
+          "3.12", "3.13"
         ]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
@@ -383,7 +381,7 @@ jobs:
 
     runs-on: ${{ matrix.runs-on }}
 
-    name: "Test eudsl-llvmpy ${{ matrix.name }}"
+    name: "Test llvmpy ${{ matrix.name }} ${{ matrix.python-version }}"
 
     defaults:
       run:
@@ -426,7 +424,6 @@ jobs:
       test-eudsl-llvmpy
     ]
     runs-on: "ubuntu-22.04"
-    name: "Release eudsl"
 
     permissions:
       id-token: write
@@ -442,6 +439,8 @@ jobs:
          "macos_x86_64",
          "windows_x86_64"
         ]
+
+    name: "Release eudsl ${{ matrix.name }}"
 
     steps:
 

@@ -120,7 +120,7 @@ include_directories("${EUDSLLLVM_BINARY_DIR}/generated")
 file(GLOB _gen_src CONFIGURE_DEPENDS "${EUDSLLLVM_BINARY_DIR}/generated/*.cpp")
 
 nanobind_add_module(eudslllvm_ext
-  NB_STATIC
+  NB_STATIC STABLE_ABI
   NB_DOMAIN eudslllvm
   src/eudslllvm_ext.cpp
   ${_gen_src}
@@ -155,7 +155,13 @@ set_target_properties(eudslllvm_ext
 )
 
 target_compile_options(eudslllvm_ext PRIVATE ${nanobind_options})
-target_compile_options(nanobind-static PRIVATE ${nanobind_options})
+set(_nanobind_tgt)
+if(TARGET nanobind-static)
+  set(_nanobind_tgt nanobind-static)
+elseif(TARGET nanobind-static-abi3)
+  set(_nanobind_tgt nanobind-static-abi3)
+endif()
+target_compile_options(${_nanobind_tgt} PRIVATE ${nanobind_options})
 
 # note WORKING_DIRECTORY
 set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen"
