@@ -126,7 +126,6 @@ nanobind_add_module(eudslllvm_ext
   ${_gen_src}
 )
 set(eudslllvm_ext_libs
-  PRIVATE
   LLVMCore
   LLVMExecutionEngine
   LLVMOrcJIT
