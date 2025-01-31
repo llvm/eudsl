@@ -168,12 +168,18 @@ runs:
         ccache -z
 
         echo "CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
+        echo "CMAKE_MAKE_PROGRAM=Ninja" >> $GITHUB_ENV
         echo "CMAKE_C_COMPILER_LAUNCHER=ccache" >> $GITHUB_ENV
         echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> $GITHUB_ENV
         echo "Python3_EXECUTABLE=$(which $python3_command)" >> $GITHUB_ENV
         
-        if [[ "${{ inputs.arch }}" != "wasm32-wasi" ]]; then
+        if [[ "${{ inputs.os }}" == "ubuntu" ]] || [[ "${{ inputs.os }}" == "windows" ]]; then
           echo "CMAKE_EXE_LINKER_FLAGS_INIT=-fuse-ld=lld" >> $GITHUB_ENV
           echo "CMAKE_SHARED_LINKER_FLAGS_INIT=-fuse-ld=lld" >> $GITHUB_ENV
           echo "CMAKE_MODULE_LINKER_FLAGS_INIT=-fuse-ld=lld" >> $GITHUB_ENV
+        fi
+        
+        if [[ "${{ matrix.os }}" == "macos" ]]; then
+          echo MACOSX_DEPLOYMENT_TARGET=11.0 >> $GITHUB_ENV
+          echo CMAKE_OSX_DEPLOYMENT_TARGET=11.0 >> $GITHUB_ENV
         fi

@@ -53,8 +53,6 @@ NB_MODULE(eudslllvm_ext, m) {
   populate_TargetMachine(m);
   extern void populate_Error(nb::module_ & m);
   populate_Error(m);
-  extern void populate_lto(nb::module_ & m);
-  populate_lto(m);
   extern void populate_OrcEE(nb::module_ & m);
   populate_OrcEE(m);
   extern void populate_Core(nb::module_ & m);

@@ -60,12 +60,25 @@ nanobind_add_module(eudsl_tblgen_ext NB_STATIC STABLE_ABI
 )
 target_link_libraries(eudsl_tblgen_ext
   PRIVATE LLVMTableGenCommon LLVMTableGen LLVMCore)
-target_compile_options(eudsl_tblgen_ext
-  PUBLIC
+set(nanobind_options
   -Wno-cast-qual
+  -Wno-deprecated-literal-operator
+  -Wno-covered-switch-default
+  -Wno-nested-anon-types
+  -Wno-zero-length-array
+  -Wno-c++98-compat-extra-semi
+  -Wno-c++20-extensions
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Darwin>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>)
+target_compile_options(eudsl_tblgen_ext PRIVATE ${nanobind_options})
+set(_nanobind_tgt)
+if(TARGET nanobind-static)
+  set(_nanobind_tgt nanobind-static)
+elseif(TARGET nanobind-static-abi3)
+  set(_nanobind_tgt nanobind-static-abi3)
+endif()
+target_compile_options(${_nanobind_tgt} PRIVATE ${nanobind_options})
 
 # note WORKING_DIRECTORY
 set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen"

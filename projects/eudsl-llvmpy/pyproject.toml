@@ -6,36 +6,46 @@
 [project]
 name = "eudsl-llvmpy"
 version = "0.0.1"
-requires-python = ">3.9"
+requires-python = ">=3.10"
 [project.urls]
 Homepage = "https://github.com/llvm/eudsl"
 
 [build-system]
 requires = [
+    "ninja",
     "scikit-build-core==0.10.7",
     "nanobind==2.4.0",
     "typing_extensions==4.12.2",
     "litgen @ git+https://github.com/pthom/litgen@f5d154c6f7679e755baa1047563d7c340309bc00",
-    "eudsl-tblgen"
+    "eudsl-tblgen",
 ]
 build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
-minimum-version = "0.4"
+minimum-version = "0.10"
 build-dir = "build/{wheel_tag}"
 cmake.source-dir = "."
 wheel.packages = ["src/llvm"]
+wheel.py-api = "cp312"
 editable.mode = "inplace"
 editable.verbose = true
 editable.rebuild = false
 
 [tool.scikit-build.cmake.define]
-LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
 CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
+CMAKE_C_FLAGS = { env = "CMAKE_C_FLAGS", default = "" }
+CMAKE_CXX_FLAGS = { env = "CMAKE_CXX_FLAGS", default = "" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
+CMAKE_EXE_LINKER_FLAGS_INIT = { env = "CMAKE_EXE_LINKER_FLAGS_INIT", default = "" }
+CMAKE_SHARED_LINKER_FLAGS_INIT = { env = "CMAKE_SHARED_LINKER_FLAGS_INIT", default = "" }
+CMAKE_MODULE_LINKER_FLAGS_INIT = { env = "CMAKE_MODULE_LINKER_FLAGS_INIT", default = "" }
+CMAKE_OSX_DEPLOYMENT_TARGET = { env = "CMAKE_OSX_DEPLOYMENT_TARGET", default = "11.0" }
+CMAKE_C_VISIBILITY_PRESET = "hidden"
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
+CMAKE_VISIBILITY_INLINES_HIDDEN = "ON"
 CMAKE_VERBOSE_MAKEFILE = "ON"
+LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
 LLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN = "ON"
 
 [tool.cibuildwheel]
@@ -45,22 +55,23 @@ archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "quay.io/pypa/manylinux_2_34_aarch64"
 environment-pass = [
-    "LLVM_DIR",
-    "CMAKE_GENERATOR",
     "CMAKE_PREFIX_PATH",
-    "DISABLE_COMPILE_OPT",
+    "CMAKE_C_FLAGS",
+    "CMAKE_CXX_FLAGS",
+    "CMAKE_C_COMPILER_LAUNCHER",
+    "CMAKE_CXX_COMPILER_LAUNCHER",
+    "CMAKE_GENERATOR",
     "CC",
     "CXX",
-    "PIP_FIND_LINKS",
+    "LLVM_DIR",
     # ccache
     "CCACHE_DIR",
     "CCACHE_MAXSIZE=700M",
     "CCACHE_SLOPPINESS",
     "CCACHE_CPP2",
     "CCACHE_UMASK",
-    "CMAKE_C_COMPILER_LAUNCHER",
-    "CMAKE_CXX_COMPILER_LAUNCHER",
-    "PIP_FIND_LINKS"
+    "CCACHE_NOHASHDIR",
+    "PIP_FIND_LINKS",
 ]
 # uncomment to make sure ccache is working inside containers
 test-command = "ccache -sv"
@@ -75,3 +86,8 @@ before-all = [
 ]
 # synchronize TZ with host so ccache files have correct timestamp
 container-engine = { name = "docker", create-args = ["-v", "/etc/timezone:/etc/timezone:ro", "-v", "/etc/localtime:/etc/localtime:ro"] }
+
+[tool.cibuildwheel.macos]
+before-build = [
+    "ccache -z",
+]

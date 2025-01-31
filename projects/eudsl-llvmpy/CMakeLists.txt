@@ -120,29 +120,48 @@ include_directories("${EUDSLLLVM_BINARY_DIR}/generated")
 file(GLOB _gen_src CONFIGURE_DEPENDS "${EUDSLLLVM_BINARY_DIR}/generated/*.cpp")
 
 nanobind_add_module(eudslllvm_ext
-  NB_STATIC
+  NB_STATIC STABLE_ABI
   NB_DOMAIN eudslllvm
   src/eudslllvm_ext.cpp
   ${_gen_src}
 )
-target_link_libraries(eudslllvm_ext PRIVATE LLVM LTO)
+set(eudslllvm_ext_libs
+  PRIVATE
+  LLVMCore
+  LLVMExecutionEngine
+  LLVMOrcJIT
+  LLVMOrcDebugging
+  LLVMInterpreter
+  LLVMMCDisassembler
+  LLVMMCJIT)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  list(APPEND eudslllvm_ext_libs
+    LLVMX86Info
+    LLVMX86CodeGen
+    LLVMX86AsmParser
+    LLVMX86Disassembler)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+  list(APPEND eudslllvm_ext_libs
+    LLVMAArch64Info
+    LLVMAArch64Desc
+    LLVMAArch64CodeGen
+    LLVMAArch64AsmParser
+    LLVMAArch64Disassembler)
+endif()
+target_link_libraries(eudslllvm_ext PRIVATE ${eudslllvm_ext_libs})
 set_target_properties(eudslllvm_ext
   PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${EUDSLLLVM_SRC_DIR}/llvm"
 )
 
-set(STANDALONE)
-if(EUDSLLLVM_STANDALONE_BUILD OR EUDSL_STANDALONE_BUILD)
-  set(STANDALONE STANDALONE)
-endif()
-patch_llvm_rpath(LLVM ${STANDALONE})
-patch_llvm_rpath(LTO ${STANDALONE})
-set_install_rpath_origin(eudslllvm_ext)
-# copy libLLVM into the ext dir for wheels
-install(IMPORTED_RUNTIME_ARTIFACTS LLVM LTO LIBRARY DESTINATION llvm)
-
 target_compile_options(eudslllvm_ext PRIVATE ${nanobind_options})
-target_compile_options(nanobind-static PRIVATE ${nanobind_options})
+set(_nanobind_tgt)
+if(TARGET nanobind-static)
+  set(_nanobind_tgt nanobind-static)
+elseif(TARGET nanobind-static-abi3)
+  set(_nanobind_tgt nanobind-static-abi3)
+endif()
+target_compile_options(${_nanobind_tgt} PRIVATE ${nanobind_options})
 
 # note WORKING_DIRECTORY
 set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen"
