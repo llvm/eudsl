@@ -149,6 +149,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
 endif()
 
 if(APPLE)
+  target_link_directories(eudslllvm_ext_libs PRIVATE "${LLVM_LIBRARY_DIR}")
   list(TRANSFORM eudslllvm_ext_libs PREPEND "-Wl,-hidden-l")
 endif()
 
