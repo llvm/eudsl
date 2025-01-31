@@ -147,6 +147,11 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
     LLVMAArch64AsmParser
     LLVMAArch64Disassembler)
 endif()
+
+if(APPLE)
+  list(TRANSFORM eudslllvm_ext_libs PREPEND "-Wl,-hidden-l")
+endif()
+
 target_link_libraries(eudslllvm_ext PRIVATE ${eudslllvm_ext_libs})
 set_target_properties(eudslllvm_ext
   PROPERTIES
