@@ -405,7 +405,8 @@ jobs:
 
       - name: "Install eudsl-llvmpy"
         run: |
-          
+
+          pip install mlir-python-bindings -f https://makslevental.github.io/wheels
           python -m pip install pytest
           python -m pip install eudsl-llvmpy -f wheelhouse
 
