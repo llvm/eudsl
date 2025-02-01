@@ -11,6 +11,11 @@ from llvm.instructions import add, ret
 import llvm.amdgcn
 
 
+def test_symbol_collision():
+    # noinspection PyUnresolvedReferences
+    import eudsl_tblgen
+
+
 def test_smoke():
     src = dedent(
         """
@@ -78,3 +83,4 @@ def test_builder():
 if __name__ == "__main__":
     test_smoke()
     test_builder()
+    test_symbol_collision()

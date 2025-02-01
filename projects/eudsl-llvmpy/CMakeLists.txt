@@ -126,7 +126,6 @@ nanobind_add_module(eudslllvm_ext
   ${_gen_src}
 )
 set(eudslllvm_ext_libs
-  PRIVATE
   LLVMCore
   LLVMExecutionEngine
   LLVMOrcJIT
@@ -148,7 +147,16 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
     LLVMAArch64AsmParser
     LLVMAArch64Disassembler)
 endif()
+
+if(APPLE)
+  list(APPEND eudslllvm_ext_libs ${LLVM_AVAILABLE_LIBS})
+  list(REMOVE_ITEM eudslllvm_ext_libs Remarks LTO LLVM LLVMTableGen)
+  list(REMOVE_DUPLICATES eudslllvm_ext_libs)
+  target_link_directories(eudslllvm_ext PRIVATE "${LLVM_LIBRARY_DIR}")
+  list(TRANSFORM eudslllvm_ext_libs PREPEND "-Wl,-hidden-l")
+endif()
 target_link_libraries(eudslllvm_ext PRIVATE ${eudslllvm_ext_libs})
+
 set_target_properties(eudslllvm_ext
   PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${EUDSLLLVM_SRC_DIR}/llvm"

@@ -405,9 +405,9 @@ jobs:
 
       - name: "Install eudsl-llvmpy"
         run: |
-          
+
           python -m pip install pytest
-          python -m pip install eudsl-llvmpy -f wheelhouse
+          python -m pip install eudsl-llvmpy eudsl-tblgen -f wheelhouse
 
       - name: "Test eudsl-llvmpy"
         run: |
