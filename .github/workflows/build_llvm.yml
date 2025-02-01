@@ -152,7 +152,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Release current commit
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_name == 'main' }}
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "*.tar.gz"
