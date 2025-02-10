@@ -11,6 +11,8 @@
 namespace nb = nanobind;
 
 NB_MODULE(eudslllvm_ext, m) {
+  nb::set_leak_warnings(false);
+
   extern void populate_LLJIT(nb::module_ & m);
   populate_LLJIT(m);
   extern void populate_BitReader(nb::module_ & m);
