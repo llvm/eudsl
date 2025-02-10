@@ -24,11 +24,9 @@ echo "LLVM_SOURCE_DIR=${LLVM_SOURCE_DIR}"
 echo "LLVM_BUILD_DIR=${LLVM_BUILD_DIR}"
 echo "LLVM_INSTALL_DIR=${LLVM_INSTALL_DIR}"
 
-python3_command=""
+python3_command="python"
 if (command -v python3 &> /dev/null); then
   python3_command="python3"
-elif (command -v python &> /dev/null); then
-  python3_command="python"
 fi
 
 Python3_EXECUTABLE="${Python3_EXECUTABLE:-$(which $python3_command)}"
