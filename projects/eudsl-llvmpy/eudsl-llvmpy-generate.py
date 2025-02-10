@@ -71,6 +71,9 @@ def postprocess(code: str) -> str:
     code = code.replace('.value("llvm', '.value("')
     code = code.replace('m.def("llvm_', 'm.def("')
     code = code.replace('m.def("llvm', 'm.def("')
+    pattern = r'\.def_rw\("ptr", &(\w+)::ptr, ""\)'
+    repl = r'.def_rw("ptr", &\1::ptr, "").def_static("from_capsule", [](nb::capsule caps) -> \1 { void *ptr = PyCapsule_GetPointer(caps.ptr(), "nb_handle"); return {ptr}; })'
+    code = re.sub(pattern, repl, code)
 
     return code
 

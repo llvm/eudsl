@@ -4,7 +4,7 @@
 #  Copyright (c) 2024.
 from textwrap import dedent
 
-from llvm import types_ as T
+from llvm import types_ as T, ModuleRef, print_module_to_string
 from llvm.context import context
 from llvm.function import function
 from llvm.instructions import add, ret
@@ -80,7 +80,44 @@ def test_builder():
     assert correct == mod_str
 
 
+def test_from_capsule():
+    src = dedent(
+        """
+    ; ModuleID = 'test_smoke'
+    source_filename = "test_smoke"
+    
+    declare i32 @foo()
+    
+    declare i32 @bar()
+    
+    define i32 @entry(i32 %argc) {
+    entry:
+      %and = and i32 %argc, 1
+      %tobool = icmp eq i32 %and, 0
+      br i1 %tobool, label %if.end, label %if.then
+      
+    if.then:                                          ; preds = %entry
+      %call = tail call i32 @foo()
+      br label %return
+      
+    if.end:                                           ; preds = %entry
+      %call1 = tail call i32 @bar()
+      br label %return
+      
+    return:                                           ; preds = %if.end, %if.then
+      %retval.0 = phi i32 [ %call, %if.then ], [ %call1, %if.end ]
+      ret i32 %retval.0
+    }
+    """
+    )
+    with context(src=src, buffer_name="test_smoke") as ctx:
+        copied_mod = ModuleRef.from_capsule(ctx.module.ptr)
+        mod_str = print_module_to_string(copied_mod)
+    assert src.strip() == mod_str.strip()
+
+
 if __name__ == "__main__":
     test_smoke()
     test_builder()
     test_symbol_collision()
+    test_from_capsule()
