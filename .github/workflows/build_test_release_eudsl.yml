@@ -417,7 +417,7 @@ jobs:
 
   release-eudsl:
 
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'main' }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: [
       test-eudsl-tblgen,
       # test-eudsl-py,
@@ -454,8 +454,8 @@ jobs:
         with:
           artifacts: "wheelhouse/eudsl*.whl"
           token: "${{ secrets.GITHUB_TOKEN }}"
-          tag: "latest"
-          name: "latest"
+          tag: ${{ github.ref_name == 'main' && 'latest' || 'dev' }}
+          name: ${{ github.ref_name == 'main' && 'latest' || 'dev' }}
           removeArtifacts: false
           allowUpdates: true
           replacesArtifacts: true
