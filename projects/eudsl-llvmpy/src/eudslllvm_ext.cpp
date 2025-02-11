@@ -5,9 +5,11 @@
 
 #include "pp/Core.h"
 #include "pp/IRReader.h"
+#include "pp/TargetMachine.h"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/vector.h>
+
 namespace nb = nanobind;
 
 NB_MODULE(eudslllvm_ext, m) {
@@ -214,4 +216,24 @@ NB_MODULE(eudslllvm_ext, m) {
       },
       nb::arg("param_0"), nb::arg("fn_type"), nb::arg("fn"), nb::arg("args"),
       nb::arg("name"));
+
+  m.def(
+      "get_target_from_triple",
+      [](const char *triple) {
+        LLVMTargetRef T;
+        char *Error;
+        if (LLVMGetTargetFromTriple(triple, &T, &Error))
+          throw std::runtime_error(Error);
+        return T;
+      },
+      nb::arg("triple"));
+
+  m.def(
+      "get_attributes_at_index",
+      [](LLVMValueRef F, LLVMAttributeIndex Idx) {
+        std::vector<LLVMAttributeRef> Attrs;
+        LLVMGetAttributesAtIndex(F, Idx, Attrs.data());
+        return Attrs;
+      },
+      nb::arg("f"), nb::arg("idx"));
 }

@@ -132,7 +132,19 @@ set(eudslllvm_ext_libs
   LLVMOrcDebugging
   LLVMInterpreter
   LLVMMCDisassembler
-  LLVMMCJIT)
+  LLVMMCJIT
+  # AMDGPU
+  LLVMAMDGPUCodeGen
+  LLVMAMDGPUAsmParser
+  LLVMAMDGPUDisassembler
+  LLVMAMDGPUTargetMCA
+  LLVMAMDGPUDesc
+  LLVMAMDGPUInfo
+  LLVMAMDGPUUtils
+  # NVPTX
+  LLVMNVPTXCodeGen
+  LLVMNVPTXDesc
+  LLVMNVPTXInfo)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   list(APPEND eudslllvm_ext_libs
     LLVMX86Info
