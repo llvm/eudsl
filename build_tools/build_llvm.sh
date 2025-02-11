@@ -39,7 +39,6 @@ cmake_options=(
   -GNinja
   -S "${LLVM_SOURCE_DIR}/llvm"
   -B "${LLVM_BUILD_DIR}"
-  -DLLVM_TARGETS_TO_BUILD="${LLVM_TARGETS_TO_BUILD:-host}"
   -DCMAKE_BUILD_TYPE=Release
   # this flag keeps changing names in CMake...
   -DPython3_EXECUTABLE="$Python3_EXECUTABLE"
