@@ -67,4 +67,4 @@ echo "CMake Options: ${cmake_options[*]}"
 
 cmake "${cmake_options[@]}"
 cmake --build "${LLVM_BUILD_DIR}" \
-  --target install-mlirdevelopment-distribution -j 4
+  --target install-mlirdevelopment-distribution
