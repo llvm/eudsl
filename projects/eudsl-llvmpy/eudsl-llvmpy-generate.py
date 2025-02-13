@@ -131,9 +131,13 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
     print(
         dedent(
             """\
-    from typing import NewType, TypeVar, Generic
+    from typing import NewType, TypeVar, Generic, Literal
     from .util import call_intrinsic
-    from . import ValueRef
+    try:
+        from . import ValueRef
+    except ImportError:
+        class ValueRef:
+            pass
     
     any = NewType("any", ValueRef)      
     anyfloat = NewType("anyfloat", ValueRef)
@@ -297,9 +301,9 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
     class LLVMQualPointerType(Generic[_T]):
         pass
     
-    local_ptr = LLVMQualPointerType[3]
-    global_ptr = LLVMQualPointerType[1]
-    AMDGPUBufferRsrcTy = LLVMQualPointerType[8];
+    local_ptr = LLVMQualPointerType[Literal[3]]
+    global_ptr = LLVMQualPointerType[Literal[1]]
+    AMDGPUBufferRsrcTy = LLVMQualPointerType[Literal[8]];
     
     class LLVMMatchType(Generic[_T]):
         pass
@@ -324,10 +328,10 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
                 if p_s.startswith("anon"):
                     p_s = p.type.as_string
                     if p_s == "LLVMMatchType":
-                        p_s += f"[{p.def_.values.Number.value.value}]"
+                        p_s += f"[Literal[{p.def_.values.Number.value.value}]]"
                     elif p_s == "LLVMQualPointerType":
                         _, addr_space = p.def_.values.Sig.value.values
-                        p_s += f"[{addr_space}]"
+                        p_s += f"[Literal[{addr_space}]]"
                     else:
                         raise NotImplemented(f"unsupported {p_s=}")
                 else:
@@ -362,8 +366,8 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
             print(
                 dedent(
                     f"""
-                def {intr_name}({fn_args_str}name=""):
-                    {ret_str}call_intrinsic({call_args_str}{intr_id=}, {is_overloaded=}, name=name)
+                def {intr_name}({fn_args_str}):
+                    {ret_str}call_intrinsic({call_args_str}{intr_id=}, {is_overloaded=}, intr_name="{llvm_intr_name}")
             """
                 ),
                 file=amdgcn_f,
