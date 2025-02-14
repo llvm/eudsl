@@ -26,6 +26,7 @@ wheel.py-api = "py3"
 cmake.source-dir = "."
 
 [tool.scikit-build.cmake.define]
+CMAKE_BUILD_TYPE = { env = "CMAKE_BUILD_TYPE", default = "Release" }
 CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
 CMAKE_C_FLAGS = { env = "CMAKE_C_FLAGS", default = "" }
 CMAKE_CXX_FLAGS = { env = "CMAKE_CXX_FLAGS", default = "" }

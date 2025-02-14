@@ -409,9 +409,9 @@ def generate_nb_bindings(header_root: Path, output_root: Path):
             ff.write(g)
             ff.write("}")
 
-    for mod in Path(output_root).glob("*.cpp"):
-        print(f"extern void populate_{mod.stem}(nb::module_ &m);")
-        print(f"populate_{mod.stem}(m);")
+    # for mod in Path(output_root).glob("*.cpp"):
+    #     print(f"extern void populate_{mod.stem}(nb::module_ &m);")
+    #     print(f"populate_{mod.stem}(m);")
 
 
 if __name__ == "__main__":

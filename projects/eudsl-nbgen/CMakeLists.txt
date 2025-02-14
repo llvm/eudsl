@@ -79,6 +79,12 @@ install(
 )
 
 install(
+  DIRECTORY includes/eudsl/
+  DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}/includes/eudsl"
+  FILES_MATCHING PATTERN "*\.h"
+)
+
+install(
   FILES
   cmake/eudsl_nbgen-config.cmake
   DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}/cmake"
