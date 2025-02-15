@@ -7,17 +7,18 @@
 name = "eudsl-llvmpy"
 version = "0.0.1"
 requires-python = ">=3.10"
+
 [project.urls]
 Homepage = "https://github.com/llvm/eudsl"
 
 [build-system]
 requires = [
+    "eudsl-tblgen",
+    "litgen @ git+https://github.com/pthom/litgen@f5d154c6f7679e755baa1047563d7c340309bc00",
+    "nanobind==2.4.0",
     "ninja",
     "scikit-build-core==0.10.7",
-    "nanobind==2.4.0",
     "typing_extensions==4.12.2",
-    "litgen @ git+https://github.com/pthom/litgen@f5d154c6f7679e755baa1047563d7c340309bc00",
-    "eudsl-tblgen",
 ]
 build-backend = "scikit_build_core.build"
 

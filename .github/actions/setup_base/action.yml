@@ -164,6 +164,11 @@ runs:
         echo "CCACHE_CPP2=true" >> $GITHUB_ENV
         echo "CCACHE_NOHASHDIR=true" >> $GITHUB_ENV
         echo "CCACHE_UMASK=002" >> $GITHUB_ENV
+        if [[ "${{ inputs.os }}" == "almalinux" ]] || [[ "${{ inputs.os }}" == "ubuntu" ]] || [[ "${{ inputs.os }}" == "macos" ]]; then
+          echo "CCACHE_LOGFILE=/tmp/ccache.log" >> $GITHUB_ENV
+        elif [[ "${{ inputs.os }}" == "windows" ]]; then
+          echo "CCACHE_LOGFILE=D:\a\ccache.log" >> $GITHUB_ENV
+        fi
         
         ccache -z
 
