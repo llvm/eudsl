@@ -3,10 +3,6 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #  Copyright (c) 2024.
 
-[build-system]
-requires = ["scikit-build-core>=0.10.7", "nanobind>=2.2.0", "typing_extensions>=4.12.2"]
-build-backend = "scikit_build_core.build"
-
 [project]
 name = "eudsl-tblgen"
 version = "0.0.1"
@@ -14,6 +10,14 @@ requires-python = ">=3.9"
 
 [project.urls]
 Homepage = "https://github.com/llvm/eudsl"
+
+[build-system]
+requires = [
+    "nanobind>=2.2.0",
+    "scikit-build-core>=0.10.7",
+    "typing_extensions==4.12.2"
+]
+build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
 minimum-version = "0.10"

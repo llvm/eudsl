@@ -7,14 +7,15 @@
 name = "eudsl-nbgen"
 version = "0.0.1"
 requires-python = ">=3.9"
+
 [project.urls]
 Homepage = "https://github.com/llvm/eudsl"
 
 [build-system]
 requires = [
-    "scikit-build-core==0.10.7",
     "nanobind==2.4.0",
-    "typing_extensions==4.12.2",
+    "scikit-build-core==0.10.7",
+    "typing_extensions==4.12.2"
 ]
 build-backend = "scikit_build_core.build"
 

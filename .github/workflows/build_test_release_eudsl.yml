@@ -195,7 +195,7 @@ jobs:
 
       # just to/make sure total build continues to work
       - name: "Build all of eudsl"
-        if: ${{ github.event_name != 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'pull_request' }}
         run: |
 
           $python3_command -m pip install eudsl-tblgen -f wheelhouse
@@ -219,6 +219,13 @@ jobs:
           name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse/*.whl
           if-no-files-found: warn
+
+      - name: Upload ccache log
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccache_log_${{ matrix.name }}
+          path: ${{ startsWith(matrix.os, 'windows') && 'D:\a\ccache.log' || '/tmp/ccache.log' }}
+          if-no-files-found: ignore
 
       - name: "Setup tmate session"
         if: ${{ (failure() && inputs.debug_with_tmate) || inputs.force_debug_with_tmate }}
@@ -289,6 +296,7 @@ jobs:
 
   test-eudsl-llvmpy:
 
+    if: ${{ github.event_name == 'pull_request' }}
     needs: [build-eudsl]
 
     strategy:
@@ -351,11 +359,8 @@ jobs:
 
   release-eudsl:
 
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    needs: [
-      test-eudsl-tblgen,
-      test-eudsl-llvmpy
-    ]
+    if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+    needs: [build-eudsl]
     runs-on: "ubuntu-22.04"
 
     permissions:

@@ -151,6 +151,12 @@ jobs:
           path: llvm-install
           if-no-files-found: warn
 
+      - name: Upload ccache log
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccache_log_${{ matrix.name }}
+          path: ${{ startsWith(matrix.os, 'windows') && 'D:\a\ccache.log' || '/tmp/ccache.log' }}
+
       - name: Release current commit
         if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_name == 'main' }}
         uses: ncipollo/release-action@v1.12.0
