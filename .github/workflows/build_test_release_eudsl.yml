@@ -236,6 +236,8 @@ jobs:
 
   test-eudsl-tblgen:
 
+    if: ${{ github.event_name == 'pull_request' }}
+
     needs: [build-eudsl]
 
     strategy:
@@ -297,6 +299,7 @@ jobs:
   test-eudsl-llvmpy:
 
     if: ${{ github.event_name == 'pull_request' }}
+
     needs: [build-eudsl]
 
     strategy:
