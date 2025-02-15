@@ -57,8 +57,9 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ThreadPool.h"
 
-#include "bind_vec_like.h"
-#include "type_casters.h"
+#include "eudsl/bind_vec_like.h"
+#include "eudsl/helpers.h"
+#include "eudsl/type_casters.h"
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -73,7 +74,7 @@ nb::class_<_SmallVector> smallVector;
 nb::class_<_ArrayRef> arrayRef;
 nb::class_<_MutableArrayRef> mutableArrayRef;
 
-void bind_array_ref_smallvector(nb::handle scope) {
+static void bind_array_ref_smallvector(nb::handle scope) {
   scope.attr("T") = nb::type_var("T");
   arrayRef = nb::class_<_ArrayRef>(scope, "ArrayRef", nb::is_generic(),
                                    nb::sig("class ArrayRef[T]"));
@@ -84,54 +85,7 @@ void bind_array_ref_smallvector(nb::handle scope) {
                                          nb::sig("class SmallVector[T]"));
 }
 
-template <typename T, typename... Ts>
-struct non_copying_non_moving_class_ : nb::class_<T, Ts...> {
-  template <typename... Extra>
-  NB_INLINE non_copying_non_moving_class_(nb::handle scope, const char *name,
-                                          const Extra &...extra) {
-    nb::detail::type_init_data d;
-
-    d.flags = 0;
-    d.align = (uint8_t)alignof(typename nb::class_<T, Ts...>::Alias);
-    d.size = (uint32_t)sizeof(typename nb::class_<T, Ts...>::Alias);
-    d.name = name;
-    d.scope = scope.ptr();
-    d.type = &typeid(T);
-
-    if constexpr (!std::is_same_v<typename nb::class_<T, Ts...>::Base, T>) {
-      d.base = &typeid(typename nb::class_<T, Ts...>::Base);
-      d.flags |= (uint32_t)nb::detail::type_init_flags::has_base;
-    }
-
-    if constexpr (std::is_destructible_v<T>) {
-      d.flags |= (uint32_t)nb::detail::type_flags::is_destructible;
-
-      if constexpr (!std::is_trivially_destructible_v<T>) {
-        d.flags |= (uint32_t)nb::detail::type_flags::has_destruct;
-        d.destruct = nb::detail::wrap_destruct<T>;
-      }
-    }
-
-    if constexpr (nb::detail::has_shared_from_this_v<T>) {
-      d.flags |= (uint32_t)nb::detail::type_flags::has_shared_from_this;
-      d.keep_shared_from_this_alive = [](PyObject *self) noexcept {
-        if (auto sp = nb::inst_ptr<T>(self)->weak_from_this().lock()) {
-          nb::detail::keep_alive(
-              self, new auto(std::move(sp)),
-              [](void *p) noexcept { delete (decltype(sp) *)p; });
-          return true;
-        }
-        return false;
-      };
-    }
-
-    (nb::detail::type_extra_apply(d, extra), ...);
-
-    this->m_ptr = nb::detail::nb_type_new(&d);
-  }
-};
-
-void populateIRModule(nb::module_ &m) {
+static void populateIRModule(nb::module_ &m) {
   using namespace mlir;
   auto mlir_DialectRegistry =
       non_copying_non_moving_class_<mlir::DialectRegistry>(m, "DialectRegistry")
@@ -256,9 +210,9 @@ void populateIRModule(nb::module_ &m) {
 // too big
 // extern void populateEUDSLGen_accModule(nb::module_ &m);
 
-extern void populateEUDSLGen_affineModule(nb::module_ &m);
+// extern void populateEUDSLGen_affineModule(nb::module_ &m);
 
-extern void populateEUDSLGen_amdgpuModule(nb::module_ &m);
+// extern void populateEUDSLGen_amdgpuModule(nb::module_ &m);
 
 // extern void populateEUDSLGen_amxModule(nb::module_ &m);
 
@@ -271,23 +225,23 @@ extern void populateEUDSLGen_arithModule(nb::module_ &m);
 
 // extern void populateEUDSLGen_arm_sveModule(nb::module_ &m);
 
-extern void populateEUDSLGen_asyncModule(nb::module_ &m);
+// extern void populateEUDSLGen_asyncModule(nb::module_ &m);
 
-extern void populateEUDSLGen_bufferizationModule(nb::module_ &m);
+// extern void populateEUDSLGen_bufferizationModule(nb::module_ &m);
 
-extern void populateEUDSLGen_cfModule(nb::module_ &m);
+// extern void populateEUDSLGen_cfModule(nb::module_ &m);
 
-extern void populateEUDSLGen_complexModule(nb::module_ &m);
+// extern void populateEUDSLGen_complexModule(nb::module_ &m);
 
 // extern void populateEUDSLGen_DLTIDialectModule(nb::module_ &m);
 
-extern void populateEUDSLGen_emitcModule(nb::module_ &m);
-
-extern void populateEUDSLGen_funcModule(nb::module_ &m);
-
-extern void populateEUDSLGen_gpuModule(nb::module_ &m);
-
-extern void populateEUDSLGen_indexModule(nb::module_ &m);
+// extern void populateEUDSLGen_emitcModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_funcModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_gpuModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_indexModule(nb::module_ &m);
 
 // error: use of class template 'ArrayRef' requires template arguments; argument
 // deduction not allowed in conversion function type void
@@ -296,65 +250,66 @@ extern void populateEUDSLGen_indexModule(nb::module_ &m);
 // #include "EUDSLGen_irdl.cpp.inc"
 // }
 
-extern void populateEUDSLGen_linalgModule(nb::module_ &m);
-
-extern void populateEUDSLGen_LLVMModule(nb::module_ &m);
-
-extern void populateEUDSLGen_mathModule(nb::module_ &m);
-
-extern void populateEUDSLGen_memrefModule(nb::module_ &m);
-
-// extern void populateEUDSLGen_meshModule(nb::module_ &m);
-
-// extern void populateEUDSLGen_ml_programModule(nb::module_ &m);
-
-// extern void populateEUDSLGen_mpiModule(nb::module_ &m);
-
-extern void populateEUDSLGen_nvgpuModule(nb::module_ &m);
-
-extern void populateEUDSLGen_NVVMModule(nb::module_ &m);
-
+// extern void populateEUDSLGen_linalgModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_LLVMModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_mathModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_memrefModule(nb::module_ &m);
+//
+// // extern void populateEUDSLGen_meshModule(nb::module_ &m);
+//
+// // extern void populateEUDSLGen_ml_programModule(nb::module_ &m);
+//
+// // extern void populateEUDSLGen_mpiModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_nvgpuModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_NVVMModule(nb::module_ &m);
+//
+// //
 // mlir::omp::TaskloopOp::getEffects(llvm::SmallVectorImpl<mlir::SideEffects::EffectInstance<mlir::MemoryEffects::Effect>>&)
-// void populateEUDSLGen_ompModule(nb::module_ &m) {
-// #include "EUDSLGen_omp.cpp.inc"
-// }
-
-extern void populateEUDSLGen_pdlModule(nb::module_ &m);
-
-extern void populateEUDSLGen_pdl_interpModule(nb::module_ &m);
-
-extern void populateEUDSLGen_polynomialModule(nb::module_ &m);
-
-// extern void populateEUDSLGen_ptrModule(nb::module_ &m);
-
-extern void populateEUDSLGen_quantModule(nb::module_ &m);
-
-extern void populateEUDSLGen_ROCDLModule(nb::module_ &m);
-
-extern void populateEUDSLGen_scfModule(nb::module_ &m);
-
-extern void populateEUDSLGen_shapeModule(nb::module_ &m);
-
-// extern void populateEUDSLGen_sparse_tensorModule(nb::module_ &m);
-
-// nb::detail::nb_func_new("get_vce_triple_attr_name"): mismatched
-// static/instance method flags in function overloads! extern void
-// populateEUDSLGen_spirvModule(nb::module_ &m);
-
-extern void populateEUDSLGen_tensorModule(nb::module_ &m);
-
-extern void populateEUDSLGen_tosaModule(nb::module_ &m);
-
-extern void populateEUDSLGen_transformModule(nb::module_ &m);
-
-extern void populateEUDSLGen_ubModule(nb::module_ &m);
+// // void populateEUDSLGen_ompModule(nb::module_ &m) {
+// // #include "EUDSLGen_omp.cpp.inc"
+// // }
+//
+// extern void populateEUDSLGen_pdlModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_pdl_interpModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_polynomialModule(nb::module_ &m);
+//
+// // extern void populateEUDSLGen_ptrModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_quantModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_ROCDLModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_scfModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_shapeModule(nb::module_ &m);
+//
+// // extern void populateEUDSLGen_sparse_tensorModule(nb::module_ &m);
+//
+// // nb::detail::nb_func_new("get_vce_triple_attr_name"): mismatched
+// // static/instance method flags in function overloads! extern void
+// // populateEUDSLGen_spirvModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_tensorModule(nb::module_ &m);
+//
+// // extern void populateEUDSLGen_tosaModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_transformModule(nb::module_ &m);
+//
+// extern void populateEUDSLGen_ubModule(nb::module_ &m);
 
 // can't cast std::pair<VectorDim, VectorDim>
 // void populateEUDSLGen_vectorModule(nb::module_ &m) {
 // #include "EUDSLGen_vector.cpp.inc"
 // }
 
-extern void populateEUDSLGen_x86vectorModule(nb::module_ &m);
+// extern void populateEUDSLGen_x86vectorModule(nb::module_ &m);
 
 // extern void populateEUDSLGen_xegpuModule(nb::module_ &m);
 
@@ -486,82 +441,94 @@ NB_MODULE(eudslpy_ext, m) {
   bind_array_ref<mlir::OpAsmParser::Argument>(m);
   bind_array_ref<mlir::OpAsmParser::UnresolvedOperand>(m);
 
-  smallVector.def_static(
-      "__class_getitem__",
-      [smallVectorOfBool, smallVectorOfInt, smallVectorOfFloat,
-       smallVectorOfInt16, smallVectorOfInt32, smallVectorOfInt64,
-       smallVectorOfUInt16, smallVectorOfUInt32, smallVectorOfUInt64,
-       smallVectorOfChar,
-       smallVectorOfDouble](nb::type_object type) -> nb::object {
-        PyTypeObject *typeObj = (PyTypeObject *)type.ptr();
-        if (typeObj == &PyBool_Type)
-          return smallVectorOfBool;
-        if (typeObj == &PyLong_Type)
-          return smallVectorOfInt64;
-        if (typeObj == &PyFloat_Type)
-          return smallVectorOfDouble;
+  smallVector.def_static("__class_getitem__",
+                         // https://stackoverflow.com/a/48103632
+                         [smallVectorOfBool = smallVectorOfBool,
+                          smallVectorOfInt16 = smallVectorOfInt16,
+                          smallVectorOfInt32 = smallVectorOfInt32,
+                          smallVectorOfInt64 = smallVectorOfInt64,
+                          smallVectorOfUInt16 = smallVectorOfUInt16,
+                          smallVectorOfUInt32 = smallVectorOfUInt32,
+                          smallVectorOfUInt64 = smallVectorOfUInt64,
+                          smallVectorOfChar = smallVectorOfChar,
+                          smallVectorOfDouble = smallVectorOfDouble](
+                             nb::type_object type) -> nb::object {
+                           PyTypeObject *typeObj = (PyTypeObject *)type.ptr();
+                           if (typeObj == &PyBool_Type)
+                             return smallVectorOfBool;
+                           if (typeObj == &PyLong_Type)
+                             return smallVectorOfInt64;
+                           if (typeObj == &PyFloat_Type)
+                             return smallVectorOfDouble;
 
-        auto np = nb::module_::import_("numpy");
-        auto npCharDType = np.attr("char");
-        auto npDoubleDType = np.attr("double");
-        auto npInt16DType = np.attr("int16");
-        auto npInt32DType = np.attr("int32");
-        auto npInt64DType = np.attr("int64");
-        auto npUInt16DType = np.attr("uint16");
-        auto npUInt32DType = np.attr("uint32");
-        auto npUInt64DType = np.attr("uint64");
+                           auto np = nb::module_::import_("numpy");
+                           auto npCharDType = np.attr("char");
+                           auto npDoubleDType = np.attr("double");
+                           auto npInt16DType = np.attr("int16");
+                           auto npInt32DType = np.attr("int32");
+                           auto npInt64DType = np.attr("int64");
+                           auto npUInt16DType = np.attr("uint16");
+                           auto npUInt32DType = np.attr("uint32");
+                           auto npUInt64DType = np.attr("uint64");
 
-        if (type.is(npCharDType))
-          return smallVectorOfChar;
-        if (type.is(npDoubleDType))
-          return smallVectorOfDouble;
-        if (type.is(npInt16DType))
-          return smallVectorOfInt16;
-        if (type.is(npInt32DType))
-          return smallVectorOfInt32;
-        if (type.is(npInt64DType))
-          return smallVectorOfInt64;
-        if (type.is(npUInt16DType))
-          return smallVectorOfUInt16;
-        if (type.is(npUInt32DType))
-          return smallVectorOfUInt32;
-        if (type.is(npUInt64DType))
-          return smallVectorOfUInt64;
+                           if (type.is(npCharDType))
+                             return smallVectorOfChar;
+                           if (type.is(npDoubleDType))
+                             return smallVectorOfDouble;
+                           if (type.is(npInt16DType))
+                             return smallVectorOfInt16;
+                           if (type.is(npInt32DType))
+                             return smallVectorOfInt32;
+                           if (type.is(npInt64DType))
+                             return smallVectorOfInt64;
+                           if (type.is(npUInt16DType))
+                             return smallVectorOfUInt16;
+                           if (type.is(npUInt32DType))
+                             return smallVectorOfUInt32;
+                           if (type.is(npUInt64DType))
+                             return smallVectorOfUInt64;
 
-        std::string errMsg = "unsupported type for SmallVector";
-        errMsg += nb::repr(type).c_str();
-        throw std::runtime_error(errMsg);
-      });
+                           std::string errMsg =
+                               "unsupported type for SmallVector";
+                           errMsg += nb::repr(type).c_str();
+                           throw std::runtime_error(errMsg);
+                         });
 
-  smallVector.def_static(
-      "__class_getitem__",
-      [smallVectorOfFloat, smallVectorOfInt16, smallVectorOfInt32,
-       smallVectorOfInt64, smallVectorOfUInt16, smallVectorOfUInt32,
-       smallVectorOfUInt64, smallVectorOfChar,
-       smallVectorOfDouble](std::string type) -> nb::object {
-        if (type == "char")
-          return smallVectorOfChar;
-        if (type == "float")
-          return smallVectorOfFloat;
-        if (type == "double")
-          return smallVectorOfDouble;
-        if (type == "int16")
-          return smallVectorOfInt16;
-        if (type == "int32")
-          return smallVectorOfInt32;
-        if (type == "int64")
-          return smallVectorOfInt64;
-        if (type == "uint16")
-          return smallVectorOfUInt16;
-        if (type == "uint32")
-          return smallVectorOfUInt32;
-        if (type == "uint64")
-          return smallVectorOfUInt64;
+  smallVector.def_static("__class_getitem__",
+                         [smallVectorOfFloat = smallVectorOfFloat,
+                          smallVectorOfInt16 = smallVectorOfInt16,
+                          smallVectorOfInt32 = smallVectorOfInt32,
+                          smallVectorOfInt64 = smallVectorOfInt64,
+                          smallVectorOfUInt16 = smallVectorOfUInt16,
+                          smallVectorOfUInt32 = smallVectorOfUInt32,
+                          smallVectorOfUInt64 = smallVectorOfUInt64,
+                          smallVectorOfChar = smallVectorOfChar,
+                          smallVectorOfDouble = smallVectorOfDouble](
+                             std::string type) -> nb::object {
+                           if (type == "char")
+                             return smallVectorOfChar;
+                           if (type == "float")
+                             return smallVectorOfFloat;
+                           if (type == "double")
+                             return smallVectorOfDouble;
+                           if (type == "int16")
+                             return smallVectorOfInt16;
+                           if (type == "int32")
+                             return smallVectorOfInt32;
+                           if (type == "int64")
+                             return smallVectorOfInt64;
+                           if (type == "uint16")
+                             return smallVectorOfUInt16;
+                           if (type == "uint32")
+                             return smallVectorOfUInt32;
+                           if (type == "uint64")
+                             return smallVectorOfUInt64;
 
-        std::string errMsg = "unsupported type for SmallVector: ";
-        errMsg += type;
-        throw std::runtime_error(errMsg);
-      });
+                           std::string errMsg =
+                               "unsupported type for SmallVector: ";
+                           errMsg += type;
+                           throw std::runtime_error(errMsg);
+                         });
 
   nb::class_<llvm::iterator_range<mlir::BlockArgument *>>(
       m, "iterator_range[BlockArgument]");
@@ -591,11 +558,11 @@ NB_MODULE(eudslpy_ext, m) {
   // auto accModule = dialectsModule.def_submodule("acc");
   // populateEUDSLGen_accModule(accModule);
 
-  auto affineModule = dialectsModule.def_submodule("affine");
-  populateEUDSLGen_affineModule(affineModule);
-
-  auto amdgpuModule = dialectsModule.def_submodule("amdgpu");
-  populateEUDSLGen_amdgpuModule(amdgpuModule);
+  // auto affineModule = dialectsModule.def_submodule("affine");
+  // populateEUDSLGen_affineModule(affineModule);
+  //
+  // auto amdgpuModule = dialectsModule.def_submodule("amdgpu");
+  // populateEUDSLGen_amdgpuModule(amdgpuModule);
 
   // auto amxModule = dialectsModule.def_submodule("amx");
   // populateEUDSLGen_amxModule(amxModule);
@@ -612,101 +579,102 @@ NB_MODULE(eudslpy_ext, m) {
   // auto arm_sveModule = dialectsModule.def_submodule("arm_sve");
   // populateEUDSLGen_arm_sveModule(arm_sveModule);
 
-  auto asyncModule = dialectsModule.def_submodule("async");
-  populateEUDSLGen_asyncModule(asyncModule);
+  // auto asyncModule = dialectsModule.def_submodule("async");
+  // populateEUDSLGen_asyncModule(asyncModule);
+  //
+  // auto bufferizationModule = dialectsModule.def_submodule("bufferization");
+  // populateEUDSLGen_bufferizationModule(bufferizationModule);
+  //
+  // auto cfModule = dialectsModule.def_submodule("cf");
+  // populateEUDSLGen_cfModule(cfModule);
+  //
+  // auto complexModule = dialectsModule.def_submodule("complex");
+  // populateEUDSLGen_complexModule(complexModule);
+  //
+  // // auto DLTIDialectModule = dialectsModule.def_submodule("DLTIDialect");
+  // // populateEUDSLGen_DLTIDialectModule(DLTIDialectModule);
+  //
+  // auto emitcModule = dialectsModule.def_submodule("emitc");
+  // populateEUDSLGen_emitcModule(emitcModule);
+  //
+  // auto funcModule = dialectsModule.def_submodule("func");
+  // populateEUDSLGen_funcModule(funcModule);
+  //
+  // auto gpuModule = dialectsModule.def_submodule("gpu");
+  // populateEUDSLGen_gpuModule(gpuModule);
+  //
+  // auto indexModule = dialectsModule.def_submodule("index");
+  // populateEUDSLGen_indexModule(indexModule);
+  //
+  // // auto irdlModule = dialectsModule.def_submodule("irdl");
+  // // populateEUDSLGen_irdlModule(irdlModule);
+  //
+  // auto linalgModule = dialectsModule.def_submodule("linalg");
+  // populateEUDSLGen_linalgModule(linalgModule);
+  //
+  // auto LLVMModule = dialectsModule.def_submodule("LLVM");
+  // populateEUDSLGen_LLVMModule(LLVMModule);
+  //
+  // auto mathModule = dialectsModule.def_submodule("math");
+  // populateEUDSLGen_mathModule(mathModule);
+  //
+  // auto memrefModule = dialectsModule.def_submodule("memref");
+  // populateEUDSLGen_memrefModule(memrefModule);
+  //
+  // // auto meshModule = dialectsModule.def_submodule("mesh");
+  // // populateEUDSLGen_meshModule(meshModule);
+  //
+  // // auto ml_programModule = dialectsModule.def_submodule("ml_program");
+  // // populateEUDSLGen_ml_programModule(ml_programModule);
+  //
+  // // auto mpiModule = dialectsModule.def_submodule("mpi");
+  // // populateEUDSLGen_mpiModule(mpiModule);
+  //
+  // auto nvgpuModule = dialectsModule.def_submodule("nvgpu");
+  // populateEUDSLGen_nvgpuModule(nvgpuModule);
+  //
+  // auto NVVMModule = dialectsModule.def_submodule("NVVM");
+  // populateEUDSLGen_NVVMModule(NVVMModule);
+  //
+  // // auto ompModule = dialectsModule.def_submodule("omp");
+  // // populateEUDSLGen_ompModule(ompModule);
+  //
+  // auto pdlModule = dialectsModule.def_submodule("pdl");
+  // populateEUDSLGen_pdlModule(pdlModule);
+  //
+  // auto pdl_interpModule = dialectsModule.def_submodule("pdl_interp");
+  // populateEUDSLGen_pdl_interpModule(pdl_interpModule);
+  //
+  // auto polynomialModule = dialectsModule.def_submodule("polynomial");
+  // populateEUDSLGen_polynomialModule(polynomialModule);
+  //
+  // // auto ptrModule = dialectsModule.def_submodule("ptr");
+  // // populateEUDSLGen_ptrModule(ptrModule);
+  //
+  // // auto quantModule = dialectsModule.def_submodule("quant");
+  // // populateEUDSLGen_quantModule(quantModule);
+  //
+  // auto ROCDLModule = dialectsModule.def_submodule("ROCDL");
+  // populateEUDSLGen_ROCDLModule(ROCDLModule);
+  //
+  // auto scfModule = dialectsModule.def_submodule("scf");
+  // populateEUDSLGen_scfModule(scfModule);
+  //
+  // auto shapeModule = dialectsModule.def_submodule("shape");
+  // populateEUDSLGen_shapeModule(shapeModule);
+  //
+  // // auto sparse_tensorModule =
+  // dialectsModule.def_submodule("sparse_tensor");
+  // // populateEUDSLGen_sparse_tensorModule(sparse_tensorModule);
+  //
+  // // auto spirvModule = dialectsModule.def_submodule("spirv");
+  // // populateEUDSLGen_spirvModule(spirvModule);
+  //
+  // auto tensorModule = dialectsModule.def_submodule("tensor");
+  // populateEUDSLGen_tensorModule(tensorModule);
 
-  auto bufferizationModule = dialectsModule.def_submodule("bufferization");
-  populateEUDSLGen_bufferizationModule(bufferizationModule);
-
-  auto cfModule = dialectsModule.def_submodule("cf");
-  populateEUDSLGen_cfModule(cfModule);
-
-  auto complexModule = dialectsModule.def_submodule("complex");
-  populateEUDSLGen_complexModule(complexModule);
-
-  // auto DLTIDialectModule = dialectsModule.def_submodule("DLTIDialect");
-  // populateEUDSLGen_DLTIDialectModule(DLTIDialectModule);
-
-  auto emitcModule = dialectsModule.def_submodule("emitc");
-  populateEUDSLGen_emitcModule(emitcModule);
-
-  auto funcModule = dialectsModule.def_submodule("func");
-  populateEUDSLGen_funcModule(funcModule);
-
-  auto gpuModule = dialectsModule.def_submodule("gpu");
-  populateEUDSLGen_gpuModule(gpuModule);
-
-  auto indexModule = dialectsModule.def_submodule("index");
-  populateEUDSLGen_indexModule(indexModule);
-
-  // auto irdlModule = dialectsModule.def_submodule("irdl");
-  // populateEUDSLGen_irdlModule(irdlModule);
-
-  auto linalgModule = dialectsModule.def_submodule("linalg");
-  populateEUDSLGen_linalgModule(linalgModule);
-
-  auto LLVMModule = dialectsModule.def_submodule("LLVM");
-  populateEUDSLGen_LLVMModule(LLVMModule);
-
-  auto mathModule = dialectsModule.def_submodule("math");
-  populateEUDSLGen_mathModule(mathModule);
-
-  auto memrefModule = dialectsModule.def_submodule("memref");
-  populateEUDSLGen_memrefModule(memrefModule);
-
-  // auto meshModule = dialectsModule.def_submodule("mesh");
-  // populateEUDSLGen_meshModule(meshModule);
-
-  // auto ml_programModule = dialectsModule.def_submodule("ml_program");
-  // populateEUDSLGen_ml_programModule(ml_programModule);
-
-  // auto mpiModule = dialectsModule.def_submodule("mpi");
-  // populateEUDSLGen_mpiModule(mpiModule);
-
-  auto nvgpuModule = dialectsModule.def_submodule("nvgpu");
-  populateEUDSLGen_nvgpuModule(nvgpuModule);
-
-  auto NVVMModule = dialectsModule.def_submodule("NVVM");
-  populateEUDSLGen_NVVMModule(NVVMModule);
-
-  // auto ompModule = dialectsModule.def_submodule("omp");
-  // populateEUDSLGen_ompModule(ompModule);
-
-  auto pdlModule = dialectsModule.def_submodule("pdl");
-  populateEUDSLGen_pdlModule(pdlModule);
-
-  auto pdl_interpModule = dialectsModule.def_submodule("pdl_interp");
-  populateEUDSLGen_pdl_interpModule(pdl_interpModule);
-
-  auto polynomialModule = dialectsModule.def_submodule("polynomial");
-  populateEUDSLGen_polynomialModule(polynomialModule);
-
-  // auto ptrModule = dialectsModule.def_submodule("ptr");
-  // populateEUDSLGen_ptrModule(ptrModule);
-
-  // auto quantModule = dialectsModule.def_submodule("quant");
-  // populateEUDSLGen_quantModule(quantModule);
-
-  auto ROCDLModule = dialectsModule.def_submodule("ROCDL");
-  populateEUDSLGen_ROCDLModule(ROCDLModule);
-
-  auto scfModule = dialectsModule.def_submodule("scf");
-  populateEUDSLGen_scfModule(scfModule);
-
-  auto shapeModule = dialectsModule.def_submodule("shape");
-  populateEUDSLGen_shapeModule(shapeModule);
-
-  // auto sparse_tensorModule = dialectsModule.def_submodule("sparse_tensor");
-  // populateEUDSLGen_sparse_tensorModule(sparse_tensorModule);
-
-  // auto spirvModule = dialectsModule.def_submodule("spirv");
-  // populateEUDSLGen_spirvModule(spirvModule);
-
-  auto tensorModule = dialectsModule.def_submodule("tensor");
-  populateEUDSLGen_tensorModule(tensorModule);
-
-  auto tosaModule = dialectsModule.def_submodule("tosa");
-  populateEUDSLGen_tosaModule(tosaModule);
+  // auto tosaModule = dialectsModule.def_submodule("tosa");
+  // populateEUDSLGen_tosaModule(tosaModule);
 
   // auto transformModule = dialectsModule.def_submodule("transform");
   // populateEUDSLGen_transformModule(transformModule);

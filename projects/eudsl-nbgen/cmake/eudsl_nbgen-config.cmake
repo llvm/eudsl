@@ -5,9 +5,13 @@
 
 # copy-pasta from AddMLIR.cmake/AddLLVM.cmake/TableGen.cmake
 
+get_filename_component(EUDSL_NBGEN_INSTALL_PREFIX "${CMAKE_CURRENT_LIST_FILE}" PATH)
+get_filename_component(EUDSL_NBGEN_INSTALL_PREFIX "${EUDSL_NBGEN_INSTALL_PREFIX}" PATH)
+set(EUDSL_NBGEN_INCLUDE_DIR "${EUDSL_NBGEN_INSTALL_PREFIX}/includes")
+
 function(eudsl_nbgen target input_file)
   set(EUDSL_NBGEN_TARGET_DEFINITIONS ${input_file})
-  cmake_parse_arguments(ARG "" "" "LINK_LIBS;EXTRA_INCLUDES;NAMESPACES" ${ARGN})
+  cmake_parse_arguments(ARG "" "" "LINK_LIBS;EXTRA_INCLUDES;NAMESPACES;DEPENDS" ${ARGN})
   if (IS_ABSOLUTE ${EUDSL_NBGEN_TARGET_DEFINITIONS})
     set(EUDSL_NBGEN_TARGET_DEFINITIONS_ABSOLUTE ${input_file})
   else()
@@ -45,6 +49,7 @@ function(eudsl_nbgen target input_file)
     )
     execute_process(COMMAND ${clang_command} RESULT_VARIABLE _had_error_depfile
       # COMMAND_ECHO STDOUT
+      ERROR_QUIET
     )
   endif()
 
@@ -70,15 +75,21 @@ function(eudsl_nbgen target input_file)
     -shard-target ${target} ${ARG_EXTRA_INCLUDES} -I ${EUDSL_NBGEN_TARGET_DEFINITIONS_ABSOLUTE}
   )
 
-  find_program(EUDSL_NBGEN_EXE "eudsl-nbgen")
-  if (EUDSL_NBGEN_EXE STREQUAL "EUDSL_NBGEN_EXE-NOTFOUND")
+  find_program(EUDSL_NBGEN_EXE NAMES "eudsl-nbgen" "eudsl-nbgen.exe")
+  if (EUDSL_NBGEN_EXE STREQUAL "EUDSL_NBGEN_EXE-NOTFOUND" OR ARG_DEPENDS)
     ##################################
     # not standalone build
     ##################################
-    if (WIN32)
-      set(EUDSL_NBGEN_EXE "eudsl-nbgen.exe")
+    if (EUDSL_NBGEN_EXE STREQUAL "EUDSL_NBGEN_EXE-NOTFOUND")
+      if (WIN32)
+        set(EUDSL_NBGEN_EXE "eudsl-nbgen.exe")
+      else()
+        set(EUDSL_NBGEN_EXE "eudsl-nbgen")
+      endif()
+      set(_eudsl_nbgen_exe_depends ${EUDSL_NBGEN_EXE})
     else()
-      set(EUDSL_NBGEN_EXE "eudsl-nbgen")
+      message(STATUS "found EUDSL_NBGEN_EXE @ ${EUDSL_NBGEN_EXE}")
+      set(_eudsl_nbgen_exe_depends)
     endif()
 
     string(REPLACE " " ";" eudsl_nbgen_defines "${LLVM_DEFINITIONS}")
@@ -87,7 +98,7 @@ function(eudsl_nbgen target input_file)
     add_custom_command(OUTPUT ${_full_gen_file}
       COMMAND ${EUDSL_NBGEN_EXE} ${eudsl_nbgen_generate_cmd}
       WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-      DEPENDS ${EUDSL_NBGEN_EXE} ${global_tds}
+      DEPENDS ${_eudsl_nbgen_exe_depends} ${global_tds} ${ARG_DEPENDS}
       DEPFILE ${_depfile}
       COMMENT "eudsl-nbgen: Generating ${_full_gen_file}..."
     )
@@ -105,10 +116,11 @@ function(eudsl_nbgen target input_file)
       -max-number-shards ${_max_num_shards}
       BYPRODUCTS ${_shards}
       WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-      DEPENDS ${_full_gen_file} ${EUDSL_NBGEN_EXE}
+      DEPENDS ${_full_gen_file} ${_eudsl_nbgen_exe_depends}
       COMMENT "eudsl-nbgen: Generating ${_full_gen_file}.sharded.cpp..."
     )
   else()
+    message(STATUS "found EUDSL_NBGEN_EXE @ ${EUDSL_NBGEN_EXE}")
     ##################################
     # standalone build
     ##################################
@@ -149,15 +161,13 @@ function(eudsl_nbgen target input_file)
     ${eudsl_nbgen_includes}
     ${Python_INCLUDE_DIRS}
     ${nanobind_include_dir}
+    ${EUDSL_NBGEN_INCLUDE_DIR}
   )
   # not sure why unix needs this buy not apple (and really only in root-cmake build...)
   if(UNIX AND NOT APPLE)
     set_property(TARGET ${target} PROPERTY POSITION_INDEPENDENT_CODE ON)
   endif()
   set(_link_libs ${ARG_LINK_LIBS})
-  if (NOT ARG_LINK_LIBS)
-    set(_link_libs MLIR LLVM)
-  endif()
   target_link_libraries(${target} PUBLIC ${_link_libs})
   target_compile_options(${target} PUBLIC -Wno-cast-qual)
 
@@ -207,3 +217,17 @@ function(patch_llvm_rpath target)
     endif()
   endif()
 endfunction()
+
+macro(maybe_add_eudsl_nbgen_to_path)
+  find_program(EUDSL_NBGEN_EXE NAMES "eudsl-nbgen" "eudsl-nbgen.exe")
+  if (EUDSL_NBGEN_EXE STREQUAL "EUDSL_NBGEN_EXE-NOTFOUND")
+    execute_process(
+      COMMAND "${Python_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_path('scripts'))"
+      OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE eudsl_nbgen_exe_path)
+    set(ENV{PATH} "${eudsl_nbgen_exe_path}:$ENV{PATH}")
+  endif()
+  find_program(EUDSL_NBGEN_EXE NAMES "eudsl-nbgen" "eudsl-nbgen.exe")
+  if (EUDSL_NBGEN_EXE STREQUAL "EUDSL_NBGEN_EXE-NOTFOUND")
+    message(WARNING "couldn't find EUDSL_NBGEN_EXE")
+  endif()
+endmacro()

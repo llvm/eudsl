@@ -802,7 +802,7 @@ namespace nb = nanobind;
 using namespace nb::literals;
 using namespace mlir;
 using namespace llvm;
-#include "type_casters.h"
+#include "eudsl/type_casters.h"
 
 void populate)" << finalTarget << i << R"(Module(nb::module_ &m) {
 )";

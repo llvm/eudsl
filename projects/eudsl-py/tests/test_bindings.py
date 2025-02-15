@@ -19,7 +19,6 @@ from eudsl.ir import (
     Attribute,
     MemRefType,
 )
-from eudsl.dialects import nvgpu
 
 
 def test_array_ref():
@@ -94,27 +93,27 @@ def test_arith_dialect():
     assert mod1.verify()
 
 
-def test_types():
-    ctx = MLIRContext(Threading.DISABLED)
-    nvgpu.NVGPUDialect.insert_into_registry(ctx.dialect_registry)
-    ctx.load_all_available_dialects()
-    shape = SmallVector[np.int64]([10, 10])
-    f32_ty = Float32Type.get(ctx)
-    shape_ = ArrayRef(shape)
-    memref_ty = MemRefType.Builder(shape_, f32_ty).memref_type()
-    print(memref_ty)
-    td = nvgpu.TensorMapDescriptorType.get(
-        ctx,
-        memref_ty,
-        nvgpu.TensorMapSwizzleKind.SWIZZLE_64B,
-        nvgpu.TensorMapL2PromoKind.L2PROMO_64B,
-        nvgpu.TensorMapOOBKind.OOB_NAN,
-        nvgpu.TensorMapInterleaveKind.INTERLEAVE_16B,
-    )
-    print(td)
+# def test_types():
+#     ctx = MLIRContext(Threading.DISABLED)
+#     nvgpu.NVGPUDialect.insert_into_registry(ctx.dialect_registry)
+#     ctx.load_all_available_dialects()
+#     shape = SmallVector[np.int64]([10, 10])
+#     f32_ty = Float32Type.get(ctx)
+#     shape_ = ArrayRef(shape)
+#     memref_ty = MemRefType.Builder(shape_, f32_ty).memref_type()
+#     print(memref_ty)
+#     td = nvgpu.TensorMapDescriptorType.get(
+#         ctx,
+#         memref_ty,
+#         nvgpu.TensorMapSwizzleKind.SWIZZLE_64B,
+#         nvgpu.TensorMapL2PromoKind.L2PROMO_64B,
+#         nvgpu.TensorMapOOBKind.OOB_NAN,
+#         nvgpu.TensorMapInterleaveKind.INTERLEAVE_16B,
+#     )
+#     print(td)
 
 
 if __name__ == "__main__":
     test_array_ref()
     test_arith_dialect()
-    test_types()
+    # test_types()

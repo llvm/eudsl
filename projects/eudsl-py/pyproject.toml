@@ -26,7 +26,7 @@ Homepage = "https://github.com/llvm/eudsl"
 
 [tool.scikit-build]
 minimum-version = "0.10"
-build-dir = "build/{wheel_tag}"
+build-dir = "build"
 wheel.py-api = "cp312"
 cmake.source-dir = "."
 

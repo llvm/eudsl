@@ -10,4 +10,8 @@ def cmake_dir() -> str:
     return str(Path(__file__).parent / "cmake")
 
 
-__all__ = ["cmake_dir"]
+def includes_dir() -> str:
+    return str(Path(__file__).parent / "includes")
+
+
+__all__ = ["cmake_dir", "includes_dir"]
