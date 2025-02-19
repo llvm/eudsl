@@ -156,7 +156,9 @@ runs:
     - name: "Set CMake/ccache env vars"
       shell: bash
       run: |
-        echo "CCACHE_DIR=${{ steps.canonicalize-cache-dir.outputs.cache-dir }}/ccache" >> $GITHUB_ENV
+        export CCACHE_DIR="${{ steps.canonicalize-cache-dir.outputs.cache-dir }}/ccache"
+        mkdir -p $CCACHE_DIR
+        echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
         echo "CCACHE_COMPILERCHECK=string:$($CC --version | head -n 1)" >> $GITHUB_ENV
         echo $CCACHE_COMPILERCHECK
         echo "CCACHE_MAXSIZE=700M" >> $GITHUB_ENV

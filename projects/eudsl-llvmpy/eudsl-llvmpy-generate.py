@@ -333,10 +333,10 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
                     p_s = p.get_type().get_as_string()
                     pdv = p.get_def().get_values()
                     if p_s == "LLVMMatchType":
-                        p_s += f"[{pdv.Number.get_value()}]"
+                        p_s += f"[Literal[{pdv.Number.get_value()}]]"
                     elif p_s == "LLVMQualPointerType":
                         kind, addr_space = pdv.Sig.get_value()
-                        p_s += f"[{addr_space}]"
+                        p_s += f"[Literal[{addr_space}]]"
                     else:
                         raise NotImplemented(f"unsupported {p_s=}")
                 else:

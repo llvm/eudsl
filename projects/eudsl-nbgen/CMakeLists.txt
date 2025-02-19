@@ -31,8 +31,6 @@ if(EUDSL_NBGEN_STANDALONE_BUILD)
   include(AddLLVM)
   include(AddClang)
   include(HandleLLVMOptions)
-
-  include_directories(${CMAKE_CURRENT_LIST_DIR}/../common)
 endif()
 
 include_directories(${LLVM_INCLUDE_DIRS})
@@ -81,7 +79,7 @@ install(
 )
 
 install(
-  DIRECTORY includes/eudsl/
+  DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/../common/eudsl/"
   DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}/includes/eudsl"
   FILES_MATCHING PATTERN "*\.h"
 )
