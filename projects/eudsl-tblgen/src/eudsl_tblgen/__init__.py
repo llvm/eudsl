@@ -92,4 +92,3 @@ def get_all_type_constraints(records: RecordKeeper) -> List[Constraint]:
             continue
         result.append(constr)
     return result
-

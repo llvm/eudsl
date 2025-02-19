@@ -43,6 +43,7 @@
 #include "eudsl/util.h"
 // ReSharper disable once CppUnusedIncludeDirective
 #include "eudsl/type_casters.h"
+#include "eudsl/bind_vec_like.h"
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -52,7 +53,15 @@ struct HackInit : public llvm::Init {
   using InitKind = Init::InitKind;
 };
 
+namespace eudsl {
+nb::class_<_SmallVector> smallVector;
+nb::class_<_ArrayRef> arrayRef;
+nb::class_<_MutableArrayRef> mutableArrayRef;
+} // namespace eudsl
+
 NB_MODULE(eudsl_tblgen_ext, m) {
+  eudsl::bind_array_ref_smallvector(m);
+
   auto recty = nb::class_<llvm::RecTy>(m, "RecTy");
 
   nb::enum_<llvm::RecTy::RecTyKind>(m, "RecTyKind")
@@ -936,7 +945,15 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_template_args", &llvm::Record::getTemplateArgs)
       .def("get_assertions", &llvm::Record::getAssertions)
       .def("get_dumps", &llvm::Record::getDumps)
-      .def("get_super_classes", &llvm::Record::getSuperClasses)
+      .def(
+          "get_super_classes",
+          [](llvm::Record &self) {
+            std::vector<const llvm::Record *> classes;
+            for (auto [rec, _] : self.getSuperClasses())
+              classes.push_back(rec);
+            return classes;
+          },
+          nb::rv_policy::reference_internal)
       .def("has_direct_super_class", &llvm::Record::hasDirectSuperClass,
            "super_class"_a)
       .def("is_template_arg", &llvm::Record::isTemplateArg, "name"_a)
@@ -1525,6 +1542,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def("get_default_value",
                &mlir::tblgen::Builder::Parameter::getDefaultValue);
 
+  eudsl::bind_array_ref<mlir::tblgen::Builder::Parameter>(m);
   mlir_tblgen_Builder
       .def(nb::init<const llvm::Record *, llvm::ArrayRef<llvm::SMLoc>>(),
            "record"_a, "loc"_a)
@@ -1646,6 +1664,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                       &mlir::tblgen::AttributeSelfTypeParameter::classof,
                       "param"_a);
 
+  eudsl::bind_array_ref<mlir::tblgen::AttrOrTypeParameter>(m);
   auto mlir_tblgen_AttrOrTypeDef =
       nb::class_<mlir::tblgen::AttrOrTypeDef>(m, "AttrOrTypeDef")
           .def(nb::init<const llvm::Record *>(), "def_"_a)
