@@ -918,4 +918,8 @@ def SignlessIntegerOrFloatLike : TypeConstraint<Or<[
     SignlessIntegerLike.predicate, FloatLike.predicate]>,
     "signless-integer-like or floating-point-like">;
 
+def DummyConstraint : AnyTypeOf<[AnyInteger, Index, AnyFloat]> {
+  let cppFunctionName = "isValidDummy";
+}
+
 #endif // COMMON_TYPE_CONSTRAINTS_TD

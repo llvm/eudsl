@@ -53,6 +53,8 @@ if(EUDSLPY_STANDALONE_BUILD)
   # for out-of-tree MLIR_INCLUDE_DIR points to the build dir by default
   # and MLIR_INCLUDE_DIRS points to the correct place
   set(MLIR_INCLUDE_DIR ${MLIR_INCLUDE_DIRS})
+
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/../common)
 endif()
 
 include_directories(${LLVM_INCLUDE_DIRS})

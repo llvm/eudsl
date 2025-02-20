@@ -15,6 +15,7 @@ set(LLVM_BUILD_TOOLS ON CACHE BOOL "")
 set(LLVM_BUILD_UTILS ON CACHE BOOL "")
 set(LLVM_INCLUDE_TOOLS ON CACHE BOOL "")
 set(LLVM_INSTALL_UTILS ON CACHE BOOL "")
+set(LLVM_ENABLE_DUMP ON CACHE BOOL "")
 
 set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
 # All the tools will use libllvm shared library
@@ -75,26 +76,7 @@ set(LLVM_INSTALL_TOOLCHAIN_ONLY OFF CACHE BOOL "")
 
 set(LLVM_DISTRIBUTIONS MlirDevelopment CACHE STRING "")
 set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
-    clangAPINotes
-    clangAST
-    clangASTMatchers
-    clangAnalysis
-    clangBasic
-    clangDriver
-    clangDriver
-    clangEdit
-    clangFormat
-    clangFrontend
-    clangLex
-    clangParse
-    clangRewrite
-    clangSema
-    clangSerialization
-    clangSupport
-    clangTooling
-    clangToolingCore
-    clangToolingInclusions
-
+    clang-libraries
     clang-headers
     # triggers ClangConfig.cmake and etc
     clang-cmake-exports

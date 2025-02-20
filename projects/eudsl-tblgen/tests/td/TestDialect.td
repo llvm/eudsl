@@ -72,3 +72,58 @@ def Test_VariadicityOp : Test_Op<"variadicity"> {
                        Optional<Test_SingletonBType>:$optional,
                        Test_SingletonCType:$required);
 }
+
+def TritonGPU_AttrTrait : AttrInterface<"TritonGPU_AttrTrait"> {
+  let cppNamespace = "::mlir::triton::gpu";
+
+  let methods = [
+  ];
+}
+
+class TritonGPU_Attr<string name, string attrMnemonic, list<Trait> traits = [],
+                     Dialect dialect = Test_Dialect,
+                     string baseCppClass = "::mlir::Attribute">
+  : AttrDef<dialect, name, !listconcat([TritonGPU_AttrTrait], traits), baseCppClass> {
+  let attrName = "triton.gpu." # attrMnemonic;
+}
+
+//===----------------------------------------------------------------------===//
+// CTA Layout
+//===----------------------------------------------------------------------===//
+
+def CTALayoutAttr : TritonGPU_Attr<"CTALayout", "cta_layout"> {
+  let parameters = (
+    ins
+    ArrayRefParameter<"unsigned">:$CTAsPerCGA,
+    ArrayRefParameter<"unsigned">:$CTASplitNum,
+    ArrayRefParameter<"unsigned">:$CTAOrder
+  );
+
+  let builders = [
+    AttrBuilder<(ins "ArrayRef<unsigned>":$CTAsPerCGA,
+                     "ArrayRef<unsigned>":$CTASplitNum,
+                     "ArrayRef<unsigned>":$CTAOrder), [{
+        if (llvm::all_of(CTAsPerCGA, [](unsigned x) { return x == 1; })) {
+          SmallVector<unsigned> order;
+          for (int i = CTAsPerCGA.size() - 1; i >= 0; --i)
+            order.push_back(i);
+          return $_get(context, CTAsPerCGA, CTASplitNum, order);
+        }
+        return $_get(context, CTAsPerCGA, CTASplitNum, CTAOrder);
+    }]>,
+  ];
+
+  let extraClassDeclaration = [{
+    static CTALayoutAttr getDefault(MLIRContext *context, int rank) {
+      SmallVector<unsigned> CTAsPerCGA(rank, 1);
+      SmallVector<unsigned> CTASplitNum(rank, 1);
+      SmallVector<unsigned> CTAOrder;
+      for (int i = rank - 1; i >= 0; --i)
+        CTAOrder.push_back(i);
+      return get(context, CTAsPerCGA, CTASplitNum, CTAOrder);
+    }
+  }];
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+}

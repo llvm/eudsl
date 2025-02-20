@@ -318,19 +318,24 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
     int_regex = re.compile(r"_i(\d+)")
     fp_regex = re.compile(r"_f(\d+)")
 
-    for d in intrins.defs:
-        intr = intrins.defs[d]
-        if intr.name.startswith("int_amdgcn") and intr.type.as_string != "ClangBuiltin":
+    defs = intrins.get_defs()
+    for d in defs:
+        intr = defs[d]
+        if (
+            intr.get_name().startswith("int_amdgcn")
+            and intr.get_type().get_as_string() != "ClangBuiltin"
+        ):
             arg_types = []
             ret_types = []
-            for p in intr.values.ParamTypes.value:
-                p_s = p.as_string
+            for p in intr.get_values().ParamTypes.get_value():
+                p_s = p.get_as_string()
                 if p_s.startswith("anon"):
-                    p_s = p.type.as_string
+                    p_s = p.get_type().get_as_string()
+                    pdv = p.get_def().get_values()
                     if p_s == "LLVMMatchType":
-                        p_s += f"[Literal[{p.def_.values.Number.value.value}]]"
+                        p_s += f"[Literal[{pdv.Number.get_value()}]]"
                     elif p_s == "LLVMQualPointerType":
-                        _, addr_space = p.def_.values.Sig.value.values
+                        kind, addr_space = pdv.Sig.get_value()
                         p_s += f"[Literal[{addr_space}]]"
                     else:
                         raise NotImplemented(f"unsupported {p_s=}")
@@ -343,8 +348,8 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
                     p_s = "pointer"
 
                 arg_types.append(p_s)
-            for p in intr.values.RetTypes.value:
-                ret_types.append(p.as_string)
+            for p in intr.get_values().RetTypes.get_value():
+                ret_types.append(p.get_as_string())
 
             ret_str = ""
             if len(ret_types):

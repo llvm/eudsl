@@ -79,7 +79,7 @@ install(
 )
 
 install(
-  DIRECTORY includes/eudsl/
+  DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/../common/eudsl/"
   DESTINATION "${EUDSL_NBGEN_INSTALL_DATADIR}/includes/eudsl"
   FILES_MATCHING PATTERN "*\.h"
 )
