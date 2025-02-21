@@ -87,6 +87,13 @@ class TritonGPU_Attr<string name, string attrMnemonic, list<Trait> traits = [],
   let attrName = "triton.gpu." # attrMnemonic;
 }
 
+
+class TritonTypeDef<string name, string _mnemonic, list<Trait> traits = []>
+    : TypeDef<Test_Dialect, name, traits> {
+    // Used by printer/parser
+    let mnemonic = _mnemonic;
+}
+
 //===----------------------------------------------------------------------===//
 // CTA Layout
 //===----------------------------------------------------------------------===//
@@ -126,4 +133,16 @@ def CTALayoutAttr : TritonGPU_Attr<"CTALayout", "cta_layout"> {
 
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
+}
+
+// Result type of ExperimentalMakeTensorDescriptor
+def TT_TensorDescType : TritonTypeDef<"TensorDesc", "tensordesc", []> {
+  let summary = "Tensor descriptor type (`::mlir::triton::TensorDescType`) in Triton IR type system";
+
+  let description = [{
+      A portable abstraction for nvidia-TMA descriptors.
+  }];
+
+  let parameters = (ins "RankedTensorType":$blockType);
+  let assemblyFormat = "`<` $blockType `>`";
 }

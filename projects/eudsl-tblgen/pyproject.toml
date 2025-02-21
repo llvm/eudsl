@@ -7,6 +7,9 @@
 name = "eudsl-tblgen"
 version = "0.0.1"
 requires-python = ">=3.9"
+dependencies = [
+    "inflection==0.5.1"
+]
 
 [project.urls]
 Homepage = "https://github.com/llvm/eudsl"
