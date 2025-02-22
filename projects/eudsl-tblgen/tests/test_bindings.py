@@ -241,11 +241,3 @@ def test_mlir_tblgen(record_keeper_test_dialect):
     all_defs = collect_all_defs(record_keeper_test_dialect)
     for d in all_defs:
         print(d.get_name())
-
-
-def test_cta_layout(record_keeper_test_dialect):
-    all_defs = collect_all_defs(record_keeper_test_dialect)
-    for d in all_defs:
-        if d.get_name() == "CTALayoutAttr":
-            for p in d.get_parameters():
-                print(p.get_cpp_type())
