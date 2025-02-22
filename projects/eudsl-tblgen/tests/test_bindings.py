@@ -11,14 +11,6 @@ from eudsl_tblgen import (
     get_requested_op_definitions,
     get_all_type_constraints,
     collect_all_defs,
-    collect_all_attr_or_type_defs,
-)
-from eudsl_tblgen.mlir import (
-    emit_c_attr_builder,
-    emit_c_type_builder,
-    emit_c_attr_field_getter,
-    emit_attr_nanobind_class,
-    emit_type_nanobind_class,
 )
 
 
@@ -249,28 +241,3 @@ def test_mlir_tblgen(record_keeper_test_dialect):
     all_defs = collect_all_defs(record_keeper_test_dialect)
     for d in all_defs:
         print(d.get_name())
-
-
-def test_cta_layout(record_keeper_test_dialect):
-    all_defs = collect_all_attr_or_type_defs(
-        collect_all_defs(record_keeper_test_dialect)
-    )
-    for d in all_defs:
-        params = list(d.get_parameters())
-        if params:
-            base_class_name = d.get_cpp_base_class_name()
-            class_name = d.get_cpp_class_name()
-            if base_class_name == "::mlir::Attribute":
-                decl, defn = emit_c_attr_builder(class_name, params)
-                print(decl)
-                print(defn)
-                for p in params:
-                    decl, defn = emit_c_attr_field_getter(class_name, p)
-                    print(decl)
-                    print(defn)
-                nbclass = emit_attr_nanobind_class(class_name, params)
-            elif base_class_name == "::mlir::Type":
-                emit_c_type_builder(class_name, params)
-                nbclass = emit_type_nanobind_class(class_name, params)
-
-            print(nbclass)

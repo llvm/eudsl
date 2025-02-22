@@ -78,7 +78,7 @@ def collect_all_defs(
     return result_defs
 
 
-def collect_all_attr_or_type_defs(records):
+def collect_all_attr_or_type_defs(records: List[Record]):
     return [
         AttrOrTypeDef(rec)
         for rec in records
@@ -86,7 +86,7 @@ def collect_all_attr_or_type_defs(records):
     ]
 
 
-def get_all_type_constraints(records: RecordKeeper) -> List[Constraint]:
+def get_all_type_constraints(records: RecordKeeper):
     result = []
     for record in records.get_all_derived_definitions_if_defined("TypeConstraint"):
         # Ignore constraints defined outside of the top-level file.
