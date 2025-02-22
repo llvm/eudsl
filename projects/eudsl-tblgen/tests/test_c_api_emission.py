@@ -47,7 +47,11 @@ def test_attrs(record_keeper_triton_gpu_attrs):
         print(d)
     for d in defns:
         print(d)
-    for n in nbclasses:
+    for hdecl, hdefn, n in nbclasses:
+        for h in hdecl:
+            print(h)
+        for h in hdefn:
+            print(h)
         print(n)
 
 
@@ -62,5 +66,9 @@ def test_types(record_keeper_triton_gpu_types):
         print(d)
     for d in defns:
         print(d)
-    for n in nbclasses:
+    for hdecl, hdefn, n in nbclasses:
+        for h in hdecl:
+            print(h)
+        for h in hdefn:
+            print(h)
         print(n)

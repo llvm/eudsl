@@ -35,15 +35,19 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_map.h>
 // ReSharper disable once CppUnusedIncludeDirective
+#include <nanobind/stl/shared_ptr.h>
+// ReSharper disable once CppUnusedIncludeDirective
 #include <nanobind/stl/string.h>
+// ReSharper disable once CppUnusedIncludeDirective
 #include <nanobind/stl/unique_ptr.h>
 // ReSharper disable once CppUnusedIncludeDirective
 #include <nanobind/stl/vector.h>
 
 #include "eudsl/util.h"
 // ReSharper disable once CppUnusedIncludeDirective
-#include "eudsl/type_casters.h"
 #include "eudsl/bind_vec_like.h"
+// ReSharper disable once CppUnusedIncludeDirective
+#include "eudsl/type_casters.h"
 
 namespace nb = nanobind;
 using namespace nb::literals;

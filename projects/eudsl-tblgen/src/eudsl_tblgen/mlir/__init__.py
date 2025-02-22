@@ -106,7 +106,11 @@ def emit_c_attr_or_type_builder(
         if isinstance(p, ArrayRefParam):
             defn += f"  {p.cpp_type} {p.param_name}_ = {{{p.param_name}, n{p.param_name}s}};\n"
         else:
-            rhs = f"unwrap({p.param_name})" if p.needs_wrap_unwrap() else p.param_name
+            rhs = (
+                f"llvm::cast<{p.cpp_type}>(unwrap({p.param_name}))"
+                if p.needs_wrap_unwrap()
+                else p.param_name
+            )
             defn += f"  {p.cpp_type} {p.param_name}_ = {rhs};\n"
     defn += f"  return wrap({class_name}::get(context, {', '.join([p.param_name + '_' for p in mapped_params])}));\n"
     defn += "}"
@@ -152,6 +156,37 @@ def emit_attr_or_type_nanobind_class(
 ):
     mapped_params = map_params(class_name, params)
 
+    mlir_attr_or_mlir_type = (
+        "MlirAttribute" if cclass_kind == CClassKind.ATTRIBUTE else "MlirType"
+    )
+
+    helper_decls = []
+    helper_defns = []
+    helper_decls.append(
+        f"MLIR_CAPI_EXPORTED MlirTypeID mlir{class_name}GetTypeID(void);"
+    )
+    helper_defns.append(
+        dedent(
+            f"""\
+    MlirTypeID mlir{class_name}GetTypeID() {{
+      return wrap({class_name}::getTypeID());
+    }}
+    """
+        )
+    )
+    helper_decls.append(
+        f"MLIR_CAPI_EXPORTED bool isaMlir{class_name}({mlir_attr_or_mlir_type} thing);"
+    )
+    helper_defns.append(
+        dedent(
+            f"""\
+    bool isaMlir{class_name}({mlir_attr_or_mlir_type} thing) {{
+      return isa<{class_name}>(unwrap(thing));
+    }}
+    """
+        )
+    )
+
     params_str = []
     for mp in mapped_params:
         if isinstance(mp, ArrayRefParam):
@@ -191,7 +226,7 @@ def emit_attr_or_type_nanobind_class(
         if isinstance(mp, ArrayRefParam):
             s += dedent(
                 f"""
-                nb{class_name}.def_property_readonly("{underscore(mp.param_name)}", []({'MlirAttribute' if cclass_kind == CClassKind.ATTRIBUTE else 'MlirType'} self) {{
+                nb{class_name}.def_property_readonly("{underscore(mp.param_name)}", []({mlir_attr_or_mlir_type} self) {{
                   unsigned n{mp.param_name}s;
                   {mp.c_element_type}* {mp.param_name}Ptr;
                   {mp.getter_name}(self, &{mp.param_name}Ptr, &n{mp.param_name}s);
@@ -208,7 +243,7 @@ def emit_attr_or_type_nanobind_class(
             """
             )
 
-    return s
+    return helper_decls, helper_defns, s
 
 
 def emit_decls_defns_nbclasses(cclass_kind: CClassKind, defs):
