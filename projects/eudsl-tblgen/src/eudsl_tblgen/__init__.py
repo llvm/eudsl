@@ -2,6 +2,7 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #  Copyright (c) 2024.
+from pathlib import Path
 from typing import List, Optional
 
 from .eudsl_tblgen_ext import *
@@ -96,3 +97,7 @@ def get_all_type_constraints(records: RecordKeeper):
             continue
         result.append(constr)
     return result
+
+
+def cmake_dir() -> str:
+    return str(Path(__file__).parent / "cmake")

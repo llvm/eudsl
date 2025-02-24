@@ -7,9 +7,15 @@ from dataclasses import dataclass
 import re
 from textwrap import dedent
 
-from inflection import underscore
-
 from .. import AttrOrTypeParameter
+
+
+# stolen from inflection
+def underscore(word: str) -> str:
+    word = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", word)
+    word = re.sub(r"([a-z\d])([A-Z])", r"\1_\2", word)
+    word = word.replace("-", "_")
+    return word.lower()
 
 
 def map_cpp_to_c_type(t):
