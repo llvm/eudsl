@@ -2,6 +2,7 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #  Copyright (c) 2024.
+from pathlib import Path
 from typing import List, Optional
 
 from .eudsl_tblgen_ext import *
@@ -48,23 +49,19 @@ def get_requested_op_definitions(records, op_inc_filter=None, op_exc_filter=None
 def collect_all_defs(
     record_keeper: RecordKeeper,
     selected_dialect: Optional[str] = None,
-) -> List[AttrOrTypeDef]:
+) -> List[Record]:
     records = record_keeper.get_defs()
     records = [records[d] for d in records]
     # Nothing to do if no defs were found.
     if not records:
         return []
 
-    defs = [
-        AttrOrTypeDef(rec)
-        for rec in records
-        if rec.get_value("builders") and rec.get_value("parameters")
-    ]
+    defs = [rec for rec in records if rec.get_value("dialect")]
     result_defs = []
 
     if not selected_dialect:
         # If a dialect was not specified, ensure that all found defs belong to the same dialect.
-        dialects = {definition.get_dialect().get_name() for definition in defs}
+        dialects = {d.get_value("dialect").get_value().get_as_string() for d in defs}
         if len(dialects) > 1:
             raise RuntimeError(
                 "Defs belong to more than one dialect. Must select one via '--(attr|type)defs-dialect'"
@@ -73,16 +70,24 @@ def collect_all_defs(
     else:
         # Otherwise, generate the defs that belong to the selected dialect.
         dialect_defs = [
-            definition
-            for definition in defs
-            if definition.get_dialect().get_name() == selected_dialect
+            d
+            for d in defs
+            if d.get_value("dialect").get_value().get_as_string() == selected_dialect
         ]
         result_defs.extend(dialect_defs)
 
     return result_defs
 
 
-def get_all_type_constraints(records: RecordKeeper) -> List[Constraint]:
+def collect_all_attr_or_type_defs(records: List[Record]):
+    return [
+        AttrOrTypeDef(rec)
+        for rec in records
+        if rec.get_value("builders") and rec.get_value("parameters")
+    ]
+
+
+def get_all_type_constraints(records: RecordKeeper):
     result = []
     for record in records.get_all_derived_definitions_if_defined("TypeConstraint"):
         # Ignore constraints defined outside of the top-level file.
@@ -92,3 +97,7 @@ def get_all_type_constraints(records: RecordKeeper) -> List[Constraint]:
             continue
         result.append(constr)
     return result
+
+
+def cmake_dir() -> str:
+    return str(Path(__file__).parent / "cmake")
