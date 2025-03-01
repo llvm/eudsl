@@ -72,3 +72,33 @@ def test_types(record_keeper_triton_gpu_types):
         for h in hdefn:
             print(h)
         print(n)
+
+
+@pytest.fixture(scope="function")
+def record_keeper_builtin_attributes():
+    here = Path(__file__).parent
+    return RecordKeeper().parse_td(
+        str(here / "td" / "BuiltinLocationAttributes.td"), [str(here / "td")]
+    )
+
+
+def test_builtin_attributes(record_keeper_builtin_attributes):
+    all_defs = collect_all_attr_or_type_defs(
+        collect_all_defs(record_keeper_builtin_attributes)
+    )
+    decls, defns, nbclasses = emit_decls_defns_nbclasses(CClassKind.ATTRIBUTE, all_defs)
+
+    print()
+    for d in decls:
+        print(d)
+    for hdecl, _hdefn, n in nbclasses:
+        for h in hdecl:
+            print(h)
+
+    for d in defns:
+        print(d)
+
+    for _hdecl, hdefn, n in nbclasses:
+        for h in hdefn:
+            print(h)
+        print(n)

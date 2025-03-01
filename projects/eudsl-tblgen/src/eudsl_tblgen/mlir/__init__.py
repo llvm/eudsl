@@ -18,13 +18,26 @@ def underscore(word: str) -> str:
     return word.lower()
 
 
+def camelize(string: str, uppercase_first_letter: bool = True) -> str:
+    if uppercase_first_letter:
+        return re.sub(r"(?:^|_)(.)", lambda m: m.group(1).upper(), string)
+    else:
+        return string[0].lower() + camelize(string)[1:]
+
+
 def map_cpp_to_c_type(t):
     if t in {"unsigned", "bool", "int8_t", "int16_t", "int32_t", "int64_t"}:
         return t
     if t in {"RankedTensorType", "Type"}:
         return "MlirType"
-    if t in {"Attribute", "CTALayoutAttr"}:
+    if t in {"Attribute", "CTALayoutAttr", "StringAttr"}:
         return "MlirAttribute"
+    if t in {"StringRef"}:
+        return "MlirStringRef"
+    if t in {"Location"}:
+        return "MlirLocation"
+    if t in {"TypeID"}:
+        return "MlirTypeID"
     warnings.warn(f"unrecognized cpp type {t}")
     return t
 
@@ -40,12 +53,21 @@ class Param:
     cpp_type: str
     param_def: AttrOrTypeParameter
 
+    @property
+    def py_param_name(self):
+        return underscore(self.param_name)
+
+    @property
+    def c_param_name(self):
+        return camelize(self.param_name, False)
+
+    @property
     def c_param_str(self):
-        return f"{self.c_type} {self.param_name}"
+        return f"{self.c_type} {self.c_param_name}"
 
     @property
     def getter_name(self):
-        return f"mlir{self.class_name}Get{self.param_name}"
+        return f"mlir{self.class_name}Get{camelize(self.param_name)}"
 
     # TODO(max): bad heuristic - should look inside param_def
     def needs_wrap_unwrap(self):
@@ -56,14 +78,21 @@ class Param:
 class ArrayRefParam(Param):
     c_element_type: str
 
+    @property
+    def c_count_param_name(self):
+        return f"n{camelize(self.param_name)}"
+
+    @property
     def c_param_str(self):
-        return f"{self.c_element_type} *{self.param_name}, unsigned n{self.param_name}s"
+        return f"{self.c_element_type} *{self.c_param_name}, unsigned {self.c_count_param_name}"
 
 
 def map_params(class_name, params: list[AttrOrTypeParameter]):
     mapped_params = []
     for p in params:
         cpp_ty = p.get_cpp_type()
+        if cpp_ty.startswith("::"):
+            cpp_ty = cpp_ty[2:]
         p_name = p.get_name()
         if "ArrayRef" in cpp_ty:
             element_ty = element_ty_reg.findall(cpp_ty)
@@ -100,8 +129,7 @@ def emit_c_attr_or_type_builder(
     cclass_kind: CClassKind, class_name, params: list[AttrOrTypeParameter]
 ):
     mapped_params = map_params(class_name, params)
-    sig = f"""{cclass_kind} mlir{class_name}{'Attr' if cclass_kind == CClassKind.ATTRIBUTE else 'Type'}Get({', '.join([p.c_param_str() for p in mapped_params])}, MlirContext mlirContext)"""
-    decl = f"""MLIR_CAPI_EXPORTED {sig};"""
+    sig = f"""{cclass_kind} mlir{class_name}{'Attr' if cclass_kind == CClassKind.ATTRIBUTE else 'Type'}Get({', '.join([p.c_param_str for p in mapped_params])}, MlirContext mlirContext)"""
     defn = dedent(
         f"""
     {sig} {{
@@ -110,41 +138,42 @@ def emit_c_attr_or_type_builder(
     )
     for p in mapped_params:
         if isinstance(p, ArrayRefParam):
-            defn += f"  {p.cpp_type} {p.param_name}_ = {{{p.param_name}, n{p.param_name}s}};\n"
+            defn += f"  {p.cpp_type} {p.param_name}_ = {{{p.c_param_name}, {p.c_count_param_name}}};\n"
         else:
-            rhs = (
-                f"llvm::cast<{p.cpp_type}>(unwrap({p.param_name}))"
-                if p.needs_wrap_unwrap()
-                else p.param_name
-            )
-            defn += f"  {p.cpp_type} {p.param_name}_ = {rhs};\n"
-    defn += f"  return wrap({class_name}::get(context, {', '.join([p.param_name + '_' for p in mapped_params])}));\n"
+            if p.needs_wrap_unwrap():
+                rhs = f"llvm::cast<{p.cpp_type}>(unwrap({p.c_param_name}))"
+                defn += f"  {p.cpp_type} {p.c_param_name}_ = {rhs};\n"
+    defn += f"  return wrap({class_name}::get(context, {', '.join([(p.c_param_name + '_' if p.needs_wrap_unwrap() else p.c_param_name) for p in mapped_params])}));\n"
     defn += "}"
 
+    decl = dedent(
+        f"""\
+            /// {'Attribute' if cclass_kind == CClassKind.ATTRIBUTE else 'Type'} builder for {class_name}
+            MLIR_CAPI_EXPORTED {sig};
+        """
+    )
     return decl, defn
 
 
 def emit_c_attr_or_type_field_getter(
     cclass_kind: CClassKind, class_name, param: AttrOrTypeParameter
 ):
-    mapped_param = map_params(class_name, [param])[0]
-    if isinstance(mapped_param, ArrayRefParam):
-        sig = f"""void {mapped_param.getter_name}({cclass_kind} mlir{class_name}, {mapped_param.c_element_type}** {mapped_param.param_name}Ptr, unsigned *n{mapped_param.param_name}s)"""
-        decl = f"MLIR_CAPI_EXPORTED {sig};"
+    mp = map_params(class_name, [param])[0]
+    if isinstance(mp, ArrayRefParam):
+        sig = f"""void {mp.getter_name}({cclass_kind} mlir{class_name}, {mp.c_element_type}** {mp.c_param_name}CPtr, unsigned *{mp.c_count_param_name})"""
         defn = dedent(
             f"""
         {sig} {{
-          {mapped_param.param_def.get_cpp_accessor_type()} {mapped_param.param_name} = llvm::cast<{class_name}>(unwrap(mlir{class_name})).{mapped_param.param_def.get_accessor_name()}();
-          *n{mapped_param.param_name}s = {mapped_param.param_name}.size();
-          *{mapped_param.param_name}Ptr = const_cast<{mapped_param.c_element_type}*>({mapped_param.param_name}.data());
+          {mp.cpp_type} {mp.param_name} = llvm::cast<{class_name}>(unwrap(mlir{class_name})).{mp.param_def.get_accessor_name()}();
+          *{mp.c_count_param_name} = {mp.param_name}.size();
+          *{mp.c_param_name}CPtr = const_cast<{mp.c_element_type}*>({mp.param_name}.data());
         }}
         """
         )
     else:
-        sig = f"""{mapped_param.c_type} {mapped_param.getter_name}({cclass_kind} mlir{class_name})"""
-        decl = f"""MLIR_CAPI_EXPORTED {sig};"""
-        ret = f"llvm::cast<{class_name}>(unwrap(mlir{class_name})).{mapped_param.param_def.get_accessor_name()}()"
-        if mapped_param.needs_wrap_unwrap():
+        sig = f"""{mp.c_type} {mp.getter_name}({cclass_kind} mlir{class_name})"""
+        ret = f"llvm::cast<{class_name}>(unwrap(mlir{class_name})).{mp.param_def.get_accessor_name()}()"
+        if mp.needs_wrap_unwrap():
             ret = f"wrap({ret})"
         defn = dedent(
             f"""
@@ -154,6 +183,12 @@ def emit_c_attr_or_type_field_getter(
         """
         )
 
+    decl = dedent(
+        f"""\
+            /// Getter for {mp.param_name} of {class_name}
+            MLIR_CAPI_EXPORTED {sig};
+        """
+    )
     return decl, defn
 
 
@@ -169,7 +204,12 @@ def emit_attr_or_type_nanobind_class(
     helper_decls = []
     helper_defns = []
     helper_decls.append(
-        f"MLIR_CAPI_EXPORTED MlirTypeID mlir{class_name}GetTypeID(void);"
+        dedent(
+            f"""\
+                /// TypeID Getter for {class_name}
+                MLIR_CAPI_EXPORTED MlirTypeID mlir{class_name}GetTypeID(void);
+            """
+        )
     )
     helper_defns.append(
         dedent(
@@ -181,7 +221,11 @@ def emit_attr_or_type_nanobind_class(
         )
     )
     helper_decls.append(
-        f"MLIR_CAPI_EXPORTED bool isaMlir{class_name}({mlir_attr_or_mlir_type} thing);"
+        dedent(
+            f"""\
+                MLIR_CAPI_EXPORTED bool isaMlir{class_name}({mlir_attr_or_mlir_type} thing);
+            """
+        )
     )
     helper_defns.append(
         dedent(
@@ -211,10 +255,10 @@ def emit_attr_or_type_nanobind_class(
     help_str = []
     for mp in mapped_params:
         if isinstance(mp, ArrayRefParam):
-            arg_str.append(f"{mp.param_name}.data(), {mp.param_name}.size()")
+            arg_str.append(f"{mp.c_param_name}.data(), {mp.c_param_name}.size()")
         else:
-            arg_str.append(f"{mp.param_name}")
-        help_str.append(f'"{underscore(mp.param_name)}"_a')
+            arg_str.append(f"{mp.c_param_name}")
+        help_str.append(f'"{mp.py_param_name}"_a')
     arg_str.append("context")
     arg_str = ", ".join(arg_str)
 
@@ -232,18 +276,18 @@ def emit_attr_or_type_nanobind_class(
         if isinstance(mp, ArrayRefParam):
             s += dedent(
                 f"""
-                nb{class_name}.def_property_readonly("{underscore(mp.param_name)}", []({mlir_attr_or_mlir_type} self) {{
-                  unsigned n{mp.param_name}s;
-                  {mp.c_element_type}* {mp.param_name}Ptr;
-                  {mp.getter_name}(self, &{mp.param_name}Ptr, &n{mp.param_name}s);
-                  return std::vector<{mp.c_element_type}>{{{mp.param_name}Ptr, {mp.param_name}Ptr + n{mp.param_name}s}};
+                nb{class_name}.def_property_readonly("{mp.py_param_name}", []({mlir_attr_or_mlir_type} self) {{
+                  unsigned {mp.c_count_param_name};
+                  {mp.c_element_type}* {mp.c_param_name};
+                  {mp.getter_name}(self, &{mp.c_param_name}, &{mp.c_count_param_name});
+                  return std::vector<{mp.c_element_type}>{{{mp.c_param_name}, {mp.c_param_name} + {mp.c_count_param_name}}};
                 }});
             """
             )
         else:
             s += dedent(
                 f"""
-                nb{class_name}.def_property_readonly("{underscore(mp.param_name)}", []({'MlirAttribute' if cclass_kind == CClassKind.ATTRIBUTE else 'MlirType'} self) {{
+                nb{class_name}.def_property_readonly("{mp.py_param_name}", []({'MlirAttribute' if cclass_kind == CClassKind.ATTRIBUTE else 'MlirType'} self) {{
                   return {mp.getter_name}(self);
                 }});
             """
@@ -259,8 +303,6 @@ def emit_decls_defns_nbclasses(cclass_kind: CClassKind, defs):
     for d in defs:
         params = list(d.get_parameters())
         if params:
-            base_class_name = d.get_cpp_base_class_name()
-            assert base_class_name in {"::mlir::Attribute", "::mlir::Type"}
             class_name = d.get_cpp_class_name()
             decl, defn = emit_c_attr_or_type_builder(cclass_kind, class_name, params)
             decls.append(decl)
