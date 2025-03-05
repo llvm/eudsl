@@ -110,7 +110,7 @@ def emit_c_attr_or_type_builder(
     cclass_kind: CClassKind, class_name, params: list[AttrOrTypeParameter]
 ):
     mapped_params = map_params(class_name, params)
-    sig = f"""{cclass_kind} mlir{class_name}{'Attr' if cclass_kind == CClassKind.ATTRIBUTE else 'Type'}Get({', '.join([p.c_param_str() for p in mapped_params])}, MlirContext mlirContext)"""
+    sig = f"""{cclass_kind} mlir{class_name}{cclass_kind.replace('Mlir', '')}Get({', '.join([p.c_param_str() for p in mapped_params])}, MlirContext mlirContext)"""
     decl = f"""MLIR_CAPI_EXPORTED {sig};"""
     defn = dedent(
         f"""
@@ -172,10 +172,6 @@ def emit_attr_or_type_nanobind_class(
 ):
     mapped_params = map_params(class_name, params)
 
-    mlir_attr_or_mlir_type = (
-        "MlirAttribute" if cclass_kind == CClassKind.ATTRIBUTE else "MlirType"
-    )
-
     helper_decls = []
     helper_defns = []
     helper_decls.append(
@@ -191,12 +187,12 @@ def emit_attr_or_type_nanobind_class(
         )
     )
     helper_decls.append(
-        f"MLIR_CAPI_EXPORTED bool isaMlir{class_name}({mlir_attr_or_mlir_type} thing);"
+        f"MLIR_CAPI_EXPORTED bool isaMlir{class_name}({cclass_kind} thing);"
     )
     helper_defns.append(
         dedent(
             f"""\
-    bool isaMlir{class_name}({mlir_attr_or_mlir_type} thing) {{
+    bool isaMlir{class_name}({cclass_kind} thing) {{
       return isa<{class_name}>(unwrap(thing));
     }}
     """
@@ -215,7 +211,7 @@ def emit_attr_or_type_nanobind_class(
     params_str = ", ".join(params_str)
     s = dedent(
         f"""
-        auto nb{class_name} = {'mlir_attribute_subclass' if cclass_kind == CClassKind.ATTRIBUTE else 'mlir_type_subclass'}(m, "{class_name}", isaMlir{class_name}, mlir{class_name}GetTypeID);
+        auto nb{class_name} = {underscore(cclass_kind)}_subclass(m, "{class_name}", isaMlir{class_name}, mlir{class_name}GetTypeID);
         nb{class_name}.def_staticmethod("get", []({params_str}, MlirContext context) {{
         """
     )
@@ -230,7 +226,7 @@ def emit_attr_or_type_nanobind_class(
                 arg_str.append(f"{mp.param_name}.data(), {mp.param_name}.size()")
         else:
             if mp.is_optional:
-                arg_str.append(f"{mp.param_name}.has_value() ? *{mp.param_name} : {{nullptr}}")
+                arg_str.append(f"{mp.param_name}.has_value() ? *{mp.param_name} : {cclass_kind}{{nullptr}}")
             else:
                 arg_str.append(f"{mp.param_name}")
         if mp.is_optional:
@@ -245,7 +241,7 @@ def emit_attr_or_type_nanobind_class(
 
     s += dedent(
         f"""\
-        return mlir{class_name}{'Attr' if cclass_kind == CClassKind.ATTRIBUTE else 'Type'}Get({arg_str});
+        return mlir{class_name}{cclass_kind.replace('Mlir', '')}Get({arg_str});
     }}, {help_str});
     """
     )
@@ -254,7 +250,7 @@ def emit_attr_or_type_nanobind_class(
         if isinstance(mp, ArrayRefParam):
             s += dedent(
                 f"""
-                nb{class_name}.def_property_readonly("{underscore(mp.param_name)}", []({mlir_attr_or_mlir_type} self) {{
+                nb{class_name}.def_property_readonly("{underscore(mp.param_name)}", []({cclass_kind} self) {{
                   unsigned n{mp.param_name}s;
                   {mp.c_element_type}* {mp.param_name}Ptr;
                   {mp.getter_name}(self, &{mp.param_name}Ptr, &n{mp.param_name}s);
@@ -265,7 +261,7 @@ def emit_attr_or_type_nanobind_class(
         else:
             s += dedent(
                 f"""
-                nb{class_name}.def_property_readonly("{underscore(mp.param_name)}", []({'MlirAttribute' if cclass_kind == CClassKind.ATTRIBUTE else 'MlirType'} self) {{
+                nb{class_name}.def_property_readonly("{underscore(mp.param_name)}", []({cclass_kind} self) {{
                   return {mp.getter_name}(self);
                 }});
             """
