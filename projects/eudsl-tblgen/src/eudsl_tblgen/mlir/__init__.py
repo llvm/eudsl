@@ -5,6 +5,7 @@
 import warnings
 from dataclasses import dataclass
 import re
+from functools import lru_cache
 from textwrap import dedent
 
 from .. import AttrOrTypeParameter
@@ -32,7 +33,7 @@ def map_cpp_to_c_type(t):
 element_ty_reg = re.compile(r"ArrayRef<(\w+)>")
 
 
-@dataclass
+@dataclass(frozen=True)
 class Param:
     class_name: str
     param_name: str
@@ -40,22 +41,31 @@ class Param:
     cpp_type: str
     param_def: AttrOrTypeParameter
 
+    @lru_cache(maxsize=1)
     def c_param_str(self):
         return f"{self.c_type} {self.param_name}"
 
     @property
+    @lru_cache(maxsize=1)
     def getter_name(self):
         return f"mlir{self.class_name}Get{self.param_name}"
 
     # TODO(max): bad heuristic - should look inside param_def
+    @lru_cache(maxsize=1)
     def needs_wrap_unwrap(self):
         return self.cpp_type != self.c_type
 
+    @property
+    @lru_cache(maxsize=1)
+    def is_optional(self):
+        return self.param_def.is_optional()
 
-@dataclass
+
+@dataclass(frozen=True)
 class ArrayRefParam(Param):
     c_element_type: str
 
+    @lru_cache(maxsize=1)
     def c_param_str(self):
         return f"{self.c_element_type} *{self.param_name}, unsigned n{self.param_name}s"
 
@@ -196,9 +206,12 @@ def emit_attr_or_type_nanobind_class(
     params_str = []
     for mp in mapped_params:
         if isinstance(mp, ArrayRefParam):
-            params_str.append(f"std::vector<{mp.c_element_type}> &{mp.param_name}")
+            typ = f"std::vector<{mp.c_element_type}>&"
         else:
-            params_str.append(f"{mp.c_type} {mp.param_name}")
+            typ = f"{mp.c_type}"
+        if mp.is_optional:
+            typ = f"std::optional<{typ}>"
+        params_str.append(f"{typ} {mp.param_name}")
     params_str = ", ".join(params_str)
     s = dedent(
         f"""
@@ -211,10 +224,19 @@ def emit_attr_or_type_nanobind_class(
     help_str = []
     for mp in mapped_params:
         if isinstance(mp, ArrayRefParam):
-            arg_str.append(f"{mp.param_name}.data(), {mp.param_name}.size()")
+            if mp.is_optional:
+                arg_str.append(f"{mp.param_name}.has_value() ? {mp.param_name}.data() : nullptr, {mp.param_name}.has_value() ? {mp.param_name}.size() : 0")
+            else:
+                arg_str.append(f"{mp.param_name}.data(), {mp.param_name}.size()")
         else:
-            arg_str.append(f"{mp.param_name}")
-        help_str.append(f'"{underscore(mp.param_name)}"_a')
+            if mp.is_optional:
+                arg_str.append(f"{mp.param_name}.has_value() ? {mp.param_name} : nullptr")
+            else:
+                arg_str.append(f"{mp.param_name}")
+        if mp.is_optional:
+            help_str.append(f'"{underscore(mp.param_name)}"_a = nb::none()')
+        else:
+            help_str.append(f'"{underscore(mp.param_name)}"_a')
     arg_str.append("context")
     arg_str = ", ".join(arg_str)
 
