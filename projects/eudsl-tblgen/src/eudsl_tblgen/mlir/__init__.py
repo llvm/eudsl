@@ -230,7 +230,7 @@ def emit_attr_or_type_nanobind_class(
                 arg_str.append(f"{mp.param_name}.data(), {mp.param_name}.size()")
         else:
             if mp.is_optional:
-                arg_str.append(f"{mp.param_name}.has_value() ? *{mp.param_name} : nullptr")
+                arg_str.append(f"{mp.param_name}.has_value() ? *{mp.param_name} : {{nullptr}}")
             else:
                 arg_str.append(f"{mp.param_name}")
         if mp.is_optional:
