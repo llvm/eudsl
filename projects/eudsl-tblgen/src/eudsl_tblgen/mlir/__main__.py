@@ -43,9 +43,13 @@ class EnumAction(argparse.Action):
         setattr(namespace, self.dest, value)
 
 
-def emit_attrs_or_types(kind, rk, output_dir, output_prefix):
+def emit_attrs_or_types(
+    kind, rk, output_dir, output_prefix, include=None, exclude=None
+):
     all_defs = collect_all_attr_or_type_defs(collect_all_defs(rk))
-    decls, defns, nbclasses = emit_decls_defns_nbclasses(kind, all_defs)
+    decls, defns, nbclasses = emit_decls_defns_nbclasses(
+        kind, all_defs, include, exclude
+    )
 
     attr_decls = open(output_dir / f"{output_prefix}_{kind}_decls.h.inc", "w")
     attr_defns = open(output_dir / f"{output_prefix}_{kind}_defns.cpp.inc", "w")
@@ -74,7 +78,14 @@ def main(args):
         str(args.td_file),
         [str(ip) for ip in args.include_paths],
     )
-    emit_attrs_or_types(args.kind, defs_rk, args.output_dir, args.output_prefix)
+    emit_attrs_or_types(
+        args.kind,
+        defs_rk,
+        args.output_dir,
+        args.output_prefix,
+        include=args.include,
+        exclude=args.exclude,
+    )
 
 
 if __name__ == "__main__":
@@ -83,8 +94,18 @@ if __name__ == "__main__":
     args.add_argument("-o", "--output-dir", type=Path, required=True)
     args.add_argument("-k", "--kind", type=CClassKind, action=EnumAction, required=True)
     args.add_argument("-I", "--include-paths", nargs="+", type=Path, required=True)
+    args.add_argument("--exclude", nargs="*")
+    args.add_argument("--include", nargs="*")
 
     args = args.parse_args()
+    if args.include:
+        args.include = set(args.include)
+    else:
+        args.include = None
+    if args.exclude:
+        args.exclude = set(args.exclude)
+    else:
+        args.exclude = None
     args.output_prefix = Path(args.td_file).stem
 
     main(args)

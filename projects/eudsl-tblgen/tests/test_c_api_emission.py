@@ -40,19 +40,32 @@ def test_attrs(record_keeper_triton_gpu_attrs):
     all_defs = collect_all_attr_or_type_defs(
         collect_all_defs(record_keeper_triton_gpu_attrs)
     )
-    decls, defns, nbclasses = emit_decls_defns_nbclasses(CClassKind.ATTRIBUTE, all_defs)
+    decls, defns, nbclasses = emit_decls_defns_nbclasses(
+        CClassKind.ATTRIBUTE, all_defs, exclude={"BlockedEncodingAttr", "SliceEncodingAttr"}
+    )
 
-    print()
-    for d in decls:
-        print(d)
-    for d in defns:
-        print(d)
+    dump_dir = Path(__file__).parent
+
+    with open(f"{dump_dir}/TritonGPUAttrDefs_MlirAttribute_decls.h.inc", "w") as f:
+        for d in decls:
+            print(d, file=f)
+    with open(f"{dump_dir}/TritonGPUAttrDefs_MlirAttribute_defns.cpp.inc", "w") as f:
+        for d in defns:
+            print(d, file=f)
     for hdecl, hdefn, n in nbclasses:
-        for h in hdecl:
-            print(h)
-        for h in hdefn:
-            print(h)
-        print(n)
+        with open(f"{dump_dir}/TritonGPUAttrDefs_MlirAttribute_decls.h.inc", "a") as f:
+            for h in hdecl:
+                print(h, file=f)
+        with open(
+            f"{dump_dir}/TritonGPUAttrDefs_MlirAttribute_defns.cpp.inc", "a"
+        ) as f:
+            for h in hdefn:
+                print(h, file=f)
+    with open(
+        f"{dump_dir}/TritonGPUAttrDefs_MlirAttribute_nbclasses.cpp.inc", "w"
+    ) as f:
+        for *_, n in nbclasses:
+            print(n, file=f)
 
 
 def test_types(record_keeper_triton_gpu_types):
@@ -60,15 +73,21 @@ def test_types(record_keeper_triton_gpu_types):
         collect_all_defs(record_keeper_triton_gpu_types)
     )
     decls, defns, nbclasses = emit_decls_defns_nbclasses(CClassKind.TYPE, all_defs)
+    dump_dir = Path(__file__).parent
 
-    print()
-    for d in decls:
-        print(d)
-    for d in defns:
-        print(d)
+    with open(f"{dump_dir}/TritonGPUTypes_MlirType_decls.h.inc", "w") as f:
+        for d in decls:
+            print(d, file=f)
+    with open(f"{dump_dir}/TritonGPUTypes_MlirType_defns.cpp.inc", "w") as f:
+        for d in defns:
+            print(d, file=f)
     for hdecl, hdefn, n in nbclasses:
-        for h in hdecl:
-            print(h)
-        for h in hdefn:
-            print(h)
-        print(n)
+        with open(f"{dump_dir}/TritonGPUTypes_MlirType_decls.h.inc", "a") as f:
+            for h in hdecl:
+                print(h, file=f)
+        with open(f"{dump_dir}/TritonGPUTypes_MlirType_defns.cpp.inc", "a") as f:
+            for h in hdefn:
+                print(h, file=f)
+    with open(f"{dump_dir}/TritonGPUTypes_MlirType_nbclasses.cpp.inc", "w") as f:
+        for *_, n in nbclasses:
+            print(n, file=f)
