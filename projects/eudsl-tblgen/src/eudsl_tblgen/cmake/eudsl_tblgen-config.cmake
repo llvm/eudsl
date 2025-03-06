@@ -6,7 +6,7 @@
 # copy-pasta from AddMLIR.cmake/AddLLVM.cmake/TableGen.cmake
 
 function(eudsl_tblgen target)
-  cmake_parse_arguments(ARG "" "TD_FILE;OUTPUT_DIRECTORY;KIND" "INCLUDES;DEPENDS" ${ARGN})
+  cmake_parse_arguments(ARG "" "TD_FILE;OUTPUT_DIRECTORY;KIND" "INCLUDES;DEPENDS;INCLUDE;EXCLUDE" ${ARGN})
   if (IS_ABSOLUTE ${ARG_TD_FILE})
     set(EUDSL_TBLGEN_TD_FILE_INPUT_ABSOLUTE ${ARG_TD_FILE})
   else()
@@ -27,6 +27,8 @@ function(eudsl_tblgen target)
     ${Python_EXECUTABLE} -Wignore -m eudsl_tblgen.mlir ${EUDSL_TBLGEN_TD_FILE_INPUT_ABSOLUTE}
     -k ${ARG_KIND} -I ${eudsl_tblgen_includes}
     -o "${ARG_OUTPUT_DIRECTORY}"
+    --include ${ARG_INCLUDE}
+    --exclude ${ARG_EXCLUDE}
   )
 
   get_filename_component(_prefix ${EUDSL_TBLGEN_TD_FILE_INPUT_ABSOLUTE} NAME_WE)
