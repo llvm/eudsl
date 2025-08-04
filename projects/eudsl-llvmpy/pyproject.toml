@@ -18,7 +18,7 @@ requires = [
     "nanobind==2.4.0",
     "ninja",
     "scikit-build-core==0.10.7",
-    "typing_extensions==4.12.2",
+    "typing_extensions>=4.12.2",
 ]
 build-backend = "scikit_build_core.build"
 
