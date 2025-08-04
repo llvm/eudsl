@@ -111,11 +111,21 @@ runs:
       uses: aminya/setup-cpp@v1
       if: ${{ startsWith(inputs.os, 'almalinux') || startsWith(inputs.os, 'ubuntu') || startsWith(inputs.os, 'windows') }}
       with:
-        compiler: llvm-18
+        # https://github.com/actions/runner-images/issues/12435
+        compiler: ${{ startsWith(inputs.os, 'windows') && 'llvm-19' || 'llvm-18' }}
         cmake: true
         ninja: true
         ccache: ${{ startsWith(inputs.os, 'windows') || startsWith(inputs.os, 'ubuntu') }}
         vcvarsall: ${{ startsWith(inputs.os, 'windows') }}
+
+    # https://github.com/llvm/llvm-project/issues/86250
+    - name: install DIA SDK
+      if: startsWith(inputs.os, 'windows')
+      shell: bash
+      run: |
+        set -x
+        mkdir -p "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise" || true
+        cp -rv "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/DIA SDK" "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/DIA SDK"
 
     - name: "Set CC/CXX"
       shell: bash
