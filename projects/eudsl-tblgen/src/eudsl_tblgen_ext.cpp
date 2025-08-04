@@ -912,8 +912,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                    recordValsInst.type().is(recordValsInstTy) &&
                    !nb::inst_ready(recordValsInst));
 
-            std::vector<llvm::RecordVal> values = self.getValues();
-            for (const llvm::RecordVal &recordVal : values) {
+            for (const llvm::RecordVal &recordVal : self.getValues()) {
               nb::setattr(recordValsInst, recordVal.getName().str().c_str(),
                           nb::borrow(nb::cast(recordVal)));
             }
