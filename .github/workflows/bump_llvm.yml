@@ -37,7 +37,8 @@ jobs:
           echo "LLVM_SHA_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           popd
 
-      - uses: actions/create-github-app-token@v1
+      - name: Generate token
+        uses: actions/create-github-app-token@v1
         id: generate-token
         with:
           app-id: ${{ secrets.BUMP_LLVM_CREATE_PR_APP_ID }}
