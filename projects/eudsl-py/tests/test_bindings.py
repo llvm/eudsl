@@ -70,7 +70,7 @@ def test_arith_dialect():
     ctx.load_all_available_dialects()
     l = OpBuilder.Listener()
     b = OpBuilder(ctx, l)
-    mod1 = ModuleOp.create(b.unknown_loc, "foo")
+    mod1 = ModuleOp.create(b, b.unknown_loc, "foo")
     b.set_insertion_point_to_start(mod1.body_region.blocks[0])
     f32_ty = Float32Type.get(ctx)
     f32_attr = FloatAttr.get(f32_ty, 1.0)

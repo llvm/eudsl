@@ -115,7 +115,7 @@ static clang::PrintingPolicy getPrintingPolicy(bool canonical = true) {
   p.FullyQualifiedName = true;
   p.SuppressScope = false;
   p.SuppressInlineNamespace = false;
-  p.PrintCanonicalTypes = canonical;
+  p.PrintAsCanonical = canonical;
   p.Bool = true;
 
   return p;
