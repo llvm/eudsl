@@ -86,7 +86,7 @@ jobs:
 
     runs-on: ${{ matrix.runs-on }}
 
-    name: ${{ matrix.name }}
+    name: build-llvm-mlir ${{ matrix.name }}
 
     defaults:
       run:
