@@ -44,6 +44,7 @@ jobs:
           private-key: ${{ secrets.BUMP_LLVM_CREATE_PR_APP_PRIVATE_KEY }}
 
       - name: "Create Pull Request"
+        id: cpr
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ steps.generate-token.outputs.token }}
@@ -58,7 +59,14 @@ jobs:
           reviewers: makslevental
 
       - uses: peter-evans/enable-pull-request-automerge@v3
+        if: steps.cpr.outputs.pull-request-operation == 'created'
         with:
           token: ${{ steps.generate-token.outputs.token }}
-          pull-request-number: ${{ github.event.pull_request.number }}
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          
+      - name: Auto approve
+        if: steps.cpr.outputs.pull-request-operation == 'created'
+        run: gh pr review --approve "${{ steps.cpr.outputs.pull-request-number }}"
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
           merge-method: squash
