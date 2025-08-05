@@ -296,6 +296,8 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
     vararg = NewType("vararg", ValueRef)
     metadata = NewType("metadata", ValueRef)
     
+    flat_ptr = NewType("flat_ptr", ValueRef)
+    
     _T = TypeVar('_T')
     
     class LLVMQualPointerType(Generic[_T]):

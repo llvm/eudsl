@@ -903,9 +903,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_direct_super_classes",
            [](const llvm::Record &self) -> std::vector<const llvm::Record *> {
              llvm::SmallVector<const llvm::Record *> Classes;
-             for (auto [rec, _] : self.getDirectSuperClasses()) {
+             for (auto [rec, _] : self.getDirectSuperClasses())
                Classes.push_back(rec);
-             }
              return {Classes.begin(), Classes.end()};
            })
       .def(
