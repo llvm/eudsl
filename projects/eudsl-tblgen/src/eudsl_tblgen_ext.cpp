@@ -418,9 +418,9 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                 return v.getElement(eudsl::wrap(i, v.size()));
               },
               nb::rv_policy::reference_internal)
-          .def("get_values",
+          .def("get_elements",
                eudsl::coerceReturn<std::vector<const llvm::Init *>>(
-                   &llvm::ListInit::getValues, nb::const_));
+                   &llvm::ListInit::getElements, nb::const_));
 
   auto llvm_OpInit = nb::class_<llvm::OpInit, llvm::TypedInit>(m, "OpInit")
                          .def_static("classof", &llvm::OpInit::classof, "i"_a)
@@ -773,8 +773,14 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            nb::rv_policy::reference_internal)
       .def("name_end", &llvm::DagInit::name_end,
            nb::rv_policy::reference_internal)
-      .def("name_size", &llvm::DagInit::name_size)
-      .def("name_empty", &llvm::DagInit::name_empty)
+      .def("name_size",
+           [](const llvm::DagInit &init) {
+             return std::distance(init.name_begin(), init.name_end());
+           })
+      .def("name_empty",
+           [](const llvm::DagInit &init) {
+             return std::distance(init.name_begin(), init.name_end()) == 0;
+           })
       .def("get_bit", &llvm::DagInit::getBit, "bit"_a,
            nb::rv_policy::reference_internal)
       .def("get_arg_names",
@@ -854,7 +860,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            [](const nb::object &self) {
              nb::str s{"RecordValues("};
              auto dic = nb::cast<nb::dict>(nb::getattr(self, "__dict__"));
-             int i = 0;
+             size_t i = 0;
              for (auto [key, value] : dic) {
                s += key + nb::str("=") +
                     nb::str(nb::cast<llvm::RecordVal>(value)
@@ -897,7 +903,9 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_direct_super_classes",
            [](const llvm::Record &self) -> std::vector<const llvm::Record *> {
              llvm::SmallVector<const llvm::Record *> Classes;
-             self.getDirectSuperClasses(Classes);
+             for (auto [rec, _] : self.getDirectSuperClasses()) {
+               Classes.push_back(rec);
+             }
              return {Classes.begin(), Classes.end()};
            })
       .def(
@@ -950,12 +958,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_dumps", &llvm::Record::getDumps)
       .def(
           "get_super_classes",
-          [](llvm::Record &self) {
-            std::vector<const llvm::Record *> classes;
-            for (auto [rec, _] : self.getSuperClasses())
-              classes.push_back(rec);
-            return classes;
-          },
+          [](llvm::Record &self) { return self.getSuperClasses(); },
           nb::rv_policy::reference_internal)
       .def("has_direct_super_class", &llvm::Record::hasDirectSuperClass,
            "super_class"_a)
@@ -1016,7 +1019,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
             return self.isSubClassOf(Name);
           },
           "name"_a)
-      .def("add_super_class", &llvm::Record::addSuperClass, "r"_a, "range"_a)
+      .def("add_direct_super_class", &llvm::Record::addDirectSuperClass, "r"_a,
+           "range"_a)
       .def(
           "resolve_references",
           [](llvm::Record &self, const llvm::Init *NewName) -> void {
@@ -1327,61 +1331,59 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def("get_constant_value",
                &mlir::tblgen::ConstantAttr::getConstantValue);
 
-  auto mlir_tblgen_EnumAttrCase =
-      nb::class_<mlir::tblgen::EnumAttrCase, mlir::tblgen::Attribute>(
-          m, "EnumAttrCase")
+  auto mlir_tblgen_EnumCase =
+      nb::class_<mlir::tblgen::EnumCase>(m, "EnumCase")
           .def(nb::init<const llvm::Record *>(), "record"_a)
           .def(nb::init<const llvm::DefInit *>(), "init"_a)
-          .def("get_symbol", &mlir::tblgen::EnumAttrCase::getSymbol)
-          .def("get_str", &mlir::tblgen::EnumAttrCase::getStr)
-          .def("get_value", &mlir::tblgen::EnumAttrCase::getValue);
+          .def("get_symbol", &mlir::tblgen::EnumCase::getSymbol)
+          .def("get_str", &mlir::tblgen::EnumCase::getStr)
+          .def("get_value", &mlir::tblgen::EnumCase::getValue);
 
-  mlir_tblgen_EnumAttrCase.def("get_def", &mlir::tblgen::EnumAttrCase::getDef,
-                               nb::rv_policy::reference_internal);
+  mlir_tblgen_EnumCase.def("get_def", &mlir::tblgen::EnumCase::getDef,
+                           nb::rv_policy::reference_internal);
 
-  auto mlir_tblgen_EnumAttr =
-      nb::class_<mlir::tblgen::EnumAttr, mlir::tblgen::Attribute>(m, "EnumAttr")
+  auto mlir_tblgen_EnumInfo =
+      nb::class_<mlir::tblgen::EnumInfo>(m, "EnumInfo")
           .def(nb::init<const llvm::Record *>(), "record"_a)
           .def(nb::init<const llvm::Record &>(), "record"_a)
           .def(nb::init<const llvm::DefInit *>(), "init"_a)
-          .def_static("classof", &mlir::tblgen::EnumAttr::classof, "attr"_a)
-          .def("is_bit_enum", &mlir::tblgen::EnumAttr::isBitEnum)
-          .def("get_enum_class_name", &mlir::tblgen::EnumAttr::getEnumClassName)
-          .def("get_cpp_namespace", &mlir::tblgen::EnumAttr::getCppNamespace)
+          .def("is_bit_enum", &mlir::tblgen::EnumInfo::isBitEnum)
+          .def("get_enum_class_name", &mlir::tblgen::EnumInfo::getEnumClassName)
+          .def("get_cpp_namespace", &mlir::tblgen::EnumInfo::getCppNamespace)
           .def("get_underlying_type",
-               &mlir::tblgen::EnumAttr::getUnderlyingType)
+               &mlir::tblgen::EnumInfo::getUnderlyingType)
           .def("get_underlying_to_symbol_fn_name",
-               &mlir::tblgen::EnumAttr::getUnderlyingToSymbolFnName)
+               &mlir::tblgen::EnumInfo::getUnderlyingToSymbolFnName)
           .def("get_string_to_symbol_fn_name",
-               &mlir::tblgen::EnumAttr::getStringToSymbolFnName)
+               &mlir::tblgen::EnumInfo::getStringToSymbolFnName)
           .def("get_symbol_to_string_fn_name",
-               &mlir::tblgen::EnumAttr::getSymbolToStringFnName)
+               &mlir::tblgen::EnumInfo::getSymbolToStringFnName)
           .def("get_symbol_to_string_fn_ret_type",
-               &mlir::tblgen::EnumAttr::getSymbolToStringFnRetType)
+               &mlir::tblgen::EnumInfo::getSymbolToStringFnRetType)
           .def("get_max_enum_val_fn_name",
-               &mlir::tblgen::EnumAttr::getMaxEnumValFnName)
-          .def("get_all_cases", &mlir::tblgen::EnumAttr::getAllCases)
+               &mlir::tblgen::EnumInfo::getMaxEnumValFnName)
+          .def("get_all_cases", &mlir::tblgen::EnumInfo::getAllCases)
           .def("gen_specialized_attr",
-               &mlir::tblgen::EnumAttr::genSpecializedAttr)
-          .def("get_base_attr_class", &mlir::tblgen::EnumAttr::getBaseAttrClass,
+               &mlir::tblgen::EnumInfo::genSpecializedAttr)
+          .def("get_base_attr_class", &mlir::tblgen::EnumInfo::getBaseAttrClass,
                nb::rv_policy::reference_internal)
           .def("get_specialized_attr_class_name",
-               &mlir::tblgen::EnumAttr::getSpecializedAttrClassName);
+               &mlir::tblgen::EnumInfo::getSpecializedAttrClassName);
 
-  mlir_tblgen_EnumAttr.def("print_bit_enum_primary_groups",
-                           &mlir::tblgen::EnumAttr::printBitEnumPrimaryGroups);
+  mlir_tblgen_EnumInfo.def("print_bit_enum_primary_groups",
+                           &mlir::tblgen::EnumInfo::printBitEnumPrimaryGroups);
 
   auto mlir_tblgen_Property =
       nb::class_<mlir::tblgen::Property>(m, "Property")
           .def(nb::init<const llvm::Record *>(), "record"_a)
           .def(nb::init<const llvm::DefInit *>(), "init"_a)
-          .def(nb::init<llvm::StringRef, llvm::StringRef, llvm::StringRef,
+          .def(nb::init<const llvm::Record *, llvm::StringRef, llvm::StringRef,
                         llvm::StringRef, llvm::StringRef, llvm::StringRef,
                         llvm::StringRef, llvm::StringRef, llvm::StringRef,
                         llvm::StringRef, llvm::StringRef, llvm::StringRef,
                         llvm::StringRef, llvm::StringRef, llvm::StringRef,
-                        llvm::StringRef>(),
-               "summary"_a, "description"_a, "storage_type"_a,
+                        llvm::StringRef, llvm::StringRef>(),
+               "maybe_def"_a, "summary"_a, "description"_a, "storage_type"_a,
                "interface_type"_a, "convert_from_storage_call"_a,
                "assign_to_storage_call"_a, "convert_to_attribute_call"_a,
                "convert_from_attribute_call"_a, "parser_call"_a,
@@ -2587,13 +2589,12 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def("is_attr_matcher", &mlir::tblgen::DagLeaf::isAttrMatcher)
           .def("is_native_code_call", &mlir::tblgen::DagLeaf::isNativeCodeCall)
           .def("is_constant_attr", &mlir::tblgen::DagLeaf::isConstantAttr)
-          .def("is_enum_attr_case", &mlir::tblgen::DagLeaf::isEnumAttrCase)
+          .def("is_enum_case", &mlir::tblgen::DagLeaf::isEnumCase)
           .def("is_string_attr", &mlir::tblgen::DagLeaf::isStringAttr)
           .def("get_as_constraint", &mlir::tblgen::DagLeaf::getAsConstraint)
           .def("get_as_constant_attr",
                &mlir::tblgen::DagLeaf::getAsConstantAttr)
-          .def("get_as_enum_attr_case",
-               &mlir::tblgen::DagLeaf::getAsEnumAttrCase)
+          .def("get_as_enum_case", &mlir::tblgen::DagLeaf::getAsEnumCase)
           .def("get_condition_template",
                &mlir::tblgen::DagLeaf::getConditionTemplate)
           .def("get_native_code_template",

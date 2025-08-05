@@ -2001,7 +2001,6 @@ auto mlir_OpBuilder = nb::class_<mlir::OpBuilder, mlir::Builder>(m, "OpBuilder")
 .def("insert", &mlir::OpBuilder::insert, "op"_a, nb::rv_policy::reference_internal)
 .def("create", [](mlir::OpBuilder& self, const mlir::OperationState & state){ return self.create(state); }, "state"_a, nb::rv_policy::reference_internal)
 .def("create", [](mlir::OpBuilder& self, mlir::Location loc, mlir::StringAttr opName, mlir::ValueRange operands, mlir::TypeRange types, llvm::ArrayRef<mlir::NamedAttribute> attributes, mlir::BlockRange successors, llvm::MutableArrayRef<std::unique_ptr<mlir::Region>> regions){ return self.create(loc, opName, operands, types, attributes, successors, std::move(regions)); }, "loc"_a, "op_name"_a, "operands"_a, "types"_a, "attributes"_a, "successors"_a, "regions"_a, nb::rv_policy::reference_internal)
-.def("try_fold", &mlir::OpBuilder::tryFold, "op"_a, "results"_a)
 .def("clone", [](mlir::OpBuilder& self, mlir::Operation & op, mlir::IRMapping & mapper){ return self.clone(op, mapper); }, "op"_a, "mapper"_a, nb::rv_policy::reference_internal)
 .def("clone", [](mlir::OpBuilder& self, mlir::Operation & op){ return self.clone(op); }, "op"_a, nb::rv_policy::reference_internal)
 .def("clone_without_regions", [](mlir::OpBuilder& self, mlir::Operation & op, mlir::IRMapping & mapper){ return self.cloneWithoutRegions(op, mapper); }, "op"_a, "mapper"_a, nb::rv_policy::reference_internal)
@@ -2760,7 +2759,9 @@ auto mlir_ModuleOp = nb::class_<mlir::ModuleOp,  mlir::OpState>(m, "ModuleOp")
 .def("verify_invariants", &mlir::ModuleOp::verifyInvariants)
 .def("verify", &mlir::ModuleOp::verify)
 .def_static("parse", &mlir::ModuleOp::parse, "parser"_a, "result"_a)
-.def_static("create", &mlir::ModuleOp::create, "loc"_a, "name"_a)
+.def_static("create", [](mlir::OpBuilder& builder, mlir::Location loc, std::string name) {
+  return mlir::ModuleOp::create(builder, loc, name);
+}, "builder"_a, "loc"_a, "name"_a)
 .def_prop_ro("name", &mlir::ModuleOp::getName)
 .def("is_optional_symbol", &mlir::ModuleOp::isOptionalSymbol)
 .def_prop_ro("data_layout_spec", &mlir::ModuleOp::getDataLayoutSpec)
@@ -2774,7 +2775,6 @@ auto mlir_detail_TypeIDResolver___mlir_ModuleOp__ = nb::class_<mlir::detail::Typ
 
 auto mlir_detail_UnrealizedConversionCastOpGenericAdaptorBase = nb::class_<mlir::detail::UnrealizedConversionCastOpGenericAdaptorBase>(m, "UnrealizedConversionCastOpGenericAdaptorBase")
 .def(nb::init<mlir::DictionaryAttr, const mlir::EmptyProperties &, mlir::RegionRange>(), "attrs"_a, "properties"_a, "regions"_a)
-.def(nb::init<mlir::Operation *>(), "op"_a)
 .def("get_ods_operand_index_and_length", &mlir::detail::UnrealizedConversionCastOpGenericAdaptorBase::getODSOperandIndexAndLength, "index"_a, "ods_operands_size"_a)
 .def_prop_ro("attributes", &mlir::detail::UnrealizedConversionCastOpGenericAdaptorBase::getAttributes)
 ;
@@ -2794,7 +2794,9 @@ auto mlir_UnrealizedConversionCastOp = nb::class_<mlir::UnrealizedConversionCast
 .def("get_ods_result_index_and_length", &mlir::UnrealizedConversionCastOp::getODSResultIndexAndLength, "index"_a)
 .def("get_ods_results", &mlir::UnrealizedConversionCastOp::getODSResults, "index"_a)
 .def_prop_ro("outputs", &mlir::UnrealizedConversionCastOp::getOutputs)
-.def_static("build", &mlir::UnrealizedConversionCastOp::build, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
+.def_static("build", [](mlir::OpBuilder &b, ::mlir::OperationState &odsState, mlir::TypeRange resultTypes, mlir::ValueRange operands, llvm::SmallVector<mlir::NamedAttribute> attributes){
+  return mlir::UnrealizedConversionCastOp::build(b, odsState, resultTypes, operands, attributes);
+}, "_"_a, "ods_state"_a, "result_types"_a, "operands"_a, "attributes"_a)
 .def("verify_invariants_impl", &mlir::UnrealizedConversionCastOp::verifyInvariantsImpl)
 .def("verify_invariants", &mlir::UnrealizedConversionCastOp::verifyInvariants)
 .def("verify", &mlir::UnrealizedConversionCastOp::verify)
@@ -3104,8 +3106,6 @@ auto mlir_Pattern = nb::class_<mlir::Pattern>(m, "Pattern")
 ;
 
 auto mlir_RewritePattern = nb::class_<mlir::RewritePattern, mlir::Pattern>(m, "RewritePattern")
-.def("rewrite", &mlir::RewritePattern::rewrite, "op"_a, "rewriter"_a)
-.def("match", &mlir::RewritePattern::match, "op"_a)
 .def("match_and_rewrite", &mlir::RewritePattern::matchAndRewrite, "op"_a, "rewriter"_a)
 ;
 

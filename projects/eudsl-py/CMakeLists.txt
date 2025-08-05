@@ -130,8 +130,11 @@ include_directories(${EUDSL_NBGEN_INCLUDE_DIR})
 #)
 
 eudsl_nbgen(EUDSLGen_arith
-  ${MLIR_INCLUDE_DIR}/mlir/InitAllDialects.h
+  ${MLIR_INCLUDE_DIR}/mlir/Dialect/Arith/IR/Arith.h
   NAMESPACES mlir::arith mlir::arith::detail
+  EXTRA_INCLUDES
+    ${MLIR_INCLUDE_DIR}/mlir/IR/PatternMatch.h
+    ${MLIR_INCLUDE_DIR}/mlir/IR/DialectImplementation.h
 )
 
 #eudsl_nbgen(EUDSLGen_arm_neon
