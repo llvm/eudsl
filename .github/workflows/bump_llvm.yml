@@ -37,7 +37,8 @@ jobs:
           echo "LLVM_SHA_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           popd
 
-      - uses: actions/create-github-app-token@v1
+      - name: Generate token
+        uses: actions/create-github-app-token@v1
         id: generate-token
         with:
           app-id: ${{ secrets.BUMP_LLVM_CREATE_PR_APP_ID }}
@@ -58,15 +59,15 @@ jobs:
           assignees: makslevental
           reviewers: makslevental
 
-      - uses: peter-evans/enable-pull-request-automerge@v3
-        if: steps.cpr.outputs.pull-request-operation == 'created'
+      - name: Enable auto-merge
+        uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: ${{ steps.generate-token.outputs.token }}
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          merge-method: squash
           
       - name: Auto approve
-        if: steps.cpr.outputs.pull-request-operation == 'created'
         run: gh pr review --approve "${{ steps.cpr.outputs.pull-request-number }}"
         env:
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           merge-method: squash
