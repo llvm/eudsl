@@ -56,3 +56,9 @@ jobs:
           delete-branch: true
           assignees: makslevental
           reviewers: makslevental
+
+      - uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          token: ${{ steps.generate-token.outputs.token }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          merge-method: squash
