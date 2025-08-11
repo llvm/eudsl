@@ -276,8 +276,11 @@ static std::string getCppClass(const clang::CXXRecordDecl *decl) {
     // TODO(max): this emits unnecessary default template args, like
     // mlir::detail::TypeIDResolver<void, void>
     // auto td = t->getTypeForDecl();
-    className = t->getTypeForDecl()->getCanonicalTypeInternal().getAsString(
-        getPrintingPolicy());
+    className = t->getASTContext()
+                    .getCanonicalTypeDeclType(decl)
+                    .getTypePtr()
+                    ->getCanonicalTypeInternal()
+                    .getAsString(getPrintingPolicy());
   } else {
     className = decl->getQualifiedNameAsString();
   }
