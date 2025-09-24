@@ -2514,27 +2514,28 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def("get_def", &mlir::tblgen::Operator::VariableDecorator::getDef,
                nb::rv_policy::reference_internal);
 
-  auto mlir_tblgen_Operator_OperandOrAttribute =
-      nb::class_<mlir::tblgen::Operator::OperandOrAttribute>(
-          mlir_tblgen_Operator, "OperandOrAttribute")
-          .def(
-              nb::init<mlir::tblgen::Operator::OperandOrAttribute::Kind, int>(),
-              "kind"_a, "index"_a)
+  auto mlir_tblgen_Operator_OperandAttrOrProp =
+      nb::class_<mlir::tblgen::Operator::OperandAttrOrProp>(
+          mlir_tblgen_Operator, "OperandAttrOrProp")
+          .def(nb::init<mlir::tblgen::Operator::OperandAttrOrProp::Kind, int>(),
+               "kind"_a, "index"_a)
           .def("operand_or_attribute_index",
-               &mlir::tblgen::Operator::OperandOrAttribute::
+               &mlir::tblgen::Operator::OperandAttrOrProp::
                    operandOrAttributeIndex)
-          .def("kind", &mlir::tblgen::Operator::OperandOrAttribute::kind);
+          .def("kind", &mlir::tblgen::Operator::OperandAttrOrProp::kind);
 
-  nb::enum_<mlir::tblgen::Operator::OperandOrAttribute::Kind>(
-      mlir_tblgen_Operator_OperandOrAttribute, "Kind")
+  nb::enum_<mlir::tblgen::Operator::OperandAttrOrProp::Kind>(
+      mlir_tblgen_Operator_OperandAttrOrProp, "Kind")
       .value("Operand",
-             mlir::tblgen::Operator::OperandOrAttribute::Kind::Operand)
+             mlir::tblgen::Operator::OperandAttrOrProp::Kind::Operand)
       .value("Attribute",
-             mlir::tblgen::Operator::OperandOrAttribute::Kind::Attribute);
+             mlir::tblgen::Operator::OperandAttrOrProp::Kind::Attribute)
+      .value("Property",
+             mlir::tblgen::Operator::OperandAttrOrProp::Kind::Property);
 
   mlir_tblgen_Operator
-      .def("get_arg_to_operand_or_attribute",
-           &mlir::tblgen::Operator::getArgToOperandOrAttribute, "index"_a)
+      .def("get_arg_to_operand_attr_or_prop",
+           &mlir::tblgen::Operator::getArgToOperandAttrOrProp, "index"_a)
       .def("get_builders", &mlir::tblgen::Operator::getBuilders)
       .def("get_getter_name", &mlir::tblgen::Operator::getGetterName, "name"_a)
       .def("get_setter_name", &mlir::tblgen::Operator::getSetterName, "name"_a)
