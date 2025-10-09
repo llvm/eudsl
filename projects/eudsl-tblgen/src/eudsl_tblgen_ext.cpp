@@ -30,6 +30,7 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
+// #include "llvm/TableGen/CodeGenHelpers.h"
 #include "llvm/TableGen/Record.h"
 
 #include <nanobind/nanobind.h>
@@ -1866,17 +1867,11 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       },
       "fmt"_a, "ctx"_a, "params"_a);
 
-  auto mlir_tblgen_IfDefScope =
-      nb::class_<mlir::tblgen::IfDefScope>(m, "IfDefScope")
-          .def(nb::init<llvm::StringRef, llvm::raw_ostream &>(), "name"_a,
-               "os"_a);
-
-  auto mlir_tblgen_NamespaceEmitter =
-      nb::class_<mlir::tblgen::NamespaceEmitter>(m, "NamespaceEmitter")
+  auto mlir_tblgen_DialectNamespaceEmitter =
+      nb::class_<mlir::tblgen::DialectNamespaceEmitter>(
+          m, "DialectNamespaceEmitter")
           .def(nb::init<llvm::raw_ostream &, const mlir::tblgen::Dialect &>(),
-               "os"_a, "dialect"_a)
-          .def(nb::init<llvm::raw_ostream &, llvm::StringRef>(), "os"_a,
-               "cpp_namespace"_a);
+               "os"_a, "dialect"_a);
 
   auto mlir_tblgen_StaticVerifierFunctionEmitter =
       nb::class_<mlir::tblgen::StaticVerifierFunctionEmitter>(
