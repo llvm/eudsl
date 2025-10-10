@@ -18,11 +18,15 @@ set(LLVM_INSTALL_UTILS ON CACHE BOOL "")
 set(LLVM_ENABLE_DUMP ON CACHE BOOL "")
 
 set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
-# All the tools will use libllvm shared library
-# (but doesn't work on windows)
 if (NOT WIN32)
+  # All the tools will use libllvm shared library
+  # (but doesn't work on windows)
   set(LLVM_LINK_LLVM_DYLIB ON CACHE BOOL "")
   set(MLIR_LINK_MLIR_DYLIB ON CACHE BOOL "")
+else()
+  set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded CACHE STRING "")
+  list(APPEND CMAKE_C_FLAGS "/MT")
+  list(APPEND CMAKE_CXX_FLAGS "/MT")
 endif()
 
 # useful things
@@ -33,6 +37,8 @@ set(LLVM_FORCE_ENABLE_STATS ON CACHE BOOL "")
 set(LLVM_TARGETS_TO_BUILD "host;NVPTX;AMDGPU" CACHE STRING "")
 set(LLVM_OPTIMIZED_TABLEGEN ON CACHE BOOL "")
 set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
+set(LLVM_VERSION_SUFFIX "" CACHE STRING "")
+set(CMAKE_PLATFORM_NO_VERSIONED_SONAME ON CACHE BOOL "")
 
 # MLIR options
 
