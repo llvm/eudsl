@@ -13,6 +13,12 @@ inputs:
   arch:
     required: true
     description: ''
+  container:
+    required: false
+    description: ''
+  runs-on:
+    required: false
+    description: ''
   cache-key:
     required: true
     description: ''
@@ -39,6 +45,33 @@ runs:
         timezoneLinux: "Asia/Singapore"
         timezoneMacos: "Asia/Singapore"
         timezoneWindows: "Singapore Standard Time"
+
+    - name: "Clean ubuntu"
+      if: (inputs.container && startsWith(inputs.runs-on, 'ubuntu'))
+      shell: bash
+      run: |
+        
+        echo "before"
+        df -h
+        rm -rf $GH_HOST_DIR/usr/local/lib/android
+        rm -rf $GH_HOST_DIR/usr/share/dotnet
+        rm -rf $GH_HOST_DIR/opt/ghc
+        rm -rf $GH_HOST_DIR/$AGENT_TOOLSDIRECTORY
+        # i don't know why chroot doesn't work? it should?
+        # chroot /ghhost
+        # apt-get remove -y '^aspnetcore-.*'
+        # apt-get remove -y '^dotnet-.*'
+        # apt-get remove -y '^llvm-.*'
+        # apt-get remove -y 'php.*'
+        # apt-get remove -y '^mongodb-.*'
+        # apt-get remove -y '^mysql-.*'
+        # apt-get remove -y azure-cli google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri
+        # apt-get remove -y google-cloud-sdk || sudo apt-get remove -y google-cloud-cli || true
+        # apt-get autoremove -y
+        # apt-get clean
+        # docker image prune --all --force
+        echo "after"
+        df -h
 
     # notes for next time i bash my head against this:
     # 1. github.workspace and $GITHUB_WORKSPACE are different between container actions and non-container actions

@@ -102,6 +102,12 @@ jobs:
 
     container:
       image: ${{ matrix.container }}
+      volumes:
+        - /:/ghhost
+      options: --privileged --pid=host --ipc=host
+      env:
+        AGENT_TOOLSDIRECTORY: ${{ env.AGENT_TOOLSDIRECTORY }}
+        GH_HOST_DIR: "/ghhost"
 
     steps:
       - name: "Check out repository"
@@ -117,6 +123,8 @@ jobs:
           restore-key: "mlir_${{ matrix.name }}_clang"
           os: ${{ matrix.os }}
           arch: ${{ matrix.arch }}
+          container: ${{ matrix.container }}
+          runs-on: ${{ matrix.runs-on }}
 
       - name: "Build LLVM and MLIR"
         id: build
