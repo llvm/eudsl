@@ -2160,7 +2160,9 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def_rw("type", &mlir::tblgen::InterfaceMethod::Argument::type)
           .def_rw("name", &mlir::tblgen::InterfaceMethod::Argument::name);
 
-  mlir_tblgen_InterfaceMethod.def(nb::init<const llvm::Record *>(), "def_"_a)
+  mlir_tblgen_InterfaceMethod
+      .def(nb::init<const llvm::Record *, std::string>(), "def_"_a,
+           "unique_name"_a)
       .def("get_return_type", &mlir::tblgen::InterfaceMethod::getReturnType)
       .def("get_name", &mlir::tblgen::InterfaceMethod::getName)
       .def("is_static", &mlir::tblgen::InterfaceMethod::isStatic)
