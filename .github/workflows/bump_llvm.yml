@@ -32,6 +32,7 @@ jobs:
       - name: "Sync third-party/llvm-project"
         id: sync-llvm-project
         run: |
+          
           pushd third_party/llvm-project
           git checkout main && git pull
           echo "LLVM_SHA_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
