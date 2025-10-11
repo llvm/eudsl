@@ -19,7 +19,7 @@ Currently, there are three components:
 
 ## Getting started
 
-Python wheels of all the tools are available at the [`latest` release page](https://github.com/llvm/eudsl/releases/tag/eudsl).
+Python wheels of all the tools are available at the [`eudsl` release page](https://github.com/llvm/eudsl/releases/tag/eudsl).
 They are also `pip install`-able with .e.g
 
 ```shell
