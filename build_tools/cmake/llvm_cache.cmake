@@ -22,11 +22,6 @@ if (WIN32)
   set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded CACHE STRING "")
   list(APPEND CMAKE_C_FLAGS "/MT")
   list(APPEND CMAKE_CXX_FLAGS "/MT")
-else()
-  # All the tools will use libllvm shared library
-  # (but doesn't work on windows)
-  set(LLVM_LINK_LLVM_DYLIB ON CACHE BOOL "")
-  set(MLIR_LINK_MLIR_DYLIB ON CACHE BOOL "")
 endif()
 
 # useful things
