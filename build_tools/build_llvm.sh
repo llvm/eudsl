@@ -45,6 +45,8 @@ cmake_options=(
   -DPython_EXECUTABLE="$Python3_EXECUTABLE"
   -DPYTHON_EXECUTABLE="$Python3_EXECUTABLE"
   -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}"
+  -DCMAKE_PLATFORM_NO_VERSIONED_SONAME=ON
+  -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
 )
 
 if [ -x "$(command -v ccache)" ]; then
