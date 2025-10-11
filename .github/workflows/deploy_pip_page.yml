@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - ".github/workflows/deploy_page.yml"
+      - ".github/workflows/deploy_pip_page.yml"
 
 permissions:
   contents: read
@@ -32,7 +32,10 @@ jobs:
         shell: bash
         run: |
 
-          wget https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings -O index.html
+          wget https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings
+          wget https://github.com/llvm/eudsl/releases/expanded_assets/eudsl
+          wget https://github.com/llvm/eudsl/releases/expanded_assets/llvm
+          cat mlir-python-bindings eudsl llvm > index.html
           sed -i.bak 's/\/llvm\/eudsl/https:\/\/github.com\/llvm\/eudsl/g' index.html
           mkdir -p page && mv index.html page
         

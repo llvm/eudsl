@@ -19,12 +19,11 @@ Currently, there are three components:
 
 ## Getting started
 
-Python wheels of all the tools are available at the [`latest` release page](https://github.com/llvm/eudsl/releases/tag/latest).
+Python wheels of all the tools are available at the [`eudsl` release page](https://github.com/llvm/eudsl/releases/tag/eudsl).
 They are also `pip install`-able with .e.g
 
 ```shell
-$ cd <EUDSL_CHECKOUT_DIR>
-$ pip install eudsl-py -f https://github.com/llvm/eudsl/releases/expanded_assets/latest
+$ pip install eudsl-py -f https://llvm.github.io/eudsl
 ```
 
 `eudsl-py` has a slowly growing set of tests @ [projects/eudsl-py/tests](./projects/eudsl-py/tests).
