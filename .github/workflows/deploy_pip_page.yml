@@ -34,7 +34,8 @@ jobs:
 
           wget https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings
           wget https://github.com/llvm/eudsl/releases/expanded_assets/eudsl
-          cat mlir-python-bindings eudsl > index.html
+          wget https://github.com/llvm/eudsl/releases/expanded_assets/llvm
+          cat mlir-python-bindings eudsl llvm > index.html
           sed -i.bak 's/\/llvm\/eudsl/https:\/\/github.com\/llvm\/eudsl/g' index.html
           mkdir -p page && mv index.html page
         
