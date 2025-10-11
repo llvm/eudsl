@@ -22,19 +22,21 @@ on:
     paths:
       - ".github/actions/setup_base"
       - ".github/workflows/build_llvm.yml"
-      - "build_tools/cmake/llvm_cache.cmake"
-      - "build_tools/cmake/llvm_wasm_cache.cmake"
-      - "build_tools/build_llvm.sh"
-      - "build_tools/build_llvm_wasi.sh"
+      - "scripts/cmake/llvm_cache.cmake"
+      - "scripts/cmake/llvm_wasm_cache.cmake"
+      - "scripts/build_llvm.sh"
+      - "scripts/build_llvm_wasi.sh"
       - "third_party/llvm-project"
   push:
     branches:
       - main
     paths:
-      - "build_tools/cmake/llvm_cache.cmake"
-      - "build_tools/cmake/llvm_wasm_cache.cmake"
-      - "build_tools/build_llvm.sh"
-      - "build_tools/build_llvm_wasi.sh"
+      - ".github/actions/setup_base"
+      - ".github/workflows/build_llvm.yml"
+      - "scripts/cmake/llvm_cache.cmake"
+      - "scripts/cmake/llvm_wasm_cache.cmake"
+      - "scripts/build_llvm.sh"
+      - "scripts/build_llvm_wasi.sh"
       - "third_party/llvm-project"
 
 concurrency:
@@ -139,9 +141,9 @@ jobs:
           $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
           
           if [[ "${{ matrix.arch }}" == "wasm32-wasi" ]]; then
-            build_tools/build_llvm_wasi.sh
+            scripts/build_llvm_wasi.sh
           else
-            build_tools/build_llvm.sh
+            scripts/build_llvm.sh
             echo "*********************** SMOKE TEST *********************************"
             "$LLVM_INSTALL_DIR/bin/mlir-tblgen" --version
             echo "*********************** SMOKE TEST *********************************"
@@ -166,7 +168,7 @@ jobs:
           path: ${{ startsWith(matrix.os, 'windows') && 'D:\a\ccache.log' || '/tmp/ccache.log' }}
 
       - name: Release current commit
-        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_name == 'main' }}
+        if: (!cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_name == 'main')
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "*.tar.gz"
@@ -180,13 +182,13 @@ jobs:
 
       - name: "Save cache"
         uses: actions/cache/save@v3
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref_name == 'main' }}
+        if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
         with:
           path: ${{ steps.setup_base.outputs.cache-dir }}
           key: ${{ env.cache-key }}
 
       - name: "Setup tmate session"
-        if: ${{ (failure() && inputs.debug_with_tmate) || inputs.force_debug_with_tmate }}
+        if: (failure() && inputs.debug_with_tmate) || inputs.force_debug_with_tmate
         uses: mxschmitt/action-tmate@v3.18
         with:
           limit-access-to-actor: true
