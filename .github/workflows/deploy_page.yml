@@ -32,8 +32,9 @@ jobs:
         shell: bash
         run: |
 
-          mkdir -p page
-          wget https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings -O page/index.html
+          wget https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings -O index.html
+          sed -i.bak 's/llvm\.github\.io/github.com/g' index.html
+          mkdir -p page && mv index.html page
         
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
