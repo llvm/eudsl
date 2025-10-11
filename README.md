@@ -39,7 +39,7 @@ Firstly, you need a distribution of LLVM. You can build LLVM from source using o
 
 ```shell
 $ cd <EUDSL_CHECKOUT_DIR>
-$ ./build_tools/build_llvm.sh
+$ ./scripts/build_llvm.sh
 ```
 
 Alternatively you can download a distribution for your platform from the [`llvm` release page](https://github.com/llvm/eudsl/releases/tag/llvm).
