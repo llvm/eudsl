@@ -378,7 +378,6 @@ nanobind_add_module(eudslpy_ext
 )
 target_link_libraries(eudslpy_ext PRIVATE
   MLIR
-  LLVM
   # broken
   # EUDSLGen_irdl
   # EUDSLGen_omp
@@ -438,10 +437,9 @@ if(EUDSLPY_STANDALONE_BUILD OR EUDSL_STANDALONE_BUILD)
   set(STANDALONE STANDALONE)
 endif()
 patch_llvm_rpath(MLIR ${STANDALONE})
-patch_llvm_rpath(LLVM ${STANDALONE})
 set_install_rpath_origin(eudslpy_ext)
 # copy libMLIR into the ext dir for wheels
-install(IMPORTED_RUNTIME_ARTIFACTS MLIR LLVM LIBRARY DESTINATION eudsl)
+install(IMPORTED_RUNTIME_ARTIFACTS MLIR LIBRARY DESTINATION eudsl)
 
 target_compile_options(eudslpy_ext PRIVATE ${nanobind_options})
 set(_nanobind_tgt)
