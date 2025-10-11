@@ -31,12 +31,14 @@ jobs:
       - name: Download pip links
         shell: bash
         run:
-          wget https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings -O index.html
+
+          mkdir -p page
+          wget https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings -O page/index.html
         
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: index.html
+          path: page
           
       - name: Deploy to GitHub Pages
         id: deployment
