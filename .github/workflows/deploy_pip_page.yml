@@ -32,7 +32,9 @@ jobs:
         shell: bash
         run: |
 
-          wget https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings -O index.html
+          wget https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings
+          wget https://github.com/llvm/eudsl/releases/expanded_assets/eudsl
+          cat mlir-python-bindings eudsl > index.html
           sed -i.bak 's/\/llvm\/eudsl/https:\/\/github.com\/llvm\/eudsl/g' index.html
           mkdir -p page && mv index.html page
         
