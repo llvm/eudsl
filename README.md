@@ -23,7 +23,6 @@ Python wheels of all the tools are available at the [`eudsl` release page](https
 They are also `pip install`-able with .e.g
 
 ```shell
-$ cd <EUDSL_CHECKOUT_DIR>
 $ pip install eudsl-py -f https://llvm.github.io/eudsl
 ```
 
