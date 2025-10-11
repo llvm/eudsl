@@ -30,7 +30,7 @@ jobs:
 
       - name: Download pip links
         shell: bash
-        run:
+        run: |
 
           mkdir -p page
           wget https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings -O page/index.html
