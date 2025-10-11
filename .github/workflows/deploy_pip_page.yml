@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - ".github/workflows/deploy_page.yml"
+      - ".github/workflows/deploy_pip_page.yml"
 
 permissions:
   contents: read
