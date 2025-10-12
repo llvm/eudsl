@@ -22,7 +22,7 @@ g = Github(auth=auth)
 n_deleted = 0
 for rel in [
     # llvm
-    191777437,
+    253845177,
     # eudsl
     253847293,
     # mlir-python-bindings

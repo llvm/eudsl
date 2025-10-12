@@ -30,4 +30,4 @@ jobs:
         run: |
           
           pip install PyGithub
-          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} python scripts/gh_releases.py
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} python scripts/clean_gh_releases.py
