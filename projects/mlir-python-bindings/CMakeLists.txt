@@ -103,12 +103,16 @@ endif()
 # The fully assembled package of modules. This must come last.
 # ##############################################################################
 
+set(_declared_sources MLIRPythonSources MLIRPythonExtension.RegisterEverything)
+if(NOT CMAKE_CROSSCOMPILING)
+  list(APPEND _declared_sources MLIRPythonExtension.Core.type_stub_gen)
+endif()
+
 add_mlir_python_modules(MLIRPythonModules
   ROOT_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/mlir"
   INSTALL_PREFIX "mlir"
   DECLARED_SOURCES
-    MLIRPythonSources
-    MLIRPythonExtension.RegisterEverything
+    ${_declared_sources}
   COMMON_CAPI_LINK_LIBS
     MLIRPythonCAPI
 )
