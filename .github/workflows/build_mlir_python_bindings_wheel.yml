@@ -155,8 +155,6 @@ jobs:
 
   test-mlir-python-bindings:
 
-    if: github.event_name == 'pull_request'
-
     needs: [build-mlir-python-bindings]
 
     strategy:
