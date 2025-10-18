@@ -1,0 +1,81 @@
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+# Copyright (c) 2025.
+
+[project]
+name = "mlir-python-bindings"
+dynamic = ["version"]
+requires-python = ">=3.8,<=3.14"
+dependencies = [
+    "numpy>=1.19.5, <=2.1.2",
+    "PyYAML>=5.4.0, <=6.0.2",
+    # required but no package for it...
+    # "ml_dtypes>=0.5.0, <=0.6.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/llvm/llvm-project"
+Discussions = "https://discourse.llvm.org/"
+"Issue Tracker" = "https://github.com/llvm/llvm-project/issues?q=is%3Aissue%20state%3Aopen%20label%3Amlir%3Apython%20"
+"Source Code" = "https://github.com/llvm/llvm-project/tree/main/mlir/python"
+
+[build-system]
+requires = [
+    "scikit-build-core==0.10.7",
+    # nanobind requires it for stubgen but we don't use stubgen?
+    "typing_extensions==4.12.2",
+    "nanobind>=2.4, <3.0",
+    "pybind11>=2.10.0, <=2.13.6",
+]
+build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+experimental = true
+metadata.version.provider = "version"
+metadata.version.provider-path = "."
+
+minimum-version = "0.10"
+build-dir = "build"
+cmake.source-dir = "../../third_party/llvm-project/llvm"
+wheel.exclude = ["bin", "include", "lib", "src", "share"]
+# for installing/distributing only the python stuff
+build.targets = ["MLIRPythonModules"]
+install.components = ["MLIRPythonModules"]
+
+[tool.scikit-build.cmake.define]
+CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
+CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
+CMAKE_CXX_FLAGS = "-sNO_DISABLE_EXCEPTION_CATCHING"
+CMAKE_VISIBILITY_INLINES_HIDDEN = "ON"
+CMAKE_C_VISIBILITY_PRESET = "hidden"
+CMAKE_CXX_VISIBILITY_PRESET = "hidden"
+CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
+CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
+CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
+CMAKE_VERBOSE_MAKEFILE = "ON"
+
+LLVM_ENABLE_EH = "ON"
+LLVM_ENABLE_PROJECTS = "mlir"
+LLVM_ENABLE_RTTI = "ON"
+LLVM_ENABLE_THREADS = "OFF"
+
+# for ExecutionEngine
+LLVM_ENABLE_PIC = "ON"
+LLVM_TARGET_ARCH = "wasm32"
+LLVM_HOST_TRIPLE = "wasm32-unknown-emscripten"
+LLVM_DEFAULT_TARGET_TRIPLE = "wasm32-unknown-emscripten"
+MLIR_ENABLE_EXECUTION_ENGINE = "ON"
+MLIR_ENABLE_SPIRV_CPU_RUNNER = "ON"
+
+LLVM_INCLUDE_TESTS = "OFF"
+
+# so that NATIVE doesn't try to get built
+LLVM_NATIVE_TOOL_DIR = { env = "LLVM_NATIVE_TOOL_DIR", default = "" }
+LLVM_TABLEGEN = { env = "LLVM_TABLEGEN", default = "" }
+MLIR_LINALG_ODS_YAML_GEN = { env = "MLIR_LINALG_ODS_YAML_GEN", default = "" }
+MLIR_TABLEGEN = { env = "MLIR_TABLEGEN", default = "" }
+
+LLVM_TARGETS_TO_BUILD = "WebAssembly"
+MLIR_BINDINGS_PYTHON_INSTALL_PREFIX = "mlir"
+MLIR_ENABLE_BINDINGS_PYTHON = "ON"

@@ -190,12 +190,6 @@ runs:
         fi 
         echo "python3_command=$python3_command" >> $GITHUB_ENV
 
-    - name: Setup Emscripten
-      if: contains(inputs.arch, 'wasm')
-      uses: mymindstorm/setup-emsdk@v14
-      with:
-        version: 3.1.71
-
     - name: "Set CMake/ccache env vars"
       shell: bash
       run: |
