@@ -168,7 +168,7 @@ jobs:
           path: ${{ startsWith(matrix.os, 'windows') && 'D:\a\ccache.log' || '/tmp/ccache.log' }}
 
       - name: Release current commit
-        if: (!cancelled() && ((github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch')
+        if: (!cancelled() && ((github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'))
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "*.tar.gz"
