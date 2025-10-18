@@ -61,6 +61,13 @@ def preprocess_code(code: str, here, header_f) -> str:
     transformed_code = re.sub(
         pattern, replacement, transformed_code, flags=re.MULTILINE
     )
+    transformed_code = transformed_code.replace(
+        "uint8_t buf[LLVM_BLAKE3_BLOCK_LEN];", "uint8_t buf[64];"
+    )
+    transformed_code = transformed_code.replace(
+        "uint8_t cv_stack[(LLVM_BLAKE3_MAX_DEPTH + 1) * LLVM_BLAKE3_OUT_LEN];",
+        "uint8_t cv_stack[1760];",
+    )
 
     return transformed_code
 

@@ -95,6 +95,7 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     llvm-config
     llvm-headers
     llvm-libraries
+    llvm-tblgen
 
     FileCheck
     not
@@ -105,6 +106,7 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     mlir-cmake-exports
     mlir-headers
     mlir-libraries
+    mlir-linalg-ods-yaml-gen
     mlir-opt
     mlir-python-sources
     mlir-reduce
