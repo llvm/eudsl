@@ -100,7 +100,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          
+          set -x
           if [[ "${{ matrix.os }}" == "almalinux" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             export RELEASE_PREFIX="mlir_manylinux_${{ matrix.arch }}"
           else
