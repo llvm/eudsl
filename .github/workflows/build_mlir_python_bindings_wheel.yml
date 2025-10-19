@@ -344,17 +344,19 @@ jobs:
         shell: bash
         run: |
           
-          set -x
           pyodide venv venv
           . venv/bin/activate
-          
           pip install mlir-python-bindings -f wheelhouse
-          for f in third_party/llvm-project/mlir/test/python/dialects/*.py; do
+          pushd third_party/llvm-project/mlir/test/python/dialects
+          
+          for f in *.py; do
             if [[ "$f" == "python_test.py" ]]; then
               continue
             fi
             python $f
           done
+
+          popd
 
       - name: Upload wasm32 wheels
         uses: actions/upload-artifact@v4
@@ -363,6 +365,7 @@ jobs:
           name: build_artifact_python_bindings-ubuntu-wasm
 
       - name: Release current commit
+        if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "wheelhouse/mlir_python_bindings*.whl"
