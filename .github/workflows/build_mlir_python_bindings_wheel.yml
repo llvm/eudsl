@@ -270,3 +270,110 @@ jobs:
           replacesArtifacts: true
           makeLatest: true
           omitBody: true
+
+  build-mlir-python-bindings-wasm:
+
+    runs-on: ubuntu-22.04
+
+    name: "Build mlir-python-bindings wasm"
+
+    defaults:
+      run:
+        shell: bash
+
+    permissions:
+      id-token: write
+      contents: write
+
+    env:
+      cache-key: mlir_python_bindings_wasm_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: true
+
+      - name: "Setup base"
+        uses: ./.github/actions/setup_base
+        id: setup_base
+        with:
+          cache-key: ${{ env.cache-key }}
+          restore-key: "mlir_python_bindings_wasm_clang"
+          os: "ubuntu"
+          arch: "x86_64"
+
+      - name: Install pyodide
+        run: |
+          
+          pip install pyodide-build>=0.28.0
+          echo EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version) >> $GITHUB_ENV
+
+      - name: Wheel version
+        run: |
+          
+          pushd third_party/llvm-project
+          LLVM_PROJECT_COMMIT=$(git rev-parse --short HEAD)
+          popd
+          
+          DATETIME=$(date +"%Y%m%d%H")
+          echo WHEEL_VERSION="${DATETIME}+${LLVM_PROJECT_COMMIT}" >> $GITHUB_ENV
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSCRIPTEN_VERSION }}
+
+      - name: build wasm python wheel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          
+          RELEASE_URL=$(gh release view llvm --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains("mlir_manylinux_x86_64"))) | .[-1] | .url')
+          curl -sLO $RELEASE_URL
+          RELEASE_NAME="$RELEASE_PREFIX*.tar.gz"
+          tar xf $RELEASE_NAME
+          
+          export LLVM_NATIVE_TOOL_DIR="$PWD/llvm-install/bin"
+          export LLVM_TABLEGEN="$LLVM_NATIVE_TOOL_DIR/llvm-tblgen"
+          export MLIR_TABLEGEN="$LLVM_NATIVE_TOOL_DIR/mlir-tblgen"
+          export MLIR_LINALG_ODS_YAML_GEN="$LLVM_NATIVE_TOOL_DIR/mlir-linalg-ods-yaml-gen"
+          pyodide build projects/mlir-python-bindings-wasm -o wheelhouse --compression-level 10
+
+      - name: Install pyodide and test
+        shell: bash
+        run: |
+          
+          pyodide venv venv
+          . venv/bin/activate
+          pip install mlir-python-bindings -f wheelhouse
+          pushd third_party/llvm-project/mlir/test/python/dialects
+          
+          for f in *.py; do
+            if [[ "$f" == "python_test.py" ]]; then
+              continue
+            fi
+            python $f
+          done
+
+          popd
+
+      - name: Upload wasm32 wheels
+        uses: actions/upload-artifact@v4
+        with:
+          path: wheelhouse/*.whl
+          name: build_artifact_python_bindings-ubuntu-wasm
+
+      - name: Release current commit
+        if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+        uses: ncipollo/release-action@v1.12.0
+        with:
+          artifacts: "wheelhouse/mlir_python_bindings*.whl"
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          tag: mlir-python-bindings
+          name: mlir-python-bindings
+          removeArtifacts: false
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
+          omitBody: true
