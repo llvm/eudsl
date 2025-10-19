@@ -1884,8 +1884,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                    collectOpConstraints,
                "op_defs"_a)
           .def("emit_op_constraints",
-               &mlir::tblgen::StaticVerifierFunctionEmitter::emitOpConstraints,
-               "op_defs"_a)
+               &mlir::tblgen::StaticVerifierFunctionEmitter::emitOpConstraints)
           .def(
               "emit_pattern_constraints",
               [](mlir::tblgen::StaticVerifierFunctionEmitter &self,
