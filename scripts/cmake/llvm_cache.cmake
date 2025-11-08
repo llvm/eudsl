@@ -108,7 +108,7 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     mlir-libraries
     mlir-linalg-ods-yaml-gen
     mlir-opt
-    mlir-python-sources
+    # mlir-python-sources
     mlir-reduce
     mlir-tblgen
     mlir-translate
