@@ -10,7 +10,7 @@ from github import Auth
 # using an access token
 auth = Auth.Token(os.environ["GITHUB_TOKEN"])
 
-twelve_days_ago = datetime.date.today() - datetime.timedelta(days=12)
+thirty_days_ago = datetime.date.today() - datetime.timedelta(days=30)
 
 g = Github(auth=auth)
 
@@ -34,7 +34,7 @@ for rel in [
         release = repo.get_release(rel)
         assets = release.get_assets()
         for ass in assets:
-            if ass.created_at.date() < twelve_days_ago:
+            if ass.created_at.date() < thirty_days_ago:
                 print(ass.name)
                 assert ass.delete_asset()
                 n_deleted += 1
