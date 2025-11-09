@@ -26,6 +26,7 @@ requires = [
     "typing_extensions>=4.12.2",
     "nanobind>=2.9, <3.0",
     "pybind11>=2.10.0, <=2.13.6",
+    "numpy>=1.19.5, <=2.1.2",
 ]
 build-backend = "scikit_build_core.build"
 
