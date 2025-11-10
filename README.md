@@ -70,6 +70,16 @@ $ cmake --build "$PWD/eudsl-build" --target install
 If you want to build all the tools at once using CMake you can use the root [`CMakeLists.txt`](./CMakeLists.txt).
 Note, in this case, `eudsl-nbgen` will automatically be built prior to `eudsl-py`.
 
+If you want to build all the tools at once using CMake _directly against `third_party/llvm-project`_ then (roughly) the CMake invocation is:
+
+```shell
+cmake -GNinja -B build -S <EUDSL_CHECKOUT_DIR>/third_party/llvm-project/llvm \
+  -DLLVM_EXTERNAL_PROJECTS=EUDSL \
+  -DLLVM_EXTERNAL_EUDSL_SOURCE_DIR=<EUDSL_CHECKOUT_DIR> \
+  -DLLVM_BUILD_LLVM_DYLIB=ON \
+  -DLLVM_ENABLE_PROJECTS=clang;mlir
+```
+
 ## Footnotes
 
 [^1]: Yes C++ headers...

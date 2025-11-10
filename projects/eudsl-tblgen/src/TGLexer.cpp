@@ -499,7 +499,7 @@ bool TGLexer::LexInclude() {
 /// SkipBCPLComment - Skip over the comment by finding the next CR or LF.
 /// Or we may end up at the end of the buffer.
 void TGLexer::SkipBCPLComment() {
-  ++CurPtr; // skip the second slash.
+  ++CurPtr; // Skip the second slash.
   auto EOLPos = CurBuf.find_first_of("\r\n", CurPtr - CurBuf.data());
   CurPtr = (EOLPos == StringRef::npos) ? CurBuf.end() : CurBuf.data() + EOLPos;
 }
@@ -507,7 +507,7 @@ void TGLexer::SkipBCPLComment() {
 /// SkipCComment - This skips C-style /**/ comments. The only difference from C
 /// is that we allow nesting.
 bool TGLexer::SkipCComment() {
-  ++CurPtr; // skip the star.
+  ++CurPtr; // Skip the star.
   unsigned CommentDepth = 1;
 
   while (true) {
@@ -681,8 +681,10 @@ tgtok::TokKind TGLexer::LexExclaim() {
           .Case("instances", tgtok::XInstances)
           .Case("substr", tgtok::XSubstr)
           .Case("find", tgtok::XFind)
-          .Cases("setdagop", "setop", tgtok::XSetDagOp) // !setop is deprecated.
-          .Cases("getdagop", "getop", tgtok::XGetDagOp) // !getop is deprecated.
+          .Cases({"setdagop", "setop"},
+                 tgtok::XSetDagOp) // !setop is deprecated.
+          .Cases({"getdagop", "getop"},
+                 tgtok::XGetDagOp) // !getop is deprecated.
           .Case("setdagopname", tgtok::XSetDagOpName)
           .Case("getdagopname", tgtok::XGetDagOpName)
           .Case("getdagarg", tgtok::XGetDagArg)

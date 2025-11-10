@@ -19,7 +19,7 @@ else()
   set(EUDSLLLVM_STANDALONE_BUILD OFF)
 endif()
 
-find_package(Python 3.9...<3.14 REQUIRED
+find_package(Python 3.9...<3.15 REQUIRED
   REQUIRED COMPONENTS Interpreter Development.Module
   OPTIONAL_COMPONENTS Development.SABIModule)
 
@@ -63,20 +63,78 @@ set(EUDSLLLVM_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/src")
 include_directories(${EUDSLLLVM_BINARY_DIR})
 include_directories(${EUDSLLLVM_SRC_DIR})
 
-#set(ENV{PYTHONPATH} "${CMAKE_CURRENT_LIST_DIR}/../eudsl-tblgen/src:$ENV{PYTHONPATH}")
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/eudsl-llvmpy-generate.py"
-                                 ${LLVM_INCLUDE_DIRS}
-                                 "${EUDSLLLVM_BINARY_DIR}/generated"
-                                 "${EUDSLLLVM_SRC_DIR}/llvm"
-  RESULT_VARIABLE _has_err_generate
-  COMMAND_ECHO STDOUT
-)
-if (_has_err_generate AND NOT _has_err_generate EQUAL 0)
-  message(FATAL_ERROR "couldn't generate sources: ${_has_err_generate}")
-endif()
+if (EUDSLLLVM_STANDALONE_BUILD)
+  execute_process(
+        COMMAND "${Python_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/eudsl-llvmpy-generate.py"
+                                        ${LLVM_INCLUDE_DIRS}
+                                        "${EUDSLLLVM_BINARY_DIR}/generated"
+                                        "${EUDSLLLVM_SRC_DIR}/llvm"
+        RESULT_VARIABLE _has_err_generate
+        COMMAND_ECHO STDOUT
+  )
+  if (_has_err_generate AND NOT _has_err_generate EQUAL 0)
+    message(FATAL_ERROR "couldn't generate sources: ${_has_err_generate}")
+  endif()
+  include_directories("${EUDSLLLVM_BINARY_DIR}/generated")
+  file(GLOB _gen_src CONFIGURE_DEPENDS "${EUDSLLLVM_BINARY_DIR}/generated/*.cpp")
+else()
+  set(_gen_src
+      Analysis.cpp
+      BitReader.cpp
+      BitWriter.cpp
+      Comdat.cpp
+      Core.cpp
+      DataTypes.cpp
+      DebugInfo.cpp
+      Deprecated.cpp
+      Disassembler.cpp
+      DisassemblerTypes.cpp
+      Error.cpp
+      ErrorHandling.cpp
+      ExecutionEngine.cpp
+      ExternC.cpp
+      IRReader.cpp
+      LLJIT.cpp
+      LLJITUtils.cpp
+      Linker.cpp
+      Object.cpp
+      Orc.cpp
+      OrcEE.cpp
+      PassBuilder.cpp
+      Remarks.cpp
+      Support.cpp
+      Target.cpp
+      TargetMachine.cpp
+      Types.cpp
+      Visibility.cpp
+      blake3.cpp
+  )
+  list(TRANSFORM _gen_src PREPEND "${EUDSLLLVM_BINARY_DIR}/generated/")
+  #If we're building against third_party/llvm-project then build/include will also be in this list...
+  set(_llvm_include_dirs ${LLVM_INCLUDE_DIRS})
+  list(LENGTH _llvm_include_dirs _llvm_include_dirs_len)
+  if (_llvm_include_dirs_len GREATER_EQUAL 2)
+    list(GET _llvm_include_dirs 0 _llvm_include_dirs)
+    set(_llvm_include_dir "llvm/include")
+    cmake_path(SET _llvm_include_dir NORMALIZE "${_llvm_include_dir}")
+    if(NOT "${_llvm_include_dirs}" MATCHES "${_llvm_include_dir}$")
+      message(FATAL_ERROR "Expected 0th entry in ${LLVM_INCLUDE_DIRS} to be ${_llvm_include_dir}")
+    endif()
+  endif ()
+  cmake_path(SET _eudsl_tblgen_path NORMALIZE "${CMAKE_CURRENT_LIST_DIR}/../eudsl-tblgen/src")
+  add_custom_command(
+    OUTPUT ${_gen_src}
+    COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${_eudsl_tblgen_path}:$ENV{PYTHONPATH}
+                                    "${Python_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/eudsl-llvmpy-generate.py"
+                                    ${_llvm_include_dirs}
+                                    "${EUDSLLLVM_BINARY_DIR}/generated"
+                                    "${EUDSLLLVM_SRC_DIR}/llvm"
+    DEPENDS eudsl_tblgen_ext
+  )
+endif ()
+
+
 include_directories("${EUDSLLLVM_BINARY_DIR}/generated")
-file(GLOB _gen_src CONFIGURE_DEPENDS "${EUDSLLLVM_BINARY_DIR}/generated/*.cpp")
 
 nanobind_add_module(eudslllvm_ext
   NB_STATIC STABLE_ABI

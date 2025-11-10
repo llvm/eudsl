@@ -63,12 +63,20 @@ nanobind_add_module(eudsl_tblgen_ext NB_STATIC STABLE_ABI
 set_property(TARGET eudsl_tblgen_ext PROPERTY POSITION_INDEPENDENT_CODE ON)
 set(eudsl_tblgen_ext_libs
   LLVMTableGenCommon LLVMTableGen LLVMCore MLIRTableGen)
+# This is a hack but I don't know why things aren't getting linked into the shlib...
 if(APPLE)
+  # If we're building against third_party/llvm-project ...
+  if ((NOT LLVM_AVAILABLE_LIBS) OR ("${LLVM_AVAILABLE_LIBS}" STREQUAL ""))
+    get_property(LLVM_AVAILABLE_LIBS GLOBAL PROPERTY LLVM_LIBS)
+  endif()
   list(APPEND eudsl_tblgen_ext_libs ${LLVM_AVAILABLE_LIBS})
   list(REMOVE_ITEM eudsl_tblgen_ext_libs Remarks LTO LLVM)
   list(REMOVE_DUPLICATES eudsl_tblgen_ext_libs)
   target_link_directories(eudsl_tblgen_ext PRIVATE "${LLVM_LIBRARY_DIR}")
+  add_dependencies(eudsl_tblgen_ext ${eudsl_tblgen_ext_libs})
   list(TRANSFORM eudsl_tblgen_ext_libs PREPEND "-Wl,-hidden-l")
+else()
+  add_dependencies(eudsl_tblgen_ext ${eudsl_tblgen_ext_libs})
 endif()
 target_link_libraries(eudsl_tblgen_ext PRIVATE ${eudsl_tblgen_ext_libs})
 
