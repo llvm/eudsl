@@ -19,7 +19,7 @@ else()
   set(EUDSLPY_STANDALONE_BUILD OFF)
 endif()
 
-find_package(Python 3.9...<3.14 REQUIRED
+find_package(Python 3.9...<3.15 REQUIRED
   REQUIRED COMPONENTS Interpreter Development.Module
   OPTIONAL_COMPONENTS Development.SABIModule)
 
@@ -101,7 +101,9 @@ if(NOT eudsl_nbgen_FOUND)
 endif()
 find_package(eudsl_nbgen CONFIG REQUIRED)
 
-maybe_add_eudsl_nbgen_to_path()
+if (EUDSLPY_STANDALONE_BUILD)
+  maybe_add_eudsl_nbgen_to_path()
+endif()
 
 include_directories(${EUDSL_NBGEN_INCLUDE_DIR})
 
@@ -135,6 +137,8 @@ eudsl_nbgen(EUDSLGen_arith
   EXTRA_INCLUDES
     ${MLIR_INCLUDE_DIR}/mlir/IR/PatternMatch.h
     ${MLIR_INCLUDE_DIR}/mlir/IR/DialectImplementation.h
+#  DEPENDS
+#    MLIRArithOpsIncGen
 )
 
 #eudsl_nbgen(EUDSLGen_arm_neon
@@ -432,14 +436,16 @@ set_target_properties(eudslpy_ext
   LIBRARY_OUTPUT_DIRECTORY "${EUDSLPY_SRC_DIR}/eudsl"
 )
 
-set(STANDALONE)
-if(EUDSLPY_STANDALONE_BUILD OR EUDSL_STANDALONE_BUILD)
-  set(STANDALONE STANDALONE)
+if(TARGET MLIR)
+  set(STANDALONE)
+  if(EUDSLPY_STANDALONE_BUILD OR EUDSL_STANDALONE_BUILD)
+    set(STANDALONE STANDALONE)
+  endif()
+  patch_llvm_rpath(MLIR ${STANDALONE})
+  set_install_rpath_origin(eudslpy_ext)
+  # copy libMLIR into the ext dir for wheels
+  install(IMPORTED_RUNTIME_ARTIFACTS MLIR LIBRARY DESTINATION eudsl)
 endif()
-patch_llvm_rpath(MLIR ${STANDALONE})
-set_install_rpath_origin(eudslpy_ext)
-# copy libMLIR into the ext dir for wheels
-install(IMPORTED_RUNTIME_ARTIFACTS MLIR LIBRARY DESTINATION eudsl)
 
 target_compile_options(eudslpy_ext PRIVATE ${nanobind_options})
 set(_nanobind_tgt)

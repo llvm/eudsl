@@ -80,7 +80,7 @@ test-command = "ccache -sv"
 
 [tool.cibuildwheel.linux]
 before-all = [
-    "yum install -y clang libarchive-devel antlr-tool libxml2-devel libxslt-devel libcurl-devel",
+    "yum install -y clang libarchive-devel antlr-tool libxml2-devel libxslt-devel libcurl-devel java java-devel",
     # ccache
     "echo $(if [ \"$(arch)\" == \"x86_64\" ]; then curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz && tar -xf ccache-4.10.2-linux-x86_64.tar.xz && pushd ccache-4.10.2-linux-x86_64 && make install && popd; fi)",
     "echo $(if [ \"$(arch)\" == \"aarch64\" ]; then dnf install -y ccache; fi)",

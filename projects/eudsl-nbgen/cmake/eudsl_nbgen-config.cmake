@@ -75,16 +75,16 @@ function(eudsl_nbgen target input_file)
     -shard-target ${target} ${ARG_EXTRA_INCLUDES} -I ${EUDSL_NBGEN_TARGET_DEFINITIONS_ABSOLUTE}
   )
 
-  find_program(EUDSL_NBGEN_EXE NAMES "eudsl-nbgen" "eudsl-nbgen.exe")
+  find_program(EUDSL_NBGEN_EXE NAMES "eudsl_nbgen" "eudsl_nbgen.exe" PATHS ${PROJECT_BINARY_DIR}/bin)
   if (EUDSL_NBGEN_EXE STREQUAL "EUDSL_NBGEN_EXE-NOTFOUND" OR ARG_DEPENDS)
     ##################################
     # not standalone build
     ##################################
     if (EUDSL_NBGEN_EXE STREQUAL "EUDSL_NBGEN_EXE-NOTFOUND")
       if (WIN32)
-        set(EUDSL_NBGEN_EXE "eudsl-nbgen.exe")
+        set(EUDSL_NBGEN_EXE "eudsl_nbgen.exe")
       else()
-        set(EUDSL_NBGEN_EXE "eudsl-nbgen")
+        set(EUDSL_NBGEN_EXE "eudsl_nbgen")
       endif()
       set(_eudsl_nbgen_exe_depends ${EUDSL_NBGEN_EXE})
     else()
@@ -219,14 +219,14 @@ function(patch_llvm_rpath target)
 endfunction()
 
 macro(maybe_add_eudsl_nbgen_to_path)
-  find_program(EUDSL_NBGEN_EXE NAMES "eudsl-nbgen" "eudsl-nbgen.exe")
+  find_program(EUDSL_NBGEN_EXE NAMES "eudsl_nbgen" "eudsl_nbgen.exe" PATHS ${PROJECT_BINARY_DIR}/bin)
   if (EUDSL_NBGEN_EXE STREQUAL "EUDSL_NBGEN_EXE-NOTFOUND")
     execute_process(
       COMMAND "${Python_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_path('scripts'))"
       OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE eudsl_nbgen_exe_path)
     set(ENV{PATH} "${eudsl_nbgen_exe_path}:$ENV{PATH}")
   endif()
-  find_program(EUDSL_NBGEN_EXE NAMES "eudsl-nbgen" "eudsl-nbgen.exe")
+  find_program(EUDSL_NBGEN_EXE NAMES "eudsl_nbgen" "eudsl_nbgen.exe" PATHS ${PROJECT_BINARY_DIR}/bin)
   if (EUDSL_NBGEN_EXE STREQUAL "EUDSL_NBGEN_EXE-NOTFOUND")
     message(WARNING "couldn't find EUDSL_NBGEN_EXE")
   endif()
