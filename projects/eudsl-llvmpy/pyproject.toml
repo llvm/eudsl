@@ -90,6 +90,11 @@ before-all = [
 container-engine = { name = "docker", create-args = ["-v", "/etc/timezone:/etc/timezone:ro", "-v", "/etc/localtime:/etc/localtime:ro"] }
 
 [tool.cibuildwheel.macos]
+# something about litgen failing to build
+skip = "cp314t-*"
 before-build = [
     "ccache -z",
 ]
+
+[tool.cibuildwheel.windows]
+skip = "cp314t-*"
