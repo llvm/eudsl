@@ -18,6 +18,11 @@ on:
         description: 'Run the build with a tmate session ONLY in case of failure'
         required: false
         default: false
+      llvm_commit:
+        description: 'llvm commit to build'
+        type: string
+        required: false
+        default: ''
   pull_request:
     paths:
       - ".github/actions/setup_base"
@@ -133,12 +138,21 @@ jobs:
         run: |
           
           export LLVM_SOURCE_DIR="$PWD/third_party/llvm-project"
+
+          if [ x"${{ inputs.llvm_commit }}" != x"" ]; then
+            pushd $LLVM_SOURCE_DIR
+            git fetch --unshallow
+            git reset --hard "${{ inputs.llvm_commit }}"
+            popd
+          fi
+
           export LLVM_BUILD_DIR="$PWD/llvm-build"
           # double nested so that upload artifacts uploads a folder 
           export LLVM_INSTALL_DIR="$PWD/llvm-install/llvm-install"
           
           ccache -z
-          $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
+
+          $python3_command -m pip install PyYAML nanobind pybind11 numpy
           
           if [[ "${{ matrix.arch }}" == "wasm32-wasi" ]]; then
             scripts/build_llvm_wasi.sh
