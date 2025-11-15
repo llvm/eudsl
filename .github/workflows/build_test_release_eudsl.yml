@@ -55,9 +55,10 @@ jobs:
             runs-on: "ubuntu-22.04-arm"
             os: "ubuntu"
             arch: "aarch64"
-          - name: "windows_x86_64"
+          - name: "windows_amd64"
             runs-on: "windows-2022"
             os: "windows"
+            arch: "amd64"
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
@@ -255,7 +256,7 @@ jobs:
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
           {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
-          {runs-on: "windows-2022", name: "windows_x86_64", os: "windows"},
+          {runs-on: "windows-2022", name: "windows_amd64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
           {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
         ]
@@ -323,7 +324,7 @@ jobs:
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
           {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
-          {runs-on: "windows-2022", name: "windows_x86_64", os: "windows"},
+          {runs-on: "windows-2022", name: "windows_amd64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
           {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
         ]
@@ -382,7 +383,7 @@ jobs:
          "ubuntu_aarch64",
          "macos_arm64",
          "macos_x86_64",
-         "windows_x86_64"
+         "windows_amd64"
         ]
 
     name: "Release eudsl ${{ matrix.name }}"
