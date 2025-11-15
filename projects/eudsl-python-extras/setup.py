@@ -3,16 +3,20 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import os
+from pathlib import Path
 
 from pip._internal.req import parse_requirements
 from setuptools import find_namespace_packages, find_packages
 from setuptools import setup
 
 # By setting this env variable during install, this package (a namespace package)
-# can "squat" in some host bindings namespace.
-HOST_MLIR_PYTHON_PACKAGE_PREFIX = os.environ.get(
-    "HOST_MLIR_PYTHON_PACKAGE_PREFIX", "mlir"
+# can "squat" in some host bindings namespace. Note, this DOES work even for nested
+# packages like EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX=foo.bar (extras will be installed into foo/bar/extras).
+EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX = os.environ.get(
+    "EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX", "mlir"
 )
+
+HERE = Path(__file__).parent
 
 
 def load_requirements(fname):
@@ -21,10 +25,10 @@ def load_requirements(fname):
 
 
 packages = (
-    [HOST_MLIR_PYTHON_PACKAGE_PREFIX]
-    + [f"{HOST_MLIR_PYTHON_PACKAGE_PREFIX}.extras"]
+    [EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX]
+    + [f"{EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX}.extras"]
     + [
-        f"{HOST_MLIR_PYTHON_PACKAGE_PREFIX}.extras.{p}"
+        f"{EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX}.extras.{p}"
         for p in find_namespace_packages(where="mlir/extras")
         + find_packages(where="mlir/extras")
     ]
@@ -35,15 +39,16 @@ setup(
     version="0.1.0",
     description="The missing pieces (as far as boilerplate reduction goes) of the upstream MLIR python bindings.",
     license="LICENSE",
-    install_requires=load_requirements("requirements.txt"),
+    install_requires=load_requirements(str(HERE / "requirements.txt")),
     extras_require={
         "test": ["pytest", "mlir-native-tools", "astpretty"],
         "mlir": ["mlir-python-bindings"],
     },
     python_requires=">=3.8",
+    include_package_data=True,
     packages=packages,  # lhs is package namespace, rhs is path (relative to this setup.py)
     package_dir={
-        f"{HOST_MLIR_PYTHON_PACKAGE_PREFIX}": "mlir",
-        f"{HOST_MLIR_PYTHON_PACKAGE_PREFIX}.extras": "mlir/extras",
+        f"{EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX}": "mlir",
+        f"{EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX}.extras": "mlir/extras",
     },
 )

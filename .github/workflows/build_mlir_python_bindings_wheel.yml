@@ -22,6 +22,7 @@ on:
     paths:
       - ".github/workflows/build_mlir_python_bindings_wheel.yml"
       - "projects/mlir-python-bindings/**"
+      - "projects/eudsl-python-extras/**"
       - "third_party/llvm-project"
   push:
     branches:
@@ -29,6 +30,7 @@ on:
     paths:
       - ".github/workflows/build_mlir_python_bindings_wheel.yml"
       - "projects/mlir-python-bindings/**"
+      - "projects/eudsl-python-extras/**"
       - "third_party/llvm-project"
 
 concurrency:
@@ -372,6 +374,142 @@ jobs:
           token: "${{ secrets.GITHUB_TOKEN }}"
           tag: mlir-python-bindings
           name: mlir-python-bindings
+          removeArtifacts: false
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
+          omitBody: true
+
+  build-eudsl-python-extras:
+
+    runs-on: ubuntu-22.04
+
+    name: "Build eudsl-python-extras sdist"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: false
+
+      - name: "Install Python"
+        uses: actions/setup-python@v6.0.0
+        with:
+          python-version: "3.12"
+
+      - name: "Install prereqs"
+        run: python -m pip install setuptools
+
+      - name: "Build eudsl-python-extras sdist"
+        run: pushd projects/eudsl-python-extras && python setup.py sdist && popd
+
+      - name: Upload eudsl-python-extras sdist
+        uses: actions/upload-artifact@v4
+        with:
+          path: projects/eudsl-python-extras/dist/*.tar.gz
+          name: eudsl_python_extras_sdist_artifact
+
+  test-eudsl-python-extras:
+
+    needs: [build-eudsl-python-extras, build-mlir-python-bindings]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [
+          "ubuntu-22.04",
+          "ubuntu-22.04-arm",
+          "macos-13",
+          "macos-14",
+          "windows-2022"
+        ]
+        python-version: [
+          # "3.10", "3.11", "3.12",
+          "3.13", "3.14", "3.14t"
+        ]
+        include: [
+          {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
+          {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
+          {runs-on: "windows-2022", name: "windows_x86_64", os: "windows"},
+          {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
+          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
+        ]
+        exclude:
+          # <frozen importlib._bootstrap>:491: Warning: Numpy built with MINGW-W64 on Windows 64 bits is experimental, and only available for testing. You are advised not to use it for production.
+          - runs-on: windows-2022
+            python-version: "3.14"
+
+          - runs-on: windows-2022
+            python-version: "3.14t"
+
+    runs-on: ${{ matrix.runs-on }}
+
+    name: "Test eudsl-python-extras ${{ matrix.name }} ${{ matrix.python-version }}"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: false
+
+      - name: "Install Python"
+        uses: actions/setup-python@v6.0.0
+        with:
+          python-version: "${{ matrix.python-version }}"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mlir_python_bindings_${{ matrix.name }}_artifact
+          path: wheelhouse
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: eudsl_python_extras_sdist_artifact
+          path: dist
+
+      - name: "Install mlir-python-bindings"
+        run: python -m pip install mlir-python-bindings -f wheelhouse
+
+      - name: "Install eudsl-python-extras"
+        run: python -m pip install dist/eudsl_python_extras*.tar.gz
+
+      - name: "Test eudsl-python-extras"
+        run: python -m pytest projects/eudsl-python-extras/tests
+
+  release-eudsl-python-extras:
+
+    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+    needs: [test-eudsl-python-extras]
+    runs-on: "ubuntu-22.04"
+
+    permissions:
+      id-token: write
+      contents: write
+
+    name: "Release eudsl-python-extras"
+
+    steps:
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: eudsl_python_extras_sdist_artifact
+          path: dist
+
+      - name: Release current commit
+        uses: ncipollo/release-action@v1.12.0
+        with:
+          artifacts: "dist/eudsl_python_extras*.tar.gz"
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          tag: eudsl-python-extras
+          name: eudsl-python-extras
           removeArtifacts: false
           allowUpdates: true
           replacesArtifacts: true

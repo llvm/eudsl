@@ -1,0 +1,4 @@
+# So that it's included in the sdist and can be found by setup.py
+# when users install the sdist.
+include requirements.txt
+prune tests
