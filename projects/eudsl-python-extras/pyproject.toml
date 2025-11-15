@@ -1,23 +1,14 @@
-[project]
-name = "eudsl-python-extras"
-version = "0.1.0"
-description = "Extra utilities for MLIR Python bindings"
-readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "numpy>=2.3.4",
-    "pytest",
-]
-
-[project.scripts]
-eudsl-python-extras = "eudsl_python_extras:main"
-eudsl-generate-test-checks = "mlir.testing.generate_test_checks:main"
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 [build-system]
-requires = [
-    "setuptools>=42",
-    "wheel",
-    "setuptools_scm==8.3.1",
-    "pip",
-]
+# https://stackoverflow.com/a/69711730
+requires = ["setuptools>=64.0.0", "wheel", "pip"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+log_cli = false
+log_cli_level = "DEBUG"
+log_cli_format = "[%(filename)s:%(funcName)s:%(lineno)d] %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
