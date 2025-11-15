@@ -73,10 +73,10 @@ jobs:
 #            container: "quay.io/pypa/manylinux_2_28_x86_64"
 #            os: "almalinux"
 #            arch: "wasm32-wasi"
-          - name: "windows_x86_64"
+          - name: "windows_amd64"
             runs-on: "windows-2022"
             os: "windows"
-            arch: x86_64
+            arch: amd64
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
@@ -173,7 +173,7 @@ jobs:
           elif [ x"${{ matrix.os }}" == x"windows" ]; then
             PLAT="win"
           fi
-          PLAT="${PLAT}_$(echo ${{ matrix.arch }} | tr '[:upper:]' '[:lower:]')"
+          PLAT="${PLAT}_${{ matrix.arch }}"
           
           pushd projects/mlir-native-tools
           $python3_command setup.py bdist_wheel --dist-dir ../../wheelhouse --plat $PLAT
