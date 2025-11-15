@@ -1,0 +1,23 @@
+[project]
+name = "eudsl-python-extras"
+version = "0.1.0"
+description = "Extra utilities for MLIR Python bindings"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.3.4",
+    "pytest",
+]
+
+[project.scripts]
+eudsl-python-extras = "eudsl_python_extras:main"
+eudsl-generate-test-checks = "mlir.testing.generate_test_checks:main"
+
+[build-system]
+requires = [
+    "setuptools>=42",
+    "wheel",
+    "setuptools_scm==8.3.1",
+    "pip",
+]
+build-backend = "setuptools.build_meta"
