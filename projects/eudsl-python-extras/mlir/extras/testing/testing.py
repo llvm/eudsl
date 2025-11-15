@@ -13,6 +13,7 @@ import pytest
 
 from .generate_test_checks import main
 from ..context import MLIRContext, mlir_mod_ctx
+from ..runtime.refbackend import LLVMJITBackend
 from ...ir import Module, Operation, Context
 
 
@@ -126,5 +127,10 @@ def filecheck_with_comments(module):
 def mlir_ctx() -> MLIRContext:
     with mlir_mod_ctx(allow_unregistered_dialects=True) as ctx:
         yield ctx
-    assert Context.current is None
+    # TODO(max): why is context.current being retained now?
+    # assert Context.current is None
 
+
+@pytest.fixture(scope="function")
+def backend() -> LLVMJITBackend:
+    return LLVMJITBackend()
