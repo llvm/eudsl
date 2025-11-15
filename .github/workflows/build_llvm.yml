@@ -136,10 +136,16 @@ jobs:
           export LLVM_BUILD_DIR="$PWD/llvm-build"
           # double nested so that upload artifacts uploads a folder 
           export LLVM_INSTALL_DIR="$PWD/llvm-install/llvm-install"
+          pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT="$(git rev-parse --short HEAD)" && popd
+          export WHEEL_VERSION="$(date +'%Y%m%d')_$LLVM_SHA_SHORT"
           
           ccache -z
           $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
+          $python3_command -m pip install setuptools wheel
           
+          ###############################
+          # Build MLIR/LLVM distro
+          ###############################
           if [[ "${{ matrix.arch }}" == "wasm32-wasi" ]]; then
             scripts/build_llvm_wasi.sh
           else
@@ -150,15 +156,47 @@ jobs:
           fi
           ccache -s
           
-          pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT=$(git rev-parse --short HEAD) && popd
-          tar -czf mlir_${{ matrix.name }}_$(date +'%Y%m%d')_$LLVM_SHA_SHORT.tar.gz -C "$LLVM_INSTALL_DIR/.." llvm-install
+          ###############################
+          # Build mlir-native-tools wheel
+          ###############################
+          for TOOL in "llvm-tblgen" "mlir-tblgen" "mlir-linalg-ods-yaml-gen" "mlir-pdll" "llvm-config" "FileCheck"; do
+            if [ x"${{ matrix.os }}" == x"windows" ]; then
+             TOOL="$TOOL.exe"
+            fi
+            cp "$LLVM_INSTALL_DIR/bin/$TOOL" projects/mlir-native-tools
+          done
+          
+          if [ x"${{ matrix.os }}" == x"almalinux" ] || [ x"${{ matrix.os }}" == x"ubuntu" ]; then
+            PLAT="linux"
+          elif [ x"${{ matrix.os }}" == x"macos" ]; then
+            PLAT="macosx_12_0"
+          elif [ x"${{ matrix.os }}" == x"windows" ]; then
+            PLAT="win"
+          fi
+          PLAT="${PLAT}_$(echo ${{ matrix.arch }} | tr '[:upper:]' '[:lower:]')"
+          
+          pushd projects/mlir-native-tools
+          $python3_command setup.py bdist_wheel --dist-dir ../../wheelhouse --plat $PLAT
+          popd
+          
+          ###############################
+          # Tar up MLIR/LLVM distro
+          ###############################
+          tar -czf "mlir_${{ matrix.name }}_$WHEEL_VERSION.tar.gz" -C "$LLVM_INSTALL_DIR/.." llvm-install
           rm -rf "$LLVM_BUILD_DIR" "$LLVM_SOURCE_DIR"
 
-      - name: Upload artifacts
+      - name: Upload LLVM distro artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mlir_${{ matrix.name }}_artifact
           path: llvm-install
+          if-no-files-found: warn
+
+      - name: Upload mlir-native-tools artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlir_native_tools_${{ matrix.name }}_artifact
+          path: wheelhouse
           if-no-files-found: warn
 
       - name: Upload ccache log
@@ -171,7 +209,7 @@ jobs:
         if: (!cancelled() && ((github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'))
         uses: ncipollo/release-action@v1.12.0
         with:
-          artifacts: "*.tar.gz"
+          artifacts: "*.tar.gz,wheelhouse/*.whl"
           token: "${{ secrets.GITHUB_TOKEN }}"
           tag: "llvm"
           name: "llvm"
