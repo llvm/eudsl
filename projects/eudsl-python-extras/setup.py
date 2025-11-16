@@ -41,7 +41,14 @@ setup(
     license="LICENSE",
     install_requires=load_requirements(str(HERE / "requirements.txt")),
     extras_require={
-        "test": ["pytest", "mlir-native-tools", "astpretty"],
+        "test": [
+            "pytest",
+            "mlir-native-tools",
+            "astpretty",
+            "black",
+            "pre-commit",
+            "pre-commit-hooks",
+        ],
         "mlir": ["mlir-python-bindings"],
     },
     python_requires=">=3.8",

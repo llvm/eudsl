@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """A script to generate FileCheck statements for mlir unit tests.
 
 This script is a utility to add FileCheck patterns to an mlir file.
@@ -241,7 +244,7 @@ def process_attribute_references(line, attribute_namer):
         m = ATTR_RE.match(component)
         attribute_name = attribute_namer.get_name(m.group(1)) if m else None
         if attribute_name:
-            output_line += f"#[[{attribute_name}]]{component[len(m.group()):]}"
+            output_line += f"#[[{attribute_name}]]{component[len(m.group()) :]}"
         else:
             output_line += component
     return output_line

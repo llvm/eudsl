@@ -50,7 +50,7 @@ def mlir_mod_ctx(
         context.allow_unregistered_dialects = True
     with context, mlir_mod(src, location) as module:
         yield MLIRContext(context, module)
-    
+
     # TODO(AJM): was this removed?
     # context._clear_live_operations()
 
