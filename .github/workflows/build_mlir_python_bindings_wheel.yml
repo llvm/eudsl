@@ -427,4 +427,4 @@ jobs:
     secrets: inherit # pass all secrets
     with:
       workflow_call: true
-      workflow_caller_run_id: ${{ github.event.workflow_run.id }}
+      workflow_caller_run_id: ${{ github.run_id }}
