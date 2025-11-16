@@ -131,7 +131,7 @@ jobs:
         uses: dawidd6/action-download-artifact@v11
         with:
           name: mlir_${{ matrix.os == 'ubuntu' && 'manylinux' || matrix.os }}_${{ matrix.arch }}_artifact
-          path: llvm-install
+          path: "./"
           run_id: ${{ inputs.workflow_caller_run_id }}
 
       - name: "Set WHEEL_VERSION env var"
