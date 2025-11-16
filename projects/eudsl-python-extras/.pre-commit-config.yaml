@@ -1,0 +1,15 @@
+repos:
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.11.2
+  hooks:
+    # TODO(ajm): will need some cleanup work to enable this by default
+    # - id: ruff
+    #   args: [--fix]
+    - id: ruff-format
+- repo: local
+  hooks:
+    - id: check-llvm-license
+      name: Check LLVM License
+      # Note that this is relative to the root of the repository
+      entry: python projects/eudsl-python-extras/utils/check_llvm_license.py
+      language: python
