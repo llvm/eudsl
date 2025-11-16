@@ -18,14 +18,27 @@ on:
         description: 'Run the build with a tmate session ONLY in case of failure'
         required: false
         default: false
+  workflow_call:
+    inputs:
+      workflow_call:
+        description: 'To distinguish workflow_call from regular push'
+        type: boolean
+        required: false
+        default: true
+      workflow_caller_run_id:
+        description: ''
+        type: number
+        required: false
+        default: 0
   pull_request:
+    branches:
+      - main
     paths:
       - ".github/workflows/build_test_release_eudsl.yml"
       - "projects/eudsl-tblgen/**"
       - "projects/eudsl-nbgen/**"
       - "projects/eudsl-py/**"
       - "projects/eudsl-llvmpy/**"
-      - "third_party/llvm-project"
   push:
     branches:
       - main
@@ -37,7 +50,7 @@ on:
       - "projects/eudsl-llvmpy/**"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}-build_test_release_eudsl
   cancel-in-progress: true
 
 jobs:
@@ -98,6 +111,7 @@ jobs:
           arch: ${{ matrix.arch }}
 
       - name: "Download MLIR and configure build"
+        if: ${{ !inputs.workflow_call }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -112,6 +126,17 @@ jobs:
           RELEASE_URL=$(gh release view llvm --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains(env.RELEASE_PREFIX))) | .[-1] | .url')
           curl -sLO $RELEASE_URL
           tar xf $RELEASE_PREFIX*.tar.gz
+
+      - name: Download LLVM distro artifacts
+        if: ${{ inputs.workflow_call }}
+        uses: dawidd6/action-download-artifact@v11
+        with:
+          name: mlir_${{ matrix.name }}_artifact
+          path: llvm-install
+          run_id: ${{ inputs.workflow_caller_run_id }}
+
+      - name: "Configure build"
+        run: |
           
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             echo "LLVM_DIR=/host/$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
@@ -228,7 +253,7 @@ jobs:
       - name: Upload ccache log
         uses: actions/upload-artifact@v4
         with:
-          name: ccache_log_${{ matrix.name }}
+          name: eudsl_ccache_log_${{ matrix.name }}
           path: ${{ startsWith(matrix.os, 'windows') && 'D:\a\ccache.log' || '/tmp/ccache.log' }}
           if-no-files-found: ignore
 

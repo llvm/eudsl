@@ -44,7 +44,7 @@ concurrency:
   # queued and in-progress runs for the same PR (presubmit) or commit
   # (postsubmit). The workflow name is prepended to avoid conflicts between
   # different workflows.
-  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}-build_llvm
   cancel-in-progress: true
 
 jobs:
@@ -111,6 +111,9 @@ jobs:
         AGENT_TOOLSDIRECTORY: ${{ env.AGENT_TOOLSDIRECTORY }}
         GH_HOST_DIR: "/ghhost"
 
+    outputs:
+      WHEEL_VERSION: ${{ steps.build.outputs.WHEEL_VERSION }}
+
     steps:
       - name: "Check out repository"
         uses: actions/checkout@v4.2.2
@@ -138,6 +141,7 @@ jobs:
           export LLVM_INSTALL_DIR="$PWD/llvm-install/llvm-install"
           pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT="$(git rev-parse --short HEAD)" && popd
           export WHEEL_VERSION="$(date +'%Y%m%d')_$LLVM_SHA_SHORT"
+          echo "WHEEL_VERSION=$WHEEL_VERSION" >> $GITHUB_OUTPUT
           
           ccache -z
           $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
@@ -202,7 +206,7 @@ jobs:
       - name: Upload ccache log
         uses: actions/upload-artifact@v4
         with:
-          name: ccache_log_${{ matrix.name }}
+          name: llvm_ccache_log_${{ matrix.name }}
           path: ${{ startsWith(matrix.os, 'windows') && 'D:\a\ccache.log' || '/tmp/ccache.log' }}
 
       - name: Release current commit
@@ -231,3 +235,34 @@ jobs:
         with:
           limit-access-to-actor: true
           install-dependencies: ${{ startsWith(matrix.runs-on, 'macos') || startsWith(matrix.runs-on, 'windows') }}
+
+  call-build-python-bindings:
+
+    needs: [build]
+
+    permissions:
+      contents: write
+      id-token: write
+
+    # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
+    uses: llvm/eudsl/.github/workflows/build_mlir_python_bindings_wheel.yml@users/makslevental/workflow_dispatch
+    secrets: inherit # pass all secrets
+    with:
+      wheel_version: ${{ needs.build.outputs.WHEEL_VERSION }}
+      workflow_call: true
+      workflow_caller_run_id: ${{ github.event.workflow_run.id }}
+
+  call-build-eudsl:
+
+    needs: [build]
+
+    permissions:
+      contents: write
+      id-token: write
+
+    # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
+    uses: llvm/eudsl/.github/workflows/build_test_release_eudsl.yml@users/makslevental/workflow_dispatch
+    secrets: inherit # pass all secrets
+    with:
+      workflow_call: true
+      workflow_caller_run_id: ${{ github.event.workflow_run.id }}
