@@ -75,7 +75,7 @@ jobs:
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
-            arch: "aarch64"
+            arch: "arm64"
           - name: "macos_x86_64"
             runs-on: "macos-13"
             os: "macos"
@@ -131,7 +131,7 @@ jobs:
         if: ${{ inputs.workflow_call }}
         uses: dawidd6/action-download-artifact@v11
         with:
-          name: mlir_${{ matrix.name }}_artifact
+          name: mlir_${{ matrix.os == 'ubuntu' && 'manylinux' || matrix.os }}_${{ matrix.arch }}_artifact
           path: "./"
           run_id: ${{ inputs.workflow_caller_run_id }}
 

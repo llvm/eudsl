@@ -74,7 +74,7 @@ jobs:
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
-            arch: "aarch64"
+            arch: "arm64"
           - name: "macos_x86_64"
             runs-on: "macos-13"
             os: "macos"
@@ -136,7 +136,9 @@ jobs:
 
       - name: "Set WHEEL_VERSION env var"
         if: ${{ inputs.workflow_call }}
-        run: echo WHEEL_VERSION="${{ inputs.wheel_version }}" >> $GITHUB_ENV
+        run: |
+          WHEEL_VERSION="${{ inputs.wheel_version }}"
+          echo "WHEEL_VERSION=${WHEEL_VERSION/_/+}" >> $GITHUB_ENV
 
       - name: "Configure build"
         run: |
