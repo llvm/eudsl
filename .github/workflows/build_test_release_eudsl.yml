@@ -27,9 +27,9 @@ on:
         default: true
       workflow_caller_run_id:
         description: ''
-        type: number
+        type: string
         required: false
-        default: 0
+        default: ''
   pull_request:
     branches:
       - main
