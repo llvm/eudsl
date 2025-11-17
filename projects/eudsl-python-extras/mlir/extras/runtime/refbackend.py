@@ -61,7 +61,7 @@ if _lib_prefix:
 
 if ASYNC_RUNTIME_LIB_PATH := os.getenv("ASYNC_RUNTIME_LIB_PATH"):
     ASYNC_RUNTIME_LIB_PATH = Path(ASYNC_RUNTIME_LIB_PATH)
-elif _lib_prefix:
+else:
     ASYNC_RUNTIME_LIB_PATH = (
         _lib_prefix / f"{shlib_prefix()}mlir_async_runtime.{shlib_ext()}"
     )
