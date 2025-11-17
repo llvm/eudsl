@@ -423,7 +423,7 @@ jobs:
       id-token: write
 
     # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
-    uses: llvm/eudsl/.github/workflows/build_test_release_eudsl_python_extras.yml@users/makslevental/workflow_dispatch
+    uses: llvm/eudsl/.github/workflows/build_test_release_eudsl_python_extras.yml@main
     secrets: inherit # pass all secrets
     with:
       workflow_call: true
