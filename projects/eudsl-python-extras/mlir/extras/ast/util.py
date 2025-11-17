@@ -4,6 +4,7 @@
 import ast
 import functools
 import inspect
+import io
 import types
 from opcode import opmap
 from textwrap import dedent
@@ -11,6 +12,7 @@ from typing import Dict
 
 from bytecode import ConcreteBytecode
 from cloudpickle import cloudpickle
+from ...ir import Type
 
 
 def set_lineno(node, n=1):
@@ -117,6 +119,17 @@ def replace_closure(code, new_closure: Dict):
     return new_code, closure
 
 
+def unpickle_mlir_type(v):
+    return Type.parse(v)
+
+
+class MLIRTypePickler(cloudpickle.Pickler):
+    def reducer_override(self, obj):
+        if isinstance(obj, Type):
+            return unpickle_mlir_type, (str(obj),)
+        return super().reducer_override(obj)
+
+
 # Based on http://stackoverflow.com/a/6528148/190597 (Glenn Maynard);
 # potentially more complete approach https://stackoverflow.com/a/56901529/9045206
 def copy_func(f, new_closure: Dict = None):
@@ -125,7 +138,10 @@ def copy_func(f, new_closure: Dict = None):
     else:
         # see https://github.com/cloudpipe/cloudpickle/blob/f111f7ab6d302e9b1e2a568d0e4c574895db6a6e/cloudpickle/cloudpickle.py#L813
         # for how this trick is accomplished (dill and pickle both fail to pickle eg generic typevars)
-        closure = cloudpickle.loads(cloudpickle.dumps(f.__closure__))
+        with io.BytesIO() as file:
+            cp = MLIRTypePickler(file)
+            cp.dump(f.__closure__)
+            closure = cloudpickle.loads(file.getvalue())
         code = f.__code__
 
     g = types.FunctionType(
