@@ -1,6 +1,7 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+from mlir.extras.context import mlir_mod_ctx
 import platform
 
 import numpy as np
@@ -32,6 +33,15 @@ from mlir.extras.context import ExplicitlyManagedModule
 # noinspection PyUnresolvedReferences
 from mlir.extras.dialects import arith, linalg, memref, vector, scf, func
 from mlir.extras.dialects.vector import outer, shuffle, load
+from mlir.extras.runtime.passes import Pipeline, run_pipeline
+from mlir.extras.runtime.refbackend import LLVMJITBackend
+from mlir.extras.dialects import transform
+from mlir.extras.dialects.transform import (
+    get_parent_op,
+    match,
+    tile_to_scf_for,
+    transform_any_op_t,
+)
 
 # noinspection PyUnresolvedReferences
 from mlir.extras.testing import (
@@ -44,18 +54,7 @@ from mlir.extras.util import find_ops
 
 
 # based on /home/mlevental/dev_projects/llvm-project/mlir/test/Dialect/LLVM/transform-e2e.mlir
-@pytest.mark.skip("NYI: Transform extras")
 def test_e2e(ctx: MLIRContext):
-    from mlir.extras.runtime.passes import Pipeline, run_pipeline
-    from mlir.extras.runtime.refbackend import LLVMJITBackend
-    from mlir.extras.dialects import transform
-    from mlir.extras.dialects.transform import (
-        get_parent_op,
-        match,
-        tile_to_scf_for,
-        transform_any_op_t,
-    )
-
     backend = LLVMJITBackend()
     module = ExplicitlyManagedModule()
 
@@ -156,12 +155,8 @@ testdata = (
 )
 
 
-@pytest.mark.skip("NYI: Transform extras")
 @pytest.mark.parametrize("tz_a, tz_b, tz_c", testdata)
 def test_e2e_sugar(ctx: MLIRContext, tz_a, tz_b, tz_c):
-    from mlir.extras.runtime.passes import Pipeline, run_pipeline
-    from mlir.extras.runtime.refbackend import LLVMJITBackend
-
     backend = LLVMJITBackend()
 
     scale = 16
@@ -335,11 +330,8 @@ def aligned(a, alignment=16):
     return aa
 
 
-@pytest.mark.skip("NYI: Transform extras")
+@pytest.mark.skip(reason="TODO: infinite loop looking for user code location")
 def test_memref_of_vector_linalg_generic_2(ctx: MLIRContext):
-    from mlir.extras.runtime.refbackend import LLVMJITBackend
-    from mlir.extras.runtime.passes import Pipeline
-
     @func.func
     def spmv8x8(
         AVAL: T.memref(4, T.vector(8, T.f32())),
@@ -366,7 +358,7 @@ def test_memref_of_vector_linalg_generic_2(ctx: MLIRContext):
                 result=T.vector(8, T.f32()),
                 base=X,
                 indices=[c0],
-                index_vec=aidx,
+                offsets=aidx,
                 mask=v0,
                 pass_thru=v1,
             )
@@ -413,11 +405,7 @@ def test_memref_of_vector_linalg_generic_2(ctx: MLIRContext):
     assert np.allclose(B, np.array(sparse_A) @ X)
 
 
-@pytest.mark.skip("NYI: Transform extras")
 def test_memref_of_vector_linalg_generic_3(ctx: MLIRContext):
-    from mlir.extras.runtime.refbackend import LLVMJITBackend
-    from mlir.extras.runtime.passes import Pipeline
-
     @func.func
     def mv8x8(
         A: T.memref(8, T.vector(8, T.f32())),
@@ -486,3 +474,8 @@ def test_vector_load(ctx: MLIRContext):
     mem @ load(vcf32) @ [2, 0]
 
     filecheck_with_comments(ctx.module)
+
+
+if __name__ == "__main__":
+    with mlir_mod_ctx() as ctx:
+        test_memref_of_vector_linalg_generic_2(ctx)

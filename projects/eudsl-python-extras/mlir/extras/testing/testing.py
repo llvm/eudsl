@@ -18,6 +18,7 @@ import pytest
 from .generate_test_checks import main
 from ..context import MLIRContext, mlir_mod_ctx
 from ...ir import Module, Operation, Context
+from ..runtime.refbackend import LLVMJITBackend
 
 
 def replace_correct_str_with_comments(fun, correct_with_checks):
@@ -49,9 +50,9 @@ def get_filecheck_path():
     # try to find using which
     if not filecheck_path.exists():
         filecheck_path = shutil.which(filecheck_name)
-    assert (
-        filecheck_path is not None and Path(filecheck_path).exists() is not None
-    ), "couldn't find FileCheck"
+    assert filecheck_path is not None and Path(filecheck_path).exists() is not None, (
+        "couldn't find FileCheck"
+    )
 
     return filecheck_path
 
@@ -132,3 +133,8 @@ def mlir_ctx() -> MLIRContext:
         yield ctx
     # TODO(max): why is context.current being retained now?
     # assert Context.current is None
+
+
+@pytest.fixture(scope="function")
+def backend() -> LLVMJITBackend:
+    return LLVMJITBackend()
