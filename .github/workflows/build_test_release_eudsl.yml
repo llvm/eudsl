@@ -441,8 +441,8 @@ jobs:
 
     permissions:
       contents: read
-      pages: write
       id-token: write
+      pages: write
 
     # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
     uses: llvm/eudsl/.github/workflows/deploy_pip_page.yml@main
