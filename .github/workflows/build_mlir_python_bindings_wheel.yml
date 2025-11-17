@@ -428,3 +428,19 @@ jobs:
     with:
       workflow_call: true
       workflow_caller_run_id: ${{ github.run_id }}
+
+
+  call-deploy-pip-page:
+
+    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+
+    needs: [test-mlir-python-bindings]
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
+    uses: llvm/eudsl/.github/workflows/deploy_pip_page.yml@main
+    secrets: inherit # pass all secrets

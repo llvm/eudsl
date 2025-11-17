@@ -63,7 +63,9 @@ jobs:
         run: python -m pip install setuptools
 
       - name: "Build eudsl-python-extras sdist"
-        run: pushd projects/eudsl-python-extras && python setup.py sdist && popd
+        run: |
+          export "GIT_COMMIT=$(git rev-parse --short HEAD)"
+          pushd projects/eudsl-python-extras && python setup.py sdist && popd
 
       - name: Upload eudsl-python-extras sdist
         uses: actions/upload-artifact@v4
@@ -179,3 +181,18 @@ jobs:
           replacesArtifacts: true
           makeLatest: true
           omitBody: true
+
+  call-deploy-pip-page:
+
+    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+
+    needs: [test-eudsl-python-extras]
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
+    uses: llvm/eudsl/.github/workflows/deploy_pip_page.yml@main
+    secrets: inherit # pass all secrets

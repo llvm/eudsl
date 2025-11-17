@@ -34,9 +34,14 @@ packages = (
     ]
 )
 
+version = "0.1.0"
+GIT_COMMIT = os.getenv("GIT_COMMIT", None)
+if GIT_COMMIT is not None:
+    version += f"+{GIT_COMMIT}"
+
 setup(
     name="eudsl-python-extras",
-    version="0.1.0",
+    version=version,
     description="The missing pieces (as far as boilerplate reduction goes) of the upstream MLIR python bindings.",
     license="LICENSE",
     install_requires=load_requirements(str(HERE / "requirements.txt")),
