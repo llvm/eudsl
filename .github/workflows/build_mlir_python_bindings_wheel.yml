@@ -222,6 +222,12 @@ jobs:
           - runs-on: windows-2022
             python-version: "3.14t"
 
+          - runs-on: macos-13
+            python-version: "3.13"
+
+          - runs-on: macos-13
+            python-version: "3.14t"
+
     runs-on: ${{ matrix.runs-on }}
 
     name: "Test mlir-python-bindings ${{ matrix.name }} ${{ matrix.python-version }}"
