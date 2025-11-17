@@ -46,59 +46,45 @@ refback_cb_attr = CONSUME_RETURN_CALLBACK_ATTR
 
 _exec_engine_shared_libs = []
 
-_mlir_root_path = Path(_mlir_libs.__file__).parent
-_lib_prefix_locations = {
-    _mlir_root_path,
-    _mlir_root_path.parent.parent.parent.parent / "lib",
-}
-_lib_prefix = [
-    loc
-    for loc in _lib_prefix_locations
-    if (loc / f"{shlib_prefix()}mlir_runner_utils.{shlib_ext()}").exists()
-]
-if _lib_prefix:
-    _lib_prefix = _lib_prefix[0]
 
-if ASYNC_RUNTIME_LIB_PATH := os.getenv("ASYNC_RUNTIME_LIB_PATH"):
-    ASYNC_RUNTIME_LIB_PATH = Path(ASYNC_RUNTIME_LIB_PATH)
-else:
-    ASYNC_RUNTIME_LIB_PATH = (
-        _lib_prefix / f"{shlib_prefix()}mlir_async_runtime.{shlib_ext()}"
-    )
+def _try_find_runtime_libraries(local_vars: dict):
+    mlir_root_path = Path(_mlir_libs.__file__).parent
+    lib_prefix_locations = {
+        mlir_root_path,
+        mlir_root_path.parent.parent.parent.parent / "lib",
+    }
+    libraries_to_find = {
+        "async_runtime",
+        "c_runner_utils",
+        "runner_utils",
+        "cuda_runtime",
+    }
+    # TODO(max): for some reason adding cuda runtime lib to execengine
+    # causes a segfault (or something)
 
-if ASYNC_RUNTIME_LIB_PATH.exists():
-    _exec_engine_shared_libs.append(ASYNC_RUNTIME_LIB_PATH)
+    def try_find_library(library: str):
+        var_name = f"{library.upper()}_LIB_PATH"
+        if env_var := os.getenv(var_name):
+            local_vars[var_name] = Path(env_var)
+            return Path(env_var)
 
-if C_RUNNER_UTILS_LIB_PATH := os.getenv("C_RUNNER_UTILS_LIB_PATH"):
-    C_RUNNER_UTILS_LIB_PATH = Path(C_RUNNER_UTILS_LIB_PATH)
-else:
-    C_RUNNER_UTILS_LIB_PATH = (
-        _lib_prefix / f"{shlib_prefix()}mlir_c_runner_utils.{shlib_ext()}"
-    )
+        lib_name = f"{shlib_prefix()}mlir_{library}.{shlib_ext()}"
+        for loc in lib_prefix_locations:
+            if (loc / lib_name).exists():
+                local_vars[var_name] = loc / lib_name
+                return loc / lib_name
 
-if C_RUNNER_UTILS_LIB_PATH.exists():
-    _exec_engine_shared_libs.append(C_RUNNER_UTILS_LIB_PATH)
+        logger.debug(
+            f"Falling back on wheel path for {library} even though it was not found there"
+        )
+        local_vars[var_name] = mlir_root_path / lib_name
 
-if RUNNER_UTILS_LIB_PATH := os.getenv("RUNNER_UTILS_LIB_PATH"):
-    RUNNER_UTILS_LIB_PATH = Path(RUNNER_UTILS_LIB_PATH)
-else:
-    RUNNER_UTILS_LIB_PATH = (
-        _lib_prefix / f"{shlib_prefix()}mlir_runner_utils.{shlib_ext()}"
-    )
+    for library in libraries_to_find:
+        if lib_path := try_find_library(library):
+            _exec_engine_shared_libs.append(lib_path)
 
-if RUNNER_UTILS_LIB_PATH.exists():
-    _exec_engine_shared_libs.append(RUNNER_UTILS_LIB_PATH)
 
-if CUDA_RUNTIME_LIB_PATH := os.getenv("CUDA_RUNTIME_LIB_PATH"):
-    CUDA_RUNTIME_LIB_PATH = Path(CUDA_RUNTIME_LIB_PATH)
-else:
-    CUDA_RUNTIME_LIB_PATH = (
-        _lib_prefix / f"{shlib_prefix()}mlir_cuda_runtime.{shlib_ext()}"
-    )
-
-# TODO(max): for some reason adding this lib to execengine causes a segfault (or something)
-# if CUDA_RUNTIME_LIB_PATH.exists():
-#     _exec_engine_shared_libs.append(CUDA_RUNTIME_LIB_PATH)
+_try_find_runtime_libraries(locals())
 
 
 def get_ctype_func(mlir_ret_types):
