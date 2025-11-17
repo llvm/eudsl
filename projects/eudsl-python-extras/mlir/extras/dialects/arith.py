@@ -597,7 +597,7 @@ class CanonicalizeFMA(StrictTransformer):
 class ArithPatchByteCode(BytecodePatcher):
     def patch_bytecode(self, code: ConcreteBytecode, f):
         # TODO(max): this is bad and should be in the closure rather than as a global
-        from ....dialects import arith, math
+        from ...dialects import arith, math
 
         f.__globals__["math_dialect"] = math
         f.__globals__["arith_dialect"] = arith

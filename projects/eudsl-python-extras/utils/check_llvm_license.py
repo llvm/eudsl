@@ -27,8 +27,7 @@ def main(file: str):
     diff = list(unified_diff(lines_to_check, LICENSE))
     if diff:
         sys.stderr.write(f"Expected license in file {filepath}!\n")
-        for line in diff:
-            sys.stderr.write(line)
+        sys.stderr.write("\n".join(diff) + "\n")
         return 1
     return 0
 

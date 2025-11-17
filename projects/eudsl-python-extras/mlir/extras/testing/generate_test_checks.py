@@ -408,7 +408,7 @@ def main(
                 output.write(output_line)
         output.write("\n")
 
-    if isinstance(output, io.BytesIO):
+    if isinstance(output, io.StringIO):
         return output.getvalue()
     else:
         output.close()
