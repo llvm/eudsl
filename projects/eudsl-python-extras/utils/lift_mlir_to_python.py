@@ -38,8 +38,8 @@ from mlir.ir import (
 )
 
 from mlir.extras.context import mlir_mod_ctx
-from mlir.extras.dialects.ext import arith
-from mlir.extras.dialects.ext import scf
+from mlir.extras.dialects import arith
+from mlir.extras.dialects import scf
 
 # noinspection PyUnresolvedReferences
 from mlir.extras.testing import mlir_ctx as ctx, filecheck, MLIRContext
