@@ -87,7 +87,6 @@ def filecheck(correct: str, module):
         p = Popen([filecheck_path, tmp.name], stdout=PIPE, stdin=PIPE, stderr=PIPE)
         out, err = map(lambda o: o.decode(), p.communicate(input=op.encode()))
         if p.returncode:
-            breakpoint()
             if "error: " in err:
                 raise RuntimeError(err)
             diff = list(
@@ -97,7 +96,6 @@ def filecheck(correct: str, module):
                     lineterm="",
                 )
             )
-            breakpoint()
             diff.insert(1, "delta from module to correct")
             print("lit report:", err, file=sys.stderr)
             raise ValueError("\n" + "\n".join(diff))
