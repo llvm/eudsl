@@ -2,9 +2,8 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 from . import arith
-from ..util import get_user_code_loc
+from ... import ir
 from ...dialects import linalg
-
 from ...dialects._ods_common import (
     _dispatch_mixed_values,
     _cext,
@@ -18,7 +17,6 @@ from ...dialects._ods_common import (
 # noinspection PyUnresolvedReferences
 from ...dialects.linalg import *
 from ...extras import types as T
-from ... import ir
 
 
 def abs(I, O, *, loc=None, ip=None):
@@ -220,16 +218,14 @@ def log(I, O, *, loc=None, ip=None):
 
 @linalg.linalg_structured_op
 def _matmul_generic(
-    A=linalg.TensorDef(linalg.T1, linalg.S.M, linalg.S.K),
-    B=linalg.TensorDef(linalg.T2, linalg.S.K, linalg.S.N),
-    C=linalg.TensorDef(linalg.U, linalg.S.M, linalg.S.N, output=True),
-    cast=linalg.TypeFnAttrDef(default=linalg.TypeFn.cast_signed),
+    A=TensorDef(T1, S.M, S.K),
+    B=TensorDef(T2, S.K, S.N),
+    C=TensorDef(U, S.M, S.N, output=True),
+    cast=TypeFnAttrDef(default=TypeFn.cast_signed),
 ):
-    linalg.domain(linalg.D.m, linalg.D.n, linalg.D.k)
-    linalg.implements(linalg.ContractionOpInterface)
-    C[linalg.D.m, linalg.D.n] += cast(linalg.U, A[linalg.D.m, linalg.D.k]) * cast(
-        linalg.U, B[linalg.D.k, linalg.D.n]
-    )
+    domain(D.m, D.n, D.k)
+    implements(ContractionOpInterface)
+    C[D.m, D.n] += cast(U, A[D.m, D.k]) * cast(U, B[D.k, D.n])
 
 
 _matmul_generic.op_name = "matmul"
@@ -265,7 +261,10 @@ def matmul(A, B, C, *, loc=None, ip=None):
         ip=ip,
     )
     linalg.fill_builtin_region(named_op.operation)
-    return named_op.results
+    if len(named_op.results):
+        return named_op.results
+    else:
+        return named_op
 
 
 def matmul_transpose_a(A, B, C, *, loc=None, ip=None):
@@ -306,68 +305,100 @@ def pooling_nchw_max(I, K, O, *, strides, dilations, loc=None, ip=None):
     )
 
 
-def pooling_nchw_sum(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nchw_sum(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nchw_sum(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nchw_sum(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_ncw_max(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_ncw_max(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_ncw_max(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_ncw_max(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_ncw_sum(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_ncw_sum(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_ncw_sum(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_ncw_sum(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_ndhwc_max(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_ndhwc_max(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_ndhwc_max(I, K, O, strides, dilations, *, loc=None, ip=None):
+    return linalg.pooling_ndhwc_max(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_ndhwc_min(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_ndhwc_min(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_ndhwc_min(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_ndhwc_min(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_ndhwc_sum(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_ndhwc_sum(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_ndhwc_sum(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_ndhwc_sum(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_nhwc_max(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nhwc_max(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nhwc_max(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nhwc_max(
+        I, K, strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_nhwc_max_unsigned(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nhwc_max_unsigned(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nhwc_max_unsigned(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nhwc_max_unsigned(
+        I, K, strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_nhwc_min(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nhwc_min(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nhwc_min(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nhwc_min(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_nhwc_min_unsigned(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nhwc_min_unsigned(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nhwc_min_unsigned(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nhwc_min_unsigned(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_nhwc_sum(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nhwc_sum(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nhwc_sum(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nhwc_sum(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_nwc_max(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nwc_max(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nwc_max(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nwc_max(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_nwc_max_unsigned(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nwc_max_unsigned(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nwc_max_unsigned(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nwc_max_unsigned(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_nwc_min(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nwc_min(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nwc_min(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nwc_min(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_nwc_min_unsigned(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nwc_min_unsigned(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nwc_min_unsigned(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nwc_min_unsigned(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
-def pooling_nwc_sum(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nwc_sum(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nwc_sum(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nwc_sum(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
 def quantized_batch_matmul(A, B, C, *, loc=None, ip=None):
@@ -384,3 +415,84 @@ def sub(lhs, rhs, O, *, loc=None, ip=None):
 
 def vecmat(y, A, x, *, loc=None, ip=None):
     return linalg.vecmat(y, A, loc=loc, ip=ip, outs=[x])
+
+
+@linalg.linalg_structured_op
+def _pooling_ncdhw_max(
+    I=TensorDef(
+        T1,
+        S.N,
+        S.C,
+        S.OD * S.SD + S.KD * S.DD,
+        S.OH * S.SH + S.KH * S.DH,
+        S.OW * S.SW + S.KW * S.DW,
+    ),
+    K=TensorDef(T2, S.KD, S.KH, S.KW, index_dims=[D.kd, D.kh, D.kw]),
+    O=TensorDef(U, S.N, S.C, S.OD, S.OH, S.OW, output=True),
+    strides=IndexAttrDef(S.SD, S.SH, S.SW, default=[1, 1, 1]),
+    dilations=IndexAttrDef(S.DD, S.DH, S.DW, default=[1, 1, 1]),
+):
+    """Performs 3D max pooling.
+
+    Numeric casting is performed on the input operand, promoting it to the same
+    data type as the accumulator/output.
+    """
+    implements(ConvolutionOpInterface)
+    domain(D.n, D.c, D.od, D.oh, D.ow, D.kd, D.kh, D.kw)
+    O[D.n, D.c, D.od, D.oh, D.ow] = ReduceFn.max_signed[D.kd, D.kh, D.kw](
+        TypeFn.cast_signed(
+            U,
+            I[
+                D.n,
+                D.c,
+                D.od * S.SD + D.kd * S.DD,
+                D.oh * S.SH + D.kh * S.DH,
+                D.ow * S.SW + D.kw * S.DW,
+            ],
+        )
+    )
+
+
+def pooling_ncdhw_max(I, K, O, *, strides, dilations, loc=None, ip=None):
+    op_configs = linalg.LinalgOpConfig.from_linalg_op_def(
+        _pooling_ncdhw_max.op_def, context=ir.Context.current
+    )
+    op_config = op_configs[0]
+    (
+        _all_arg_defs,
+        _in_arg_defs,
+        _out_arg_defs,
+        _outs,
+        result_types,
+        _type_mapping,
+        indexing_maps_attr,
+        iterator_types_attr,
+        _index_attrs,
+        _fn_attr_mapping,
+        _block_arg_types,
+    ) = linalg.opdsl.lang.emitter.prepare_common_structured_op(
+        op_config.structured_op,
+        I,
+        K,
+        strides=strides,
+        dilations=dilations,
+        outs=[O],
+        loc=loc,
+        ip=ip,
+    )
+
+    @linalg.generic(
+        [I, K],
+        [O],
+        indexing_maps=indexing_maps_attr,
+        iterator_types=iterator_types_attr,
+        loc=loc,
+        ip=ip,
+    )
+    def payload(inp, _kern, outp):
+        return arith.maximumf(inp, outp)
+
+    if len(payload.results):
+        return payload.results
+    else:
+        return payload

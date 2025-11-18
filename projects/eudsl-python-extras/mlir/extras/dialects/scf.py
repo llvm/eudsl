@@ -139,9 +139,9 @@ def in_parallel():
 
 def in_parallel_(parallel_insert_slice=None):
     if isinstance(parallel_insert_slice, (tuple, list)):
-        assert len(parallel_insert_slice) <= 1, (
-            "expected at most one parallel_insert_slice op"
-        )
+        assert (
+            len(parallel_insert_slice) <= 1
+        ), "expected at most one parallel_insert_slice op"
         if len(parallel_insert_slice) == 1:
             parallel_insert_slice = parallel_insert_slice[0]
         else:
@@ -322,6 +322,9 @@ def yield_(*args, results_=None):
         if len(results) > 1:
             return results
         return results[0]
+    elif len(args):
+        raise RuntimeError(f"can't yield from parent_op which has no results")
+    return None
 
 
 def _if(cond, results=None, *, has_else=False, loc=None, ip=None):
@@ -510,9 +513,9 @@ class ReplaceIfWithWith(StrictTransformer):
 
         updated_node = self.generic_visit(updated_node)
         last_statement = updated_node.body[-1]
-        assert is_yield_(last_statement) or is_yield(last_statement), (
-            f"{last_statement=}"
-        )
+        assert is_yield_(last_statement) or is_yield(
+            last_statement
+        ), f"{last_statement=}"
 
         test = updated_node.test
         num_results = max(

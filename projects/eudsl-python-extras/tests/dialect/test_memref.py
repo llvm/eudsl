@@ -537,7 +537,7 @@ def test_for_loops(ctx: MLIRContext):
         it_mem[i, i] = it_mem[i, i] + it_mem[i, i]
         res = yield_(it_mem)
 
-    assert repr(res) == "MemRef(%0, memref<10x10xi32>)"
+    assert repr(res) == "MemRefValue(%0, memref<10x10xi32>)"
     assert res.owner.name == "scf.for"
 
     # CHECK:  %[[VAL_0:.*]] = memref.alloc() : memref<10x10xi32>
@@ -563,7 +563,7 @@ def test_for_loops_canonicalizer(ctx: MLIRContext):
             it_mem[i, i] = it_mem[i, i] + it_mem[i, i]
             res = yield it_mem
 
-        assert repr(res) == "MemRef(%0, memref<10x10xi32>)"
+        assert repr(res) == "MemRefValue(%0, memref<10x10xi32>)"
         assert res.owner.name == "scf.for"
 
     tenfoo()

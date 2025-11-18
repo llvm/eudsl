@@ -168,14 +168,14 @@ rank_reduce = object()
 
 @register_value_caster(MemRefType.static_typeid)
 @ShapedValue
-class MemRef(Value):
+class MemRefValue(Value):
     def __str__(self):
         return f"{self.__class__.__name__}({self.get_name()}, {self.type})"
 
     def __repr__(self):
         return str(self)
 
-    def __getitem__(self, idx: tuple) -> "MemRef":
+    def __getitem__(self, idx: tuple) -> "MemRefValue":
         loc = get_user_code_loc()
 
         if not self.has_rank():
@@ -240,7 +240,7 @@ def expand_shape(
     *,
     loc=None,
     ip=None,
-) -> MemRef:
+) -> MemRefValue:
     """Expand the shape of a memref.
 
     Insert a new axis that will appear at the `axis` position in the expanded
@@ -262,7 +262,7 @@ def expand_shape(
         inp.shape, newaxis_dims
     )
 
-    return MemRef(
+    return MemRefValue(
         memref.expand_shape(
             T.memref(*result_shape, inp.dtype),
             inp,
@@ -390,13 +390,13 @@ def subview(
 
 
 def _subview(
-    mem: MemRef,
+    mem: MemRefValue,
     idx,
     *,
     rank_reduce=False,
     loc=None,
     ip=None,
-) -> MemRef:
+) -> MemRefValue:
     indexer = _indices_to_indexer(idx, mem.shape)
     out = mem
 
@@ -446,8 +446,8 @@ def _subview(
 
 
 def _copy_to_subview(
-    dest: MemRef,
-    source: MemRef,
+    dest: MemRefValue,
+    source: MemRefValue,
     idx,
     *,
     loc=None,
