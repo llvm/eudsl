@@ -13,7 +13,7 @@ from ._shaped_value import (
     _is_scalar,
     _is_int_arraylike,
 )
-from .arith import ArithValue, Scalar, constant
+from .arith import ArithValue, ScalarValue, constant
 from .. import types as T
 from ..util import (
     _unpack_sizes_element_type,
@@ -138,7 +138,7 @@ class Tensor(ArithValue):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)
 
-        if all(isinstance(d, Scalar) for d in idx) and len(idx) == len(self.shape):
+        if all(isinstance(d, ScalarValue) for d in idx) and len(idx) == len(self.shape):
             return tensor.extract(self, idx, loc=loc)
         else:
             if any(_is_index_tensor(i) or _is_int_arraylike(i) for i in idx):
@@ -177,9 +177,9 @@ class Tensor(ArithValue):
             or idx == slice(None)
             or (isinstance(idx, tuple) and all(i == slice(None) for i in idx))
         ):
-            assert self.shape == source.shape, (
-                f"Expected matching shape for dest slice {self.shape=} and source {source.shape=}"
-            )
+            assert (
+                self.shape == source.shape
+            ), f"Expected matching shape for dest slice {self.shape=} and source {source.shape=}"
             return self
 
         idx = list((idx,) if isinstance(idx, int) else idx)
@@ -187,21 +187,21 @@ class Tensor(ArithValue):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)
 
-        if all(isinstance(d, Scalar) and d.fold() for d in idx) and len(idx) == len(
-            self.shape
-        ):
-            assert isinstance(source, Scalar), (
-                "coordinate insert requires scalar element"
-            )
+        if all(isinstance(d, ScalarValue) and d.fold() for d in idx) and len(
+            idx
+        ) == len(self.shape):
+            assert isinstance(
+                source, ScalarValue
+            ), "coordinate insert requires scalar element"
             res = tensor.insert(source, self, idx, loc=loc)
         else:
             if any(_is_index_tensor(i) or _is_int_arraylike(i) for i in idx):
                 raise ValueError("indexing by tensor is not currently supported")
             indexer = _indices_to_indexer(tuple(idx), self.shape)
             if indexer.is_constant():
-                assert indexer.static_sizes() == source.shape, (
-                    f"Expected matching shape for dest slice {indexer.static_sizes()=} and source {source.shape=}"
-                )
+                assert (
+                    indexer.static_sizes() == source.shape
+                ), f"Expected matching shape for dest slice {indexer.static_sizes()=} and source {source.shape=}"
                 res = insert_slice(
                     source,
                     self,
@@ -241,7 +241,7 @@ class Tensor(ArithValue):
                     ip=ip,
                 )
                 return other
-            elif isinstance(other, Scalar):
+            elif isinstance(other, ScalarValue):
                 other = tensor.splat(
                     RankedTensorType.get(self.shape, other.dtype),
                     other,
@@ -369,12 +369,12 @@ def pad_(
     loc=None,
     ip=None,
 ):
-    assert all(isinstance(l, int) for l in low), (
-        f"only literal pad values supported: {low=}"
-    )
-    assert all(isinstance(l, int) for l in high), (
-        f"only literal pad values supported: {high=}"
-    )
+    assert all(
+        isinstance(l, int) for l in low
+    ), f"only literal pad values supported: {low=}"
+    assert all(
+        isinstance(l, int) for l in high
+    ), f"only literal pad values supported: {high=}"
 
     dim_sizes = []
     source_type = source.type

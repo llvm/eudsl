@@ -73,7 +73,7 @@ def test_arithmetic(ctx: MLIRContext):
     except ValueError as e:
         assert (
             str(e)
-            == "floordiv not supported for lhs=Scalar(%cst = arith.constant 1.000000e+00 : f32)"
+            == "floordiv not supported for lhs=ScalarValue(%cst = arith.constant 1.000000e+00 : f32)"
         )
     one % two
 

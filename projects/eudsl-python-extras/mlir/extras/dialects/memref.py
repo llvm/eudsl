@@ -9,7 +9,7 @@ from typing import Sequence, Union, Optional
 import numpy as np
 
 from ._shaped_value import ShapedValue, _indices_to_indexer, _maybe_compute_size
-from .arith import Scalar, constant, index_cast
+from .arith import ScalarValue, constant, index_cast
 from .tensor import compute_result_shape_reassoc_list
 from .vector import VectorValue
 from .. import types as T
@@ -188,7 +188,7 @@ class MemRefValue(Value):
         if idx is None:
             return expand_shape(self, (0,), loc=loc)
 
-        idx = list((idx,) if isinstance(idx, (int, Scalar, slice)) else idx)
+        idx = list((idx,) if isinstance(idx, (int, ScalarValue, slice)) else idx)
         should_rank_reduce = rank_reduce in idx
         if should_rank_reduce:
             idx.remove(rank_reduce)
@@ -198,7 +198,7 @@ class MemRefValue(Value):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)
 
-        if all(isinstance(d, Scalar) for d in idx) and len(idx) == len(self.shape):
+        if all(isinstance(d, ScalarValue) for d in idx) and len(idx) == len(self.shape):
             return load(self, idx, loc=loc)
         else:
             return _subview(self, tuple(idx), rank_reduce=should_rank_reduce, loc=loc)
@@ -209,19 +209,19 @@ class MemRefValue(Value):
         if not self.has_rank():
             raise ValueError("only ranked memref slicing/indexing supported")
 
-        idx = list((idx,) if isinstance(idx, (Scalar, int, Value)) else idx)
+        idx = list((idx,) if isinstance(idx, (ScalarValue, int, Value)) else idx)
         for i, d in enumerate(idx):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)
 
-        if all(isinstance(d, Scalar) for d in idx) and len(idx) == len(self.shape):
+        if all(isinstance(d, ScalarValue) for d in idx) and len(idx) == len(self.shape):
             if isinstance(val, (int, float)):
                 # TODO: this is an unchecked conversion
-                val = Scalar(val, dtype=self.dtype)
+                val = ScalarValue(val, dtype=self.dtype)
             assert isinstance(
-                val, (Scalar, VectorValue)
+                val, (ScalarValue, VectorValue)
             ), f"coordinate insert on ranked memref {self.type} requires scalar element but got {val=}"
-            if isinstance(val, Scalar):
+            if isinstance(val, ScalarValue):
                 store(val, self, idx, loc=loc)
             elif isinstance(val, VectorValue):
                 return vector.StoreOp(
@@ -419,7 +419,9 @@ def _subview(
                 offsets[i] = ind.start
                 sizes[i] = maybe_size
                 strides[i] = (
-                    ind.step.literal_value if isinstance(ind.step, Scalar) else ind.step
+                    ind.step.literal_value
+                    if isinstance(ind.step, ScalarValue)
+                    else ind.step
                 )
             elif isinstance(ind, Value):
                 offsets[i] = ind
@@ -453,7 +455,7 @@ def _copy_to_subview(
     loc=None,
     ip=None,
 ):
-    if isinstance(source, Scalar):
+    if isinstance(source, ScalarValue):
         source = expand_shape(source, (0,), loc=loc, ip=ip)
 
     dest_subview = _subview(dest, idx, loc=loc, ip=ip)

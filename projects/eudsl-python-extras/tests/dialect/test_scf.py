@@ -10,7 +10,7 @@ from mlir.dialects.memref import alloca_scope_return
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.dialects import scf
 from mlir.extras.dialects import tensor
-from mlir.extras.dialects.arith import constant, Scalar
+from mlir.extras.dialects.arith import constant, ScalarValue
 from mlir.extras.dialects.memref import alloca_scope
 from mlir.extras.dialects.scf import (
     for__,
@@ -69,20 +69,22 @@ def test_for_iter_args(ctx: MLIRContext):
 
     @for__(1, 2, 3, iter_args=[one, two])
     def forfoo(i, *iter_args):
-        assert isinstance(i, Scalar)
-        assert repr(i) == "Scalar(<block argument> of type 'index' at index: 0)"
-        assert len(iter_args) == 2 and all(isinstance(i, Scalar) for i in iter_args)
+        assert isinstance(i, ScalarValue)
+        assert repr(i) == "ScalarValue(<block argument> of type 'index' at index: 0)"
+        assert len(iter_args) == 2 and all(
+            isinstance(i, ScalarValue) for i in iter_args
+        )
         assert (
             repr(iter_args)
-            == "(Scalar(<block argument> of type 'f32' at index: 1), Scalar(<block argument> of type 'f32' at index: 2))"
+            == "(ScalarValue(<block argument> of type 'f32' at index: 1), ScalarValue(<block argument> of type 'f32' at index: 2))"
         )
         one = constant(1.0)
         return one, one
 
-    assert len(forfoo) == 2 and all(isinstance(i, Scalar) for i in forfoo)
+    assert len(forfoo) == 2 and all(isinstance(i, ScalarValue) for i in forfoo)
     assert (str(forfoo[0]), str(forfoo[1])) == (
-        "Scalar(%0#0, f32)",
-        "Scalar(%0#1, f32)",
+        "ScalarValue(%0#0, f32)",
+        "ScalarValue(%0#1, f32)",
     )
     ctx.module.operation.verify()
 
@@ -154,24 +156,24 @@ def test_for_bare(ctx: MLIRContext):
     for i, (i1, i2), _ in range_(0, 10, iter_args=[one, two]):
         _i += 1
         assert (
-            isinstance(i, Scalar)
-            and repr(i) == "Scalar(<block argument> of type 'index' at index: 0)"
+            isinstance(i, ScalarValue)
+            and repr(i) == "ScalarValue(<block argument> of type 'index' at index: 0)"
         )
         assert (
-            isinstance(i1, Scalar)
-            and repr(i1) == "Scalar(<block argument> of type 'f32' at index: 1)"
+            isinstance(i1, ScalarValue)
+            and repr(i1) == "ScalarValue(<block argument> of type 'f32' at index: 1)"
         )
         assert (
-            isinstance(i2, Scalar)
-            and repr(i2) == "Scalar(<block argument> of type 'f32' at index: 2)"
+            isinstance(i2, ScalarValue)
+            and repr(i2) == "ScalarValue(<block argument> of type 'f32' at index: 2)"
         )
         three = constant(3.0)
         four = constant(4.0)
         res1, res2 = yield_(three, four)
     assert _i == 1
 
-    assert isinstance(res1, Scalar) and str(res1) == "Scalar(%0#0, f32)"
-    assert isinstance(res2, Scalar) and str(res2) == "Scalar(%0#1, f32)"
+    assert isinstance(res1, ScalarValue) and str(res1) == "ScalarValue(%0#0, f32)"
+    assert isinstance(res2, ScalarValue) and str(res2) == "ScalarValue(%0#1, f32)"
 
     ctx.module.operation.verify()
 
@@ -216,7 +218,7 @@ def test_scf_canonicalizer_with_implicit_yield(ctx: MLIRContext):
         _i = 0
         for i in range_(0, 10):
             _i += 1
-            assert isinstance(i, Scalar) and str(i) == "Scalar(%arg0, index)"
+            assert isinstance(i, ScalarValue) and str(i) == "ScalarValue(%arg0, index)"
             three = constant(3.0)
         assert _i == 1
 
@@ -243,13 +245,13 @@ def test_scf_canonicalizer_with_explicit_yield(ctx: MLIRContext):
         _i = 0
         for i, i1, _ in range_(0, 10, iter_args=[one]):
             _i += 1
-            assert isinstance(i, Scalar) and str(i) == "Scalar(%arg0, index)"
-            assert isinstance(i1, Scalar) and str(i1) == "Scalar(%arg1, f32)"
+            assert isinstance(i, ScalarValue) and str(i) == "ScalarValue(%arg0, index)"
+            assert isinstance(i1, ScalarValue) and str(i1) == "ScalarValue(%arg1, f32)"
             three = constant(3.0)
             res = yield three
         assert _i == 1
 
-        assert isinstance(res, Scalar) and str(res) == "Scalar(%0, f32)"
+        assert isinstance(res, ScalarValue) and str(res) == "ScalarValue(%0, f32)"
 
     foo()
 
@@ -277,16 +279,16 @@ def test_scf_canonicalizer_tuple(ctx: MLIRContext):
         _i = 0
         for i, (i1, i2), _ in range_(0, 10, iter_args=[one, two]):
             _i += 1
-            assert isinstance(i, Scalar) and str(i) == "Scalar(%arg0, index)"
-            assert isinstance(i1, Scalar) and str(i1) == "Scalar(%arg1, f32)"
-            assert isinstance(i2, Scalar) and str(i2) == "Scalar(%arg2, f32)"
+            assert isinstance(i, ScalarValue) and str(i) == "ScalarValue(%arg0, index)"
+            assert isinstance(i1, ScalarValue) and str(i1) == "ScalarValue(%arg1, f32)"
+            assert isinstance(i2, ScalarValue) and str(i2) == "ScalarValue(%arg2, f32)"
             three = constant(3.0)
             four = constant(4.0)
             res1, res2 = yield three, four
         assert _i == 1
 
-        assert isinstance(res1, Scalar) and str(res1) == "Scalar(%0#0, f32)"
-        assert isinstance(res2, Scalar) and str(res2) == "Scalar(%0#1, f32)"
+        assert isinstance(res1, ScalarValue) and str(res1) == "ScalarValue(%0#0, f32)"
+        assert isinstance(res2, ScalarValue) and str(res2) == "ScalarValue(%0#1, f32)"
 
     foo()
 

@@ -5,7 +5,7 @@ import inspect
 from typing import List
 
 from ._shaped_value import ShapedValue, _indices_to_indexer
-from .arith import ArithValue, FastMathFlags, constant, Scalar
+from .arith import ArithValue, FastMathFlags, constant, ScalarValue
 from ..util import get_user_code_loc, _update_caller_vars, Infix
 from ..._mlir_libs._mlir import register_value_caster
 from ...dialects._ods_common import _dispatch_mixed_values
@@ -32,11 +32,11 @@ class VectorValue(ArithValue):
         if idx is None:
             raise RuntimeError("None idx not supported")
 
-        idx = list((idx,) if isinstance(idx, (int, Scalar, slice)) else idx)
+        idx = list((idx,) if isinstance(idx, (int, ScalarValue, slice)) else idx)
         for i, d in enumerate(idx):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)
-        if all(isinstance(d, (int, Scalar)) for d in idx):
+        if all(isinstance(d, (int, ScalarValue)) for d in idx):
             return extract(self, tuple(idx), loc=loc)
         else:
             indexer = _indices_to_indexer(idx, self.shape)
@@ -54,11 +54,11 @@ class VectorValue(ArithValue):
         if not self.has_rank():
             raise ValueError("only ranked vector slicing/indexing supported")
 
-        idx = list((idx,) if isinstance(idx, (Scalar, int, Value, slice)) else idx)
+        idx = list((idx,) if isinstance(idx, (ScalarValue, int, Value, slice)) else idx)
         for i, d in enumerate(idx):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)
-        if all(isinstance(d, Scalar) for d in idx):
+        if all(isinstance(d, ScalarValue) for d in idx):
             res = insert(self, val, idx, loc=loc)
         else:
             indexer = _indices_to_indexer(tuple(idx), self.shape)

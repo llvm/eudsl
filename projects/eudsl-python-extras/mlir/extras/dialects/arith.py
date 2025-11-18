@@ -147,9 +147,9 @@ class ArithValueMeta(type(Value)):
     all three of the following wrappers are equivalent:
 
     ```
-    s1 = Scalar(arith.ConstantOp(f64, 0.0).result)
-    s2 = Scalar(arith.ConstantOp(f64, 0.0))
-    s3 = Scalar(0.0)
+    s1 = ScalarValue(arith.ConstantOp(f64, 0.0).result)
+    s2 = ScalarValue(arith.ConstantOp(f64, 0.0))
+    s3 = ScalarValue(0.0)
     ```
 
     In general the Python object protocol for an object instance is determined
@@ -298,8 +298,8 @@ def _binary_op(
     """Generic for handling infix binary operator dispatch.
 
     Args:
-      lhs: E.g. Scalar or Tensor below.
-      rhs: Scalar or Tensor with type matching self.
+      lhs: E.g. ScalarValue or Tensor below.
+      rhs: ScalarValue or Tensor with type matching self.
       op: Binary operator, currently only add, sub, mul
         supported.
 
@@ -496,7 +496,7 @@ class ArithValue(Value, metaclass=ArithValueMeta):
         return Value(self) != Value(other)
 
 
-class Scalar(ArithValue):
+class ScalarValue(ArithValue):
     """Value subclass ScalarValue that adds convenience methods
     for getting dtype and (possibly) the stored literal value.
 
@@ -512,7 +512,7 @@ class Scalar(ArithValue):
     @cached_property
     def literal_value(self) -> Union[int, float, bool]:
         if not self.is_constant():
-            raise ValueError("Can't build literal from non-constant Scalar")
+            raise ValueError("Can't build literal from non-constant ScalarValue")
         return self.owner.opview.literal_value
 
     def __int__(self):
@@ -521,10 +521,10 @@ class Scalar(ArithValue):
     def __float__(self):
         return float(self.literal_value)
 
-    def coerce(self, other) -> Tuple["Scalar", "Scalar"]:
+    def coerce(self, other) -> Tuple["ScalarValue", "ScalarValue"]:
         if isinstance(other, (int, float, bool)):
-            other = Scalar(other, dtype=self.dtype)
-        elif isinstance(other, Scalar) and (
+            other = ScalarValue(other, dtype=self.dtype)
+        elif isinstance(other, ScalarValue) and (
             _is_index_type(self.type) or _is_index_type(other.type)
         ):
             other = index_cast(other, to=self.type)
@@ -534,7 +534,7 @@ class Scalar(ArithValue):
 
 
 for t in [BF16Type, F16Type, F32Type, F64Type, IndexType, IntegerType, ComplexType]:
-    register_value_caster(t.static_typeid)(Scalar)
+    register_value_caster(t.static_typeid)(ScalarValue)
 
 
 class CanonicalizeFMA(StrictTransformer):
