@@ -60,15 +60,15 @@ jobs:
           assignees: makslevental
           reviewers: makslevental
 
-      - name: Enable auto-merge
-        uses: peter-evans/enable-pull-request-automerge@v3
-        with:
-          token: ${{ steps.generate-token.outputs.token }}
-          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
-          merge-method: squash
+#      - name: Enable auto-merge
+#        uses: peter-evans/enable-pull-request-automerge@v3
+#        with:
+#          token: ${{ steps.generate-token.outputs.token }}
+#          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+#          merge-method: squash
           
-      - name: Auto approve
-        run: gh pr review --approve "${{ steps.cpr.outputs.pull-request-number }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          merge-method: squash
+#      - name: Auto approve
+#        run: gh pr review --approve "${{ steps.cpr.outputs.pull-request-number }}"
+#        env:
+#          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#          merge-method: squash
