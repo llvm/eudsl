@@ -81,10 +81,10 @@ jobs:
             runs-on: "macos-14"
             os: "macos"
             arch: arm64
-          - name: "macos_x86_64"
-            runs-on: "macos-13"
-            os: "macos"
-            arch: x86_64
+#          - name: "macos_x86_64"
+#            runs-on: "macos-13"
+#            os: "macos"
+#            arch: x86_64
 
     runs-on: ${{ matrix.runs-on }}
 
