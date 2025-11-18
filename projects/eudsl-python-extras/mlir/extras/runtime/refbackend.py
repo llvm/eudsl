@@ -223,10 +223,11 @@ def make_kernel_wrapper(kernel_func, return_consumer=None):
 class LLVMJITBackend:
     def __init__(
         self,
-        shared_lib_paths=None,
+        shared_lib_paths: set[str | Path] | None = None,
     ):
         if shared_lib_paths is None:
             shared_lib_paths = set()
+        shared_lib_paths = set(shared_lib_paths)
         if platform.system() != "Windows":
             shared_lib_paths |= set(_exec_engine_shared_libs)
         self.shared_lib_paths = list(shared_lib_paths)
