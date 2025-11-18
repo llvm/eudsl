@@ -72,7 +72,13 @@ def filecheck(correct: str, module):
 
     correct = "\n".join(filter(None, correct.splitlines()))
     correct = dedent(correct)
-    correct_with_checks = main(correct).replace("CHECK:", "CHECK-NEXT:")
+    correct_with_checks = main(correct).strip().splitlines()
+    correct_with_checks = "\n".join(
+        [
+            (line.replace("CHECK:", "CHECK-NEXT:") if i > 0 else line)
+            for i, line in enumerate(correct_with_checks)
+        ]
+    )
 
     filecheck_path = get_filecheck_path()
     with tempfile.NamedTemporaryFile() as tmp:
@@ -81,6 +87,9 @@ def filecheck(correct: str, module):
         p = Popen([filecheck_path, tmp.name], stdout=PIPE, stdin=PIPE, stderr=PIPE)
         out, err = map(lambda o: o.decode(), p.communicate(input=op.encode()))
         if p.returncode:
+            breakpoint()
+            if "error: " in err:
+                raise RuntimeError(err)
             diff = list(
                 difflib.unified_diff(
                     op.splitlines(),  # to this
@@ -88,6 +97,7 @@ def filecheck(correct: str, module):
                     lineterm="",
                 )
             )
+            breakpoint()
             diff.insert(1, "delta from module to correct")
             print("lit report:", err, file=sys.stderr)
             raise ValueError("\n" + "\n".join(diff))
