@@ -87,8 +87,6 @@ def filecheck(correct: str, module):
         p = Popen([filecheck_path, tmp.name], stdout=PIPE, stdin=PIPE, stderr=PIPE)
         out, err = map(lambda o: o.decode(), p.communicate(input=op.encode()))
         if p.returncode:
-            if "error: " in err:
-                raise RuntimeError(err)
             diff = list(
                 difflib.unified_diff(
                     op.splitlines(),  # to this

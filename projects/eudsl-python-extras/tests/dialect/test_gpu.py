@@ -563,7 +563,7 @@ def test_generics(ctx: MLIRContext):
         """\
     module attributes {gpu.container_module} {
       gpu.module @naive [#nvvm.target]  {
-        gpu.func @mat_product_kernel(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>, %arg2: memref<32x32xf32>) kernel {
+        gpu.func @mat_product_kernel_int_32_int_32_int_32_type_f32(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>, %arg2: memref<32x32xf32>) kernel {
           %block_dim_x = gpu.block_dim  x
           %block_id_x = gpu.block_id  x
           %0 = arith.muli %block_dim_x, %block_id_x : index
@@ -594,6 +594,7 @@ def test_generics(ctx: MLIRContext):
     }
     """
     )
+    print(ctx.module)
 
     filecheck(correct, ctx.module)
 
