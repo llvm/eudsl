@@ -76,6 +76,12 @@ add_compile_definitions("MLIR_PYTHON_PACKAGE_PREFIX=${MLIR_PYTHON_PACKAGE_PREFIX
 
 mlir_configure_python_dev_packages()
 
+declare_mlir_python_sources(MLIRPythonCAPI.TableGenSources
+  ADD_TO_PARENT MLIRPythonCAPI.HeaderSources
+  ROOT_DIR "${MLIR_SOURCE_DIR}/include"
+  SOURCES_GLOB "mlir/*.td"
+)
+
 add_mlir_python_common_capi_library(MLIRPythonCAPI
   INSTALL_COMPONENT MLIRPythonModules
   INSTALL_DESTINATION mlir/_mlir_libs
