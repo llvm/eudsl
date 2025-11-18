@@ -11,7 +11,7 @@ import numpy as np
 from ._shaped_value import ShapedValue, _indices_to_indexer, _maybe_compute_size
 from .arith import Scalar, constant, index_cast
 from .tensor import compute_result_shape_reassoc_list
-from .vector import Vector
+from .vector import VectorValue
 from .. import types as T
 from ..meta import region_op
 from ..util import (
@@ -218,12 +218,12 @@ class MemRefValue(Value):
             if isinstance(val, (int, float)):
                 # TODO: this is an unchecked conversion
                 val = Scalar(val, dtype=self.dtype)
-            assert isinstance(val, (Scalar, Vector)), (
-                f"coordinate insert on ranked memref {self.type} requires scalar element but got {val=}"
-            )
+            assert isinstance(
+                val, (Scalar, VectorValue)
+            ), f"coordinate insert on ranked memref {self.type} requires scalar element but got {val=}"
             if isinstance(val, Scalar):
                 store(val, self, idx, loc=loc)
-            elif isinstance(val, Vector):
+            elif isinstance(val, VectorValue):
                 return vector.StoreOp(
                     valueToStore=val,
                     base=self,
@@ -427,9 +427,9 @@ def _subview(
                 strides[i] = 1
             else:
                 raise RuntimeError(f"indexing of {mem=} not supported by {ind=}")
-        assert all(map(lambda x: x is not None, offsets + sizes + strides)), (
-            f"not each slice is statically known: {indexer.indices}"
-        )
+        assert all(
+            map(lambda x: x is not None, offsets + sizes + strides)
+        ), f"not each slice is statically known: {indexer.indices}"
 
     out = subview(
         out,
@@ -457,9 +457,9 @@ def _copy_to_subview(
         source = expand_shape(source, (0,), loc=loc, ip=ip)
 
     dest_subview = _subview(dest, idx, loc=loc, ip=ip)
-    assert dest_subview.shape == source.shape, (
-        f"Expected matching shape for dest subview {dest_subview.shape} and source {source.shape=}"
-    )
+    assert (
+        dest_subview.shape == source.shape
+    ), f"Expected matching shape for dest subview {dest_subview.shape} and source {source.shape=}"
 
     return memref.copy(source, dest_subview, loc=loc, ip=ip)
 
@@ -490,9 +490,9 @@ def global_(
         sym_name = _get_sym_name(
             previous_frame, check_func_call="memref\\.global_|global_"
         )
-        assert sym_name is not None, (
-            "couldn't automatically find sym_name in previous frame"
-        )
+        assert (
+            sym_name is not None
+        ), "couldn't automatically find sym_name in previous frame"
     if initial_value is None:
         assert type is not None
     else:

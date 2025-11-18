@@ -18,8 +18,8 @@ from ...ir import AffineMap, VectorType, Value
 
 @register_value_caster(VectorType.static_typeid)
 @ShapedValue
-class Vector(ArithValue):
-    def __getitem__(self, idx: tuple) -> "Vector":
+class VectorValue(ArithValue):
+    def __getitem__(self, idx: tuple) -> "VectorValue":
         loc = get_user_code_loc()
 
         if not self.has_rank():
@@ -82,7 +82,7 @@ _transfer_write = transfer_write
 
 
 def transfer_write(
-    val: Vector,
+    val: VectorValue,
     dest,
     indices,
     *,

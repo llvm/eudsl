@@ -226,7 +226,7 @@ def test_np_constructor(ctx: MLIRContext):
     vec = arith.constant(A, vector=True)
     assert (
         repr(vec)
-        == f"Vector(%cst = arith.constant dense<{vec.literal_value.tolist()}> : vector<2x4xi32>)"
+        == f"VectorValue(%cst = arith.constant dense<{vec.literal_value.tolist()}> : vector<2x4xi32>)"
     )
 
 
