@@ -102,7 +102,7 @@ jobs:
         uses: actions/checkout@v4.2.2
 
       - name: "Setup base"
-        if: matrix.runs-on != "self-hosted-macos-arm64"
+        if: matrix.runs-on != 'self-hosted-macos-arm64'
         uses: ./.github/actions/setup_base
         id: setup_base
         with:
