@@ -203,12 +203,17 @@ class PyTypeObject(Structure):
         return cls.from_address(address(obj))
 
 
+# https://github.com/python/cpython/blob/9648eed33f5fca0fcb8802fe0be8d35907bc33e3/Objects/typevarobject.c#L19-L31
 class PyTypeVarObject(Structure):
     _fields_ = _py_object_fields + [
         ("ob_size", c_ssize_t),
         ("name", _Ptr[PyObject]),
-        # not sure why but this is the only thing that works but that's fine because it's the only thing we need
         ("bound", _Ptr[PyObject]),
+        ("evaluate_bound", _Ptr[PyObject]),
+        ("constraints", _Ptr[PyObject]),
+        ("evaluate_constraints", _Ptr[PyObject]),
+        ("default_value", _Ptr[PyObject]),
+        ("evaluate_default", _Ptr[PyObject]),
     ]
 
     @classmethod

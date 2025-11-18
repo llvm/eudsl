@@ -300,8 +300,10 @@ def negf(I, O, *, loc=None, ip=None):
     return linalg.negf(I, loc=loc, ip=ip, outs=[O])
 
 
-def pooling_nchw_max(I, K, O, *, loc=None, ip=None):
-    return linalg.pooling_nchw_max(I, K, loc=loc, ip=ip, outs=[O])
+def pooling_nchw_max(I, K, O, *, strides, dilations, loc=None, ip=None):
+    return linalg.pooling_nchw_max(
+        I, K, strides=strides, dilations=dilations, loc=loc, ip=ip, outs=[O]
+    )
 
 
 def pooling_nchw_sum(I, K, O, *, loc=None, ip=None):

@@ -178,6 +178,9 @@ class LLVMJITBackendInvoker:
 
         return invoke
 
+    def __getitem__(self, item):
+        return getattr(self, item)
+
 
 # A return consumer is a trampoline to a python function that will store/capture the return from the return;
 # this is done because you can't return structs etc from C APIs.
