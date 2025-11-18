@@ -78,7 +78,7 @@ jobs:
             os: "windows"
             arch: amd64
           - name: "macos_arm64"
-            runs-on: "macos-14"
+            runs-on: "self-hosted-macos-arm64"
             os: "macos"
             arch: arm64
 #          - name: "macos_x86_64"
@@ -121,6 +121,7 @@ jobs:
           submodules: true
 
       - name: "Setup base"
+        if: matrix.runs-on != 'self-hosted-macos-arm64'
         uses: ./.github/actions/setup_base
         id: setup_base
         with:

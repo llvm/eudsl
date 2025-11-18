@@ -84,7 +84,7 @@ jobs:
           "ubuntu-22.04",
           "ubuntu-22.04-arm",
           "macos-13",
-          "macos-14",
+          "self-hosted-macos-arm64",
           "windows-2022"
         ]
         python-version: [
@@ -95,7 +95,7 @@ jobs:
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
           {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
           {runs-on: "windows-2022", name: "windows_amd64", os: "windows"},
-          {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
+          {runs-on: "self-hosted-macos-arm64", name: "macos_arm64", os: "macos"},
 #          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
         ]
         exclude:
