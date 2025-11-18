@@ -78,7 +78,7 @@ mlir_configure_python_dev_packages()
 
 declare_mlir_python_sources(MLIRPythonCAPI.TableGenSources
   ADD_TO_PARENT MLIRPythonCAPI.HeaderSources
-  ROOT_DIR "${MLIR_SOURCE_DIR}/include"
+  ROOT_DIR "${MLIR_INCLUDE_DIRS}"
   SOURCES_GLOB "mlir/*.td"
 )
 
