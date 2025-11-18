@@ -76,10 +76,10 @@ jobs:
             runs-on: "macos-14"
             os: "macos"
             arch: "arm64"
-          - name: "macos_x86_64"
-            runs-on: "macos-13"
-            os: "macos"
-            arch: "x86_64"
+#          - name: "macos_x86_64"
+#            runs-on: "macos-13"
+#            os: "macos"
+#            arch: "x86_64"
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -283,7 +283,7 @@ jobs:
           {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
           {runs-on: "windows-2022", name: "windows_amd64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
-          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
+#          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
         ]
         exclude:
           - runs-on: macos-13
@@ -354,7 +354,7 @@ jobs:
           {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
           {runs-on: "windows-2022", name: "windows_amd64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
-          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
+#          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
         ]
         exclude:
           - runs-on: macos-13
