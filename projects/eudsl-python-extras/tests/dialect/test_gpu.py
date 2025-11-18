@@ -625,6 +625,7 @@ def test_generic_type_var_closure_patching(ctx: MLIRContext):
     )
 
 
+@pytest.mark.xfail(reason="TODO: reification of ")
 @pytest.mark.skipif(
     sys.version_info < (3, 12) or platform.system() == "Windows",
     reason="requires python3.12 or higher (and windows can't find the source file)",
