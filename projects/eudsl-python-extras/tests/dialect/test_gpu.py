@@ -657,9 +657,9 @@ def test_generic_type_var_closure_patching_dependent_generics(ctx: MLIRContext):
         K,
         N,
         dtype,
-        A_t: T.memref(M, K, dtype),
-        B_t: T.memref(K, N, dtype),
-        C_t: T.memref(M, N, dtype),
+        A_t = T.memref(M, K, dtype),
+        B_t = T.memref(K, N, dtype),
+        C_t = T.memref(M, N, dtype),
     ](A: A_t, B: B_t, C: C_t):
         one = arith.constant(1.0, type=dtype)
         
@@ -684,33 +684,27 @@ def test_generic_type_var_closure_patching_dependent_generics(ctx: MLIRContext):
         test_plain[4, 5, 6, T.f16()].emit()  # noqa: F821
         test_2_with_rewrite[4, 5, 6, T.f16()].emit()  # noqa: F821
 
-    correct = dedent(
-        """\
-    module {
-      gpu.module @mod1 [#nvvm.target]  {
-        gpu.func @test_plain(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) kernel {
-          %cst = arith.constant 1.000000e+00 : f32
-          gpu.return
-        }
-        gpu.func @test_2_with_rewrite(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) kernel {
-          %cst = arith.constant 1.000000e+00 : f32
-          gpu.return
-        }
-      }
-      gpu.module @mod2 [#nvvm.target]  {
-        gpu.func @test_plain(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) kernel {
-          %cst = arith.constant 1.000000e+00 : f16
-          gpu.return
-        }
-        gpu.func @test_2_with_rewrite(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) kernel {
-          %cst = arith.constant 1.000000e+00 : f16
-          gpu.return
-        }
-      }
-    }
-    """
-    )
-    filecheck(correct, ctx.module)
+    # CHECK: gpu.module @mod1 [#nvvm.target] {
+    # CHECK:   gpu.func @"test_plain_int_1_int_2_int_3_type_f32_MemRefType_memref<1x2xf32>_MemRefType_memref<2x3xf32>_MemRefType_memref<1x3xf32>"(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) kernel {
+    # CHECK:     %cst = arith.constant 1.000000e+00 : f32
+    # CHECK:     gpu.return
+    # CHECK:   }
+    # CHECK:   gpu.func @"test_2_with_rewrite_int_1_int_2_int_3_type_f32_MemRefType_memref<1x2xf32>_MemRefType_memref<2x3xf32>_MemRefType_memref<1x3xf32>"(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) kernel {
+    # CHECK:     %cst = arith.constant 1.000000e+00 : f32
+    # CHECK:     gpu.return
+    # CHECK:   }
+    # CHECK: }
+    # CHECK: gpu.module @mod2 [#nvvm.target] {
+    # CHECK:   gpu.func @"test_plain_int_4_int_5_int_6_type_f16_MemRefType_memref<4x5xf16>_MemRefType_memref<5x6xf16>_MemRefType_memref<4x6xf16>"(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) kernel {
+    # CHECK:     %cst = arith.constant 1.000000e+00 : f16
+    # CHECK:     gpu.return
+    # CHECK:   }
+    # CHECK:   gpu.func @"test_2_with_rewrite_int_4_int_5_int_6_type_f16_MemRefType_memref<4x5xf16>_MemRefType_memref<5x6xf16>_MemRefType_memref<4x6xf16>"(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) kernel {
+    # CHECK:     %cst = arith.constant 1.000000e+00 : f16
+    # CHECK:     gpu.return
+    # CHECK:   }
+    # CHECK: }
+    filecheck_with_comments(ctx.module)
 
 
 def test_amdgpu(ctx: MLIRContext):
