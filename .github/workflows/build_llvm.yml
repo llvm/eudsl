@@ -121,6 +121,7 @@ jobs:
           submodules: true
 
       - name: "Setup base"
+        if: matrix.runs-on != "self-hosted-macos-arm64"
         uses: ./.github/actions/setup_base
         id: setup_base
         with:
