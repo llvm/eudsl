@@ -13,7 +13,7 @@ from ._shaped_value import (
     _is_scalar,
     _is_int_arraylike,
 )
-from .arith import ArithValue, Scalar, constant
+from .arith import ArithValue, ScalarValue, constant
 from .. import types as T
 from ..util import (
     _unpack_sizes_element_type,
@@ -41,7 +41,7 @@ def empty(*sizes: Union[int, Value], element_type: Type = None, loc=None, ip=Non
 
 
 def extract_slice(
-    source: "Tensor",
+    source: "TensorValue",
     offsets: Optional[Sequence[Value]] = None,
     strides: Optional[Sequence[Value]] = None,
     static_offsets: Optional[Sequence[int]] = None,
@@ -109,15 +109,17 @@ def insert_slice(
 
 
 def _is_index_tensor(x):
-    """Returns True if x is a Tensor with index dtype, False otherwise."""
-    return isinstance(x, Value) and isinstance(x, Tensor) and _is_index_type(x.dtype)
+    """Returns True if x is a TensorValue with index dtype, False otherwise."""
+    return (
+        isinstance(x, Value) and isinstance(x, TensorValue) and _is_index_type(x.dtype)
+    )
 
 
 # TODO(max): unify vector/memref/tensor
 @register_value_caster(RankedTensorType.static_typeid)
 @ShapedValue
-class Tensor(ArithValue):
-    def __getitem__(self, idx: tuple) -> "Tensor":
+class TensorValue(ArithValue):
+    def __getitem__(self, idx: tuple) -> "TensorValue":
         loc = get_user_code_loc()
 
         if not self.has_rank():
@@ -138,7 +140,7 @@ class Tensor(ArithValue):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)
 
-        if all(isinstance(d, Scalar) for d in idx) and len(idx) == len(self.shape):
+        if all(isinstance(d, ScalarValue) for d in idx) and len(idx) == len(self.shape):
             return tensor.extract(self, idx, loc=loc)
         else:
             if any(_is_index_tensor(i) or _is_int_arraylike(i) for i in idx):
@@ -177,9 +179,9 @@ class Tensor(ArithValue):
             or idx == slice(None)
             or (isinstance(idx, tuple) and all(i == slice(None) for i in idx))
         ):
-            assert self.shape == source.shape, (
-                f"Expected matching shape for dest slice {self.shape=} and source {source.shape=}"
-            )
+            assert (
+                self.shape == source.shape
+            ), f"Expected matching shape for dest slice {self.shape=} and source {source.shape=}"
             return self
 
         idx = list((idx,) if isinstance(idx, int) else idx)
@@ -187,21 +189,21 @@ class Tensor(ArithValue):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)
 
-        if all(isinstance(d, Scalar) and d.fold() for d in idx) and len(idx) == len(
-            self.shape
-        ):
-            assert isinstance(source, Scalar), (
-                "coordinate insert requires scalar element"
-            )
+        if all(isinstance(d, ScalarValue) and d.fold() for d in idx) and len(
+            idx
+        ) == len(self.shape):
+            assert isinstance(
+                source, ScalarValue
+            ), "coordinate insert requires scalar element"
             res = tensor.insert(source, self, idx, loc=loc)
         else:
             if any(_is_index_tensor(i) or _is_int_arraylike(i) for i in idx):
                 raise ValueError("indexing by tensor is not currently supported")
             indexer = _indices_to_indexer(tuple(idx), self.shape)
             if indexer.is_constant():
-                assert indexer.static_sizes() == source.shape, (
-                    f"Expected matching shape for dest slice {indexer.static_sizes()=} and source {source.shape=}"
-                )
+                assert (
+                    indexer.static_sizes() == source.shape
+                ), f"Expected matching shape for dest slice {indexer.static_sizes()=} and source {source.shape=}"
                 res = insert_slice(
                     source,
                     self,
@@ -223,9 +225,9 @@ class Tensor(ArithValue):
         *,
         loc=None,
         ip=None,
-    ) -> Tuple["Tensor", "Tensor"]:
+    ) -> Tuple["TensorValue", "TensorValue"]:
         if isinstance(other, np.ndarray):
-            other = Tensor(other)
+            other = TensorValue(other)
             return other
         elif _is_scalar(other):
             if not self.has_static_shape():
@@ -234,14 +236,14 @@ class Tensor(ArithValue):
                 )
             if isinstance(other, (int, float)):
                 np_dtype = mlir_type_to_np_dtype(self.dtype)
-                other = Tensor(
+                other = TensorValue(
                     np.full(self.shape, other, dtype=np_dtype),
                     dtype=self.dtype,
                     loc=loc,
                     ip=ip,
                 )
                 return other
-            elif isinstance(other, Scalar):
+            elif isinstance(other, ScalarValue):
                 other = tensor.splat(
                     RankedTensorType.get(self.shape, other.dtype),
                     other,
@@ -282,7 +284,7 @@ def expand_dims(
     *,
     loc=None,
     ip=None,
-) -> Tensor:
+) -> TensorValue:
     """Expand the shape of a tensor.
 
     Insert a new axis that will appear at the `axis` position in the expanded
@@ -304,9 +306,9 @@ def expand_dims(
         inp.shape, newaxis_dims
     )
     if inp.fold():
-        return Tensor(inp.literal_value.reshape(result_shape))
+        return TensorValue(inp.literal_value.reshape(result_shape))
 
-    return Tensor(
+    return TensorValue(
         tensor.expand_shape(
             RankedTensorType.get(result_shape, inp.dtype),
             inp,
@@ -369,12 +371,12 @@ def pad_(
     loc=None,
     ip=None,
 ):
-    assert all(isinstance(l, int) for l in low), (
-        f"only literal pad values supported: {low=}"
-    )
-    assert all(isinstance(l, int) for l in high), (
-        f"only literal pad values supported: {high=}"
-    )
+    assert all(
+        isinstance(l, int) for l in low
+    ), f"only literal pad values supported: {low=}"
+    assert all(
+        isinstance(l, int) for l in high
+    ), f"only literal pad values supported: {high=}"
 
     dim_sizes = []
     source_type = source.type

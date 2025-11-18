@@ -13,7 +13,7 @@ from mlir.ir import MLIRError, Type
 
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.dialects import memref, arith
-from mlir.extras.dialects.arith import Scalar, constant
+from mlir.extras.dialects.arith import ScalarValue, constant
 from mlir.extras.dialects.memref import (
     alloc,
     alloca,
@@ -48,7 +48,7 @@ def test_simple_literal_indexing(ctx: MLIRContext):
     mem = alloc((10, 22, 333, 4444), T.i32())
 
     w = mem[2, 4, 6, 8]
-    assert isinstance(w, Scalar)
+    assert isinstance(w, ScalarValue)
 
     two = constant(1) * 2
     w = mem[two, 4, 6, 8]
@@ -105,7 +105,7 @@ def test_simple_literal_indexing_alloca(ctx: MLIRContext):
         mem = alloca((10, 22, 333, 4444), T.i32())
 
         w = mem[2, 4, 6, 8]
-        assert isinstance(w, Scalar)
+        assert isinstance(w, ScalarValue)
         alloca_scope_return([])
 
     # CHECK:  memref.alloca_scope  {
@@ -537,7 +537,7 @@ def test_for_loops(ctx: MLIRContext):
         it_mem[i, i] = it_mem[i, i] + it_mem[i, i]
         res = yield_(it_mem)
 
-    assert repr(res) == "MemRef(%0, memref<10x10xi32>)"
+    assert repr(res) == "MemRefValue(%0, memref<10x10xi32>)"
     assert res.owner.name == "scf.for"
 
     # CHECK:  %[[VAL_0:.*]] = memref.alloc() : memref<10x10xi32>
@@ -563,7 +563,7 @@ def test_for_loops_canonicalizer(ctx: MLIRContext):
             it_mem[i, i] = it_mem[i, i] + it_mem[i, i]
             res = yield it_mem
 
-        assert repr(res) == "MemRef(%0, memref<10x10xi32>)"
+        assert repr(res) == "MemRefValue(%0, memref<10x10xi32>)"
         assert res.owner.name == "scf.for"
 
     tenfoo()

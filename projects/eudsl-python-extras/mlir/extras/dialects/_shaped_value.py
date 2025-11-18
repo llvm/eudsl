@@ -7,7 +7,7 @@ import numpy as np
 from typing import Tuple, Union, List, Any
 
 from ...dialects.linalg.opdsl.lang.emitter import _is_index_type
-from .arith import Scalar
+from .arith import ScalarValue
 from ...ir import DenseElementsAttr, ShapedType, Type, Value, RankedTensorType
 
 S = ShapedType.get_dynamic_size()
@@ -70,7 +70,7 @@ def ShapedValue(cls):
 
 @dataclass(frozen=True)
 class _Indexer:
-    indices: Tuple[Union[int, Scalar, slice, "Ellipsis", None]]
+    indices: Tuple[Union[int, ScalarValue, slice, "Ellipsis", None]]
     newaxis_dims: Tuple[int, "Ellipsis"]
     in_shape: Tuple[Union[Value, int]]
 
@@ -80,7 +80,7 @@ class _Indexer:
     def is_full(self):
         return all(
             isinstance(idx, slice)
-            # TODO(max): could also work for constant Scalar
+            # TODO(max): could also work for constant ScalarValue
             and all([isinstance(x, int) for x in [idx.start, idx.stop, idx.step]])
             and len(range(*idx.indices(self.in_shape[i]))) == self.in_shape[i]
             for i, idx in enumerate(self.indices)
@@ -91,7 +91,7 @@ class _Indexer:
     def static_offsets(self):
         offsets = []
         for i in self.indices:
-            if isinstance(i, (int, Scalar)):
+            if isinstance(i, (int, ScalarValue)):
                 offsets.append(int(i))
             elif isinstance(i, slice):
                 offsets.append(int(i.start))
@@ -103,7 +103,7 @@ class _Indexer:
     def static_sizes(self):
         sizes = []
         for i in self.indices:
-            if isinstance(i, (int, Scalar)):
+            if isinstance(i, (int, ScalarValue)):
                 sizes.append(1)
             elif isinstance(i, slice):
                 start, stop, step = map(int, (i.start, i.stop, i.step))
@@ -123,7 +123,7 @@ class _Indexer:
     def static_strides(self):
         strides = []
         for i in self.indices:
-            if isinstance(i, (int, Scalar)):
+            if isinstance(i, (int, ScalarValue)):
                 strides.append(1)
             elif isinstance(i, slice):
                 strides.append(int(i.step))
@@ -133,13 +133,13 @@ class _Indexer:
 
 
 def _indices_to_indexer(
-    idx: Tuple[Union[Scalar, slice, "Ellipsis", None]], in_shape: Tuple[int]
+    idx: Tuple[Union[ScalarValue, slice, "Ellipsis", None]], in_shape: Tuple[int]
 ) -> _Indexer:
     """Processes sequence of index objects and constructs _Indexer with
     corresponding indexing tensor and collapse dims (i.e., scatter/gather dims).
 
     Args:
-      idx: Sequence (list or tuple) of slices, ellipses, Scalar, or Tensors.
+      idx: Sequence (list or tuple) of slices, ellipses, ScalarValue, or Tensors.
       in_shape: The shape of the tensor being indexed into.
 
     Returns:
@@ -150,13 +150,15 @@ def _indices_to_indexer(
 
     in_axis = 0  # Current axis in input.
     out_axis = 0  # Current axis in output.
-    indices: List[Union[Scalar, slice, Ellipsis, None]] = [slice(None)] * len(in_shape)
+    indices: List[Union[ScalarValue, slice, Ellipsis, None]] = [slice(None)] * len(
+        in_shape
+    )
     newaxis_dims: List[int] = []
 
     # nb: idx_e <-> idx_element
     for idx_i, idx_e in enumerate(idx):
         if _is_scalar(idx_e) and _has_index_type(idx_e):
-            # Handle basic Scalar indexes.
+            # Handle basic ScalarValue indexes.
             indices[in_axis] = idx_e
             in_axis += 1
         # Handle newaxis (None)
@@ -219,7 +221,7 @@ def _indices_to_indexer(
         if _is_constant_index(idx) and _is_constant_scalar(in_shape[i]):
             if isinstance(idx, slice):
                 indices[i] = slice(*idx.indices(int(in_shape[i])))
-            elif isinstance(idx, Scalar):
+            elif isinstance(idx, ScalarValue):
                 indices[i] = int(idx)
 
     return _Indexer(
@@ -234,7 +236,7 @@ def _canonicalize_tuple_index(idx: Tuple[Any], rank: int):
 
     Args:
       rank: Rank of tensor.
-      idx: Index object (Scalar, Tensor, slice, Ellipse, or None).
+      idx: Index object (ScalarValue, TensorValue, slice, Ellipse, or None).
 
     Returns:
       Tuple of index objects with no ellipses.
@@ -282,12 +284,12 @@ def _is_int_arraylike(x):
 
 
 def _is_scalar(e: Any) -> bool:
-    """Checks whether e is a Scalar or can be used to construct a Scalar.
+    """Checks whether e is a ScalarValue or can be used to construct a ScalarValue.
 
     Args:
       e: Anything
     """
-    return isinstance(e, Scalar) or isinstance(e, (int, float, bool))
+    return isinstance(e, ScalarValue) or isinstance(e, (int, float, bool))
 
 
 def _has_index_type(e: Any) -> bool:
@@ -310,7 +312,7 @@ def _has_index_type(e: Any) -> bool:
 
 def _is_constant_index(e: Any) -> bool:
     return (
-        (isinstance(e, Scalar) and e.is_constant())
+        (isinstance(e, ScalarValue) and e.is_constant())
         or isinstance(e, (int, float, bool))
         or (
             isinstance(e, slice)
@@ -323,7 +325,7 @@ def _is_constant_index(e: Any) -> bool:
 
 def _is_constant_scalar(e: Any) -> bool:
     return (
-        (isinstance(e, Scalar) and e.is_constant())
+        (isinstance(e, ScalarValue) and e.is_constant())
         or (isinstance(e, (int, float, bool)) and e != ShapedType.get_dynamic_size())
         or e is None
     )
@@ -349,7 +351,7 @@ def _maybe_compute_size(start, stop, step):
         and start.owner.operands[0] == stop.owner.operands[0].owner.operands[0]
         and stop.owner.operands[1].is_constant()
         and isinstance(step, int)
-        or (isinstance(step, Scalar) and step.is_constant())
+        or (isinstance(step, ScalarValue) and step.is_constant())
     ):
         # looks like this
         # l = lambda l: l * D

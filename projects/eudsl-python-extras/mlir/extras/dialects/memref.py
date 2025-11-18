@@ -9,9 +9,9 @@ from typing import Sequence, Union, Optional
 import numpy as np
 
 from ._shaped_value import ShapedValue, _indices_to_indexer, _maybe_compute_size
-from .arith import Scalar, constant, index_cast
+from .arith import ScalarValue, constant, index_cast
 from .tensor import compute_result_shape_reassoc_list
-from .vector import Vector
+from .vector import VectorValue
 from .. import types as T
 from ..meta import region_op
 from ..util import (
@@ -168,14 +168,14 @@ rank_reduce = object()
 
 @register_value_caster(MemRefType.static_typeid)
 @ShapedValue
-class MemRef(Value):
+class MemRefValue(Value):
     def __str__(self):
         return f"{self.__class__.__name__}({self.get_name()}, {self.type})"
 
     def __repr__(self):
         return str(self)
 
-    def __getitem__(self, idx: tuple) -> "MemRef":
+    def __getitem__(self, idx: tuple) -> "MemRefValue":
         loc = get_user_code_loc()
 
         if not self.has_rank():
@@ -188,7 +188,7 @@ class MemRef(Value):
         if idx is None:
             return expand_shape(self, (0,), loc=loc)
 
-        idx = list((idx,) if isinstance(idx, (int, Scalar, slice)) else idx)
+        idx = list((idx,) if isinstance(idx, (int, ScalarValue, slice)) else idx)
         should_rank_reduce = rank_reduce in idx
         if should_rank_reduce:
             idx.remove(rank_reduce)
@@ -198,7 +198,7 @@ class MemRef(Value):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)
 
-        if all(isinstance(d, Scalar) for d in idx) and len(idx) == len(self.shape):
+        if all(isinstance(d, ScalarValue) for d in idx) and len(idx) == len(self.shape):
             return load(self, idx, loc=loc)
         else:
             return _subview(self, tuple(idx), rank_reduce=should_rank_reduce, loc=loc)
@@ -209,21 +209,21 @@ class MemRef(Value):
         if not self.has_rank():
             raise ValueError("only ranked memref slicing/indexing supported")
 
-        idx = list((idx,) if isinstance(idx, (Scalar, int, Value)) else idx)
+        idx = list((idx,) if isinstance(idx, (ScalarValue, int, Value)) else idx)
         for i, d in enumerate(idx):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)
 
-        if all(isinstance(d, Scalar) for d in idx) and len(idx) == len(self.shape):
+        if all(isinstance(d, ScalarValue) for d in idx) and len(idx) == len(self.shape):
             if isinstance(val, (int, float)):
                 # TODO: this is an unchecked conversion
-                val = Scalar(val, dtype=self.dtype)
-            assert isinstance(val, (Scalar, Vector)), (
-                f"coordinate insert on ranked memref {self.type} requires scalar element but got {val=}"
-            )
-            if isinstance(val, Scalar):
+                val = ScalarValue(val, dtype=self.dtype)
+            assert isinstance(
+                val, (ScalarValue, VectorValue)
+            ), f"coordinate insert on ranked memref {self.type} requires scalar element but got {val=}"
+            if isinstance(val, ScalarValue):
                 store(val, self, idx, loc=loc)
-            elif isinstance(val, Vector):
+            elif isinstance(val, VectorValue):
                 return vector.StoreOp(
                     valueToStore=val,
                     base=self,
@@ -240,7 +240,7 @@ def expand_shape(
     *,
     loc=None,
     ip=None,
-) -> MemRef:
+) -> MemRefValue:
     """Expand the shape of a memref.
 
     Insert a new axis that will appear at the `axis` position in the expanded
@@ -262,7 +262,7 @@ def expand_shape(
         inp.shape, newaxis_dims
     )
 
-    return MemRef(
+    return MemRefValue(
         memref.expand_shape(
             T.memref(*result_shape, inp.dtype),
             inp,
@@ -390,13 +390,13 @@ def subview(
 
 
 def _subview(
-    mem: MemRef,
+    mem: MemRefValue,
     idx,
     *,
     rank_reduce=False,
     loc=None,
     ip=None,
-) -> MemRef:
+) -> MemRefValue:
     indexer = _indices_to_indexer(idx, mem.shape)
     out = mem
 
@@ -419,7 +419,9 @@ def _subview(
                 offsets[i] = ind.start
                 sizes[i] = maybe_size
                 strides[i] = (
-                    ind.step.literal_value if isinstance(ind.step, Scalar) else ind.step
+                    ind.step.literal_value
+                    if isinstance(ind.step, ScalarValue)
+                    else ind.step
                 )
             elif isinstance(ind, Value):
                 offsets[i] = ind
@@ -427,9 +429,9 @@ def _subview(
                 strides[i] = 1
             else:
                 raise RuntimeError(f"indexing of {mem=} not supported by {ind=}")
-        assert all(map(lambda x: x is not None, offsets + sizes + strides)), (
-            f"not each slice is statically known: {indexer.indices}"
-        )
+        assert all(
+            map(lambda x: x is not None, offsets + sizes + strides)
+        ), f"not each slice is statically known: {indexer.indices}"
 
     out = subview(
         out,
@@ -446,20 +448,20 @@ def _subview(
 
 
 def _copy_to_subview(
-    dest: MemRef,
-    source: MemRef,
+    dest: MemRefValue,
+    source: MemRefValue,
     idx,
     *,
     loc=None,
     ip=None,
 ):
-    if isinstance(source, Scalar):
+    if isinstance(source, ScalarValue):
         source = expand_shape(source, (0,), loc=loc, ip=ip)
 
     dest_subview = _subview(dest, idx, loc=loc, ip=ip)
-    assert dest_subview.shape == source.shape, (
-        f"Expected matching shape for dest subview {dest_subview.shape} and source {source.shape=}"
-    )
+    assert (
+        dest_subview.shape == source.shape
+    ), f"Expected matching shape for dest subview {dest_subview.shape} and source {source.shape=}"
 
     return memref.copy(source, dest_subview, loc=loc, ip=ip)
 
@@ -490,9 +492,9 @@ def global_(
         sym_name = _get_sym_name(
             previous_frame, check_func_call="memref\\.global_|global_"
         )
-        assert sym_name is not None, (
-            "couldn't automatically find sym_name in previous frame"
-        )
+        assert (
+            sym_name is not None
+        ), "couldn't automatically find sym_name in previous frame"
     if initial_value is None:
         assert type is not None
     else:
