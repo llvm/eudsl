@@ -1,9 +1,8 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-from . import arith
 from ..util import get_user_code_loc
-
+from ... import ir
 from ...dialects._ods_common import (
     _dispatch_mixed_values,
     _cext,
@@ -16,54 +15,10 @@ from ...dialects._ods_common import (
 
 # noinspection PyUnresolvedReferences
 from ...dialects.rocdl import *
-from ...dialects._rocdl_ops_gen import _Dialect
-from ... import ir
 
-
-@_cext.register_operation(_Dialect, replace=True)
-class WMMA_F16_16X16X16_F16(ir.OpView):
-    OPERATION_NAME = "rocdl.wmma.f16.16x16x16.f16"
-
-    _ODS_REGIONS = (0, True)
-
-    def __init__(self, res, args, *, loc=None, ip=None):
-        operands = []
-        results = []
-        attributes = {}
-        regions = None
-        operands.extend(get_op_results_or_values(args))
-        _ods_context = get_default_loc_context(loc)
-        results.append(res)
-        _ods_successors = None
-        super().__init__(
-            self.OPERATION_NAME,
-            self._ODS_REGIONS,
-            self._ODS_OPERAND_SEGMENTS,
-            self._ODS_RESULT_SEGMENTS,
-            attributes=attributes,
-            results=results,
-            operands=operands,
-            successors=_ods_successors,
-            regions=regions,
-            loc=loc,
-            ip=ip,
-        )
-
-    @property
-    def args(self):
-        _ods_variadic_group_length = len(self.operation.operands) - 1 + 1
-        return self.operation.operands[0 : 0 + _ods_variadic_group_length]
-
-    @property
-    def res(self):
-        return self.operation.results[0]
-
-
-wmma_f16_16x16x16_f16_ = wmma_f16_16x16x16_f16
+_wmma_f16_16x16x16_f16 = wmma_f16_16x16x16_f16
 
 
 def wmma_f16_16x16x16_f16(A, B, C, *, opsel=False, loc=None, ip=None) -> ir.Value:
     v16 = ir.VectorType.get((16,), ir.F16Type.get())
-    return wmma_f16_16x16x16_f16_(
-        res=v16, A=A, B=B, C=C, opsel=opsel, loc=loc, ip=ip
-    ).result
+    return _wmma_f16_16x16x16_f16(v16, A, B, C, opsel=opsel, loc=loc, ip=ip).result

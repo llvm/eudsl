@@ -625,10 +625,9 @@ def test_generic_type_var_closure_patching(ctx: MLIRContext):
     )
 
 
-@pytest.mark.xfail(reason="TODO: reification of ")
 @pytest.mark.skipif(
-    sys.version_info < (3, 12) or platform.system() == "Windows",
-    reason="requires python3.12 or higher (and windows can't find the source file)",
+    sys.version_info < (3, 13) or platform.system() == "Windows",
+    reason="requires python3.13 or higher (and windows can't find the source file)",
 )
 def test_generic_type_var_closure_patching_dependent_generics(ctx: MLIRContext):
     # dodge <3.12 parser that doesn't support square brackets generics
@@ -645,9 +644,9 @@ def test_generic_type_var_closure_patching_dependent_generics(ctx: MLIRContext):
         K,
         N,
         dtype,
-        A_t: T.memref(M, K, dtype),
-        B_t: T.memref(K, N, dtype),
-        C_t: T.memref(M, N, dtype),
+        A_t = T.memref(M, K, dtype),
+        B_t = T.memref(K, N, dtype),
+        C_t = T.memref(M, N, dtype),
     ](A: A_t, B: B_t, C: C_t):
         one = arith.constant(1.0, type=dtype)
 
