@@ -31,7 +31,7 @@ from mlir.extras.dialects.scf import (
     placeholder_opaque_t,
     another_reduce,
 )
-from mlir.extras.dialects.tensor import empty, Tensor
+from mlir.extras.dialects.tensor import empty, TensorValue
 
 # noinspection PyUnresolvedReferences
 from mlir.extras.testing import (
@@ -2331,9 +2331,9 @@ def test_parange_inits_with_for(ctx: MLIRContext):
         twenty = empty(10, 10, T.i32())
 
         @reduce(twenty)
-        def res(lhs: Tensor, rhs: Tensor):
-            assert isinstance(lhs, Tensor)
-            assert isinstance(rhs, Tensor)
+        def res(lhs: TensorValue, rhs: TensorValue):
+            assert isinstance(lhs, TensorValue)
+            assert isinstance(rhs, TensorValue)
             return lhs + rhs
 
     ctx.module.operation.verify()

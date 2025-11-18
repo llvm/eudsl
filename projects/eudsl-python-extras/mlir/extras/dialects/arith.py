@@ -298,8 +298,8 @@ def _binary_op(
     """Generic for handling infix binary operator dispatch.
 
     Args:
-      lhs: E.g. ScalarValue or Tensor below.
-      rhs: ScalarValue or Tensor with type matching self.
+      lhs: E.g. ScalarValue or TensorValue below.
+      rhs: ScalarValue or TensorValue with type matching self.
       op: Binary operator, currently only add, sub, mul
         supported.
 

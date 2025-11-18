@@ -236,7 +236,7 @@ def _canonicalize_tuple_index(idx: Tuple[Any], rank: int):
 
     Args:
       rank: Rank of tensor.
-      idx: Index object (ScalarValue, Tensor, slice, Ellipse, or None).
+      idx: Index object (ScalarValue, TensorValue, slice, Ellipse, or None).
 
     Returns:
       Tuple of index objects with no ellipses.

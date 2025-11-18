@@ -41,7 +41,7 @@ def empty(*sizes: Union[int, Value], element_type: Type = None, loc=None, ip=Non
 
 
 def extract_slice(
-    source: "Tensor",
+    source: "TensorValue",
     offsets: Optional[Sequence[Value]] = None,
     strides: Optional[Sequence[Value]] = None,
     static_offsets: Optional[Sequence[int]] = None,
@@ -109,15 +109,17 @@ def insert_slice(
 
 
 def _is_index_tensor(x):
-    """Returns True if x is a Tensor with index dtype, False otherwise."""
-    return isinstance(x, Value) and isinstance(x, Tensor) and _is_index_type(x.dtype)
+    """Returns True if x is a TensorValue with index dtype, False otherwise."""
+    return (
+        isinstance(x, Value) and isinstance(x, TensorValue) and _is_index_type(x.dtype)
+    )
 
 
 # TODO(max): unify vector/memref/tensor
 @register_value_caster(RankedTensorType.static_typeid)
 @ShapedValue
-class Tensor(ArithValue):
-    def __getitem__(self, idx: tuple) -> "Tensor":
+class TensorValue(ArithValue):
+    def __getitem__(self, idx: tuple) -> "TensorValue":
         loc = get_user_code_loc()
 
         if not self.has_rank():
@@ -223,9 +225,9 @@ class Tensor(ArithValue):
         *,
         loc=None,
         ip=None,
-    ) -> Tuple["Tensor", "Tensor"]:
+    ) -> Tuple["TensorValue", "TensorValue"]:
         if isinstance(other, np.ndarray):
-            other = Tensor(other)
+            other = TensorValue(other)
             return other
         elif _is_scalar(other):
             if not self.has_static_shape():
@@ -234,7 +236,7 @@ class Tensor(ArithValue):
                 )
             if isinstance(other, (int, float)):
                 np_dtype = mlir_type_to_np_dtype(self.dtype)
-                other = Tensor(
+                other = TensorValue(
                     np.full(self.shape, other, dtype=np_dtype),
                     dtype=self.dtype,
                     loc=loc,
@@ -282,7 +284,7 @@ def expand_dims(
     *,
     loc=None,
     ip=None,
-) -> Tensor:
+) -> TensorValue:
     """Expand the shape of a tensor.
 
     Insert a new axis that will appear at the `axis` position in the expanded
@@ -304,9 +306,9 @@ def expand_dims(
         inp.shape, newaxis_dims
     )
     if inp.fold():
-        return Tensor(inp.literal_value.reshape(result_shape))
+        return TensorValue(inp.literal_value.reshape(result_shape))
 
-    return Tensor(
+    return TensorValue(
         tensor.expand_shape(
             RankedTensorType.get(result_shape, inp.dtype),
             inp,
