@@ -191,6 +191,8 @@ jobs:
 
   test-mlir-python-bindings:
 
+    if: github.event_name == 'pull_request'
+
     needs: [build-mlir-python-bindings]
 
     strategy:
@@ -273,7 +275,9 @@ jobs:
   release-mlir-python-bindings:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
-    needs: [test-mlir-python-bindings]
+
+    needs: [build-mlir-python-bindings]
+
     runs-on: "ubuntu-22.04"
 
     permissions:
@@ -441,7 +445,7 @@ jobs:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
 
-    needs: [test-mlir-python-bindings]
+    needs: [build-mlir-python-bindings]
 
     permissions:
       contents: read
