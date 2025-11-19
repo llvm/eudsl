@@ -9,7 +9,7 @@ import mlir.extras.types as T
 import numpy as np
 import pytest
 from mlir.dialects.memref import subview
-from mlir.ir import MLIRError, Type
+from mlir.ir import MLIRError, Type, Value
 
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.dialects import memref, arith
@@ -21,6 +21,7 @@ from mlir.extras.dialects.memref import (
     alloca_scope_return,
     global_,
     rank_reduce,
+    S,
 )
 from mlir.extras.dialects.scf import (
     range_,
@@ -698,3 +699,25 @@ def test_memref_view(ctx: MLIRContext):
     # CHECK:  %[[VAL_13:.*]] = memref.view %[[VAL_0]]{{\[}}%[[VAL_12]]][] : memref<2048xi8> to memref<16x16xf32>
 
     filecheck_with_comments(ctx.module)
+
+
+def test_dim(ctx: MLIRContext):
+    mem_static = alloc((10, 22, 333, 4444), T.i32())
+
+    assert isinstance(mem_static.dim(0), int) and mem_static.dim(0) == 10
+    assert isinstance(mem_static.dim(1), int) and mem_static.dim(1) == 22
+    assert isinstance(mem_static.dim(2), int) and mem_static.dim(2) == 333
+    assert isinstance(mem_static.dim(3), int) and mem_static.dim(3) == 4444
+    assert mem_static.dims() == (10, 22, 333, 4444)
+
+    mem_dynamic = alloc((10, S, 333, 4444), T.i32())
+
+    assert isinstance(mem_dynamic.dim(0), int) and mem_dynamic.dim(0) == 10
+    assert isinstance(mem_dynamic.dim(1), Value) and isinstance(
+        mem_dynamic.dim(1).owner.opview, memref.DimOp
+    )
+    assert isinstance(mem_dynamic.dim(2), int) and mem_dynamic.dim(2) == 333
+    assert isinstance(mem_dynamic.dim(3), int) and mem_dynamic.dim(3) == 4444
+
+    dims = mem_dynamic.dims()
+    assert isinstance(dims[1], Value) and isinstance(dims[1].owner.opview, memref.DimOp)

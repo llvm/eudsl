@@ -9,7 +9,7 @@ from typing import Sequence, Union, Optional
 import numpy as np
 
 from ._shaped_value import ShapedValue, _indices_to_indexer, _maybe_compute_size
-from .arith import ScalarValue, constant, index_cast
+from .arith import ScalarValue, constant, index_cast, ConstantOp
 from .tensor import compute_result_shape_reassoc_list
 from .vector import VectorValue
 from .. import types as T
@@ -232,6 +232,28 @@ class MemRefValue(Value):
                 )
         else:
             _copy_to_subview(self, val, tuple(idx), loc=loc)
+
+    def dim(self, idx, *, loc=None, ip=None):
+        if self.has_rank():
+            if isinstance(idx, Value) and isinstance(idx.owner.opview, ConstantOp):
+                idx = idx.owner.opview.value.value
+            if not isinstance(idx, int):
+                raise TypeError(f"expected {idx=} to be an int")
+            d = self.shape[idx]
+            if d != S:
+                return d
+        if isinstance(idx, int):
+            idx = constant(idx, IndexType.get())
+        if not _is_index_type(idx.type):
+            idx = index_cast(idx, to=IndexType.get(), loc=loc, ip=ip)
+        return DimOp(self, idx, loc=loc, ip=ip).result
+
+    def dims(self, *, rank=None, loc=None, ip=None):
+        if self.has_rank():
+            return tuple(self.dim(i, loc=loc, ip=ip) for i in range(self.rank))
+        if rank is None:
+            raise ValueError("unranked dims requires rank for unranked memref")
+        return tuple(self.dim(i, loc=loc, ip=ip) for i in range(rank))
 
 
 def expand_shape(
