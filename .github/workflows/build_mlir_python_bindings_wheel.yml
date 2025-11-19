@@ -199,7 +199,7 @@ jobs:
         runs-on: [
           "ubuntu-22.04",
           "ubuntu-22.04-arm",
-          "macos-13",
+          # "macos-13",
           "macos-14",
           "windows-2022"
         ]
