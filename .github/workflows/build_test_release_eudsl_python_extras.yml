@@ -65,7 +65,7 @@ jobs:
       - name: "Build eudsl-python-extras sdist"
         run: |
           SHA_SHORT="$(git rev-parse --short HEAD)"
-          WHEEL_VERSION="$(date +'%Y%m%d')+$SHA_SHORT"
+          WHEEL_VERSION="$(date +'%Y%m%d.%H%M')+$SHA_SHORT"
           pushd projects/eudsl-python-extras 
           sed -i.bak "s/XXXWHEEL_VERSIONXXX/$WHEEL_VERSION/g" setup.py
           python setup.py sdist 
