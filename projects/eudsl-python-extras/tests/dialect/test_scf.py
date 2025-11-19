@@ -22,9 +22,9 @@ from mlir.extras.dialects.scf import (
     if_ctx_manager,
     else_ctx_manager,
     forall_,
-    parange_,
+    parallel_,
     forall,
-    parange,
+    parallel,
     reduce,
     while__,
     while___,
@@ -2233,11 +2233,10 @@ def test_forall_insert_slice_no_region(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
-@pytest.mark.xfail
-def test_parange_no_inits(ctx: MLIRContext):
+def test_parallel_no_inits(ctx: MLIRContext):
     ten = empty(10, 10, T.i32())
 
-    @parange_([1, 1], [2, 2], [3, 3], inits=[])
+    @parallel_([1, 1], [2, 2], [3, 3], inits=[])
     def forfoo(i, j):
         one = constant(1.0)
 
@@ -2254,7 +2253,7 @@ def test_parange_no_inits(ctx: MLIRContext):
       %c3_2 = arith.constant 3 : index
       scf.parallel (%arg0, %arg1) = (%c1, %c1_0) to (%c2, %c2_1) step (%c3, %c3_2) {
         %cst = arith.constant 1.000000e+00 : f32
-        scf.yield
+        scf.reduce
       }
     }
     """
@@ -2295,12 +2294,12 @@ def test_forall_insert_slice_no_region_with_for(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
-@pytest.mark.xfail
-def test_parange_no_inits_with_for(ctx: MLIRContext):
+def test_parallel_no_inits_with_for(ctx: MLIRContext):
     ten = empty(10, 10, T.i32())
 
-    for i, j in parange([1, 1], [2, 2], [3, 3], inits=[]):
+    for i, j in parallel([1, 1], [2, 2], [3, 3], inits=[]):
         one = constant(1.0)
+        scf.reduce_()
 
     ctx.module.operation.verify()
     correct = dedent(
@@ -2315,7 +2314,7 @@ def test_parange_no_inits_with_for(ctx: MLIRContext):
       %c3_2 = arith.constant 3 : index
       scf.parallel (%arg0, %arg1) = (%c1, %c1_0) to (%c2, %c2_1) step (%c3, %c3_2) {
         %cst = arith.constant 1.000000e+00 : f32
-        scf.yield
+        scf.reduce
       }
     }
     """
@@ -2323,10 +2322,10 @@ def test_parange_no_inits_with_for(ctx: MLIRContext):
     filecheck(correct, ctx.module)
 
 
-def test_parange_inits_with_for(ctx: MLIRContext):
+def test_parallel_inits_with_for(ctx: MLIRContext):
     ten = empty(10, 10, T.i32())
 
-    for i, j in parange([1, 1], [2, 2], [3, 3], inits=[ten]):
+    for i, j in parallel([1, 1], [2, 2], [3, 3], inits=[ten]):
         one = constant(1.0)
         twenty = empty(10, 10, T.i32())
 
@@ -2358,12 +2357,12 @@ def test_parange_inits_with_for(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
-def test_parange_inits_with_for_with_two_reduce(ctx: MLIRContext):
+def test_parallel_inits_with_for_with_two_reduce(ctx: MLIRContext):
     one = constant(1, index=True)
 
-    for i, j in parange([1, 1], [2, 2], [3, 3], inits=[one, one]):
+    for i, j in parallel([1, 1], [2, 2], [3, 3], inits=[one, one]):
 
-        @reduce(i, j, num_reductions=2)
+        @reduce(i, j)
         def res1(lhs: T.index(), rhs: T.index()):
             return lhs + rhs
 
@@ -2395,12 +2394,12 @@ def test_parange_inits_with_for_with_two_reduce(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
-def test_parange_inits_with_for_with_three_reduce(ctx: MLIRContext):
+def test_parallel_inits_with_for_with_three_reduce(ctx: MLIRContext):
     one = constant(1, index=True)
 
-    for i, j, k in parange([1, 1, 1], [2, 2, 2], [3, 3, 3], inits=[one, one, one]):
+    for i, j, k in parallel([1, 1, 1], [2, 2, 2], [3, 3, 3], inits=[one, one, one]):
 
-        @reduce(i, j, k, num_reductions=3)
+        @reduce(i, j, k)
         def res1(lhs: T.index(), rhs: T.index()):
             return lhs + rhs
 
