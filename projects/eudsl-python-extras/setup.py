@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import os
+from datetime import datetime
 from pathlib import Path
 
 from pip._internal.req import parse_requirements
@@ -35,9 +36,9 @@ packages = (
 )
 
 version = "0.1.0"
-GIT_COMMIT = os.getenv("GIT_COMMIT", None)
-if GIT_COMMIT is not None:
-    version += f"+{GIT_COMMIT}"
+WHEEL_VERSION = os.getenv("WHEEL_VERSION", "XXXWHEEL_VERSIONXXX")
+if WHEEL_VERSION is not None and not WHEEL_VERSION.startswith("XXX"):
+    version += "." + WHEEL_VERSION
 
 setup(
     name="eudsl-python-extras",
@@ -58,7 +59,8 @@ setup(
     },
     python_requires=">=3.8",
     include_package_data=True,
-    packages=packages,  # lhs is package namespace, rhs is path (relative to this setup.py)
+    packages=packages,
+    # lhs is package namespace, rhs is path (relative to this setup.py)
     package_dir={
         f"{EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX}": "mlir",
         f"{EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX}.extras": "mlir/extras",
