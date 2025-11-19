@@ -249,6 +249,7 @@ def _arith_CmpIPredicateAttr(predicate: Union[str, Attribute], context: Context)
     }
     if isinstance(predicate, Attribute):
         return predicate
+    predicate = str(predicate)
     assert predicate in predicates, f"{predicate=} not in predicates"
     return _arith_cmpipredicateattr(predicates[predicate], context)
 
@@ -282,6 +283,7 @@ def _arith_CmpFPredicateAttr(predicate: Union[str, Attribute], context: Context)
     }
     if isinstance(predicate, Attribute):
         return predicate
+    predicate = str(predicate)
     assert predicate in predicates, f"{predicate=} not in predicates"
     return _arith_cmpfpredicateattr(predicates[predicate], context)
 
