@@ -127,7 +127,7 @@ class Pipeline:
 
     def add_pass(self, pass_name, **kwargs):
         kwargs = {
-            k.replace("_", "-"): int(v) if isinstance(v, bool) else v
+            k: int(v) if isinstance(v, bool) else v
             for k, v in kwargs.items()
             if v is not None
         }
@@ -174,6 +174,8 @@ class Pipeline:
             .convert_cf_to_llvm()
             # Convert Index to LLVM (always needed).
             .convert_index_to_llvm()
+            # Convert UB to LLVM (always needed).
+            .convert_ub_to_llvm()
             # Convert remaining unrealized_casts (always needed).
             .reconcile_unrealized_casts()
         )

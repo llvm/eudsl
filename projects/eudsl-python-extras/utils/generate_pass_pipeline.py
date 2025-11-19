@@ -105,7 +105,7 @@ def print_options_doc_string(pass_, ident, output_file):
         for o in pass_.options:
             print(
                 indent(
-                    f"{o.argument}: {o.description}",
+                    f"{o.argument.replace('-', '_')}: {o.description}",
                     prefix=" " * ident * 3,
                 ),
                 file=output_file,
@@ -144,7 +144,7 @@ def generate_pass_method(pass_: Pass, output_file):
         print_options_doc_string(pass_, ident, output_file)
 
         mlir_args = []
-        for n, t in py_args:
+        for i, (n, t) in enumerate(py_args):
             if "list" in t:
                 print(
                     indent(
@@ -157,12 +157,13 @@ def generate_pass_method(pass_: Pass, output_file):
                     indent(f"{n} = ','.join(map(str, {n}))", prefix=" " * ident * 3),
                     file=output_file,
                 )
-            mlir_args.append(f"{n}={n}")
+            o = pass_.options[i]
+            mlir_args.append(f'"{o.argument}": {n}')
         print(
             indent(
                 dedent(
                     f"""\
-                        self.add_pass("{pass_name}", {", ".join(mlir_args)})
+                        self.add_pass("{pass_name}", **{{{", ".join(mlir_args)}}})
                         return self
                     """
                 ),
