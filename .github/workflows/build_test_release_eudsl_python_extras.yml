@@ -64,8 +64,12 @@ jobs:
 
       - name: "Build eudsl-python-extras sdist"
         run: |
-          export "GIT_COMMIT=$(git rev-parse --short HEAD)"
-          pushd projects/eudsl-python-extras && python setup.py sdist && popd
+          SHA_SHORT="$(git rev-parse --short HEAD)"
+          WHEEL_VERSION="$(date +'%Y%m%d')+$SHA_SHORT"
+          pushd projects/eudsl-python-extras 
+          sed -i.bak "s/XXXWHEEL_VERSIONXXX/$WHEEL_VERSION/g" setup.py
+          python setup.py sdist 
+          popd
 
       - name: Upload eudsl-python-extras sdist
         uses: actions/upload-artifact@v4
