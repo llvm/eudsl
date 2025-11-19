@@ -75,6 +75,8 @@ jobs:
 
   test-eudsl-python-extras:
 
+    if: github.event_name == 'pull_request'
+
     needs: [build-eudsl-python-extras]
 
     strategy:
@@ -159,7 +161,9 @@ jobs:
   release-eudsl-python-extras:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
-    needs: [test-eudsl-python-extras]
+
+    needs: [build-eudsl-python-extras]
+
     runs-on: "ubuntu-22.04"
 
     permissions:
