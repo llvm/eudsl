@@ -92,7 +92,6 @@ def test_arithmetic(ctx: MLIRContext):
     # CHECK:  %[[VAL_10:.*]] = arith.subf %[[VAL_7]], %[[VAL_8]] : f32
     # CHECK:  %[[VAL_11:.*]] = arith.divf %[[VAL_7]], %[[VAL_8]] : f32
     # CHECK:  %[[VAL_12:.*]] = arith.remf %[[VAL_7]], %[[VAL_8]] : f32
-
     filecheck_with_comments(ctx.module)
 
 
@@ -158,6 +157,51 @@ def test_arith_cmp(ctx: MLIRContext):
     # CHECK:  %[[VAL_16:.*]] = arith.cmpf oeq, %[[VAL_10]], %[[VAL_11]] : f32
     # CHECK:  %[[VAL_17:.*]] = arith.cmpf one, %[[VAL_10]], %[[VAL_11]] : f32
 
+    filecheck_with_comments(ctx.module)
+
+
+def test_arith_cmp_enum_values(ctx: MLIRContext):
+    one = arith.constant(1)
+    two = arith.constant(2)
+    for pred in arith.CmpIPredicate.__members__.values():
+        arith.cmpi(pred, one, two)
+
+    one, two = arith.constant(1.0), arith.constant(2.0)
+    for pred in arith.CmpFPredicate.__members__.values():
+        arith.cmpf(pred, one, two)
+
+    # CHECK:         %[[CONSTANT_0:.*]] = arith.constant 1 : i32
+    # CHECK:         %[[CONSTANT_1:.*]] = arith.constant 2 : i32
+    # CHECK:         %[[CMPI_0:.*]] = arith.cmpi eq, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_1:.*]] = arith.cmpi ne, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_2:.*]] = arith.cmpi slt, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_3:.*]] = arith.cmpi sle, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_4:.*]] = arith.cmpi sgt, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_5:.*]] = arith.cmpi sge, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_6:.*]] = arith.cmpi ult, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_7:.*]] = arith.cmpi ule, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_8:.*]] = arith.cmpi ugt, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_9:.*]] = arith.cmpi uge, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CONSTANT_2:.*]] = arith.constant 1.000000e+00 : f32
+    # CHECK:         %[[CONSTANT_3:.*]] = arith.constant 2.000000e+00 : f32
+    # CHECK:         %[[CMPF_0:.*]] = arith.cmpf false, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_1:.*]] = arith.cmpf oeq, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_2:.*]] = arith.cmpf ogt, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_3:.*]] = arith.cmpf oge, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_4:.*]] = arith.cmpf olt, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_5:.*]] = arith.cmpf ole, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_6:.*]] = arith.cmpf one, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_7:.*]] = arith.cmpf ord, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_8:.*]] = arith.cmpf ueq, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_9:.*]] = arith.cmpf ugt, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_10:.*]] = arith.cmpf uge, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_11:.*]] = arith.cmpf ult, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_12:.*]] = arith.cmpf ule, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_13:.*]] = arith.cmpf une, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_14:.*]] = arith.cmpf uno, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+    # CHECK:         %[[CMPF_15:.*]] = arith.cmpf true, %[[CONSTANT_2]], %[[CONSTANT_3]] : f32
+
+    ctx.module.operation.verify()
     filecheck_with_comments(ctx.module)
 
 
