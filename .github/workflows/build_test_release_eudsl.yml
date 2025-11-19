@@ -415,7 +415,7 @@ jobs:
          "ubuntu_x86_64",
          "ubuntu_aarch64",
          "macos_arm64",
-         "macos_x86_64",
+         # "macos_x86_64",
          "windows_amd64"
         ]
 

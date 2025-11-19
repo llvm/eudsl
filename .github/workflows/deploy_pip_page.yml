@@ -40,6 +40,11 @@ jobs:
           cat mlir-python-bindings eudsl llvm eudsl-python-extras > index.html
           sed -i.bak 's/\/llvm\/eudsl/https:\/\/github.com\/llvm\/eudsl/g' index.html
           mkdir -p page && mv index.html page
+
+      - uses: geekyeggo/delete-artifact@v5
+        with:
+          name: github-pages
+          failOnError: false
         
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
