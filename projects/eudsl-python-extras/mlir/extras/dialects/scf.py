@@ -117,7 +117,7 @@ def _parfor(op_ctor):
         if steps is None:
             steps = [1] * len(lower_bounds)
 
-        params = [lower_bounds, upper_bounds, steps]
+        params = [list(lower_bounds), list(upper_bounds), list(steps)]
         for i, p in enumerate(params):
             for j, pp in enumerate(p):
                 if isinstance(pp, int):
@@ -183,7 +183,7 @@ def parallel_insert_slice(
 forall_ = region_op(_parfor(ForallOp), terminator=in_parallel_)
 
 
-def _parfor_cm(op_ctor):
+def _parfor_context_manager(op_ctor):
     def _base(*args, **kwargs):
         for_op = _parfor(op_ctor)(*args, **kwargs)
         block = for_op.regions[0].blocks[0]
@@ -194,7 +194,7 @@ def _parfor_cm(op_ctor):
     return _base
 
 
-forall = _parfor_cm(ForallOp)
+forall = _parfor_context_manager(ForallOp)
 
 
 class ParallelOp(ParallelOp):
@@ -203,8 +203,8 @@ class ParallelOp(ParallelOp):
         lower_bounds,
         upper_bounds,
         steps,
-        inits: Optional[Union[Operation, OpView, Sequence[Value]]] = None,
         *,
+        inits: Optional[Union[Operation, OpView, Sequence[Value]]] = None,
         loc=None,
         ip=None,
     ):
@@ -233,10 +233,16 @@ class ParallelOp(ParallelOp):
         return self.body.arguments
 
 
-parange_ = region_op(
-    _parfor(ParallelOp), terminator=lambda xs: reduce_return(xs[0]) if xs else None
-)
-parange = _parfor_cm(ParallelOp)
+def _parallel_terminator(xs):
+    if len(xs):
+        raise ValueError(
+            "default return->parallel terminator does not support operands; use scf.reduce_ instead"
+        )
+    return reduce_()
+
+
+parallel_ = region_op(_parfor(ParallelOp), terminator=_parallel_terminator)
+parallel = _parfor_context_manager(ParallelOp)
 
 
 def while___(cond: Value, *, loc=None, ip=None):
@@ -278,8 +284,8 @@ class ReduceOp(ReduceOp):
             self.regions[i].blocks.append(operands[i].type, operands[i].type)
 
 
-def reduce_(*operands, num_reductions=1, loc=None, ip=None):
-    return ReduceOp(operands, num_reductions, loc=loc, ip=ip)
+def reduce_(*operands, loc=None, ip=None):
+    return ReduceOp(operands, len(operands), loc=loc, ip=ip)
 
 
 reduce = region_op(reduce_, terminator=lambda xs: reduce_return(*xs))
