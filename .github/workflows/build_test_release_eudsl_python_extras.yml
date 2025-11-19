@@ -196,7 +196,7 @@ jobs:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
 
-    needs: [test-eudsl-python-extras]
+    needs: [release-eudsl-python-extras]
 
     permissions:
       contents: read
