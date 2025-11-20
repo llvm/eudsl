@@ -63,6 +63,13 @@ def test_arithmetic(ctx: MLIRContext):
     one // two
     one % two
 
+    two = arith.constant(2, index=True)
+    one + two
+    one - two
+    one / two
+    one // two
+    one % two
+
     one = arith.constant(1.0)
     two = arith.constant(2.0)
     one + two
@@ -79,19 +86,31 @@ def test_arithmetic(ctx: MLIRContext):
 
     ctx.module.operation.verify()
 
-    # CHECK:  %[[VAL_0:.*]] = arith.constant 1 : i32
-    # CHECK:  %[[VAL_1:.*]] = arith.constant 2 : i32
-    # CHECK:  %[[VAL_2:.*]] = arith.addi %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_3:.*]] = arith.subi %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_4:.*]] = arith.divsi %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_5:.*]] = arith.floordivsi %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_6:.*]] = arith.remsi %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_7:.*]] = arith.constant 1.000000e+00 : f32
-    # CHECK:  %[[VAL_8:.*]] = arith.constant 2.000000e+00 : f32
-    # CHECK:  %[[VAL_9:.*]] = arith.addf %[[VAL_7]], %[[VAL_8]] : f32
-    # CHECK:  %[[VAL_10:.*]] = arith.subf %[[VAL_7]], %[[VAL_8]] : f32
-    # CHECK:  %[[VAL_11:.*]] = arith.divf %[[VAL_7]], %[[VAL_8]] : f32
-    # CHECK:  %[[VAL_12:.*]] = arith.remf %[[VAL_7]], %[[VAL_8]] : f32
+    # CHECK:         %[[CONSTANT_0:.*]] = arith.constant 1 : i32
+    # CHECK:         %[[CONSTANT_1:.*]] = arith.constant 2 : i32
+    # CHECK:         %[[ADDI_0:.*]] = arith.addi %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[SUBI_0:.*]] = arith.subi %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[DIVSI_0:.*]] = arith.divsi %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[FLOORDIVSI_0:.*]] = arith.floordivsi %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[REMSI_0:.*]] = arith.remsi %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CONSTANT_2:.*]] = arith.constant 2 : index
+    # CHECK:         %[[INDEX_CAST_0:.*]] = arith.index_cast %[[CONSTANT_2]] : index to i32
+    # CHECK:         %[[ADDI_1:.*]] = arith.addi %[[CONSTANT_0]], %[[INDEX_CAST_0]] : i32
+    # CHECK:         %[[INDEX_CAST_1:.*]] = arith.index_cast %[[CONSTANT_2]] : index to i32
+    # CHECK:         %[[SUBI_1:.*]] = arith.subi %[[CONSTANT_0]], %[[INDEX_CAST_1]] : i32
+    # CHECK:         %[[INDEX_CAST_2:.*]] = arith.index_cast %[[CONSTANT_2]] : index to i32
+    # CHECK:         %[[DIVSI_1:.*]] = arith.divsi %[[CONSTANT_0]], %[[INDEX_CAST_2]] : i32
+    # CHECK:         %[[INDEX_CAST_3:.*]] = arith.index_cast %[[CONSTANT_2]] : index to i32
+    # CHECK:         %[[FLOORDIVSI_1:.*]] = arith.floordivsi %[[CONSTANT_0]], %[[INDEX_CAST_3]] : i32
+    # CHECK:         %[[INDEX_CAST_4:.*]] = arith.index_cast %[[CONSTANT_2]] : index to i32
+    # CHECK:         %[[REMSI_1:.*]] = arith.remsi %[[CONSTANT_0]], %[[INDEX_CAST_4]] : i32
+    # CHECK:         %[[CONSTANT_3:.*]] = arith.constant 1.000000e+00 : f32
+    # CHECK:         %[[CONSTANT_4:.*]] = arith.constant 2.000000e+00 : f32
+    # CHECK:         %[[ADDF_0:.*]] = arith.addf %[[CONSTANT_3]], %[[CONSTANT_4]] : f32
+    # CHECK:         %[[SUBF_0:.*]] = arith.subf %[[CONSTANT_3]], %[[CONSTANT_4]] : f32
+    # CHECK:         %[[DIVF_0:.*]] = arith.divf %[[CONSTANT_3]], %[[CONSTANT_4]] : f32
+    # CHECK:         %[[REMF_0:.*]] = arith.remf %[[CONSTANT_3]], %[[CONSTANT_4]] : f32
+
     filecheck_with_comments(ctx.module)
 
 
@@ -111,19 +130,80 @@ def test_r_arithmetic(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
-def test_arith_cmp(ctx: MLIRContext):
-    one = arith.constant(1)
-    two = arith.constant(2)
-    one < two
-    one <= two
-    one > two
-    one >= two
-    one == two
-    one != two
-    one & two
-    one | two
-    assert one._ne(two)
-    assert not one._eq(two)
+def test_arith_cmpi(ctx: MLIRContext):
+    for kind1, kind2 in [({}, {}), ({'index': True}, {'index': True}), ({'index': True}, {}), ({}, {'index': True})]:
+        one = arith.constant(1, **kind1)
+        two = arith.constant(2, **kind2)
+        one < two
+        one <= two
+        one > two
+        one >= two
+        one == two
+        one != two
+        one & two
+        one | two
+        assert one._ne(two)
+        assert not one._eq(two)
+
+    # CHECK:         %[[CONSTANT_0:.*]] = arith.constant 1 : i32
+    # CHECK:         %[[CONSTANT_1:.*]] = arith.constant 2 : i32
+    # CHECK:         %[[CMPI_0:.*]] = arith.cmpi slt, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_1:.*]] = arith.cmpi sle, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_2:.*]] = arith.cmpi sgt, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_3:.*]] = arith.cmpi sge, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_4:.*]] = arith.cmpi eq, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CMPI_5:.*]] = arith.cmpi ne, %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[ANDI_0:.*]] = arith.andi %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[ORI_0:.*]] = arith.ori %[[CONSTANT_0]], %[[CONSTANT_1]] : i32
+    # CHECK:         %[[CONSTANT_2:.*]] = arith.constant 1 : index
+    # CHECK:         %[[CONSTANT_3:.*]] = arith.constant 2 : index
+    # CHECK:         %[[CMPI_6:.*]] = arith.cmpi ult, %[[CONSTANT_2]], %[[CONSTANT_3]] : index
+    # CHECK:         %[[CMPI_7:.*]] = arith.cmpi ule, %[[CONSTANT_2]], %[[CONSTANT_3]] : index
+    # CHECK:         %[[CMPI_8:.*]] = arith.cmpi ugt, %[[CONSTANT_2]], %[[CONSTANT_3]] : index
+    # CHECK:         %[[CMPI_9:.*]] = arith.cmpi uge, %[[CONSTANT_2]], %[[CONSTANT_3]] : index
+    # CHECK:         %[[CMPI_10:.*]] = arith.cmpi eq, %[[CONSTANT_2]], %[[CONSTANT_3]] : index
+    # CHECK:         %[[CMPI_11:.*]] = arith.cmpi ne, %[[CONSTANT_2]], %[[CONSTANT_3]] : index
+    # CHECK:         %[[ANDI_1:.*]] = arith.andi %[[CONSTANT_2]], %[[CONSTANT_3]] : index
+    # CHECK:         %[[ORI_1:.*]] = arith.ori %[[CONSTANT_2]], %[[CONSTANT_3]] : index
+    # CHECK:         %[[CONSTANT_4:.*]] = arith.constant 1 : index
+    # CHECK:         %[[CONSTANT_5:.*]] = arith.constant 2 : i32
+    # CHECK:         %[[INDEX_CAST_0:.*]] = arith.index_cast %[[CONSTANT_5]] : i32 to index
+    # CHECK:         %[[CMPI_12:.*]] = arith.cmpi ult, %[[CONSTANT_4]], %[[INDEX_CAST_0]] : index
+    # CHECK:         %[[INDEX_CAST_1:.*]] = arith.index_cast %[[CONSTANT_5]] : i32 to index
+    # CHECK:         %[[CMPI_13:.*]] = arith.cmpi ule, %[[CONSTANT_4]], %[[INDEX_CAST_1]] : index
+    # CHECK:         %[[INDEX_CAST_2:.*]] = arith.index_cast %[[CONSTANT_5]] : i32 to index
+    # CHECK:         %[[CMPI_14:.*]] = arith.cmpi ugt, %[[CONSTANT_4]], %[[INDEX_CAST_2]] : index
+    # CHECK:         %[[INDEX_CAST_3:.*]] = arith.index_cast %[[CONSTANT_5]] : i32 to index
+    # CHECK:         %[[CMPI_15:.*]] = arith.cmpi uge, %[[CONSTANT_4]], %[[INDEX_CAST_3]] : index
+    # CHECK:         %[[INDEX_CAST_4:.*]] = arith.index_cast %[[CONSTANT_5]] : i32 to index
+    # CHECK:         %[[CMPI_16:.*]] = arith.cmpi eq, %[[CONSTANT_4]], %[[INDEX_CAST_4]] : index
+    # CHECK:         %[[INDEX_CAST_5:.*]] = arith.index_cast %[[CONSTANT_5]] : i32 to index
+    # CHECK:         %[[CMPI_17:.*]] = arith.cmpi ne, %[[CONSTANT_4]], %[[INDEX_CAST_5]] : index
+    # CHECK:         %[[INDEX_CAST_6:.*]] = arith.index_cast %[[CONSTANT_5]] : i32 to index
+    # CHECK:         %[[ANDI_2:.*]] = arith.andi %[[CONSTANT_4]], %[[INDEX_CAST_6]] : index
+    # CHECK:         %[[INDEX_CAST_7:.*]] = arith.index_cast %[[CONSTANT_5]] : i32 to index
+    # CHECK:         %[[ORI_2:.*]] = arith.ori %[[CONSTANT_4]], %[[INDEX_CAST_7]] : index
+    # CHECK:         %[[CONSTANT_6:.*]] = arith.constant 1 : i32
+    # CHECK:         %[[CONSTANT_7:.*]] = arith.constant 2 : index
+    # CHECK:         %[[INDEX_CAST_8:.*]] = arith.index_cast %[[CONSTANT_7]] : index to i32
+    # CHECK:         %[[CMPI_18:.*]] = arith.cmpi slt, %[[CONSTANT_6]], %[[INDEX_CAST_8]] : i32
+    # CHECK:         %[[INDEX_CAST_9:.*]] = arith.index_cast %[[CONSTANT_7]] : index to i32
+    # CHECK:         %[[CMPI_19:.*]] = arith.cmpi sle, %[[CONSTANT_6]], %[[INDEX_CAST_9]] : i32
+    # CHECK:         %[[INDEX_CAST_10:.*]] = arith.index_cast %[[CONSTANT_7]] : index to i32
+    # CHECK:         %[[CMPI_20:.*]] = arith.cmpi sgt, %[[CONSTANT_6]], %[[INDEX_CAST_10]] : i32
+    # CHECK:         %[[INDEX_CAST_11:.*]] = arith.index_cast %[[CONSTANT_7]] : index to i32
+    # CHECK:         %[[CMPI_21:.*]] = arith.cmpi sge, %[[CONSTANT_6]], %[[INDEX_CAST_11]] : i32
+    # CHECK:         %[[INDEX_CAST_12:.*]] = arith.index_cast %[[CONSTANT_7]] : index to i32
+    # CHECK:         %[[CMPI_22:.*]] = arith.cmpi eq, %[[CONSTANT_6]], %[[INDEX_CAST_12]] : i32
+    # CHECK:         %[[INDEX_CAST_13:.*]] = arith.index_cast %[[CONSTANT_7]] : index to i32
+    # CHECK:         %[[CMPI_23:.*]] = arith.cmpi ne, %[[CONSTANT_6]], %[[INDEX_CAST_13]] : i32
+    # CHECK:         %[[INDEX_CAST_14:.*]] = arith.index_cast %[[CONSTANT_7]] : index to i32
+    # CHECK:         %[[ANDI_3:.*]] = arith.andi %[[CONSTANT_6]], %[[INDEX_CAST_14]] : i32
+    # CHECK:         %[[INDEX_CAST_15:.*]] = arith.index_cast %[[CONSTANT_7]] : index to i32
+    # CHECK:         %[[ORI_3:.*]] = arith.ori %[[CONSTANT_6]], %[[INDEX_CAST_15]] : i32
+    filecheck_with_comments(ctx.module)
+
+def test_arith_cmpf(ctx: MLIRContext):
 
     one = arith.constant(1.0)
     two = arith.constant(2.0)
@@ -138,25 +218,14 @@ def test_arith_cmp(ctx: MLIRContext):
 
     ctx.module.operation.verify()
 
-    # CHECK:  %[[VAL_0:.*]] = arith.constant 1 : i32
-    # CHECK:  %[[VAL_1:.*]] = arith.constant 2 : i32
-    # CHECK:  %[[VAL_2:.*]] = arith.cmpi slt, %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_3:.*]] = arith.cmpi sle, %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_4:.*]] = arith.cmpi sgt, %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_5:.*]] = arith.cmpi sge, %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_6:.*]] = arith.cmpi eq, %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_7:.*]] = arith.cmpi ne, %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_8:.*]] = arith.andi %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_9:.*]] = arith.ori %[[VAL_0]], %[[VAL_1]] : i32
-    # CHECK:  %[[VAL_10:.*]] = arith.constant 1.000000e+00 : f32
-    # CHECK:  %[[VAL_11:.*]] = arith.constant 2.000000e+00 : f32
-    # CHECK:  %[[VAL_12:.*]] = arith.cmpf olt, %[[VAL_10]], %[[VAL_11]] : f32
-    # CHECK:  %[[VAL_13:.*]] = arith.cmpf ole, %[[VAL_10]], %[[VAL_11]] : f32
-    # CHECK:  %[[VAL_14:.*]] = arith.cmpf ogt, %[[VAL_10]], %[[VAL_11]] : f32
-    # CHECK:  %[[VAL_15:.*]] = arith.cmpf oge, %[[VAL_10]], %[[VAL_11]] : f32
-    # CHECK:  %[[VAL_16:.*]] = arith.cmpf oeq, %[[VAL_10]], %[[VAL_11]] : f32
-    # CHECK:  %[[VAL_17:.*]] = arith.cmpf one, %[[VAL_10]], %[[VAL_11]] : f32
-
+    # CHECK:         %[[CONSTANT_0:.*]] = arith.constant 1.000000e+00 : f32
+    # CHECK:         %[[CONSTANT_1:.*]] = arith.constant 2.000000e+00 : f32
+    # CHECK:         %[[CMPF_0:.*]] = arith.cmpf olt, %[[CONSTANT_0]], %[[CONSTANT_1]] : f32
+    # CHECK:         %[[CMPF_1:.*]] = arith.cmpf ole, %[[CONSTANT_0]], %[[CONSTANT_1]] : f32
+    # CHECK:         %[[CMPF_2:.*]] = arith.cmpf ogt, %[[CONSTANT_0]], %[[CONSTANT_1]] : f32
+    # CHECK:         %[[CMPF_3:.*]] = arith.cmpf oge, %[[CONSTANT_0]], %[[CONSTANT_1]] : f32
+    # CHECK:         %[[CMPF_4:.*]] = arith.cmpf oeq, %[[CONSTANT_0]], %[[CONSTANT_1]] : f32
+    # CHECK:         %[[CMPF_5:.*]] = arith.cmpf one, %[[CONSTANT_0]], %[[CONSTANT_1]] : f32
     filecheck_with_comments(ctx.module)
 
 
