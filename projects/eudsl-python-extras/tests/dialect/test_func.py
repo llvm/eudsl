@@ -267,8 +267,6 @@ def test_global_closures(ctx: MLIRContext):
 
     _maxpool2d_scf = _generic_pool2d_scf[arith.maximumf]
 
-    # _op = TypeVar("_op")
-
     @func(generics=[_op])
     def _generic_pool3d_scf(
         a: T.f32(),
@@ -278,9 +276,21 @@ def test_global_closures(ctx: MLIRContext):
 
     with pytest.raises(
         RuntimeError,
-        match="0th generic has probably already been reified as <function maximumf at .*?>; if you're using a global tvar for the generic, you should give it a unique name.",
+        match="0th generic has probably already been reified as <function maximumf at .*?>; if you're using a global tvar for the generic,"
+        " you should use a unique one for each generic function.",
     ):
         _maxpool3d_scf = _generic_pool3d_scf[arith.maximumf]
+
+    _op1 = TypeVar("_op1")
+
+    @func(generics=[_op1])
+    def _generic_pool3d_scf(
+        a: T.f32(),
+        b: T.f32(),
+    ):
+        _op(a, b)
+
+    _maxpool3d_scf = _generic_pool3d_scf[arith.maximumf]
 
 
 def test_generics_with_canonicalizations(ctx: MLIRContext):

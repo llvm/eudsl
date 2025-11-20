@@ -114,9 +114,7 @@ def prep_func_types(sig, return_types):
     return_types = list(return_types)
     assert all(
         isinstance(r, (str, Type, TypeVar)) or isalambda(r) for r in return_types
-    ), (
-        f"all return types must be mlir types or strings or TypeVars or lambdas {return_types=}"
-    )
+    ), f"all return types must be mlir types or strings or TypeVars or lambdas {return_types=}"
 
     input_types = [
         p.annotation
@@ -125,9 +123,7 @@ def prep_func_types(sig, return_types):
     ]
     assert all(
         isinstance(r, (str, Type, TypeVar)) or isalambda(r) for r in input_types
-    ), (
-        f"all input types must be mlir types or strings or TypeVars or lambdas {input_types=}"
-    )
+    ), f"all input types must be mlir types or strings or TypeVars or lambdas {input_types=}"
     user_loc = get_user_code_loc()
     # If ir.Context is none (like for deferred func emit)
     if user_loc is None:
@@ -200,9 +196,9 @@ class FuncBase:
         )
 
         if self._is_decl():
-            assert len(self.input_types) == len(sig.parameters), (
-                f"func decl needs all input types annotated"
-            )
+            assert len(self.input_types) == len(
+                sig.parameters
+            ), f"func decl needs all input types annotated"
             self.sym_visibility = "private"
             self.emit()
 
@@ -210,16 +206,15 @@ class FuncBase:
         # magic constant found from looking at the code for an empty fn
         if sys.version_info.minor == 14:
             return self.body_builder.__code__.co_code == b"\x80\x00R\x00#\x00"
-        elif sys.version_info.minor == 13:
+        if sys.version_info.minor == 13:
             return self.body_builder.__code__.co_code == b"\x95\x00g\x00"
-        elif sys.version_info.minor == 12:
+        if sys.version_info.minor == 12:
             return self.body_builder.__code__.co_code == b"\x97\x00y\x00"
-        elif sys.version_info.minor == 11:
+        if sys.version_info.minor == 11:
             return self.body_builder.__code__.co_code == b"\x97\x00d\x00S\x00"
-        elif sys.version_info.minor in {8, 9, 10}:
+        if sys.version_info.minor in {8, 9, 10}:
             return self.body_builder.__code__.co_code == b"d\x00S\x00"
-        else:
-            raise NotImplementedError(f"{sys.version_info.minor} not supported.")
+        raise NotImplementedError(f"{sys.version_info.minor} not supported.")
 
     def __str__(self):
         return str(f"{self.__class__} {self.__dict__}")
@@ -338,7 +333,8 @@ class FuncBase:
         for i, tvar in enumerate(generics):
             if not isinstance(tvar, TypeVar):
                 raise RuntimeError(
-                    f"{i}th generic has probably already been reified as {tvar}; if you're using a global tvar for the generic, you should give it a unique name."
+                    f"{i}th generic has probably already been reified as {tvar}; if you're using a global tvar for the generic, "
+                    f"you should use a unique one for each generic function."
                 )
             type_var_default = None
             if sys.version_info >= (3, 12):
