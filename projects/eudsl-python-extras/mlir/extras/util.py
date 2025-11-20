@@ -461,11 +461,13 @@ class Infix:
         self.args = args
         return self
 
+
 def make_nanobind_metaclass_inheritable():
     # Hack to allow us to inherit from nanobind's metaclass type
     # https://github.com/wjakob/nanobind/pull/836
     from .. import ir
     from .ast.py_type import PyTypeObject
+
     nb_meta_cls = type(ir.Value)
     _Py_TPFLAGS_BASETYPE = 1 << 10
     PyTypeObject.from_object(nb_meta_cls).tp_flags |= _Py_TPFLAGS_BASETYPE
