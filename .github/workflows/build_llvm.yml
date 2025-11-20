@@ -163,7 +163,7 @@ jobs:
           ###############################
           # Build mlir-native-tools wheel
           ###############################
-          for TOOL in "llvm-tblgen" "mlir-tblgen" "mlir-linalg-ods-yaml-gen" "mlir-pdll" "llvm-config" "FileCheck"; do
+          for TOOL in "llvm-tblgen" "mlir-tblgen" "mlir-linalg-ods-yaml-gen" "mlir-pdll" "llvm-config" "FileCheck" "mlir-opt" "mlir-translate"; do
             if [ x"${{ matrix.os }}" == x"windows" ]; then
              TOOL="$TOOL.exe"
             fi
