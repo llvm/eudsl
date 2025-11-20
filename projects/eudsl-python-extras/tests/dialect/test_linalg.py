@@ -1,7 +1,6 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-from typing import TypeVar
 
 import mlir.extras.types as T
 import pytest
@@ -51,10 +50,76 @@ def test_np_constructor(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
+def test_pooling_nchw_max(ctx: MLIRContext):
+    S = ShapedType.get_dynamic_size()
+
+    @func
+    def maxpool2d[
+        kernel_size_0, kernel_size_1, stride_0, stride_1, dilation_0, dilation_1
+    ](
+        input: T.memref(S, S, S, S, T.f32()),
+        output: T.memref(S, S, S, S, T.f32()),
+    ):
+        kernel_shape_surrogate = memref.alloca(
+            (kernel_size_0, kernel_size_1),
+            T.f32(),
+        )
+
+        linalg.pooling_nchw_max(
+            input,
+            kernel_shape_surrogate,
+            output,
+            strides=[stride_0, stride_1],
+            dilations=[dilation_0, dilation_1],
+        )
+
+    kernel_sizes = [2, 3]
+    strides = [4, 5]
+    dilations = [6, 7]
+    maxpool2d_k = maxpool2d[
+        kernel_sizes[0],
+        kernel_sizes[1],
+        strides[0],
+        strides[1],
+        dilations[0],
+        dilations[1],
+    ].emit()
+    module = run_pipeline(
+        ctx.module,
+        Pipeline().bufferize().Func(Pipeline().convert_linalg_to_parallel_loops()),
+    )
+    # CHECK: func.func @maxpool2d_int_2_int_3_int_4_int_5_int_6_int_7(%arg0: memref<?x?x?x?xf32>, %arg1: memref<?x?x?x?xf32>) {
+    # CHECK:   %c3 = arith.constant 3 : index
+    # CHECK:   %c2 = arith.constant 2 : index
+    # CHECK:   %c1 = arith.constant 1 : index
+    # CHECK:   %c0 = arith.constant 0 : index
+    # CHECK:   %dim = memref.dim %arg0, %c0 : memref<?x?x?x?xf32>
+    # CHECK:   %dim_0 = memref.dim %arg0, %c1 : memref<?x?x?x?xf32>
+    # CHECK:   %dim_1 = memref.dim %arg1, %c2 : memref<?x?x?x?xf32>
+    # CHECK:   %dim_2 = memref.dim %arg1, %c3 : memref<?x?x?x?xf32>
+    # CHECK:   scf.parallel (%arg2, %arg3, %arg4, %arg5) = (%c0, %c0, %c0, %c0) to (%dim, %dim_0, %dim_1, %dim_2) step (%c1, %c1, %c1, %c1) {
+    # CHECK:     scf.for %arg6 = %c0 to %c2 step %c1 {
+    # CHECK:       scf.for %arg7 = %c0 to %c3 step %c1 {
+    # CHECK:         %0 = affine.apply #map(%arg4, %arg6)
+    # CHECK:         %1 = affine.apply #map1(%arg5, %arg7)
+    # CHECK:         %2 = memref.load %arg0[%arg2, %arg3, %0, %1] : memref<?x?x?x?xf32>
+    # CHECK:         %3 = memref.load %arg1[%arg2, %arg3, %arg4, %arg5] : memref<?x?x?x?xf32>
+    # CHECK:         %4 = arith.maximumf %3, %2 : f32
+    # CHECK:         memref.store %4, %arg1[%arg2, %arg3, %arg4, %arg5] : memref<?x?x?x?xf32>
+    # CHECK:       }
+    # CHECK:     }
+    # CHECK:     scf.reduce
+    # CHECK:   }
+    # CHECK:   return
+    # CHECK: }
+    filecheck_with_comments(module)
+
+
 def test_pooling_ncdhw_max(ctx: MLIRContext):
     S = ShapedType.get_dynamic_size()
 
-    generics = (
+    @func
+    def maxpool3d[
         kernel_size_0,
         kernel_size_1,
         kernel_size_2,
@@ -64,37 +129,7 @@ def test_pooling_ncdhw_max(ctx: MLIRContext):
         dilation_0,
         dilation_1,
         dilation_2,
-    ) = list(
-        map(
-            TypeVar,
-            [
-                "kernel_size_0",
-                "kernel_size_1",
-                "kernel_size_2",
-                "stride_0",
-                "stride_1",
-                "stride_2",
-                "dilation_0",
-                "dilation_1",
-                "dilation_2",
-            ],
-        )
-    )
-
-    @func(
-        generics=(
-            kernel_size_0,
-            kernel_size_1,
-            kernel_size_2,
-            stride_0,
-            stride_1,
-            stride_2,
-            dilation_0,
-            dilation_1,
-            dilation_2,
-        )
-    )
-    def maxpool3d(
+    ](
         input: T.memref(S, S, S, S, S, T.f32()),
         output: T.memref(S, S, S, S, S, T.f32()),
     ):
@@ -111,9 +146,9 @@ def test_pooling_ncdhw_max(ctx: MLIRContext):
             dilations=[dilation_0, dilation_1, dilation_2],
         )
 
-    kernel_sizes = [1, 2, 2]
-    strides = [1, 1, 1]
-    dilations = [1, 1, 1]
+    kernel_sizes = [1, 2, 3]
+    strides = [5, 6, 7]
+    dilations = [7, 8, 9]
     maxpool3d_k = maxpool3d[
         kernel_sizes[0],
         kernel_sizes[1],
@@ -125,9 +160,9 @@ def test_pooling_ncdhw_max(ctx: MLIRContext):
         dilations[1],
         dilations[2],
     ].emit()
-    # CHECK: func.func @maxpool3d_int_1_int_2_int_2_int_1_int_1_int_1_int_1_int_1_int_1(%arg0: memref<?x?x?x?x?xf32>, %arg1: memref<?x?x?x?x?xf32>) {
-    # CHECK:   %alloca = memref.alloca() : memref<1x2x2xf32>
-    # CHECK:   linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> (d0, d1, d2 + d5, d3 + d6, d4 + d7)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> (d5, d6, d7)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> (d0, d1, d2, d3, d4)>], iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel", "reduction", "reduction", "reduction"]} ins(%arg0, %alloca : memref<?x?x?x?x?xf32>, memref<1x2x2xf32>) outs(%arg1 : memref<?x?x?x?x?xf32>) {
+    # CHECK: func.func @maxpool3d_int_1_int_2_int_3_int_5_int_6_int_7_int_7_int_8_int_9(%arg0: memref<?x?x?x?x?xf32>, %arg1: memref<?x?x?x?x?xf32>) {
+    # CHECK:   %alloca = memref.alloca() : memref<1x2x3xf32>
+    # CHECK:   linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> (d0, d1, d2 * 5 + d5 * 7, d3 * 6 + d6 * 8, d4 * 7 + d7 * 9)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> (d5, d6, d7)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> (d0, d1, d2, d3, d4)>], iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel", "reduction", "reduction", "reduction"]} ins(%arg0, %alloca : memref<?x?x?x?x?xf32>, memref<1x2x3xf32>) outs(%arg1 : memref<?x?x?x?x?xf32>) {
     # CHECK:   ^bb0(%in: f32, %in_0: f32, %out: f32):
     # CHECK:     %0 = arith.maximumf %in, %out : f32
     # CHECK:     linalg.yield %0 : f32
@@ -140,7 +175,8 @@ def test_pooling_ncdhw_max(ctx: MLIRContext):
 def test_pooling_ncdhw_max_parallel(ctx: MLIRContext):
     S = ShapedType.get_dynamic_size()
 
-    generics = (
+    @func
+    def maxpool3d[
         kernel_size_0,
         kernel_size_1,
         kernel_size_2,
@@ -150,37 +186,7 @@ def test_pooling_ncdhw_max_parallel(ctx: MLIRContext):
         dilation_0,
         dilation_1,
         dilation_2,
-    ) = list(
-        map(
-            TypeVar,
-            [
-                "kernel_size_0",
-                "kernel_size_1",
-                "kernel_size_2",
-                "stride_0",
-                "stride_1",
-                "stride_2",
-                "dilation_0",
-                "dilation_1",
-                "dilation_2",
-            ],
-        )
-    )
-
-    @func(
-        generics=(
-            kernel_size_0,
-            kernel_size_1,
-            kernel_size_2,
-            stride_0,
-            stride_1,
-            stride_2,
-            dilation_0,
-            dilation_1,
-            dilation_2,
-        )
-    )
-    def maxpool3d(
+    ](
         input: T.memref(S, S, S, S, S, T.f32()),
         output: T.memref(S, S, S, S, S, T.f32()),
     ):

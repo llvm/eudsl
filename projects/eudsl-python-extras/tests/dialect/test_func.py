@@ -151,19 +151,15 @@ def test_func_no_context():
         filecheck_with_comments(mod_ctx.module)
 
 
-generics = M, K, N, dtype = list(map(TypeVar, ["M", "K", "N", "dtype"]))
-
-
-@func(generics=list(map(TypeVar, ["M", "N"])))
-def matmul_i32_i32(
-    A: "T.memref(M, N, T.i32())",
-    B: "T.memref(M, N, T.i32())",
-    C: "T.memref(M, N, T.i32())",
-):
-    linalg.matmul(A, B, C)
-
-
 def test_func_no_context_2(ctx: MLIRContext):
+    @func
+    def matmul_i32_i32[M, N](
+        A: "T.memref(M, N, T.i32())",
+        B: "T.memref(M, N, T.i32())",
+        C: "T.memref(M, N, T.i32())",
+    ):
+        linalg.matmul(A, B, C)
+
     matmul_i32_i32[16, 16].emit()
 
     # CHECK:  func.func @matmul_i32_i32_int_16_int_16(%[[VAL_0:.*]]: memref<16x16xi32>, %[[VAL_1:.*]]: memref<16x16xi32>, %[[VAL_2:.*]]: memref<16x16xi32>) {
@@ -175,8 +171,8 @@ def test_func_no_context_2(ctx: MLIRContext):
 
 
 def test_generics_just_args(ctx: MLIRContext):
-    @func(generics=generics)
-    def mat_product_kernel(
+    @func
+    def mat_product_kernel[M, K, N, dtype](
         A: "T.memref(M, K, dtype)",
         B: "T.memref(K, N, dtype)",
         C: "T.memref(M, N, dtype)",
@@ -194,10 +190,9 @@ def test_generics_just_args(ctx: MLIRContext):
 
 
 def test_generics_closure(ctx: MLIRContext):
-    generics = M, K, N, dtype = list(map(TypeVar, ["M", "K", "N", "dtype"]))
 
-    @func(generics=generics)
-    def mat_product_kernel(
+    @func
+    def mat_product_kernel[M, K, N, dtype](
         A: "T.memref(M, K, dtype)",
         B: "T.memref(K, N, dtype)",
         C: "T.memref(M, N, dtype)",
@@ -222,19 +217,19 @@ def test_generics_closure(ctx: MLIRContext):
 def test_generics_callable(ctx: MLIRContext):
     _op = TypeVar("_op")
 
-    @func(generics=[_op])
-    def mat_product_kernel1():
+    @func
+    def mat_product_kernel1[_op]():
         one = arith.constant(1, T.f32())
         two = _op(one, one)
 
-    @func(generics=[_op])
-    def mat_product_kernel2():
+    @func
+    def mat_product_kernel2[_op]():
         one = arith.constant(1, T.f32())
         two = _op(one, one)
 
-    mat_product_kernel1[arith.maximumf].emit()
-    mat_product_kernel2[arith.minimumf].emit()
-    mat_product_kernel2[arith.maximumf].emit()
+    mat_product_kernel1[arith.maximumf,].emit()
+    mat_product_kernel2[arith.minimumf,].emit()
+    mat_product_kernel2[arith.maximumf,].emit()
 
     # CHECK:  func.func @mat_product_kernel1_function_maximumf() {
     # CHECK:    %cst = arith.constant 1.000000e+00 : f32
@@ -255,50 +250,11 @@ def test_generics_callable(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
-_op = TypeVar("_op")
-
-
-def test_global_closures(ctx: MLIRContext):
-    globals()["_op"] = TypeVar("_op")
-
-    @func(generics=[_op])
-    def _generic_pool2d_scf(a: T.f32(), b: T.f32()):
-        _op(a, b)
-
-    _maxpool2d_scf = _generic_pool2d_scf[arith.maximumf]
-
-    @func(generics=[_op])
-    def _generic_pool3d_scf(
-        a: T.f32(),
-        b: T.f32(),
-    ):
-        _op(a, b)
-
-    with pytest.raises(
-        RuntimeError,
-        match="0th generic has probably already been reified as <function maximumf at .*?>; if you're using a global tvar for the generic,"
-        " you should use a unique one for each generic function.",
-    ):
-        _maxpool3d_scf = _generic_pool3d_scf[arith.maximumf]
-
-    _op1 = TypeVar("_op1")
-
-    @func(generics=[_op1])
-    def _generic_pool3d_scf(
-        a: T.f32(),
-        b: T.f32(),
-    ):
-        _op(a, b)
-
-    _maxpool3d_scf = _generic_pool3d_scf[arith.maximumf]
-
-
 def test_generics_with_canonicalizations(ctx: MLIRContext):
-    generics = M, K, N, dtype = list(map(TypeVar, ["M", "K", "N", "dtype"]))
 
-    @func(generics=generics)
+    @func
     @canonicalize(using=(arith.canonicalizer, scf.canonicalizer))
-    def mat_product_kernel(
+    def mat_product_kernel[M, K, N, dtype](
         A: "T.memref(M, K, dtype)",
         B: "T.memref(K, N, dtype)",
         C: "T.memref(M, N, dtype)",
@@ -434,29 +390,10 @@ def test_explicit_function_type(ctx: MLIRContext):
 def test_name_mangling(ctx: MLIRContext):
     _S = ShapedType.get_dynamic_size()
 
-    generics = (
-        kernel_size_0,
-        kernel_size_1,
-        stride_0,
-        stride_1,
-        dilation_0,
-        dilation_1,
-    ) = list(
-        map(
-            TypeVar,
-            [
-                "kernel_size_0",
-                "kernel_size_1",
-                "stride_0",
-                "stride_1",
-                "dilation_0",
-                "dilation_1",
-            ],
-        )
-    )
-
-    @func(generics=generics)
-    def maxpool2d(
+    @func
+    def maxpool2d[
+        kernel_size_0, kernel_size_1, stride_0, stride_1, dilation_0, dilation_1
+    ](
         input: T.memref(_S, _S, _S, _S, T.f32()),
         output: T.memref(_S, _S, _S, _S, T.f32()),
     ):
@@ -480,154 +417,3 @@ def test_name_mangling(ctx: MLIRContext):
     # CHECK:   return
     # CHECK: }
     filecheck_with_comments(maxpool2d_k)
-
-
-@pytest.mark.skipif(sys.version_info < (3, 12), reason="requires python3.12 or higher")
-def test_generics(ctx: MLIRContext):
-    # dodge <3.12 parser that doesn't support square brackets generics
-    exec(
-        dedent(
-            """\
-    @func
-    def mat_product_kernel[
-        M, K, N, dtype
-    ](
-        A: "T.memref(M, K, dtype)",
-        B: "T.memref(K, N, dtype)",
-        C: "T.memref(M, N, dtype)",
-        x: T.index(),
-        y: T.index()
-    ):
-
-        one = arith.constant(1.0, type=dtype)
-        tmp = arith.constant(0, type=dtype)
-        for k, tmp, _ in scf.range_(K, iter_args=[tmp]):
-            tmp += A[x, k] * B[k, y]
-            tmp = scf.yield_(tmp)
-        C[x, y] = tmp + one
-
-    globals()["mat_product_kernel"] = mat_product_kernel
-    """
-        )
-    )
-
-    matk = mat_product_kernel[32, 32, 32, T.f32()].emit()
-
-    # CHECK: func.func @mat_product_kernel_int_32_int_32_int_32_type_f32(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>, %arg2: memref<32x32xf32>, %arg3: index, %arg4: index) {
-    # CHECK:   %cst = arith.constant 1.000000e+00 : f32
-    # CHECK:   %cst_0 = arith.constant 0.000000e+00 : f32
-    # CHECK:   %c0 = arith.constant 0 : index
-    # CHECK:   %c32 = arith.constant 32 : index
-    # CHECK:   %c1 = arith.constant 1 : index
-    # CHECK:   %0 = scf.for %arg5 = %c0 to %c32 step %c1 iter_args(%arg6 = %cst_0) -> (f32) {
-    # CHECK:     %2 = memref.load %arg0[%arg3, %arg5] : memref<32x32xf32>
-    # CHECK:     %3 = memref.load %arg1[%arg5, %arg4] : memref<32x32xf32>
-    # CHECK:     %4 = arith.mulf %2, %3 : f32
-    # CHECK:     %5 = arith.addf %arg6, %4 : f32
-    # CHECK:     scf.yield %5 : f32
-    # CHECK:   }
-    # CHECK:   %1 = arith.addf %0, %cst : f32
-    # CHECK:   memref.store %1, %arg2[%arg3, %arg4] : memref<32x32xf32>
-    # CHECK:   return
-    # CHECK: }
-    filecheck_with_comments(matk)
-
-
-@pytest.mark.skipif(sys.version_info < (3, 12), reason="requires python3.12 or higher")
-def test_generic_type_var_closure_patching(ctx: MLIRContext):
-    # dodge <3.12 parser that doesn't support square brackets generics
-    exec(
-        dedent(
-            """\
-    from mlir.extras.ast.py_type import PyTypeVarObject
-
-    def fun2[foo, bar, A: foo + bar]():
-        print(A.__bound__)
-
-
-    A_type_param = fun2.__type_params__[2]
-
-    a = PyTypeVarObject.from_object(A_type_param)
-    a_something = a.bound.contents.into_object()
-    a_something.__closure__[0].cell_contents = 5
-    a_something.__closure__[1].cell_contents = 7
-
-    fun2()
-    """
-        )
-    )
-
-
-@pytest.mark.skipif(
-    sys.version_info < (3, 13) or platform.system() == "Windows",
-    reason="requires python3.13 or higher (and windows can't find the source file)",
-)
-def test_generic_type_var_closure_patching_dependent_generics(ctx: MLIRContext):
-    # dodge <3.12 parser that doesn't support square brackets generics
-    # but also need a real file here because rewriter needs source...
-    src = dedent(
-        """\
-    from mlir.extras.dialects import arith, scf
-    from mlir.extras.ast.canonicalize import canonicalize
-    import mlir.extras.types as T
-
-    @func
-    def test_plain[
-        M,
-        K,
-        N,
-        dtype,
-        A_t = T.memref(M, K, dtype),
-        B_t = T.memref(K, N, dtype),
-        C_t = T.memref(M, N, dtype),
-    ](A: A_t, B: B_t, C: C_t):
-        one = arith.constant(1.0, type=dtype)
-
-    @func
-    @canonicalize(using=(arith.canonicalizer, scf.canonicalizer))
-    def test_2_with_rewrite[
-        M,
-        K,
-        N,
-        dtype,
-        A_t = T.memref(M, K, dtype),
-        B_t = T.memref(K, N, dtype),
-        C_t = T.memref(M, N, dtype),
-    ](A: A_t, B: B_t, C: C_t):
-        one = arith.constant(1.0, type=dtype)
-        
-    globals()["test_plain"] = test_plain
-    globals()["test_2_with_rewrite"] = test_2_with_rewrite
-    """
-    )
-
-    with tempfile.NamedTemporaryFile(mode="w") as tmp:
-        tmp.write(src)
-        tmp.flush()
-        code = compile(src, tmp.name, "exec")
-        exec(code, globals(), locals())
-
-    test_plain[1, 2, 3, T.f32()].emit()
-    test_2_with_rewrite[1, 2, 3, T.f32()].emit()
-
-    test_plain[4, 5, 6, T.f16()].emit()
-    test_2_with_rewrite[4, 5, 6, T.f16()].emit()
-
-    # CHECK: func.func @"test_plain_int_1_int_2_int_3_type_f32_MemRefType_memref<1x2xf32>_MemRefType_memref<2x3xf32>_MemRefType_memref<1x3xf32>"(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) {
-    # CHECK:   %cst = arith.constant 1.000000e+00 : f32
-    # CHECK:   return
-    # CHECK: }
-    # CHECK: func.func @"test_2_with_rewrite_int_1_int_2_int_3_type_f32_MemRefType_memref<1x2xf32>_MemRefType_memref<2x3xf32>_MemRefType_memref<1x3xf32>"(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) {
-    # CHECK:   %cst = arith.constant 1.000000e+00 : f32
-    # CHECK:   return
-    # CHECK: }
-    # CHECK: func.func @"test_plain_int_4_int_5_int_6_type_f16_MemRefType_memref<4x5xf16>_MemRefType_memref<5x6xf16>_MemRefType_memref<4x6xf16>"(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) {
-    # CHECK:   %cst = arith.constant 1.000000e+00 : f16
-    # CHECK:   return
-    # CHECK: }
-    # CHECK: func.func @"test_2_with_rewrite_int_4_int_5_int_6_type_f16_MemRefType_memref<4x5xf16>_MemRefType_memref<5x6xf16>_MemRefType_memref<4x6xf16>"(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) {
-    # CHECK:   %cst = arith.constant 1.000000e+00 : f16
-    # CHECK:   return
-    # CHECK: }
-    ctx.module.operation.verify()
-    filecheck_with_comments(ctx.module)
