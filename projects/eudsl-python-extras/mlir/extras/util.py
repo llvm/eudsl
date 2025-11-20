@@ -15,8 +15,10 @@ from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
+from .ast.py_type import PyTypeObject
 from .meta import op_region_builder
 from ..extras import types as T
+from .. import ir
 from ..ir import (
     Block,
     Context,
@@ -465,9 +467,6 @@ class Infix:
 def make_nanobind_metaclass_inheritable():
     # Hack to allow us to inherit from nanobind's metaclass type
     # https://github.com/wjakob/nanobind/pull/836
-    from .. import ir
-    from .ast.py_type import PyTypeObject
-
     nb_meta_cls = type(ir.Value)
     _Py_TPFLAGS_BASETYPE = 1 << 10
     PyTypeObject.from_object(nb_meta_cls).tp_flags |= _Py_TPFLAGS_BASETYPE
