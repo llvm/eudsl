@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from functools import update_wrapper
 from typing import Optional, List, Union, TypeVar
 
-from ..ast.util import copy_func
+from ..ast.util import copy_func, copy_object
 from ..ast.py_type import PyTypeVarObject, _Ptr, PyObject
 from ..meta import op_region_builder
 from .. import types as T
@@ -114,9 +114,7 @@ def prep_func_types(sig, return_types):
     return_types = list(return_types)
     assert all(
         isinstance(r, (str, Type, TypeVar)) or isalambda(r) for r in return_types
-    ), (
-        f"all return types must be mlir types or strings or TypeVars or lambdas {return_types=}"
-    )
+    ), f"all return types must be mlir types or strings or TypeVars or lambdas {return_types=}"
 
     input_types = [
         p.annotation
@@ -125,9 +123,7 @@ def prep_func_types(sig, return_types):
     ]
     assert all(
         isinstance(r, (str, Type, TypeVar)) or isalambda(r) for r in input_types
-    ), (
-        f"all input types must be mlir types or strings or TypeVars or lambdas {input_types=}"
-    )
+    ), f"all input types must be mlir types or strings or TypeVars or lambdas {input_types=}"
     user_loc = get_user_code_loc()
     # If ir.Context is none (like for deferred func emit)
     if user_loc is None:
@@ -179,7 +175,7 @@ class FuncBase:
         self.call_op_ctor = call_op_ctor
         self.arg_attrs = arg_attrs
         self.res_attrs = res_attrs
-        self.generics = generics
+        self.generics = copy_object(generics)
         self.loc = loc
         self.ip = ip
         self._func_op = None
@@ -200,9 +196,9 @@ class FuncBase:
         )
 
         if self._is_decl():
-            assert len(self.input_types) == len(sig.parameters), (
-                f"func decl needs all input types annotated"
-            )
+            assert len(self.input_types) == len(
+                sig.parameters
+            ), f"func decl needs all input types annotated"
             self.sym_visibility = "private"
             self.emit()
 
@@ -374,10 +370,17 @@ class FuncBase:
                 body_builder.__globals__[t.__name__] = r.val
             if r.name in body_builder.__code__.co_freevars:
                 free_i = body_builder.__code__.co_freevars.index(r.name)
-                assert body_builder.__closure__[free_i].cell_contents == t, (
-                    "typevars don't match"
-                )
+                assert (
+                    body_builder.__closure__[free_i].cell_contents == t
+                ), "typevars don't match"
                 body_builder.__closure__[free_i].cell_contents = r.val
+
+        name_mangled_generics = []
+        for r in reified_type_params:
+            t, v = r.type, r.val
+            if callable(v):
+                v = v.__name__
+            name_mangled_generics.append(f"{t}_{v}")
 
         return FuncBase(
             body_builder,
@@ -386,11 +389,7 @@ class FuncBase:
             self.call_op_ctor,
             return_types=self.return_types,
             sym_visibility=self.sym_visibility,
-            sym_name=(
-                self.func_name
-                + "_"
-                + "_".join([f"{r.type}_{r.val}" for r in reified_type_params])
-            ),
+            sym_name=(self.func_name + "_" + "_".join(name_mangled_generics)),
             arg_attrs=self.arg_attrs,
             res_attrs=self.res_attrs,
             func_attrs=self.func_attrs,

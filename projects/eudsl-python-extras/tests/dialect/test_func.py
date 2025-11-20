@@ -205,9 +205,50 @@ def test_generics_closure(ctx: MLIRContext):
         one = arith.constant(1, dtype)
 
     mat_product_kernel[32, 32, 32, T.i32()].emit()
+    mat_product_kernel[32, 32, 32, T.f32()].emit()
 
     # CHECK:  func.func @mat_product_kernel_int_32_int_32_int_32_type_i32(%[[VAL_0:.*]]: memref<32x32xi32>, %[[VAL_1:.*]]: memref<32x32xi32>, %[[VAL_2:.*]]: memref<32x32xi32>) {
     # CHECK:    %[[VAL_3:.*]] = arith.constant 1 : i32
+    # CHECK:    return
+    # CHECK:  }
+    # CHECK:  func.func @mat_product_kernel_int_32_int_32_int_32_type_f32(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>, %arg2: memref<32x32xf32>) {
+    # CHECK:    %cst = arith.constant 1.000000e+00 : f32
+    # CHECK:    return
+    # CHECK:  }
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_generics_callable(ctx: MLIRContext):
+    _op = TypeVar("_op")
+
+    @func(generics=[_op])
+    def mat_product_kernel1():
+        one = arith.constant(1, T.f32())
+        two = _op(one, one)
+
+    @func(generics=[_op])
+    def mat_product_kernel2():
+        one = arith.constant(1, T.f32())
+        two = _op(one, one)
+
+    mat_product_kernel1[arith.maximumf,].emit()
+    mat_product_kernel2[arith.minimumf,].emit()
+    mat_product_kernel2[arith.maximumf,].emit()
+
+    # CHECK:  func.func @mat_product_kernel1_function_maximumf() {
+    # CHECK:    %cst = arith.constant 1.000000e+00 : f32
+    # CHECK:    %0 = arith.maximumf %cst, %cst : f32
+    # CHECK:    return
+    # CHECK:  }
+    # CHECK:  func.func @mat_product_kernel2_function_minimumf() {
+    # CHECK:    %cst = arith.constant 1.000000e+00 : f32
+    # CHECK:    %0 = arith.minimumf %cst, %cst : f32
+    # CHECK:    return
+    # CHECK:  }
+    # CHECK:  func.func @mat_product_kernel2_function_maximumf() {
+    # CHECK:    %cst = arith.constant 1.000000e+00 : f32
+    # CHECK:    %0 = arith.maximumf %cst, %cst : f32
     # CHECK:    return
     # CHECK:  }
 

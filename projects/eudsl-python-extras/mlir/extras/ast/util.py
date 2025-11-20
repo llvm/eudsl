@@ -38,9 +38,9 @@ def ast_call(name, args=None, keywords=None):
 def get_module_cst(f):
     f_src = dedent(inspect.getsource(f))
     tree = ast.parse(f_src)
-    assert isinstance(tree.body[0], ast.FunctionDef), (
-        f"unexpected ast node {tree.body[0]}"
-    )
+    assert isinstance(
+        tree.body[0], ast.FunctionDef
+    ), f"unexpected ast node {tree.body[0]}"
     return tree
 
 
@@ -130,18 +130,23 @@ class MLIRTypePickler(cloudpickle.Pickler):
         return super().reducer_override(obj)
 
 
+def copy_object(obj):
+    # see https://github.com/cloudpipe/cloudpickle/blob/f111f7ab6d302e9b1e2a568d0e4c574895db6a6e/cloudpickle/cloudpickle.py#L813
+    # for how this trick is accomplished (dill and pickle both fail to pickle eg generic typevars)
+    with io.BytesIO() as file:
+        cp = MLIRTypePickler(file)
+        cp.dump(obj)
+        obj = cloudpickle.loads(file.getvalue())
+    return obj
+
+
 # Based on http://stackoverflow.com/a/6528148/190597 (Glenn Maynard);
 # potentially more complete approach https://stackoverflow.com/a/56901529/9045206
 def copy_func(f, new_closure: Dict = None):
     if new_closure is not None:
         code, closure = replace_closure(f.__code__, new_closure)
     else:
-        # see https://github.com/cloudpipe/cloudpickle/blob/f111f7ab6d302e9b1e2a568d0e4c574895db6a6e/cloudpickle/cloudpickle.py#L813
-        # for how this trick is accomplished (dill and pickle both fail to pickle eg generic typevars)
-        with io.BytesIO() as file:
-            cp = MLIRTypePickler(file)
-            cp.dump(f.__closure__)
-            closure = cloudpickle.loads(file.getvalue())
+        closure = copy_object(f.__closure__)
         code = f.__code__
 
     g = types.FunctionType(
@@ -162,9 +167,9 @@ def copy_func(f, new_closure: Dict = None):
 
 def append_hidden_node(node_body, new_node):
     last_statement = node_body[-1]
-    assert last_statement.end_lineno is not None, (
-        f"last_statement {ast.unparse(last_statement)} must have end_lineno"
-    )
+    assert (
+        last_statement.end_lineno is not None
+    ), f"last_statement {ast.unparse(last_statement)} must have end_lineno"
     new_node = ast.fix_missing_locations(
         set_lineno(new_node, last_statement.end_lineno)
     )
