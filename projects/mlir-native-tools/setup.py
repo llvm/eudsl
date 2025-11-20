@@ -24,6 +24,8 @@ for bin in [
     "llvm-tblgen",
     "mlir-linalg-ods-yaml-gen",
     "mlir-pdll",
+    "mlir-opt",
+    "mlir-translate",
     "mlir-tblgen",
 ]:
     data_files.append(bin + get_exe_suffix())
