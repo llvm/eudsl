@@ -114,7 +114,9 @@ def prep_func_types(sig, return_types):
     return_types = list(return_types)
     assert all(
         isinstance(r, (str, Type, TypeVar)) or isalambda(r) for r in return_types
-    ), f"all return types must be mlir types or strings or TypeVars or lambdas {return_types=}"
+    ), (
+        f"all return types must be mlir types or strings or TypeVars or lambdas {return_types=}"
+    )
 
     input_types = [
         p.annotation
@@ -123,7 +125,9 @@ def prep_func_types(sig, return_types):
     ]
     assert all(
         isinstance(r, (str, Type, TypeVar)) or isalambda(r) for r in input_types
-    ), f"all input types must be mlir types or strings or TypeVars or lambdas {input_types=}"
+    ), (
+        f"all input types must be mlir types or strings or TypeVars or lambdas {input_types=}"
+    )
     user_loc = get_user_code_loc()
     # If ir.Context is none (like for deferred func emit)
     if user_loc is None:
@@ -196,9 +200,9 @@ class FuncBase:
         )
 
         if self._is_decl():
-            assert len(self.input_types) == len(
-                sig.parameters
-            ), f"func decl needs all input types annotated"
+            assert len(self.input_types) == len(sig.parameters), (
+                f"func decl needs all input types annotated"
+            )
             self.sym_visibility = "private"
             self.emit()
 
@@ -298,6 +302,8 @@ class FuncBase:
         return call(self.emit(*call_args), call_args)
 
     def __getitem__(self, item):
+        if not isinstance(item, tuple):
+            item = (item,)
         if self.generics is None:
             raise RuntimeError(
                 "using a generic call requires the func be generic (i.e., have type_params)"
@@ -322,22 +328,26 @@ class FuncBase:
                         continue
                     if k not in already_reified_type_params:
                         raise RuntimeError(
-                            f"typevar {k} not reified prior to evaluating dependent typevar {t}"
+                            f"typevar {k} not reified prior to evaluating dependent typevar {tvar}"
                         )
                     cvrs[k] = already_reified_type_params[k]
                 unevaled_type_data = copy_func(unevaled_type_data, cvrs)
             return unevaled_type_data()
 
-        generics = copy.deepcopy(self.generics)
-        for i, t in enumerate(generics):
+        generics = copy_object(self.generics)
+        for i, tvar in enumerate(generics):
+            if not isinstance(tvar, TypeVar):
+                raise RuntimeError(
+                    f"{i}th generic has probably already been reified as {tvar}; if you're using a global tvar for the generic, you should give it a unique name."
+                )
             type_var_default = None
             if sys.version_info >= (3, 12):
-                type_var = PyTypeVarObject.from_object(t)
+                type_var = PyTypeVarObject.from_object(tvar)
                 type_var_bound = type_var.bound
-                if sys.version_info >= (3, 13) and t.has_default():
+                if sys.version_info >= (3, 13) and tvar.has_default():
                     type_var_default = type_var.default_value
             else:
-                type_var_bound = t.__bound__
+                type_var_bound = tvar.__bound__
 
             if bool(type_var_bound):
                 # before 3.12 typevar was just a python class
@@ -346,7 +356,7 @@ class FuncBase:
                     type_var_bound = maybe_eval_type_data_closure_vals(type_var_bound)
             elif not bool(type_var_default):
                 if i >= len(item):
-                    raise RuntimeError(f"generic {t} must have concrete val")
+                    raise RuntimeError(f"generic {tvar=} must have concrete val")
                 if isinstance(item[i], Type):
                     type_var_bound = "type"
                 else:
@@ -358,29 +368,31 @@ class FuncBase:
                 val = type_var_default
             else:
                 if i >= len(item):
-                    raise RuntimeError(f"generic {t} must have concrete val")
+                    raise RuntimeError(f"generic {tvar=} must have concrete val")
                 val = item[i]
 
-            r = ReifiedTypeParams(t.__name__, val, type_var_bound)
+            r = ReifiedTypeParams(tvar.__name__, val, type_var_bound)
 
             reified_type_params.append(r)
             already_reified_type_params[r.name] = r.val
 
-            if t.__name__ in body_builder.__globals__:
-                body_builder.__globals__[t.__name__] = r.val
+            # replace the tvar in body_builder's global context with the reified val
+            if tvar.__name__ in body_builder.__globals__:
+                body_builder.__globals__[tvar.__name__] = r.val
+            # replace the tvar in body_builder's closure with the reified val
             if r.name in body_builder.__code__.co_freevars:
                 free_i = body_builder.__code__.co_freevars.index(r.name)
                 assert (
-                    body_builder.__closure__[free_i].cell_contents == t
+                    body_builder.__closure__[free_i].cell_contents == tvar
                 ), "typevars don't match"
                 body_builder.__closure__[free_i].cell_contents = r.val
 
         name_mangled_generics = []
         for r in reified_type_params:
-            t, v = r.type, r.val
+            tvar, v = r.type, r.val
             if callable(v):
                 v = v.__name__
-            name_mangled_generics.append(f"{t}_{v}")
+            name_mangled_generics.append(f"{tvar}_{v}")
 
         return FuncBase(
             body_builder,

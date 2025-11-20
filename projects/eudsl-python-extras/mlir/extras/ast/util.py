@@ -38,9 +38,9 @@ def ast_call(name, args=None, keywords=None):
 def get_module_cst(f):
     f_src = dedent(inspect.getsource(f))
     tree = ast.parse(f_src)
-    assert isinstance(
-        tree.body[0], ast.FunctionDef
-    ), f"unexpected ast node {tree.body[0]}"
+    assert isinstance(tree.body[0], ast.FunctionDef), (
+        f"unexpected ast node {tree.body[0]}"
+    )
     return tree
 
 
@@ -92,7 +92,7 @@ def replace_closure(code, new_closure: Dict):
     LOAD_DEREF = opmap["LOAD_DEREF"]
 
     # get the orig localplus that will be loaded from by the orig bytecode LOAD_DEREF arg_i
-    localsplus, localsplus_name_to_idx = get_localsplus_name_to_idx(code)
+    localsplus, _localsplus_name_to_idx = get_localsplus_name_to_idx(code)
 
     # closure vars go into co_freevars
     new_code = code.replace(co_freevars=tuple(new_closure.keys()))
@@ -167,9 +167,9 @@ def copy_func(f, new_closure: Dict = None):
 
 def append_hidden_node(node_body, new_node):
     last_statement = node_body[-1]
-    assert (
-        last_statement.end_lineno is not None
-    ), f"last_statement {ast.unparse(last_statement)} must have end_lineno"
+    assert last_statement.end_lineno is not None, (
+        f"last_statement {ast.unparse(last_statement)} must have end_lineno"
+    )
     new_node = ast.fix_missing_locations(
         set_lineno(new_node, last_statement.end_lineno)
     )
