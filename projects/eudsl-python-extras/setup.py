@@ -56,6 +56,10 @@ setup(
             "pre-commit-hooks",
         ],
         "mlir": ["mlir-python-bindings"],
+        "bytecode": [
+            "bytecode @ git+https://github.com/MatthieuDartiailh/bytecode",
+            "cloudpickle>=3.0.0",
+        ],
     },
     python_requires=">=3.8",
     include_package_data=True,

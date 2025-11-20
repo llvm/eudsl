@@ -1,6 +1,7 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 import platform
 import random
 import sys
@@ -8,6 +9,7 @@ import tempfile
 import time
 from textwrap import dedent
 
+from mlir.extras.ast import has_bytecode
 import mlir.extras.types as T
 import numpy as np
 import pytest
@@ -114,13 +116,15 @@ def test_forall_insert_slice_no_region_with_for_with_gpu_mapping(ctx: MLIRContex
     filecheck_with_comments(ctx.module)
 
 
+@pytest.mark.skipif(not has_bytecode(), reason="bytecode is not installed")
 def test_class(ctx: MLIRContext):
     scale = 1
     M, N, K = 4 * scale, 16 * scale, 8 * scale
 
+    from mlir.extras.dialects.scf.canonicalizer import canonicalizer as scf_canonicalizer
     class MyClass1(metaclass=GPUModuleMeta, targets=["#nvvm.target"]):
         @gpu_func(emit=True)
-        @canonicalize(using=scf.canonicalizer)
+        @canonicalize(using=scf_canonicalizer)
         def mat_product_kernel(
             A: T.memref(M, N, T.f32()),
             B: T.memref(N, K, T.f32()),
@@ -149,7 +153,9 @@ def test_class(ctx: MLIRContext):
 
 
 @pytest.mark.skipif(sys.version_info < (3, 10), reason="requires python3.10 or higher")
+@pytest.mark.skipif(not has_bytecode(), reason="bytecode is not installed")
 def test_class_call(ctx: MLIRContext):
+    from mlir.extras.dialects.scf.canonicalizer import canonicalizer as scf_canonicalizer
     scale = 1
     M, N, K = 4 * scale, 16 * scale, 8 * scale
 
@@ -157,7 +163,7 @@ def test_class_call(ctx: MLIRContext):
 
     class MyClass1(metaclass=GPUModuleMeta, targets=["#nvvm.target"]):
         @gpu_func(emit=True, emit_grid=True)
-        @canonicalize(using=scf.canonicalizer)
+        @canonicalize(using=scf_canonicalizer)
         def mat_product_kernel(
             A: T.memref(M, N, T.f32()),
             B: T.memref(N, K, T.f32()),
@@ -207,7 +213,9 @@ def test_class_call(ctx: MLIRContext):
 
 
 @pytest.mark.skipif(sys.version_info < (3, 10), reason="requires python3.10 or higher")
+@pytest.mark.skipif(not has_bytecode(), reason="bytecode is not installed")
 def test_class_call_from_func(ctx: MLIRContext):
+    from mlir.extras.dialects.scf.canonicalizer import canonicalizer as scf_canonicalizer
     scale = 1
     M, N, K = 4 * scale, 16 * scale, 8 * scale
 
@@ -215,7 +223,7 @@ def test_class_call_from_func(ctx: MLIRContext):
 
     class MyClass1(metaclass=GPUModuleMeta, targets=["#nvvm.target"]):
         @gpu_func(emit=True, emit_grid=True)
-        @canonicalize(using=scf.canonicalizer)
+        @canonicalize(using=scf_canonicalizer)
         def mat_product_kernel(
             A: T.memref(M, N, T.f32()),
             B: T.memref(N, K, T.f32()),
@@ -276,7 +284,9 @@ def test_class_call_from_func(ctx: MLIRContext):
 
 
 @pytest.mark.skipif(sys.version_info < (3, 10), reason="requires python3.10 or higher")
+@pytest.mark.skipif(not has_bytecode(), reason="bytecode is not installed")
 def test_async_object(ctx: MLIRContext):
+    from mlir.extras.dialects.scf.canonicalizer import canonicalizer as scf_canonicalizer
     scale = 1
     M, N, K = 4 * scale, 16 * scale, 8 * scale
 
@@ -284,7 +294,7 @@ def test_async_object(ctx: MLIRContext):
 
     class MyClass1(metaclass=GPUModuleMeta, targets=["#nvvm.target"]):
         @gpu_func(emit=True, emit_grid=True)
-        @canonicalize(using=scf.canonicalizer)
+        @canonicalize(using=scf_canonicalizer)
         def mat_product_kernel(
             A: T.memref(M, N, T.f32()),
             B: T.memref(N, K, T.f32()),
@@ -301,7 +311,7 @@ def test_async_object(ctx: MLIRContext):
             pass
 
     @func(emit=True)
-    @canonicalize(using=scf.canonicalizer)
+    @canonicalize(using=scf_canonicalizer)
     def main():
         a = memref.alloc((M, N), T.f32())
         b = memref.alloc((N, K), T.f32())

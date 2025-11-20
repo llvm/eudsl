@@ -1,6 +1,9 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+import pytest
+from mlir.extras.ast import has_bytecode
 from mlir.extras.dialects import arith, func
 from mlir.extras.testing import (
     filecheck_with_comments,
@@ -42,9 +45,11 @@ def test_arith_value(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
+@pytest.mark.skipif(not has_bytecode(), reason="bytecode is not installed")
 def test_arith_constant_canonicalizer(ctx: MLIRContext):
+    from mlir.extras.dialects.arith.canonicalizer import canonicalizer
     @func.func(emit=True)
-    @canonicalize(using=arith.canonicalizer)
+    @canonicalize(using=canonicalizer)
     def foo():
         # CHECK: %c0_i32 = arith.constant 0 : i32
         row_m: T.i32() = 0

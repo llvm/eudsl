@@ -10,6 +10,7 @@ from typing import TypeVar
 import pytest
 
 import mlir.extras.types as T
+from mlir.extras.ast import has_bytecode
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.context import mlir_mod_ctx, RAIIMLIRContextModule
 from mlir.extras.dialects import linalg, arith, scf, memref
@@ -214,11 +215,14 @@ def test_generics_closure(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
+@pytest.mark.skipif(not has_bytecode(), reason="bytecode is not installed")
 def test_generics_with_canonicalizations(ctx: MLIRContext):
+    from mlir.extras.dialects.arith.canonicalizer import canonicalizer as arith_canonicalizer
+    from mlir.extras.dialects.scf.canonicalizer import canonicalizer as scf_canonicalizer
     generics = M, K, N, dtype = list(map(TypeVar, ["M", "K", "N", "dtype"]))
 
     @func(generics=generics)
-    @canonicalize(using=(arith.canonicalizer, scf.canonicalizer))
+    @canonicalize(using=(arith_canonicalizer, scf_canonicalizer))
     def mat_product_kernel(
         A: "T.memref(M, K, dtype)",
         B: "T.memref(K, N, dtype)",
@@ -486,9 +490,15 @@ def test_generic_type_var_closure_patching(ctx: MLIRContext):
 def test_generic_type_var_closure_patching_dependent_generics(ctx: MLIRContext):
     # dodge <3.12 parser that doesn't support square brackets generics
     # but also need a real file here because rewriter needs source...
+
+    def test_plain(A, B, C): ...
+    def test_2_with_rewrite(A, B, C): ...
+
     src = dedent(
         """\
     from mlir.extras.dialects import arith, scf
+    from mlir.extras.dialects.arith.canonicalizer import canonicalizer as arith_canonicalizer
+    from mlir.extras.dialects.scf.canonicalizer import canonicalizer as scf_canonicalizer
     from mlir.extras.ast.canonicalize import canonicalize
     import mlir.extras.types as T
 
@@ -505,7 +515,7 @@ def test_generic_type_var_closure_patching_dependent_generics(ctx: MLIRContext):
         one = arith.constant(1.0, type=dtype)
 
     @func
-    @canonicalize(using=(arith.canonicalizer, scf.canonicalizer))
+    @canonicalize(using=(arith_canonicalizer, scf_canonicalizer))
     def test_2_with_rewrite[
         M,
         K,
