@@ -255,6 +255,30 @@ def test_generics_callable(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
+_op = TypeVar("_op")
+
+
+def test_global_closures(ctx: MLIRContext):
+    globals()["_op"] = TypeVar("_op")
+
+    @func(generics=[_op])
+    def _generic_pool2d_scf(a: T.f32(), b: T.f32()):
+        _op(a, b)
+
+    _maxpool2d_scf = _generic_pool2d_scf[arith.maximumf,]
+
+    # _op = TypeVar("_op")
+
+    @func(generics=[_op])
+    def _generic_pool3d_scf(
+        a: T.f32(),
+        b: T.f32(),
+    ):
+        _op(a, b)
+
+    _maxpool3d_scf = _generic_pool3d_scf[arith.maximumf,]
+
+
 def test_generics_with_canonicalizations(ctx: MLIRContext):
     generics = M, K, N, dtype = list(map(TypeVar, ["M", "K", "N", "dtype"]))
 
