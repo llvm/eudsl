@@ -6,13 +6,22 @@ import os
 import sys
 import tempfile
 from contextlib import ExitStack
-from enum import StrEnum
 from io import StringIO
 from typing import List, Optional, Union
 
 from ..context import disable_multithreading
 from ...ir import Module, StringAttr
 from ...passmanager import PassManager
+
+
+try:
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
+
 
 logger = logging.getLogger(__name__)
 

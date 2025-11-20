@@ -277,8 +277,8 @@ jobs:
                   # "macos-13",
                   "macos-14", "windows-2022"]
         python-version: [
-          # "3.9", "3.10", "3.11",
-          "3.12", "3.13"
+          "3.10", "3.11", "3.12",
+          "3.13", "3.14", "3.14t"
         ]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
@@ -290,6 +290,21 @@ jobs:
         exclude:
           - runs-on: macos-13
             python-version: "3.13"
+
+          - runs-on: macos-14
+            python-version: "3.10"
+
+          - runs-on: macos-14
+            python-version: "3.11"
+
+          - runs-on: macos-14
+            python-version: "3.12"
+
+          - runs-on: macos-14
+            python-version: "3.13"
+
+          - runs-on: macos-14
+            python-version: "3.14"
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -306,7 +321,7 @@ jobs:
           submodules: false
 
       - name: "Install Python"
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6.0.0
         with:
           python-version: "${{ matrix.python-version }}"
 
@@ -348,8 +363,11 @@ jobs:
           "windows-2022"
         ]
         python-version: [
+          # we only build 3.12 and up
           # "3.10", "3.11",
-          "3.12", "3.13"
+          "3.12", "3.13", "3.14",
+          # stable abi doesn't support 3.14t?
+          # "3.14t"
         ]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
@@ -360,6 +378,18 @@ jobs:
         ]
         exclude:
           - runs-on: macos-13
+            python-version: "3.13"
+
+          - runs-on: macos-14
+            python-version: "3.10"
+
+          - runs-on: macos-14
+            python-version: "3.11"
+
+          - runs-on: macos-14
+            python-version: "3.12"
+
+          - runs-on: macos-14
             python-version: "3.13"
 
     runs-on: ${{ matrix.runs-on }}
@@ -377,7 +407,7 @@ jobs:
           submodules: false
 
       - name: "Install Python"
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6.0.0
         with:
           python-version: "${{ matrix.python-version }}"
 
@@ -445,7 +475,7 @@ jobs:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
 
-    needs: [test-eudsl-llvmpy, test-eudsl-tblgen]
+    needs: [release-eudsl]
 
     permissions:
       contents: read

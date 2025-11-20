@@ -206,7 +206,7 @@ jobs:
           "windows-2022"
         ]
         python-version: [
-          # "3.10", "3.11", "3.12",
+          "3.10", "3.11", "3.12",
           "3.13", "3.14", "3.14t"
         ]
         include: [
@@ -229,6 +229,21 @@ jobs:
 
           - runs-on: macos-13
             python-version: "3.14t"
+
+          - runs-on: macos-14
+            python-version: "3.10"
+
+          - runs-on: macos-14
+            python-version: "3.11"
+
+          - runs-on: macos-14
+            python-version: "3.12"
+
+          - runs-on: macos-14
+            python-version: "3.13"
+
+          - runs-on: macos-14
+            python-version: "3.14"
 
     runs-on: ${{ matrix.runs-on }}
 

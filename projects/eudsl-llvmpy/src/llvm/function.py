@@ -65,16 +65,17 @@ class FuncOp:
 
     def _is_decl(self):
         # magic constant found from looking at the code for an empty fn
+        if sys.version_info.minor == 14:
+            return self.body_builder.__code__.co_code == b"\x80\x00R\x00#\x00"
         if sys.version_info.minor == 13:
             return self.body_builder.__code__.co_code == b"\x95\x00g\x00"
-        elif sys.version_info.minor == 12:
+        if sys.version_info.minor == 12:
             return self.body_builder.__code__.co_code == b"\x97\x00y\x00"
-        elif sys.version_info.minor == 11:
+        if sys.version_info.minor == 11:
             return self.body_builder.__code__.co_code == b"\x97\x00d\x00S\x00"
-        elif sys.version_info.minor in {8, 9, 10}:
+        if sys.version_info.minor in {8, 9, 10}:
             return self.body_builder.__code__.co_code == b"d\x00S\x00"
-        else:
-            raise NotImplementedError(f"{sys.version_info.minor} not supported.")
+        raise NotImplementedError(f"{sys.version_info.minor} not supported.")
 
     def __str__(self):
         return str(f"{self.__class__} {self.__dict__}")
