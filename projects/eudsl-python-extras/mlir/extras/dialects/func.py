@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from functools import update_wrapper
 from typing import Optional, List, Union, TypeVar
 
-from ..ast.util import copy_func
-from ..ast.py_type import PyTypeVarObject, _Ptr, PyObject
-from ..meta import op_region_builder
 from .. import types as T
+from ..ast.py_type import PyTypeVarObject, _Ptr, PyObject
+from ..ast.util import copy_func
+from ..meta import op_region_builder
 from ..util import get_user_code_loc, make_maybe_no_args_decorator
 from ...dialects._ods_common import get_op_result_or_op_results
 from ...dialects.func import *
@@ -25,7 +25,6 @@ from ...ir import (
     TypeAttr,
     Value,
 )
-
 
 _call = call
 

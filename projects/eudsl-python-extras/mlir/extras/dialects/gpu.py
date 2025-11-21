@@ -5,7 +5,6 @@ import inspect
 from functools import partial
 from typing import Any, List, Optional, Tuple, Union
 
-
 from .func import FuncBase
 from .. import types as T
 from ..meta import (
@@ -25,6 +24,10 @@ from ...dialects._ods_common import (
     get_op_result_or_op_results,
 )
 from ...dialects.gpu import *
+
+del constant
+# constant needs to be below gpu import because it needs to shadow upstream's arith.constant
+# noinspection PyUnusedImports
 from .arith import constant
 from ...ir import (
     ArrayAttr,

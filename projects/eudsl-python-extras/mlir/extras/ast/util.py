@@ -12,6 +12,7 @@ from typing import Dict
 
 from bytecode import ConcreteBytecode
 from cloudpickle import cloudpickle
+
 from ...ir import Type
 
 

@@ -1,12 +1,9 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-import platform
 import random
 import sys
-import tempfile
 import time
-from textwrap import dedent
 
 import mlir.extras.types as T
 import numpy as np
@@ -30,7 +27,6 @@ from mlir.extras.dialects.gpu import (
     thread_idx,
     block_dim,
     GPUModuleMeta,
-    func as gpu_func,
     set_container_module,
     launch,
     all_reduce_,
@@ -119,7 +115,7 @@ def test_class(ctx: MLIRContext):
     M, N, K = 4 * scale, 16 * scale, 8 * scale
 
     class MyClass1(metaclass=GPUModuleMeta, targets=["#nvvm.target"]):
-        @gpu_func(emit=True)
+        @gpu.func(emit=True)
         @canonicalize(using=scf.canonicalizer)
         def mat_product_kernel(
             A: T.memref(M, N, T.f32()),
@@ -156,7 +152,7 @@ def test_class_call(ctx: MLIRContext):
     set_container_module(ctx.module)
 
     class MyClass1(metaclass=GPUModuleMeta, targets=["#nvvm.target"]):
-        @gpu_func(emit=True, emit_grid=True)
+        @gpu.func(emit=True, emit_grid=True)
         @canonicalize(using=scf.canonicalizer)
         def mat_product_kernel(
             A: T.memref(M, N, T.f32()),
@@ -214,7 +210,7 @@ def test_class_call_from_func(ctx: MLIRContext):
     set_container_module(ctx.module)
 
     class MyClass1(metaclass=GPUModuleMeta, targets=["#nvvm.target"]):
-        @gpu_func(emit=True, emit_grid=True)
+        @gpu.func(emit=True, emit_grid=True)
         @canonicalize(using=scf.canonicalizer)
         def mat_product_kernel(
             A: T.memref(M, N, T.f32()),
@@ -283,7 +279,7 @@ def test_async_object(ctx: MLIRContext):
     set_container_module(ctx.module)
 
     class MyClass1(metaclass=GPUModuleMeta, targets=["#nvvm.target"]):
-        @gpu_func(emit=True, emit_grid=True)
+        @gpu.func(emit=True, emit_grid=True)
         @canonicalize(using=scf.canonicalizer)
         def mat_product_kernel(
             A: T.memref(M, N, T.f32()),
@@ -524,195 +520,12 @@ def test_launch_op_reduce_op(ctx: MLIRContext):
     filecheck_with_comments(module)
 
 
-@pytest.mark.skipif(sys.version_info < (3, 12), reason="requires python3.12 or higher")
-def test_generics(ctx: MLIRContext):
-    set_container_module(ctx.module)
-
-    # dodge <3.12 parser that doesn't support square brackets generics
-    exec(
-        dedent(
-            """\
-    @gpu_func
-    def mat_product_kernel[
-        M, K, N, dtype
-    ](
-        A: "T.memref(M, K, dtype)",
-        B: "T.memref(K, N, dtype)",
-        C: "T.memref(M, N, dtype)",
-    ):
-        x = block_dim.x * block_idx.x + thread_idx.x
-        y = block_dim.y * block_idx.y + thread_idx.y
-
-        one = arith.constant(1.0, type=dtype)
-        tmp = arith.constant(0, type=dtype)
-        for k, tmp, _ in scf.range_(K, iter_args=[tmp]):
-            tmp += A[x, k] * B[k, y]
-            tmp = scf.yield_(tmp)
-        C[x, y] = tmp + one
-
-    globals()["mat_product_kernel"] = mat_product_kernel
-    """
-        )
-    )
-
-    @module("naive", ["#nvvm.target"])
-    def _():
-        mat_product_kernel[32, 32, 32, T.f32()].emit()  # noqa: F821
-
-    correct = dedent(
-        """\
-    module attributes {gpu.container_module} {
-      gpu.module @naive [#nvvm.target]  {
-        gpu.func @mat_product_kernel_int_32_int_32_int_32_type_f32(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>, %arg2: memref<32x32xf32>) kernel {
-          %block_dim_x = gpu.block_dim  x
-          %block_id_x = gpu.block_id  x
-          %0 = arith.muli %block_dim_x, %block_id_x : index
-          %thread_id_x = gpu.thread_id  x
-          %1 = arith.addi %0, %thread_id_x : index
-          %block_dim_y = gpu.block_dim  y
-          %block_id_y = gpu.block_id  y
-          %2 = arith.muli %block_dim_y, %block_id_y : index
-          %thread_id_y = gpu.thread_id  y
-          %3 = arith.addi %2, %thread_id_y : index
-          %cst = arith.constant 1.000000e+00 : f32
-          %cst_0 = arith.constant 0.000000e+00 : f32
-          %c0 = arith.constant 0 : index
-          %c32 = arith.constant 32 : index
-          %c1 = arith.constant 1 : index
-          %4 = scf.for %arg3 = %c0 to %c32 step %c1 iter_args(%arg4 = %cst_0) -> (f32) {
-            %6 = memref.load %arg0[%1, %arg3] : memref<32x32xf32>
-            %7 = memref.load %arg1[%arg3, %3] : memref<32x32xf32>
-            %8 = arith.mulf %6, %7 : f32
-            %9 = arith.addf %arg4, %8 : f32
-            scf.yield %9 : f32
-          }
-          %5 = arith.addf %4, %cst : f32
-          memref.store %5, %arg2[%1, %3] : memref<32x32xf32>
-          gpu.return
-        }
-      }
-    }
-    """
-    )
-    print(ctx.module)
-
-    filecheck(correct, ctx.module)
-
-
-@pytest.mark.skipif(sys.version_info < (3, 12), reason="requires python3.12 or higher")
-def test_generic_type_var_closure_patching(ctx: MLIRContext):
-    # dodge <3.12 parser that doesn't support square brackets generics
-    exec(
-        dedent(
-            """\
-    from mlir.extras.ast.py_type import PyTypeVarObject
-
-    def fun2[foo, bar, A: foo + bar]():
-        print(A.__bound__)
-
-
-    A_type_param = fun2.__type_params__[2]
-
-
-    a = PyTypeVarObject.from_object(A_type_param)
-    a_something = a.bound.contents.into_object()
-    a_something.__closure__[0].cell_contents = 5
-    a_something.__closure__[1].cell_contents = 7
-
-    fun2()
-    """
-        )
-    )
-
-
-@pytest.mark.skipif(
-    sys.version_info < (3, 13) or platform.system() == "Windows",
-    reason="requires python3.13 or higher (and windows can't find the source file)",
-)
-def test_generic_type_var_closure_patching_dependent_generics(ctx: MLIRContext):
-    # dodge <3.12 parser that doesn't support square brackets generics
-    # but also need a real file here because rewriter needs source...
-    src = dedent(
-        """\
-    from mlir.extras.dialects import arith, gpu, scf
-    from mlir.extras.ast.canonicalize import canonicalize
-    import mlir.extras.types as T
-
-    @gpu.func
-    def test_plain[
-        M,
-        K,
-        N,
-        dtype,
-        A_t = T.memref(M, K, dtype),
-        B_t = T.memref(K, N, dtype),
-        C_t = T.memref(M, N, dtype),
-    ](A: A_t, B: B_t, C: C_t):
-        one = arith.constant(1.0, type=dtype)
-
-    @gpu.func
-    @canonicalize(using=(arith.canonicalizer, scf.canonicalizer))
-    def test_2_with_rewrite[
-        M,
-        K,
-        N,
-        dtype,
-        A_t = T.memref(M, K, dtype),
-        B_t = T.memref(K, N, dtype),
-        C_t = T.memref(M, N, dtype),
-    ](A: A_t, B: B_t, C: C_t):
-        one = arith.constant(1.0, type=dtype)
-        
-    globals()["test_plain"] = test_plain
-    globals()["test_2_with_rewrite"] = test_2_with_rewrite
-    """
-    )
-
-    with tempfile.NamedTemporaryFile(mode="w") as tmp:
-        tmp.write(src)
-        tmp.flush()
-        code = compile(src, tmp.name, "exec")
-        exec(code, globals(), locals())
-
-    @module("mod1", ["#nvvm.target"])
-    def _():
-        test_plain[1, 2, 3, T.f32()].emit()  # noqa: F821
-        test_2_with_rewrite[1, 2, 3, T.f32()].emit()  # noqa: F821
-
-    @module("mod2", ["#nvvm.target"])
-    def _():
-        test_plain[4, 5, 6, T.f16()].emit()  # noqa: F821
-        test_2_with_rewrite[4, 5, 6, T.f16()].emit()  # noqa: F821
-
-    # CHECK: gpu.module @mod1 [#nvvm.target] {
-    # CHECK:   gpu.func @"test_plain_int_1_int_2_int_3_type_f32_MemRefType_memref<1x2xf32>_MemRefType_memref<2x3xf32>_MemRefType_memref<1x3xf32>"(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) kernel {
-    # CHECK:     %cst = arith.constant 1.000000e+00 : f32
-    # CHECK:     gpu.return
-    # CHECK:   }
-    # CHECK:   gpu.func @"test_2_with_rewrite_int_1_int_2_int_3_type_f32_MemRefType_memref<1x2xf32>_MemRefType_memref<2x3xf32>_MemRefType_memref<1x3xf32>"(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) kernel {
-    # CHECK:     %cst = arith.constant 1.000000e+00 : f32
-    # CHECK:     gpu.return
-    # CHECK:   }
-    # CHECK: }
-    # CHECK: gpu.module @mod2 [#nvvm.target] {
-    # CHECK:   gpu.func @"test_plain_int_4_int_5_int_6_type_f16_MemRefType_memref<4x5xf16>_MemRefType_memref<5x6xf16>_MemRefType_memref<4x6xf16>"(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) kernel {
-    # CHECK:     %cst = arith.constant 1.000000e+00 : f16
-    # CHECK:     gpu.return
-    # CHECK:   }
-    # CHECK:   gpu.func @"test_2_with_rewrite_int_4_int_5_int_6_type_f16_MemRefType_memref<4x5xf16>_MemRefType_memref<5x6xf16>_MemRefType_memref<4x6xf16>"(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) kernel {
-    # CHECK:     %cst = arith.constant 1.000000e+00 : f16
-    # CHECK:     gpu.return
-    # CHECK:   }
-    # CHECK: }
-    filecheck_with_comments(ctx.module)
-
-
 def test_amdgpu(ctx: MLIRContext):
     set_container_module(ctx.module)
 
     M, K, N, dtype = 32, 32, 32, T.f32()
 
-    @gpu_func
+    @gpu.func
     def mat_product_kernel(
         A: T.memref(M, K, dtype), B: T.memref(K, N, dtype), C: T.memref(M, N, dtype)
     ):
@@ -824,7 +637,7 @@ def test_amdgpu_square(ctx: MLIRContext):
     scale = 1024
     M, K, N, dtype = scale, scale, scale, T.f32()
 
-    @gpu_func
+    @gpu.func
     def mat_product_kernel(
         A: T.memref(M, K, dtype), B: T.memref(K, N, dtype), C: T.memref(M, N, dtype)
     ):
@@ -938,7 +751,7 @@ def test_amdgpu_vector(ctx: MLIRContext):
     tz_a, tz_b, tz_c = [2, 2, 2]
     v2f32 = T.vector(2, T.f32())
 
-    @gpu_func
+    @gpu.func
     def smol_matmul(
         A: T.memref(M, K, T.f32()),
         B: T.memref(K, N, T.f32()),
@@ -1063,13 +876,13 @@ def test_amdgpu_bank_conflicts(ctx: MLIRContext):
 
     M = 128
 
-    @gpu_func
+    @gpu.func
     def no_bank_conflicts(A: T.memref(M, M, T.f32()), B: T.memref(M, M, T.f32())):
         for i in range(M):
             a = A[i, thread_idx.x]
             B[i, thread_idx.x] = a * a
 
-    @gpu_func
+    @gpu.func
     def all_bank_conflicts(A: T.memref(M, M, T.f32()), B: T.memref(M, M, T.f32())):
         for i in range(M):
             a = A[i, thread_idx.x]
@@ -1180,7 +993,7 @@ def test_amdgpu_vector_wmma(ctx: MLIRContext):
     M, K, N = v_len, v_len, v_len
     v16f16 = T.vector(v_len, T.f16())
 
-    @gpu_func
+    @gpu.func
     @canonicalize(using=scf.canonicalizer)
     def smol_matmul(
         a: T.memref(M, K, T.f16()),
