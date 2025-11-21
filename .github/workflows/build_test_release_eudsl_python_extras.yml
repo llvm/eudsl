@@ -64,6 +64,7 @@ jobs:
 
       - name: "Build eudsl-python-extras sdist"
         run: |
+          
           SHA_SHORT="$(git rev-parse --short HEAD)"
           WHEEL_VERSION="$(date +'%Y%m%d.%H%M')+$SHA_SHORT"
           pushd projects/eudsl-python-extras 
@@ -175,7 +176,14 @@ jobs:
         run: python -m pip install dist/eudsl_python_extras*.tar.gz
 
       - name: "Test eudsl-python-extras"
-        run: python -m pytest projects/eudsl-python-extras/tests
+        run: |
+          
+          IGNORE=""
+          if [[ $(python -c "print(__import__('sys').version_info < (3, 13))") == "True" ]]; then
+            IGNORE="--ignore projects/eudsl-python-extras/tests/dialect/test_generics.py"
+          fi
+          
+          python -m pytest projects/eudsl-python-extras/tests $IGNORE
 
   release-eudsl-python-extras:
 

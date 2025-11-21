@@ -1,17 +1,16 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-import copy
 import inspect
 import sys
 from dataclasses import dataclass
 from functools import update_wrapper
 from typing import Optional, List, Union, TypeVar
 
-from ..ast.util import copy_func, copy_object
-from ..ast.py_type import PyTypeVarObject, _Ptr, PyObject
-from ..meta import op_region_builder
 from .. import types as T
+from ..ast.py_type import PyTypeVarObject, _Ptr, PyObject
+from ..ast.util import copy_func
+from ..meta import op_region_builder
 from ..util import get_user_code_loc, make_maybe_no_args_decorator
 from ...dialects._ods_common import get_op_result_or_op_results
 from ...dialects.func import *
@@ -26,7 +25,6 @@ from ...ir import (
     TypeAttr,
     Value,
 )
-
 
 _call = call
 
@@ -175,7 +173,7 @@ class FuncBase:
         self.call_op_ctor = call_op_ctor
         self.arg_attrs = arg_attrs
         self.res_attrs = res_attrs
-        self.generics = copy_object(generics)
+        self.generics = generics
         self.loc = loc
         self.ip = ip
         self._func_op = None
@@ -323,33 +321,24 @@ class FuncBase:
                         continue
                     if k not in already_reified_type_params:
                         raise RuntimeError(
-                            f"typevar {k} not reified prior to evaluating dependent typevar {tvar}"
+                            f"typevar {k} not reified prior to evaluating dependent typevar {v}"
                         )
                     cvrs[k] = already_reified_type_params[k]
                 unevaled_type_data = copy_func(unevaled_type_data, cvrs)
             return unevaled_type_data()
 
-        generics = copy_object(self.generics)
-        for i, tvar in enumerate(generics):
-            if not isinstance(tvar, TypeVar):
-                raise RuntimeError(
-                    f"{i}th generic has probably already been reified as {tvar}; if you're using a global tvar for the generic, "
-                    f"you should use a unique one for each generic function."
-                )
+        for i, tvar in enumerate(self.generics):
+            if tvar.__name__ in body_builder.__globals__:
+                raise RuntimeError("global typevars for generics are not supported")
+
             type_var_default = None
-            if sys.version_info >= (3, 12):
-                type_var = PyTypeVarObject.from_object(tvar)
-                type_var_bound = type_var.bound
-                if sys.version_info >= (3, 13) and tvar.has_default():
-                    type_var_default = type_var.default_value
-            else:
-                type_var_bound = tvar.__bound__
+            type_var = PyTypeVarObject.from_object(tvar)
+            type_var_bound = type_var.bound
+            if sys.version_info >= (3, 13) and tvar.has_default():
+                type_var_default = type_var.default_value
 
             if bool(type_var_bound):
-                # before 3.12 typevar was just a python class
-                # https://github.com/python/cpython/blob/3.11/Lib/typing.py#L966
-                if sys.version_info >= (3, 12):
-                    type_var_bound = maybe_eval_type_data_closure_vals(type_var_bound)
+                type_var_bound = maybe_eval_type_data_closure_vals(type_var_bound)
             elif not bool(type_var_default):
                 if i >= len(item):
                     raise RuntimeError(f"generic {tvar=} must have concrete val")
@@ -372,15 +361,13 @@ class FuncBase:
             reified_type_params.append(r)
             already_reified_type_params[r.name] = r.val
 
-            # replace the tvar in body_builder's global context with the reified val
-            if tvar.__name__ in body_builder.__globals__:
-                body_builder.__globals__[tvar.__name__] = r.val
-            # replace the tvar in body_builder's closure with the reified val
+            # only in the closure if used in the body
             if r.name in body_builder.__code__.co_freevars:
                 free_i = body_builder.__code__.co_freevars.index(r.name)
-                assert (
-                    body_builder.__closure__[free_i].cell_contents == tvar
-                ), "typevars don't match"
+                if body_builder.__closure__[free_i].cell_contents != tvar:
+                    raise RuntimeError(
+                        f"typevars don't match: {id(body_builder.__closure__[free_i].cell_contents)=}, {id(tvar)=}"
+                    )
                 body_builder.__closure__[free_i].cell_contents = r.val
 
         name_mangled_generics = []
@@ -419,12 +406,9 @@ def func(
     func_attrs=None,
     function_type=None,
     emit=False,
-    generics=None,
     loc=None,
     ip=None,
 ) -> FuncBase:
-    if generics is None and hasattr(f, "__type_params__") and f.__type_params__:
-        generics = f.__type_params__
     func_ = FuncBase(
         body_builder=f,
         func_op_ctor=FuncOp.__base__,
@@ -436,7 +420,7 @@ def func(
         res_attrs=res_attrs,
         func_attrs=func_attrs,
         function_type=function_type,
-        generics=generics,
+        generics=getattr(f, "__type_params__", None),
         loc=loc,
         ip=ip,
     )

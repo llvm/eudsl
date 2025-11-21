@@ -5,7 +5,6 @@ import inspect
 from functools import partial
 from typing import Any, List, Optional, Tuple, Union
 
-
 from .func import FuncBase
 from .. import types as T
 from ..meta import (
@@ -25,6 +24,10 @@ from ...dialects._ods_common import (
     get_op_result_or_op_results,
 )
 from ...dialects.gpu import *
+
+del constant
+# constant needs to be below gpu import because it needs to shadow upstream's arith.constant
+# noinspection PyUnusedImports
 from .arith import constant
 from ...ir import (
     ArrayAttr,
@@ -439,13 +442,10 @@ def func(
     res_attrs=None,
     func_attrs=None,
     emit=False,
-    generics=None,
     loc=None,
     ip=None,
     emit_grid=False,
 ) -> Grid:
-    if generics is None and hasattr(f, "__type_params__") and f.__type_params__:
-        generics = f.__type_params__
     func_ = GPUFunc(
         body_builder=f,
         func_op_ctor=GPUFuncOp,
@@ -455,7 +455,7 @@ def func(
         arg_attrs=arg_attrs,
         res_attrs=res_attrs,
         func_attrs=func_attrs,
-        generics=generics,
+        generics=getattr(f, "__type_params__", None),
         loc=loc,
         ip=ip,
     )
