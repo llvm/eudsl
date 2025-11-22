@@ -18,6 +18,9 @@ def main(file: str):
     if not filepath.exists():
         raise FileNotFoundError(f"File {filepath} does not exist")
 
+    if not str(filepath).endswith(".py"):
+        return 0
+
     lines = filepath.read_text().splitlines()
     if "#!" in lines[0]:
         lines_to_check = lines[1:4]
