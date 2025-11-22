@@ -157,7 +157,7 @@ runs:
         fi
 
     - name: "Install Python"
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6.0.0
       if: ${{ startsWith(inputs.os, 'macos') || startsWith(inputs.os, 'windows') || startsWith(inputs.os, 'ubuntu') }}
       with:
         python-version: ${{ inputs.python-version }}
