@@ -1,7 +1,7 @@
-#  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-#  See https://llvm.org/LICENSE.txt for license information.
-#  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-#  Copyright (c) 2024.
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+# Copyright (c) 2024.
 
 name: "Build, test, release eudsl-python-extras"
 
@@ -173,7 +173,8 @@ jobs:
           path: dist
 
       - name: "Install eudsl-python-extras"
-        run: python -m pip install dist/eudsl_python_extras*.tar.gz
+        run: python -m pip install "eudsl-python-extras[test]" -f dist
+
 
       - name: "Test eudsl-python-extras"
         run: |
