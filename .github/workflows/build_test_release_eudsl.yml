@@ -18,6 +18,11 @@ on:
         description: 'Run the build with a tmate session ONLY in case of failure'
         required: false
         default: false
+      release:
+        description: 'whether to release'
+        type: boolean
+        required: false
+        default: true
   workflow_call:
     inputs:
       workflow_call:
@@ -30,6 +35,11 @@ on:
         type: string
         required: false
         default: ''
+      release:
+        description: 'whether to release'
+        type: boolean
+        required: false
+        default: true
   pull_request:
     branches:
       - main
@@ -473,7 +483,7 @@ jobs:
 
   call-deploy-pip-page:
 
-    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'workflow_dispatch' && inputs.release)
 
     needs: [release-eudsl]
 

@@ -18,6 +18,11 @@ on:
         description: 'Run the build with a tmate session ONLY in case of failure'
         required: false
         default: false
+      release:
+        description: 'whether to release'
+        type: boolean
+        required: false
+        default: true
   workflow_call:
     inputs:
       wheel_version:
@@ -35,6 +40,11 @@ on:
         type: string
         required: false
         default: ''
+      release:
+        description: 'whether to release'
+        type: boolean
+        required: false
+        default: true
   pull_request:
     branches:
       - main
@@ -454,11 +464,12 @@ jobs:
     with:
       workflow_call: true
       workflow_caller_run_id: ${{ github.run_id }}
+      release: ${{ inputs.release }}
 
 
   call-deploy-pip-page:
 
-    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'workflow_dispatch' && inputs.release)
 
     needs: [release-mlir-python-bindings]
 
