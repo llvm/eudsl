@@ -186,6 +186,14 @@ jobs:
           
           python -m pytest projects/eudsl-python-extras/tests $IGNORE
 
+      - name: "Test examples"
+        run: |
+          
+          if [[ $(python -c "print(__import__('sys').version_info >= (3, 13))") == "True" ]]; then
+            python projects/eudsl-python-extras/examples/cuda_matmul_opt.py
+          fi
+          
+
   release-eudsl-python-extras:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'

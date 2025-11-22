@@ -12,7 +12,6 @@ from dis import findlinestarts
 from opcode import opmap
 from typing import List, Union, Sequence, get_type_hints
 
-from bytecode import ConcreteBytecode
 
 from ..ast.util import get_module_cst, set_lineno, find_func_in_code_object
 
@@ -166,25 +165,23 @@ setattr(OpCode, "__int__", to_int)
 setattr(OpCode, "__str__", to_str)
 
 
-class BytecodePatcher(ABC):
+class FunctionPatcher(ABC):
     def __init__(self, context=None):
         self.context = context
 
     @abstractmethod
-    def patch_bytecode(self, code: ConcreteBytecode, original_f) -> ConcreteBytecode:
+    def patch_function(self, original_f):
         pass
 
 
-def patch_bytecode(f, patchers: List[type(BytecodePatcher)] = None):
+def patch_function(f, patchers: List[type(FunctionPatcher)] = None):
     if patchers is None:
         return f
-    code = ConcreteBytecode.from_code(f.__code__)
     context = types.SimpleNamespace()
     for patcher in patchers:
-        code = patcher(context).patch_bytecode(code, f)
+        new_f = patcher(context).patch_function(f)
 
-    f.__code__ = code.to_code()
-    return f
+    return new_f
 
 
 class Canonicalizer(ABC):
@@ -195,7 +192,7 @@ class Canonicalizer(ABC):
 
     @property
     @abstractmethod
-    def bytecode_patchers(self) -> List[BytecodePatcher]:
+    def function_patchers(self) -> List[FunctionPatcher]:
         pass
 
 
@@ -203,14 +200,14 @@ def canonicalize(*, using: Union[Canonicalizer, Sequence[Canonicalizer]]):
     if not isinstance(using, Sequence):
         using = [using]
     cst_transformers = []
-    bytecode_patchers = []
+    function_patchers = []
     for u in using:
         cst_transformers.extend(u.cst_transformers)
-        bytecode_patchers.extend(u.bytecode_patchers)
+        function_patchers.extend(u.function_patchers)
 
     def wrapper(f):
         f = transform_ast(f, cst_transformers)
-        f = patch_bytecode(f, bytecode_patchers)
+        f = patch_function(f, function_patchers)
         return f
 
     return wrapper

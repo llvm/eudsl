@@ -10,9 +10,8 @@ from functools import cached_property, partialmethod
 from typing import Optional, Tuple, Union
 
 import numpy as np
-from bytecode import ConcreteBytecode
 
-from ..ast.canonicalize import StrictTransformer, Canonicalizer, BytecodePatcher
+from ..ast.canonicalize import StrictTransformer, Canonicalizer, FunctionPatcher
 from ..util import infer_mlir_type, mlir_type_to_np_dtype
 from ..._mlir_libs._mlir import register_value_caster
 from ...dialects import complex as complex_dialect
@@ -596,19 +595,19 @@ class CanonicalizeFMA(StrictTransformer):
         return updated_node
 
 
-class ArithPatchByteCode(BytecodePatcher):
-    def patch_bytecode(self, code: ConcreteBytecode, f):
+class ArithPatchFunction(FunctionPatcher):
+    def patch_function(self, f):
         # TODO(max): this is bad and should be in the closure rather than as a global
         from ...dialects import arith, math
 
         f.__globals__["math_dialect"] = math
         f.__globals__["arith_dialect"] = arith
-        return code
+        return f
 
 
 class ArithCanonicalizer(Canonicalizer):
     cst_transformers = [CanonicalizeFMA]
-    bytecode_patchers = [ArithPatchByteCode]
+    function_patchers = [ArithPatchFunction]
 
 
 canonicalizer = ArithCanonicalizer()
