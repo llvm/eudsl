@@ -7,13 +7,11 @@ from contextlib import contextmanager
 from copy import deepcopy
 from typing import List, Union, Optional, Sequence
 
-from bytecode import ConcreteBytecode
-
 from .arith import constant as _ext_arith_constant, index_cast
-from ..ast.canonicalize import BytecodePatcher, Canonicalizer, StrictTransformer
+from ..ast.canonicalize import FunctionPatcher, Canonicalizer, StrictTransformer
 from ..ast.util import ast_call, set_lineno, append_hidden_node
 from ..meta import region_op
-from ..util import get_user_code_loc, region_adder
+from ..util import region_adder
 from ...dialects._ods_common import (
     _cext,
     get_default_loc_context,
@@ -567,14 +565,14 @@ class ReplaceIfWithWith(StrictTransformer):
             return then_with
 
 
-class RemoveJumpsAndInsertGlobals(BytecodePatcher):
-    def patch_bytecode(self, code: ConcreteBytecode, f):
+class RemoveJumpsAndInsertGlobals(FunctionPatcher):
+    def patch_function(self, f):
         # TODO(max): this is bad and should be in the closure rather than as a global
         f.__globals__[yield_.__name__] = yield_
         f.__globals__[if_ctx_manager.__name__] = if_ctx_manager
         f.__globals__[else_ctx_manager.__name__] = else_ctx_manager
         f.__globals__[placeholder_opaque_t.__name__] = placeholder_opaque_t
-        return code
+        return f
 
 
 class SCFCanonicalizer(Canonicalizer):
@@ -586,7 +584,7 @@ class SCFCanonicalizer(Canonicalizer):
         CanonicalizeWhile,
     ]
 
-    bytecode_patchers = [RemoveJumpsAndInsertGlobals]
+    function_patchers = [RemoveJumpsAndInsertGlobals]
 
 
 canonicalizer = SCFCanonicalizer()
