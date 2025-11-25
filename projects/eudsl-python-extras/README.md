@@ -151,7 +151,7 @@ $ EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX=<YOUR_HOST_MLIR_PYTHON_PACKAGE_PREFIX>
 ```
 
 where `YOUR_HOST_MLIR_PYTHON_PACKAGE_PREFIX` is (as it says) the package prefix for your chosen host bindings.
-**When in doubt about this prefix**, it is everything up until `ir` when you import your bindings, e.g., in `import torch_mlir.ir`, `torch_mlir` is the `HOST_MLIR_PYTHON_PACKAGE_PREFIX` for the torch-mlir bindings.
+**When in doubt about this prefix**, it is everything up until `ir` when you import your bindings, e.g., in `import torch_mlir.ir`, `torch_mlir` is the `EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX` for the torch-mlir bindings.
 
 ## Examples/Demo
 
