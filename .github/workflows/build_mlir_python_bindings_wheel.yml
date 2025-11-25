@@ -400,12 +400,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           
-          RELEASE_URL=$(gh release view llvm --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains("mlir_manylinux_x86_64"))) | .[-1] | .url')
-          curl -sLO $RELEASE_URL
-          RELEASE_NAME="$RELEASE_PREFIX*.tar.gz"
-          tar xf $RELEASE_NAME
+          # emsdk install ccache-git-emscripten-64bit
+          # emsdk activate ccache-git-emscripten-64bit
+          # export PATH=$EMSDK/ccache/git-emscripten_64bit/bin:$PATH
+          # export CCACHE_COMPILERCHECK=""
+          # export LLVM_CCACHE_BUILD=ON
+          # export CMAKE_C_COMPILER_LAUNCHER="$(which ccache)"
+          # export CMAKE_CXX_COMPILER_LAUNCHER="$(which ccache)"
           
-          export LLVM_NATIVE_TOOL_DIR="$PWD/llvm-install/bin"
+          pip download mlir_native_tools -f https://llvm.github.io/eudsl
+          unzip -o -j mlir_native_tools-*whl -d mlir_native_tools
+          rm -rf mlir_native_tools-*whl
+          
+          export LLVM_NATIVE_TOOL_DIR="$PWD/mlir_native_tools"
           export LLVM_TABLEGEN="$LLVM_NATIVE_TOOL_DIR/llvm-tblgen"
           export MLIR_TABLEGEN="$LLVM_NATIVE_TOOL_DIR/mlir-tblgen"
           export MLIR_LINALG_ODS_YAML_GEN="$LLVM_NATIVE_TOOL_DIR/mlir-linalg-ods-yaml-gen"
