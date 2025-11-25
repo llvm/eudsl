@@ -6,11 +6,11 @@ from mlir.ir import InsertionPoint, IntegerAttr, UnitAttr
 
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.context import RAIIMLIRContextModule
-from mlir.extras.dialects.ext import memref, scf, arith, gpu, llvm
+from mlir.extras.dialects import memref, scf, arith, gpu, llvm
 from mlir.dialects import math
 
 # noinspection PyUnresolvedReferences
-from mlir.extras.dialects.ext.gpu import (
+from mlir.extras.dialects.gpu import (
     block_idx,
     thread_idx,
     grid_dim,

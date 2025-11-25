@@ -2,13 +2,13 @@ import numpy as np
 
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.context import RAIIMLIRContextModule
-from mlir.extras.dialects.ext import memref, scf, arith, gpu, llvm
+from mlir.extras.dialects import memref, scf, arith, gpu, llvm
 from mlir.dialects import index as index_dialect
 from mlir.ir import InsertionPoint, IntegerAttr, UnitAttr, Attribute
 import mlir.extras.types as T
 
 # noinspection PyUnresolvedReferences
-from mlir.extras.dialects.ext.gpu import (
+from mlir.extras.dialects.gpu import (
     all_reduce,
     wait,
     thread_attr as thread,

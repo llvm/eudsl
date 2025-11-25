@@ -207,7 +207,30 @@ jobs:
           if [[ $(python -c "print(__import__('sys').version_info >= (3, 13))") == "True" ]]; then
             python projects/eudsl-python-extras/examples/cuda_matmul_opt.py
           fi
+
+      - name: Test jupyter notebooks
+        # sed: can't read C:\hostedtoolcache\windows\Python\3.12.10\x64/jupyter_client/runapp.py: No such file or directory
+        if: matrix.os != 'windows'
+        shell: bash
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
           
+          pip install -q jupyter
+          
+          sed -i.bak 's/OUTPUT_TIMEOUT = 10/OUTPUT_TIMEOUT = 1000/g' \
+            $(python -c 'import site; print(site.getsitepackages()[0])')/jupyter_client/runapp.py
+          
+          jupyter execute projects/eudsl-python-extras/examples/mlir_python_extras.ipynb --output=mlir_python_extras_output
+          cat projects/eudsl-python-extras/examples/mlir_python_extras_output.ipynb | jq '.cells[].outputs | select(length > 0) | .[0] | .text'
+          jupyter execute projects/eudsl-python-extras/examples/vectorization_e2e.ipynb --output=vectorization_e2e_output
+          cat projects/eudsl-python-extras/examples/vectorization_e2e_output.ipynb | jq '.cells[].outputs | select(length > 0) | .[0] | .text'
+          
+          # TODO(max): build wheels with nv targets
+          # if [ ${{ matrix.os }} == 'ubuntu' ]; then
+          #   jupyter execute projects/eudsl-python-extras/examples/cuda_e2e.ipynb --output=cuda_e2e_output
+          #   cat projects/eudsl-python-extras/examples/cuda_e2e_output.ipynb | jq '.cells[].outputs | select(length > 0) | .[0] | .text'
+          # fi
 
   release-eudsl-python-extras:
 

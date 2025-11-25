@@ -11,17 +11,17 @@ from mlir.extras.context import (
     mlir_mod_ctx,
     MLIRContext,
 )
-from mlir.extras.dialects.ext import arith, memref, gpu, scf, linalg, vector, nvgpu
-from mlir.extras.dialects.ext.gpu import (
+from mlir.extras.dialects import arith, memref, gpu, scf, linalg, vector, nvgpu
+from mlir.extras.dialects.gpu import (
     block_idx,
     thread_idx,
     block_dim,
     get_compile_object_bytes,
     smem_space,
 )
-from mlir.extras.dialects.ext.llvm import llvm_ptr_t
-from mlir.extras.dialects.ext.memref import S
-from mlir.extras.dialects.ext.scf import range_
+from mlir.extras.dialects.llvm import llvm_ptr_t
+from mlir.extras.dialects.memref import S
+from mlir.extras.dialects.scf import range_
 from mlir.extras.runtime.passes import Pipeline, run_pipeline
 
 # noinspection PyUnresolvedReferences
@@ -139,9 +139,9 @@ def sgemm_naive[
     K,
     N,
     dtype,
-    A_t: T.memref(M, K, dtype),
-    B_t: T.memref(K, N, dtype),
-    C_t: T.memref(M, N, dtype),
+    A_t = T.memref(M, K, dtype),
+    B_t = T.memref(K, N, dtype),
+    C_t = T.memref(M, N, dtype),
 ](A: A_t, B: B_t, C: C_t):
     one = arith.constant(1.0, type=dtype)
     tmp = arith.constant(0, type=dtype)
@@ -167,9 +167,9 @@ def sgemm_naive_row_order[
     K,
     N,
     dtype,
-    A_t: T.memref(M, K, dtype),
-    B_t: T.memref(K, N, dtype),
-    C_t: T.memref(M, N, dtype),
+    A_t = T.memref(M, K, dtype),
+    B_t = T.memref(K, N, dtype),
+    C_t = T.memref(M, N, dtype),
 ](A: A_t, B: B_t, C: C_t):
     one = arith.constant(1.0, type=dtype)
     tmp = arith.constant(0, type=dtype)
@@ -193,10 +193,10 @@ def sgemm_coalesce[
     K,
     N,
     dtype,
-    BLOCK_SIZE: 32,
-    A_t: T.memref(M, K, dtype),
-    B_t: T.memref(K, N, dtype),
-    C_t: T.memref(M, N, dtype),
+    BLOCK_SIZE = 32,
+    A_t = T.memref(M, K, dtype),
+    B_t = T.memref(K, N, dtype),
+    C_t = T.memref(M, N, dtype),
 ](A: A_t, B: B_t, C: C_t):
 
     tid = gpu.thread_id()
@@ -259,10 +259,10 @@ def sgemm_coalesce_transpose_B[
     K,
     N,
     dtype,
-    BLOCK_SIZE: 32,
-    A_t: T.memref(M, K, dtype),
-    B_t: T.memref(K, N, dtype),
-    C_t: T.memref(M, N, dtype),
+    BLOCK_SIZE = 32,
+    A_t = T.memref(M, K, dtype),
+    B_t = T.memref(K, N, dtype),
+    C_t = T.memref(M, N, dtype),
 ](A: A_t, B: B_t, C: C_t):
 
     tid = gpu.thread_id()
@@ -288,10 +288,10 @@ def sgemm_shared_mem_block[
     K,
     N,
     dtype,
-    BLOCK_SIZE: 32,
-    A_t: T.memref(M, K, dtype),
-    B_t: T.memref(K, N, dtype),
-    C_t: T.memref(M, N, dtype),
+    BLOCK_SIZE = 32,
+    A_t = T.memref(M, K, dtype),
+    B_t = T.memref(K, N, dtype),
+    C_t = T.memref(M, N, dtype),
 ](A: A_t, B: B_t, C: C_t):
     # allocate buffer for current block in fast shared mem
     # shared mem is shared between all threads in a block
@@ -394,9 +394,9 @@ def sgemm_shared_mem_1d_block_tiling[
     BN,
     BK,
     TM,
-    A_t: T.memref(M, K, dtype),
-    B_t: T.memref(K, N, dtype),
-    C_t: T.memref(M, N, dtype),
+    A_t = T.memref(M, K, dtype),
+    B_t = T.memref(K, N, dtype),
+    C_t = T.memref(M, N, dtype),
 ](A: A_t, B: B_t, C: C_t):
     base = gpu.dynamic_shared_memory()
     A_shared = memref.view(base, (BM, BK), dtype=dtype)
@@ -455,9 +455,9 @@ def sgemm_shared_mem_2d_block_tiling[
     BK,
     TM,
     TN,
-    A_t: T.memref(M, K, dtype),
-    B_t: T.memref(K, N, dtype),
-    C_t: T.memref(M, N, dtype),
+    A_t = T.memref(M, K, dtype),
+    B_t = T.memref(K, N, dtype),
+    C_t = T.memref(M, N, dtype),
 ](A: A_t, B: B_t, C: C_t):
     base = gpu.dynamic_shared_memory()
     A_shared = memref.view(base, (BM, BK), dtype=dtype)
@@ -542,9 +542,9 @@ def sgemm_shared_mem_2d_block_tiling_vectorize[
     BK,
     TM,
     TN,
-    A_t: T.memref(M, K, dtype),
-    B_t: T.memref(K, N, dtype),
-    C_t: T.memref(M, N, dtype),
+    A_t = T.memref(M, K, dtype),
+    B_t = T.memref(K, N, dtype),
+    C_t = T.memref(M, N, dtype),
 ](A: A_t, B: B_t, C: C_t):
     VECTOR_WIDTH = 4
     DTYPE_WIDTH = dtype.width // 8
@@ -656,9 +656,9 @@ def sgemm_warp_tiling[
     TM,
     TN,
     NUM_THREADS,
-    A_t: T.memref(M, K, dtype),
-    B_t: T.memref(K, N, dtype),
-    C_t: T.memref(M, N, dtype),
+    A_t = T.memref(M, K, dtype),
+    B_t = T.memref(K, N, dtype),
+    C_t = T.memref(M, N, dtype),
 ](A: A_t, B: B_t, C: C_t):
     VECTOR_WIDTH = 4
     DTYPE_WIDTH = dtype.width // 8
@@ -820,11 +820,11 @@ def sgemm_tensor_core[
     M,
     K,
     N,
-    A_t: T.memref(M, K, T.f16()),
-    B_t: T.memref(K, N, T.f16()),
-    C_t: T.memref(M, N, T.f32()),
-    a_tma_t: llvm_ptr_t(),
-    b_tma_t: llvm_ptr_t(),
+    A_t = T.memref(M, K, T.f16()),
+    B_t = T.memref(K, N, T.f16()),
+    C_t = T.memref(M, N, T.f32()),
+    a_tma_t = llvm_ptr_t(),
+    b_tma_t = llvm_ptr_t(),
 ](A: A_t, B: B_t, C: C_t, a_tma: a_tma_t, b_tma: b_tma_t):
     a_tma = builtin.unrealized_conversion_cast(
         [

@@ -11,7 +11,7 @@ from mlir.ir import StringAttr, UnitAttr
 
 # you need this to register the memref value caster
 # noinspection PyUnresolvedReferences
-import mlir.extras.dialects.ext.memref
+import mlir.extras.dialects.memref
 from mlir.extras.context import RAIIMLIRContext, ExplicitlyManagedModule
 from mlir.dialects.bufferization import LayoutMapOption
 from mlir.dialects.transform.vector import (
@@ -20,15 +20,15 @@ from mlir.dialects.transform.vector import (
     VectorTransferSplit,
     VectorTransposeLowering,
 )
-from mlir.extras.dialects.ext import linalg
-from mlir.extras.dialects.ext.func import func
-from mlir.extras.dialects.ext.transform import (
+from mlir.extras.dialects import linalg
+from mlir.extras.dialects.func import func
+from mlir.extras.dialects.transform import (
     match,
     tile_to_scf_for,
     get_parent_op,
     transform_any_op_t,
 )
-from mlir.extras.dialects.ext import transform
+from mlir.extras.dialects import transform
 from mlir.extras.runtime.passes import Pipeline, run_pipeline
 from mlir.extras.runtime.refbackend import LLVMJITBackend
 
@@ -153,7 +153,7 @@ compiled_module = backend.compile(
     pipeline=lower_to_llvm,
 )
 
-print(compiled_module)
+# print(compiled_module)
 
 A = np.random.randint(0, 10, (M, K)).astype(np.float32)
 B = np.random.randint(0, 10, (K, N)).astype(np.float32)
