@@ -7,6 +7,12 @@ name: "Build, test, release eudsl-python-extras"
 
 on:
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'whether to release'
+        type: boolean
+        required: false
+        default: true
   workflow_call:
     inputs:
       workflow_call:
@@ -19,6 +25,11 @@ on:
         type: string
         required: false
         default: ''
+      release:
+        description: 'whether to release'
+        type: boolean
+        required: false
+        default: true
   pull_request:
     branches:
       - main
@@ -186,9 +197,44 @@ jobs:
           
           python -m pytest projects/eudsl-python-extras/tests $IGNORE
 
+      - name: "Test examples"
+        run: |
+          
+          python projects/eudsl-python-extras/examples/flash_attention.py
+          python projects/eudsl-python-extras/examples/mwe.py
+          python projects/eudsl-python-extras/examples/rdna_matmul_opt.py
+          
+          if [[ $(python -c "print(__import__('sys').version_info >= (3, 13))") == "True" ]]; then
+            python projects/eudsl-python-extras/examples/cuda_matmul_opt.py
+          fi
+
+      - name: Test jupyter notebooks
+        # sed: can't read C:\hostedtoolcache\windows\Python\3.12.10\x64/jupyter_client/runapp.py: No such file or directory
+        if: matrix.os != 'windows'
+        shell: bash
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          
+          pip install -q jupyter
+          
+          sed -i.bak 's/OUTPUT_TIMEOUT = 10/OUTPUT_TIMEOUT = 1000/g' \
+            $(python -c 'import site; print(site.getsitepackages()[0])')/jupyter_client/runapp.py
+          
+          jupyter execute projects/eudsl-python-extras/examples/mlir_python_extras.ipynb --output=mlir_python_extras_output
+          cat projects/eudsl-python-extras/examples/mlir_python_extras_output.ipynb | jq '.cells[].outputs | select(length > 0) | .[0] | .text'
+          jupyter execute projects/eudsl-python-extras/examples/vectorization_e2e.ipynb --output=vectorization_e2e_output
+          cat projects/eudsl-python-extras/examples/vectorization_e2e_output.ipynb | jq '.cells[].outputs | select(length > 0) | .[0] | .text'
+          
+          # TODO(max): build wheels with nv targets
+          # if [ ${{ matrix.os }} == 'ubuntu' ]; then
+          #   jupyter execute projects/eudsl-python-extras/examples/cuda_e2e.ipynb --output=cuda_e2e_output
+          #   cat projects/eudsl-python-extras/examples/cuda_e2e_output.ipynb | jq '.cells[].outputs | select(length > 0) | .[0] | .text'
+          # fi
+
   release-eudsl-python-extras:
 
-    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'workflow_dispatch' && inputs.release)
 
     needs: [build-eudsl-python-extras]
 
@@ -222,7 +268,7 @@ jobs:
 
   call-deploy-pip-page:
 
-    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'workflow_dispatch' && inputs.release)
 
     needs: [release-eudsl-python-extras]
 
