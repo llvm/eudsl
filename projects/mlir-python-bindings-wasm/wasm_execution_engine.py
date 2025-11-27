@@ -62,7 +62,7 @@ def testapis():
 
 def lowerToLLVM(module):
     pm = PassManager.parse(
-        "builtin.module(convert-complex-to-llvm,finalize-memref-to-llvm,convert-func-to-llvm,convert-arith-to-llvm,convert-cf-to-llvm,reconcile-unrealized-casts)"
+        "builtin.module(convert-complex-to-llvm,finalize-memref-to-llvm{index-bitwidth=32},convert-func-to-llvm{index-bitwidth=32},convert-arith-to-llvm{index-bitwidth=32},convert-cf-to-llvm{index-bitwidth=32},reconcile-unrealized-casts)"
     )
     pm.run(module.operation)
     return module
@@ -73,11 +73,11 @@ def make_nd_memref_descriptor(rank, dtype):
         """Builds an empty descriptor for the given rank/dtype, where rank>0."""
 
         _fields_ = [
-            ("allocated", ctypes.POINTER(dtype)),
+            ("allocated", ctypes.c_long),
             ("aligned", ctypes.POINTER(dtype)),
-            ("offset", ctypes.c_longlong),
+            ("offset", ctypes.c_long),
             ("shape", ctypes.c_long * rank),
-            ("strides", ctypes.c_longlong * rank),
+            ("strides", ctypes.c_long * rank),
         ]
 
     return MemRefDescriptor
@@ -88,12 +88,18 @@ def make_zero_d_memref_descriptor(dtype):
         """Builds an empty descriptor for the given dtype, where rank=0."""
 
         _fields_ = [
-            ("allocated", ctypes.POINTER(dtype)),
+            ("allocated", ctypes.c_long),
             ("aligned", ctypes.POINTER(dtype)),
-            ("offset", ctypes.c_longlong),
+            ("offset", ctypes.c_long),
         ]
 
     return MemRefDescriptor
+
+
+class UnrankedMemRefDescriptor(ctypes.Structure):
+    """Creates a ctype struct for memref descriptor"""
+
+    _fields_ = [("rank", ctypes.c_long), ("descriptor", ctypes.c_void_p)]
 
 
 def get_ranked_memref_descriptor(nparray):
@@ -101,22 +107,20 @@ def get_ranked_memref_descriptor(nparray):
     ctp = as_ctype(nparray.dtype)
     if nparray.ndim == 0:
         x = make_zero_d_memref_descriptor(ctp)()
-        # x.allocated = nparray.ctypes.data
-        x.allocated = nparray.ctypes.data_as(ctypes.POINTER(ctp))
+        x.allocated = nparray.ctypes.data
         x.aligned = nparray.ctypes.data_as(ctypes.POINTER(ctp))
-        x.offset = ctypes.c_longlong(0)
+        x.offset = ctypes.c_long(0)
         return x
 
     x = make_nd_memref_descriptor(nparray.ndim, ctp)()
-    # x.allocated = nparray.ctypes.data
-    x.allocated = nparray.ctypes.data_as(ctypes.POINTER(ctp))
+    x.allocated = nparray.ctypes.data
     x.aligned = nparray.ctypes.data_as(ctypes.POINTER(ctp))
-    x.offset = ctypes.c_longlong(0)
+    x.offset = ctypes.c_long(0)
     x.shape = nparray.ctypes.shape
 
     # Numpy uses byte quantities to express strides, MLIR OTOH uses the
     # torch abstraction which specifies strides in terms of elements.
-    strides_ctype_t = ctypes.c_longlong * nparray.ndim
+    strides_ctype_t = ctypes.c_long * nparray.ndim
     x.strides = strides_ctype_t(*[x // nparray.itemsize for x in nparray.strides])
     return x
 
@@ -138,6 +142,11 @@ def testMemrefAdd():
                   }
                   func.func @main2(%arg0: memref<f32>) -> (f32) attributes { llvm.emit_c_interface } {
                     %1 = memref.load %arg0[] : memref<f32>
+                    return %1 : f32
+                  }
+                  func.func @main3(%arg0: memref<1xf32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %0 = arith.constant 0 : index
+                    %1 = memref.load %arg0[%0] : memref<1xf32>
                     return %1 : f32
                   }
                 } """
@@ -163,21 +172,6 @@ def testMemrefAdd():
         _mlirWasmExecutionEngine.link_load(name, "bar.wasm")
         print(_mlirWasmExecutionEngine.get_symbol_address("main"))
 
-        ctp = as_ctype(arg2.dtype)
-        func = _mlirWasmExecutionEngine.get_symbol_address("main2")
-        func = ctypes.CFUNCTYPE(
-            ctypes.c_float,
-            ctypes.POINTER(ctp),
-            ctypes.POINTER(ctp),
-            ctypes.c_longlong,
-        )(func)
-        res_ = func(
-            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
-            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
-            0,
-        )
-        print(res_)
-
         res_ = invoke(
             "_mlir_ciface_main",
             [arg1_memref_ptr, arg2_memref_ptr, res_memref_ptr],
@@ -186,3 +180,37 @@ def testMemrefAdd():
         print(res_)
         # CHECK: [32.5] + 6.0 = [38.5]
         print("{0} + {1} = {2}".format(arg1, arg2, res))
+
+        ctp = as_ctype(arg2.dtype)
+        func = _mlirWasmExecutionEngine.get_symbol_address("main2")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            arg2.ctypes.data,
+            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+        )
+        print(res_)
+
+        ctp = as_ctype(arg2.dtype)
+        func = _mlirWasmExecutionEngine.get_symbol_address("main3")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            arg1.ctypes.data,
+            arg1.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+        )
+        print(res_)
