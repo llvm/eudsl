@@ -423,6 +423,8 @@ jobs:
             fi
             python $f
           done
+          
+          python projects/mlir-python-bindings-wasm/wasm_execution_engine.py
 
           popd
 
