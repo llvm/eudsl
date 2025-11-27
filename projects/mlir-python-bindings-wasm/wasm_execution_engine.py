@@ -73,11 +73,24 @@ def make_nd_memref_descriptor(rank, dtype):
         """Builds an empty descriptor for the given rank/dtype, where rank>0."""
 
         _fields_ = [
-            ("allocated", ctypes.c_longlong),
+            ("allocated", ctypes.POINTER(dtype)),
             ("aligned", ctypes.POINTER(dtype)),
             ("offset", ctypes.c_longlong),
             ("shape", ctypes.c_long * rank),
             ("strides", ctypes.c_longlong * rank),
+        ]
+
+    return MemRefDescriptor
+
+
+def make_zero_d_memref_descriptor(dtype):
+    class MemRefDescriptor(ctypes.Structure):
+        """Builds an empty descriptor for the given dtype, where rank=0."""
+
+        _fields_ = [
+            ("allocated", ctypes.POINTER(dtype)),
+            ("aligned", ctypes.POINTER(dtype)),
+            ("offset", ctypes.c_longlong),
         ]
 
     return MemRefDescriptor
@@ -88,13 +101,15 @@ def get_ranked_memref_descriptor(nparray):
     ctp = as_ctype(nparray.dtype)
     if nparray.ndim == 0:
         x = make_zero_d_memref_descriptor(ctp)()
-        x.allocated = nparray.ctypes.data
+        # x.allocated = nparray.ctypes.data
+        x.allocated = nparray.ctypes.data_as(ctypes.POINTER(ctp))
         x.aligned = nparray.ctypes.data_as(ctypes.POINTER(ctp))
         x.offset = ctypes.c_longlong(0)
         return x
 
     x = make_nd_memref_descriptor(nparray.ndim, ctp)()
-    x.allocated = nparray.ctypes.data
+    # x.allocated = nparray.ctypes.data
+    x.allocated = nparray.ctypes.data_as(ctypes.POINTER(ctp))
     x.aligned = nparray.ctypes.data_as(ctypes.POINTER(ctp))
     x.offset = ctypes.c_longlong(0)
     x.shape = nparray.ctypes.shape
@@ -121,9 +136,8 @@ def testMemrefAdd():
                     return %1 : f32
                     // memref.store %3, %arg2[%0] : memref<1xf32>
                   }
-                  func.func @main2(%arg0: memref<1xf32>) -> (f32) attributes { llvm.emit_c_interface } {
-                    %0 = arith.constant 0 : index
-                    %1 = memref.load %arg0[%0] : memref<1xf32>
+                  func.func @main2(%arg0: memref<f32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %1 = memref.load %arg0[] : memref<f32>
                     return %1 : f32
                   }
                 } """
@@ -148,6 +162,21 @@ def testMemrefAdd():
         name = _mlirWasmExecutionEngine.compile(module.operation, "bar")
         _mlirWasmExecutionEngine.link_load(name, "bar.wasm")
         print(_mlirWasmExecutionEngine.get_symbol_address("main"))
+
+        ctp = as_ctype(arg2.dtype)
+        func = _mlirWasmExecutionEngine.get_symbol_address("main2")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            ctypes.POINTER(ctp),
+            ctypes.POINTER(ctp),
+            ctypes.c_longlong,
+        )(func)
+        res_ = func(
+            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+        )
+        print(res_)
 
         res_ = invoke(
             "_mlir_ciface_main",
