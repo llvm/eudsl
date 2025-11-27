@@ -21,20 +21,30 @@ def run(f):
     assert Context._get_live_count() == 0
 
 
-def lookup(name, return_type=None):
-    func = _mlirWasmExecutionEngine.get_symbol_address(name)
-    if not func:
-        raise RuntimeError("Unknown function " + name)
-    prototype = ctypes.CFUNCTYPE(return_type, ctypes.c_void_p)
-    return prototype(func)
+class WasmExecutionEngine:
+    def lookup(self, name, return_type=None):
+        func = _mlirWasmExecutionEngine.get_symbol_address(name)
+        if not func:
+            raise RuntimeError("Unknown function " + name)
+        prototype = ctypes.CFUNCTYPE(return_type, ctypes.c_void_p)
+        return prototype(func)
+
+    def invoke(self, name, ctypes_args, return_type=None):
+        func = self.lookup(name, return_type)
+        packed_args = (ctypes.c_void_p * len(ctypes_args))()
+        for argNum in range(len(ctypes_args)):
+            packed_args[argNum] = ctypes.cast(ctypes_args[argNum], ctypes.c_void_p)
+        return func(packed_args)
+
+    def load_module(self, module_op, module_name="foo"):
+        if isinstance(module_op, Module):
+            module_op = module_op.operation
+        object_fn = _mlirWasmExecutionEngine.compile(module_op, module_name)
+        binary_fn = f"{module_name}.wasm"
+        _mlirWasmExecutionEngine.link_load(object_fn, binary_fn)
 
 
-def invoke(name, ctypes_args, return_type=None):
-    func = lookup(name, return_type)
-    packed_args = (ctypes.c_void_p * len(ctypes_args))()
-    for argNum in range(len(ctypes_args)):
-        packed_args[argNum] = ctypes.cast(ctypes_args[argNum], ctypes.c_void_p)
-    return func(packed_args)
+wasm_ee = WasmExecutionEngine()
 
 
 @run
@@ -51,9 +61,7 @@ def testapis():
                 """
             )
         )
-        name = _mlirWasmExecutionEngine.compile(module.operation, "foo")
-        print(name)
-        _mlirWasmExecutionEngine.link_load(name, "foo.wasm")
+        wasm_ee.load_module(module.operation)
         print(_mlirWasmExecutionEngine.get_symbol_address("none"))
         func = _mlirWasmExecutionEngine.get_symbol_address("none")
         func = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int)(func)
@@ -96,12 +104,6 @@ def make_zero_d_memref_descriptor(dtype):
     return MemRefDescriptor
 
 
-class UnrankedMemRefDescriptor(ctypes.Structure):
-    """Creates a ctype struct for memref descriptor"""
-
-    _fields_ = [("rank", ctypes.c_long), ("descriptor", ctypes.c_void_p)]
-
-
 def get_ranked_memref_descriptor(nparray):
     """Returns a ranked memref descriptor for the given numpy array."""
     ctp = as_ctype(nparray.dtype)
@@ -137,8 +139,8 @@ def testMemrefAdd():
                     %1 = memref.load %arg0[%0] : memref<1xf32>
                     %2 = memref.load %arg1[] : memref<f32>
                     %3 = arith.addf %1, %2 : f32
-                    return %1 : f32
-                    // memref.store %3, %arg2[%0] : memref<1xf32>
+                    memref.store %3, %arg2[%0] : memref<1xf32>
+                    return %3 : f32
                   }
                   func.func @main2(%arg0: memref<f32>) -> (f32) attributes { llvm.emit_c_interface } {
                     %1 = memref.load %arg0[] : memref<f32>
@@ -148,6 +150,32 @@ def testMemrefAdd():
                     %0 = arith.constant 0 : index
                     %1 = memref.load %arg0[%0] : memref<1xf32>
                     return %1 : f32
+                  }
+                  func.func @main4(%arg0: memref<1xf32>, %arg1: memref<1xf32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %0 = arith.constant 0 : index
+                    %1 = memref.load %arg0[%0] : memref<1xf32>
+                    return %1 : f32
+                  }
+                  func.func @main5(%arg0: memref<1xf32>, %arg1: memref<1xf32>, %arg2: memref<f32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %0 = arith.constant 0 : index
+                    %1 = memref.load %arg0[%0] : memref<1xf32>
+                    return %1 : f32
+                  }
+                  func.func @main6(%arg0: memref<1xf32>, %arg2: memref<1xf32>, %arg1: memref<f32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %0 = arith.constant 0 : index
+                    %1 = memref.load %arg0[%0] : memref<1xf32>
+                    %2 = memref.load %arg1[] : memref<f32>
+                    %3 = arith.addf %1, %2 : f32
+                    memref.store %3, %arg2[%0] : memref<1xf32>
+                    return %3 : f32
+                  }
+                  func.func @main7(%arg0: memref<1xf32>, %arg1: memref<f32>, %arg2: memref<1xf32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %0 = arith.constant 0 : index
+                    %1 = memref.load %arg0[%0] : memref<1xf32>
+                    %2 = memref.load %arg1[] : memref<f32>
+                    %3 = arith.addf %1, %2 : f32
+                    memref.store %3, %arg2[%0] : memref<1xf32>
+                    return %3 : f32
                   }
                 } """
             )
@@ -167,12 +195,12 @@ def testMemrefAdd():
         )
 
         module = lowerToLLVM(module)
-        print(module)
+        # print(module)
         name = _mlirWasmExecutionEngine.compile(module.operation, "bar")
         _mlirWasmExecutionEngine.link_load(name, "bar.wasm")
         print(_mlirWasmExecutionEngine.get_symbol_address("main"))
 
-        res_ = invoke(
+        res_ = wasm_ee.invoke(
             "_mlir_ciface_main",
             [arg1_memref_ptr, arg2_memref_ptr, res_memref_ptr],
             return_type=ctypes.c_float,
@@ -214,3 +242,177 @@ def testMemrefAdd():
             1,
         )
         print(res_)
+
+        size_of_void_p = ctypes.sizeof(ctypes.c_void_p)
+        print(f"The size of ctypes.c_void_p is: {size_of_void_p} bytes")
+
+        size_of_longlong = ctypes.sizeof(ctypes.c_longlong)
+        print(f"The size of ctypes.c_longlong is: {size_of_longlong} bytes")
+
+        func = _mlirWasmExecutionEngine.get_symbol_address("main4")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            # arg1
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # # arg2
+            # ctypes.c_long,
+            # ctypes.POINTER(ctp),
+            # ctypes.c_long,
+            # res
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            # arg1
+            arg1.ctypes.data,
+            arg1.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # # # arg2
+            # arg2.ctypes.data,
+            # arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            # 0,
+            # res
+            res.ctypes.data,
+            res.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+        )
+        print(res_)
+
+        func = _mlirWasmExecutionEngine.get_symbol_address("main5")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            # arg1
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # res
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # arg2
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            # arg1
+            arg1.ctypes.data,
+            arg1.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # res
+            res.ctypes.data,
+            res.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # arg2
+            arg2.ctypes.data,
+            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+        )
+        print(res_)
+
+        func = _mlirWasmExecutionEngine.get_symbol_address("main6")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            # arg1
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # res
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # arg2
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            # arg1
+            arg1.ctypes.data,
+            arg1.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # res
+            res.ctypes.data,
+            res.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # arg2
+            arg2.ctypes.data,
+            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+        )
+        print(res_)
+
+        func = _mlirWasmExecutionEngine.get_symbol_address("main7")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            # arg1
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # arg2
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            # res
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            # arg1
+            arg1.ctypes.data,
+            arg1.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # arg2
+            arg2.ctypes.data,
+            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            # res
+            res.ctypes.data,
+            res.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+        )
+        print(res_)
+
+        wasm_ee.invoke(
+            "_mlir_ciface_main7",
+            [arg1_memref_ptr, arg2_memref_ptr, res_memref_ptr],
+            return_type=ctypes.c_float,
+        )
+        # CHECK: [32.5] + 6.0 = [38.5]
+        print("{0} + {1} = {2}".format(arg1, arg2, res))
