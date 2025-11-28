@@ -415,18 +415,17 @@ jobs:
           pyodide venv venv
           . venv/bin/activate
           pip install mlir-python-bindings -f wheelhouse
-          pushd third_party/llvm-project/mlir/test/python/dialects
           
+          pushd third_party/llvm-project/mlir/test/python/dialects
           for f in *.py; do
             if [[ "$f" == "python_test.py" ]]; then
               continue
             fi
             python $f
           done
-          
-          python projects/mlir-python-bindings-wasm/wasm_execution_engine.py
-
           popd
+          
+          python projects/mlir-python-bindings-wasm/test_wasm_execution_engine.py
 
       - name: Upload wasm32 wheels
         uses: actions/upload-artifact@v4

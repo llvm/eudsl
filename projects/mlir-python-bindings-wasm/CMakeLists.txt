@@ -27,9 +27,16 @@ add_mlir_upstream_c_api_library(WasmCompilerLinkerLoaderCAPI
   lldCommon
 )
 
-declare_mlir_python_extension(MLIRPythonExtension.WasmExecutionEngine
-  MODULE_NAME _mlirWasmExecutionEngine
+declare_mlir_python_sources(MLIRPythonExtension.WasmExecutionEngine
+  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mlir"
   ADD_TO_PARENT MLIRPythonSources
+  SOURCES
+    wasm_execution_engine.py
+)
+
+declare_mlir_python_extension(MLIRPythonExtension.WasmExecutionEngine.extension
+  MODULE_NAME _mlirWasmExecutionEngine
+  ADD_TO_PARENT MLIRPythonExtension.WasmExecutionEngine
   ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
   PYTHON_BINDINGS_LIBRARY nanobind
   SOURCES
