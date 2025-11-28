@@ -15,16 +15,21 @@ from ... import _mlir_libs
 from ...dialects.func import CallOp, FuncOp
 from ...ir import InsertionPoint, MemRefType, Module, UnitAttr
 
+from ...execution_engine import ExecutionEngine
+from ...runtime import (
+    UnrankedMemRefDescriptor,
+    get_ranked_memref_descriptor,
+    unranked_memref_to_numpy,
+    get_unranked_memref_descriptor,
+)
+
 try:
-    from ...execution_engine import ExecutionEngine
-    from ...runtime import (
-        UnrankedMemRefDescriptor,
-        get_ranked_memref_descriptor,
-        unranked_memref_to_numpy,
-        get_unranked_memref_descriptor,
-    )
+    from ...wasm_execution_engine import WasmExecutionEngine
+
+    HAS_WASM_EE = True
 except ImportError:
-    pass
+    warnings.warn("Couldn't import WasmExecutionEngine; wasm runtime won't work")
+    HAS_WASM_EE = False
 
 from .. import types as T
 from ...dialects.memref import cast
@@ -111,9 +116,9 @@ def convert_arg_to_ctype(arg, unranked=True):
     if isinstance(arg, CData) or isinstance(arg, (int, float, bool)):
         return arg
     elif isinstance(arg, np.ndarray):
-        assert np_dtype_to_mlir_type(arg.dtype.type), (
-            f"unsupported numpy array type {arg.dtype}"
-        )
+        assert np_dtype_to_mlir_type(
+            arg.dtype.type
+        ), f"unsupported numpy array type {arg.dtype}"
         if unranked:
             return ctypes.pointer(ctypes.pointer(get_unranked_memref_descriptor(arg)))
         else:
@@ -144,17 +149,29 @@ class LLVMJITBackendInvoker:
         return_func_types=None,
         return_func_name=None,
         consume_return_callback=None,
+        execution_engine_ctor=None,
     ):
         if shared_lib_paths is None:
             shared_lib_paths = []
-        self.ee = ExecutionEngine(
-            module, opt_level=opt_level, shared_libs=shared_lib_paths
-        )
+        if execution_engine_ctor is None:
+            if platform.system().lower() == "emscripten":
+                if HAS_WASM_EE:
+                    self.ee = WasmExecutionEngine(module)
+                    for sh_fp in shared_lib_paths:
+                        ctypes.CDLL(sh_fp, mode=ctypes.RTLD_GLOBAL)
+                else:
+                    raise RuntimeError(
+                        "wasm runtime doesn't work without mlir.wasm_execution_engine"
+                    )
+            else:
+                self.ee = ExecutionEngine(
+                    module, opt_level=opt_level, shared_libs=shared_lib_paths
+                )
         self.results = None
         if return_func_types is not None:
-            assert return_func_name is not None, (
-                f"must provide return func name when providing return func types"
-            )
+            assert (
+                return_func_name is not None
+            ), f"must provide return func name when providing return func types"
             ctype_wrapper, ret_types = get_ctype_func(return_func_types)
             self.ret_types = ret_types
             if consume_return_callback is None:

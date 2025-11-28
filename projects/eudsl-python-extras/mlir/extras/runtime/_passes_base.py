@@ -3,11 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import logging
 import os
+import re
 import sys
 import tempfile
 from contextlib import ExitStack
 from io import StringIO
 from typing import List, Optional, Union
+import platform
 
 from ..context import disable_multithreading
 from ...ir import Module, StringAttr
@@ -148,7 +150,13 @@ class Pipeline:
         self._pipeline.append(pass_str)
         return self
 
-    def lower_to_llvm(self, use_bare_ptr_memref_call_conv=False):
+    def lower_to_llvm(self, use_bare_ptr_memref_call_conv=False, index_bitwidth=None):
+        if index_bitwidth is None:
+            m = re.match(r"(\d+)bit", platform.architecture()[0])
+            if m is None:
+                raise RuntimeError(f"expected Xbit in {platform.architecture()=}")
+            index_bitwidth = int(m.group(1))
+
         # https://github.com/makslevental/llvm-project/blob/f6643263631bcb0d191ef923963ac1a5ca9ac5fd/mlir/test/lib/Dialect/LLVM/TestLowerToLLVM.cpp#L44
         return (
             self.Func(
@@ -174,17 +182,18 @@ class Pipeline:
             # The expansion may create affine expressions. Get rid of them.
             .lower_affine()
             # Convert MemRef to LLVM (always needed).
-            .finalize_memref_to_llvm()
+            .finalize_memref_to_llvm(index_bitwidth=index_bitwidth)
             # Convert Func to LLVM (always needed).
             .convert_func_to_llvm(
-                use_bare_ptr_memref_call_conv=use_bare_ptr_memref_call_conv
+                use_bare_ptr_memref_call_conv=use_bare_ptr_memref_call_conv,
+                index_bitwidth=index_bitwidth,
             )
-            .convert_arith_to_llvm()
-            .convert_cf_to_llvm()
+            .convert_arith_to_llvm(index_bitwidth=index_bitwidth)
+            .convert_cf_to_llvm(index_bitwidth=index_bitwidth)
             # Convert Index to LLVM (always needed).
-            .convert_index_to_llvm()
+            .convert_index_to_llvm(index_bitwidth=index_bitwidth)
             # Convert UB to LLVM (always needed).
-            .convert_ub_to_llvm()
+            .convert_ub_to_llvm(index_bitwidth=index_bitwidth)
             # Convert remaining unrealized_casts (always needed).
             .reconcile_unrealized_casts()
         )

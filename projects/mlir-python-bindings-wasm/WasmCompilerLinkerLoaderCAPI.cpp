@@ -111,7 +111,7 @@ MlirStringRef compile(MlirOperation module, MlirStringRef moduleName) {
   return mlirStringRefCreateFromCString(objectFileName.c_str());
 }
 
-void linkLoad(MlirStringRef objectFileName, MlirStringRef binaryFileName) {
+void *linkLoad(MlirStringRef objectFileName, MlirStringRef binaryFileName) {
   std::string objectFileNameStr(unwrap(objectFileName));
   std::string binaryFileNameStr(unwrap(binaryFileName));
   std::vector<const char *> linkerArgs = {"wasm-ld",
@@ -137,11 +137,12 @@ void linkLoad(MlirStringRef objectFileName, MlirStringRef binaryFileName) {
       dlopen(binaryFileNameStr.c_str(), RTLD_NOW | RTLD_GLOBAL);
   if (!loadedLibModule)
     llvm::report_fatal_error("Failed to link incremental module");
+  return loadedLibModule;
 }
 
-void *getSymbolAddress(MlirStringRef name) {
+void *getSymbolAddress(void *loadedLibModule, MlirStringRef name) {
   std::string nameStr(unwrap(name));
-  void *sym = dlsym(RTLD_DEFAULT, nameStr.c_str());
+  void *sym = dlsym(loadedLibModule, nameStr.c_str());
   if (!sym)
     llvm::report_fatal_error("dlsym failed for symbol: ");
   return sym;

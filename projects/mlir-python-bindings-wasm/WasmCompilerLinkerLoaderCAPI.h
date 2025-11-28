@@ -10,10 +10,11 @@ extern "C" {
 
 MLIR_CAPI_EXPORTED MlirStringRef compile(MlirOperation module,
                                          MlirStringRef moduleName);
-MLIR_CAPI_EXPORTED void linkLoad(MlirStringRef objectFileName,
-                                 MlirStringRef binaryFileName);
+MLIR_CAPI_EXPORTED void *linkLoad(MlirStringRef objectFileName,
+                                  MlirStringRef binaryFileName);
 
-MLIR_CAPI_EXPORTED void *getSymbolAddress(MlirStringRef name);
+MLIR_CAPI_EXPORTED void *getSymbolAddress(void *loadedLibModule,
+                                          MlirStringRef name);
 
 #ifdef __cplusplus
 }

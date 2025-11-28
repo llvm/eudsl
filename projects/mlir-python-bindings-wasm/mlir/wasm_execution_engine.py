@@ -33,7 +33,10 @@ class WasmExecutionEngine:
         prototype = ctypes.CFUNCTYPE(return_type, ctypes.c_void_p)
         return prototype(func)
 
-    def invoke(self, name, ctypes_args, return_type=None):
+    def invoke(self, name, *ctypes_args):
+        return self.invoke_with_return_type(name, ctypes_args)
+
+    def invoke_with_return_type(self, name, ctypes_args, return_type=None):
         func = self.lookup(name, return_type)
         packed_args = (ctypes.c_void_p * len(ctypes_args))()
         for argNum in range(len(ctypes_args)):
@@ -93,3 +96,18 @@ def get_ranked_memref_descriptor(nparray):
     strides_ctype_t = ctypes.c_long * nparray.ndim
     x.strides = strides_ctype_t(*[x // nparray.itemsize for x in nparray.strides])
     return x
+
+
+class UnrankedMemRefDescriptor(ctypes.Structure):
+    """Creates a ctype struct for memref descriptor"""
+
+    _fields_ = [("rank", ctypes.c_long), ("descriptor", ctypes.c_void_p)]
+
+
+def get_unranked_memref_descriptor(nparray):
+    """Returns a generic/unranked memref descriptor for the given numpy array."""
+    d = UnrankedMemRefDescriptor()
+    d.rank = nparray.ndim
+    x = get_ranked_memref_descriptor(nparray)
+    d.descriptor = ctypes.cast(ctypes.pointer(x), ctypes.c_void_p)
+    return d
