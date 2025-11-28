@@ -25,6 +25,8 @@ class WasmExecutionEngine:
 
     @staticmethod
     def lookup(name, return_type=None):
+        if name == "main":
+            raise ValueError("functions named `main` are not supported on wasm")
         func = _mlirWasmExecutionEngine.get_symbol_address(name)
         if not func:
             raise RuntimeError("Unknown function " + name)
