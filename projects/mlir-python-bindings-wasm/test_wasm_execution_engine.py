@@ -126,7 +126,10 @@ def testMemrefAdd():
 
         # print(module)
         wasm_ee = WasmExecutionEngine(module.operation, "bar")
-        print(_mlirWasmExecutionEngine.get_symbol_address("main"))
+        try:
+            print(wasm_ee.lookup("main"))
+        except ValueError as e:
+            assert e.args[0] == "functions named `main` are not supported on wasm"
 
         res_ = wasm_ee.invoke(
             "_mlir_ciface_main",
