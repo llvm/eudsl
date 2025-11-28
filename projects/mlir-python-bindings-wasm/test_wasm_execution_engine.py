@@ -7,7 +7,7 @@ from mlir.wasm_execution_engine import (
     _mlirWasmExecutionEngine,
     WasmExecutionEngine,
     get_ranked_memref_descriptor,
-    as_ctype
+    _as_ctype,
 )
 from mlir.ir import *
 from mlir.passmanager import *
@@ -25,9 +25,6 @@ def run(f):
     assert Context._get_live_count() == 0
 
 
-wasm_ee = WasmExecutionEngine()
-
-
 @run
 def testapis():
     with Context():
@@ -42,9 +39,9 @@ def testapis():
                 """
             )
         )
-        wasm_ee.load_module(module.operation)
-        print(_mlirWasmExecutionEngine.get_symbol_address("none"))
+        wasm_ee = WasmExecutionEngine(module.operation)
         func = _mlirWasmExecutionEngine.get_symbol_address("none")
+        print(func)
         func = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int)(func)
         assert func(20) == 353
 
@@ -128,8 +125,7 @@ def testMemrefAdd():
         )
 
         # print(module)
-        name = _mlirWasmExecutionEngine.compile(module.operation, "bar")
-        _mlirWasmExecutionEngine.link_load(name, "bar.wasm")
+        wasm_ee = WasmExecutionEngine(module.operation, "bar")
         print(_mlirWasmExecutionEngine.get_symbol_address("main"))
 
         res_ = wasm_ee.invoke(
@@ -141,7 +137,7 @@ def testMemrefAdd():
         # CHECK: [32.5] + 6.0 = [38.5]
         print("{0} + {1} = {2}".format(arg1, arg2, res))
 
-        ctp = as_ctype(arg2.dtype)
+        ctp = _as_ctype(arg2.dtype)
         func = _mlirWasmExecutionEngine.get_symbol_address("main2")
         func = ctypes.CFUNCTYPE(
             ctypes.c_float,
@@ -156,7 +152,7 @@ def testMemrefAdd():
         )
         print(res_)
 
-        ctp = as_ctype(arg2.dtype)
+        ctp = _as_ctype(arg2.dtype)
         func = _mlirWasmExecutionEngine.get_symbol_address("main3")
         func = ctypes.CFUNCTYPE(
             ctypes.c_float,
@@ -348,3 +344,4 @@ def testMemrefAdd():
         )
         # CHECK: [32.5] + 6.0 = [38.5]
         print("{0} + {1} = {2}".format(arg1, arg2, res))
+        assert res[0] == 38.5
