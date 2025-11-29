@@ -266,6 +266,5 @@ jobs:
       id-token: write
       pages: write
 
-    # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
-    uses: llvm/eudsl/.github/workflows/deploy_pip_page.yml@main
+    uses: ./.github/workflows/deploy_pip_page.yml
     secrets: inherit # pass all secrets

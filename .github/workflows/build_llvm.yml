@@ -245,8 +245,7 @@ jobs:
       id-token: write
       pages: write
 
-    # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
-    uses: llvm/eudsl/.github/workflows/build_mlir_python_bindings_wheel.yml@main
+    uses: ./.github/workflows/build_mlir_python_bindings_wheel.yml
     secrets: inherit # pass all secrets
     with:
       wheel_version: ${{ needs.build.outputs.WHEEL_VERSION }}
@@ -262,8 +261,7 @@ jobs:
       id-token: write
       pages: write
 
-    # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
-    uses: llvm/eudsl/.github/workflows/build_test_release_eudsl.yml@main
+    uses: ./.github/workflows/build_test_release_eudsl.yml
     secrets: inherit # pass all secrets
     with:
       workflow_call: true
@@ -280,6 +278,5 @@ jobs:
       id-token: write
       pages: write
 
-    # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
-    uses: llvm/eudsl/.github/workflows/deploy_pip_page.yml@main
+    uses: ./.github/workflows/deploy_pip_page.yml
     secrets: inherit # pass all secrets

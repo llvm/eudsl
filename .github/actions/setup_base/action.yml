@@ -214,8 +214,8 @@ runs:
 
         echo "CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
         echo "CMAKE_MAKE_PROGRAM=Ninja" >> $GITHUB_ENV
-        echo "CMAKE_C_COMPILER_LAUNCHER=ccache" >> $GITHUB_ENV
-        echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> $GITHUB_ENV
+        echo "CMAKE_C_COMPILER_LAUNCHER=$(which ccache)" >> $GITHUB_ENV
+        echo "CMAKE_CXX_COMPILER_LAUNCHER=$(which ccache)" >> $GITHUB_ENV
         echo "Python3_EXECUTABLE=$(which $python3_command)" >> $GITHUB_ENV
         
         if [[ "${{ inputs.os }}" == "ubuntu" ]] || [[ "${{ inputs.os }}" == "windows" ]]; then
