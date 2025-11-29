@@ -417,14 +417,16 @@ jobs:
           # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/cmake/StandardWarnings.cmake#L5
           # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/CMakeLists.txt#L61
           # error: builtin __has_trivial_copy is deprecated; use __is_trivially_copyable instead [-Werror,-Wdeprecated-builtins]
-          CCACHE_COMPILERCHECK="$(g++ --version | head -n 1)" CC=gcc CXX=g++ emsdk install ccache-git-emscripten-64bit
+          VERBOSE=1 CCACHE_COMPILERCHECK="$(g++ --version | head -n 1)" CC=gcc CXX=g++ emsdk install ccache-git-emscripten-64bit
           emsdk activate ccache-git-emscripten-64bit
           
           echo "PATH=$EMSDK/ccache/git-emscripten_64bit/bin:$PATH" >> $GITHUB_ENV
-          echo "CCACHE_COMPILERCHECK=$($EMSDK/upstream/bin/clang --version | head -n 1)" >> $GITHUB_ENV
-          echo "LLVM_CCACHE_BUILD=ON" >> $GITHUB_ENV
-          echo "CMAKE_C_COMPILER_LAUNCHER=$EMSDK/ccache/git-emscripten_64bit/bin/ccache" >> $GITHUB_ENV
-          echo "CMAKE_CXX_COMPILER_LAUNCHER=$EMSDK/ccache/git-emscripten_64bit/bin/ccache" >> $GITHUB_ENV
+          export CCACHE_COMPILERCHECK="$($EMSDK/upstream/bin/clang --version | head -n 1)"
+          echo "CCACHE_COMPILERCHECK=$CCACHE_COMPILERCHECK" >> $GITHUB_ENV
+          export CCACHE="$EMSDK/ccache/git-emscripten_64bit/bin/ccache"
+          $CCACHE -p
+          echo "CMAKE_C_COMPILER_LAUNCHER=$CCACHE" >> $GITHUB_ENV
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=$CCACHE" >> $GITHUB_ENV
 
       - name: build wasm python wheel
         run: |
@@ -458,7 +460,7 @@ jobs:
 
       - name: "Save cache"
         uses: actions/cache/save@v3
-        if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
+        # if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
         with:
           path: ${{ steps.setup_base.outputs.cache-dir }}
           key: ${{ env.cache-key }}
