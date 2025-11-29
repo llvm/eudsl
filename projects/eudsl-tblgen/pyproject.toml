@@ -83,7 +83,7 @@ before-all = [
     "set -x",
     "yum install -y clang",
     # ccache
-    "echo $(if [ \"$(arch)\" == \"x86_64\" ]; then curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz && tar -xf ccache-4.10.2-linux-x86_64.tar.xz && pushd ccache-4.10.2-linux-x86_64 && make install && popd; fi)",
+    "echo $(if [ \"$(arch)\" == \"x86_64\" ]; then curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz && tar -xf ccache-4.10.2-linux-x86_64.tar.xz && pushd ccache-4.10.2-linux-x86_64 && make install && ln -s /usr/local/bin/ccache /usr/bin/ccache && popd; fi)",
     "echo $(if [ \"$(arch)\" == \"aarch64\" ]; then dnf install -y ccache; fi)",
     "ccache -z"
 ]

@@ -368,7 +368,33 @@ jobs:
         run: |
           
           pip install pyodide-build>=0.28.0
-          echo EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version) >> $GITHUB_ENV
+          echo "EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version)" >> $GITHUB_ENV
+
+      - name: Download mlir-native-tools artifacts
+        if: ${{ inputs.workflow_call }}
+        uses: dawidd6/action-download-artifact@v11
+        with:
+          name: mlir_native_tools_manylinux_x86_64_artifact
+          path: "./"
+          run_id: ${{ inputs.workflow_caller_run_id }}
+
+      - name: Pip download mlir-native-tools
+        if: ${{ !inputs.workflow_call }}
+        run: |
+          
+          pip download mlir_native_tools -f https://llvm.github.io/eudsl
+
+      - name: Configure mlir-native-tools
+        run: |
+          
+          unzip -o -j mlir_native_tools-*whl -d mlir_native_tools
+          rm -rf mlir_native_tools-*whl
+          
+          export LLVM_NATIVE_TOOL_DIR="$PWD/mlir_native_tools"
+          echo "LLVM_NATIVE_TOOL_DIR=$LLVM_NATIVE_TOOL_DIR" >> $GITHUB_ENV
+          echo "LLVM_TABLEGEN=$LLVM_NATIVE_TOOL_DIR/llvm-tblgen" >> $GITHUB_ENV
+          echo "MLIR_TABLEGEN=$LLVM_NATIVE_TOOL_DIR/mlir-tblgen" >> $GITHUB_ENV
+          echo "MLIR_LINALG_ODS_YAML_GEN=$LLVM_NATIVE_TOOL_DIR/mlir-linalg-ods-yaml-gen" >> $GITHUB_ENV
 
       - name: Wheel version
         run: |
@@ -378,27 +404,31 @@ jobs:
           popd
           
           DATETIME=$(date +"%Y%m%d%H")
-          echo WHEEL_VERSION="${DATETIME}+${LLVM_PROJECT_COMMIT}" >> $GITHUB_ENV
+          echo "WHEEL_VERSION=${DATETIME}+${LLVM_PROJECT_COMMIT}" >> $GITHUB_ENV
 
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
           version: ${{ env.EMSCRIPTEN_VERSION }}
 
-      - name: build wasm python wheel
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Setup ccache
         run: |
           
-          RELEASE_URL=$(gh release view llvm --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains("mlir_manylinux_x86_64"))) | .[-1] | .url')
-          curl -sLO $RELEASE_URL
-          RELEASE_NAME="$RELEASE_PREFIX*.tar.gz"
-          tar xf $RELEASE_NAME
+          # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/cmake/StandardWarnings.cmake#L5
+          # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/CMakeLists.txt#L61
+          # error: builtin __has_trivial_copy is deprecated; use __is_trivially_copyable instead [-Werror,-Wdeprecated-builtins]
+          CCACHE_COMPILERCHECK="$(g++ --version | head -n 1)" CC=gcc CXX=g++ emsdk install ccache-git-emscripten-64bit
+          emsdk activate ccache-git-emscripten-64bit
           
-          export LLVM_NATIVE_TOOL_DIR="$PWD/llvm-install/bin"
-          export LLVM_TABLEGEN="$LLVM_NATIVE_TOOL_DIR/llvm-tblgen"
-          export MLIR_TABLEGEN="$LLVM_NATIVE_TOOL_DIR/mlir-tblgen"
-          export MLIR_LINALG_ODS_YAML_GEN="$LLVM_NATIVE_TOOL_DIR/mlir-linalg-ods-yaml-gen"
+          echo "PATH=$EMSDK/ccache/git-emscripten_64bit/bin:$PATH" >> $GITHUB_ENV
+          echo "CCACHE_COMPILERCHECK=$($EMSDK/upstream/bin/clang --version | head -n 1)" >> $GITHUB_ENV
+          echo "LLVM_CCACHE_BUILD=ON" >> $GITHUB_ENV
+          echo "CMAKE_C_COMPILER_LAUNCHER=$EMSDK/ccache/git-emscripten_64bit/bin/ccache" >> $GITHUB_ENV
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=$EMSDK/ccache/git-emscripten_64bit/bin/ccache" >> $GITHUB_ENV
+
+      - name: build wasm python wheel
+        run: |
+          
           pyodide build projects/mlir-python-bindings-wasm -o wheelhouse --compression-level 10
 
       - name: Install pyodide and test
@@ -408,22 +438,30 @@ jobs:
           pyodide venv venv
           . venv/bin/activate
           pip install mlir-python-bindings -f wheelhouse
-          pushd third_party/llvm-project/mlir/test/python/dialects
           
+          pushd third_party/llvm-project/mlir/test/python/dialects
           for f in *.py; do
             if [[ "$f" == "python_test.py" ]]; then
               continue
             fi
             python $f
           done
-
           popd
+          
+          python projects/mlir-python-bindings-wasm/test_wasm_execution_engine.py
 
       - name: Upload wasm32 wheels
         uses: actions/upload-artifact@v4
         with:
           path: wheelhouse/*.whl
           name: build_artifact_python_bindings-ubuntu-wasm
+
+      - name: "Save cache"
+        uses: actions/cache/save@v3
+        if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
+        with:
+          path: ${{ steps.setup_base.outputs.cache-dir }}
+          key: ${{ env.cache-key }}
 
       - name: Release current commit
         if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
@@ -448,8 +486,7 @@ jobs:
       id-token: write
       pages: write
 
-    # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
-    uses: llvm/eudsl/.github/workflows/build_test_release_eudsl_python_extras.yml@main
+    uses: ./.github/workflows/build_test_release_eudsl_python_extras.yml
     secrets: inherit # pass all secrets
     with:
       workflow_call: true
@@ -466,6 +503,5 @@ jobs:
       id-token: write
       pages: write
 
-    # DON'T FORGET TO CHANGE THIS IF YOU UPDATE WHEELS.YML
-    uses: llvm/eudsl/.github/workflows/deploy_pip_page.yml@main
+    uses: ./.github/workflows/deploy_pip_page.yml
     secrets: inherit # pass all secrets

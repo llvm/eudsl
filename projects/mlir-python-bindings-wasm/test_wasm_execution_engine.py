@@ -1,0 +1,385 @@
+import gc
+import sys
+from pathlib import Path
+from textwrap import dedent
+import ctypes
+
+from mlir import _mlir_libs
+
+from mlir.wasm_execution_engine import (
+    _mlirWasmExecutionEngine,
+    WasmExecutionEngine,
+)
+from mlir.runtime.np_to_memref import get_ranked_memref_descriptor, as_ctype
+from mlir.ir import *
+from mlir.passmanager import *
+
+
+def log(*args):
+    print(*args, file=sys.stderr)
+    sys.stderr.flush()
+
+
+def run(f):
+    log("\nTEST:", f.__name__)
+    f()
+    gc.collect()
+    assert Context._get_live_count() == 0
+
+
+@run
+def testapis():
+    with Context():
+        module = Module.parse(
+            dedent(
+                """
+                module attributes {llvm.target_triple = "wasm32-unknown-emscripten"} {
+                  llvm.func @none(%arg0: i32) -> i32 {
+                    %0 = llvm.mlir.constant(333 : i32) : i32
+                    %t0 = llvm.add %arg0, %0 : i32
+                    llvm.return %t0 : i32
+                  }
+                }
+                """
+            )
+        )
+        wasm_ee = WasmExecutionEngine(module.operation)
+        func = _mlirWasmExecutionEngine.get_symbol_address("none")
+        func = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int)(func)
+        assert func(20) == 353
+
+
+def lowerToLLVM(module):
+    pm = PassManager.parse(
+        "builtin.module(convert-complex-to-llvm,finalize-memref-to-llvm{index-bitwidth=32},convert-func-to-llvm{index-bitwidth=32},convert-arith-to-llvm{index-bitwidth=32},convert-cf-to-llvm{index-bitwidth=32},reconcile-unrealized-casts)"
+    )
+    pm.run(module.operation)
+    return module
+
+
+@run
+def testMemrefAdd():
+    with Context():
+        module = Module.parse(
+            dedent(
+                """
+                module {
+                  func.func @main(%arg0: memref<1xf32>, %arg1: memref<f32>, %arg2: memref<1xf32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %0 = arith.constant 0 : index
+                    %1 = memref.load %arg0[%0] : memref<1xf32>
+                    %2 = memref.load %arg1[] : memref<f32>
+                    %3 = arith.addf %1, %2 : f32
+                    memref.store %3, %arg2[%0] : memref<1xf32>
+                    return %3 : f32
+                  }
+                  func.func @main2(%arg0: memref<f32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %1 = memref.load %arg0[] : memref<f32>
+                    return %1 : f32
+                  }
+                  func.func @main3(%arg0: memref<1xf32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %0 = arith.constant 0 : index
+                    %1 = memref.load %arg0[%0] : memref<1xf32>
+                    return %1 : f32
+                  }
+                  func.func @main4(%arg0: memref<1xf32>, %arg1: memref<1xf32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %0 = arith.constant 0 : index
+                    %1 = memref.load %arg0[%0] : memref<1xf32>
+                    return %1 : f32
+                  }
+                  func.func @main5(%arg0: memref<1xf32>, %arg1: memref<1xf32>, %arg2: memref<f32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %0 = arith.constant 0 : index
+                    %1 = memref.load %arg0[%0] : memref<1xf32>
+                    return %1 : f32
+                  }
+                  func.func @main6(%arg0: memref<1xf32>, %arg2: memref<1xf32>, %arg1: memref<f32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %0 = arith.constant 0 : index
+                    %1 = memref.load %arg0[%0] : memref<1xf32>
+                    %2 = memref.load %arg1[] : memref<f32>
+                    %3 = arith.addf %1, %2 : f32
+                    memref.store %3, %arg2[%0] : memref<1xf32>
+                    return %3 : f32
+                  }
+                  func.func @main7(%arg0: memref<1xf32>, %arg1: memref<f32>, %arg2: memref<1xf32>) -> (f32) attributes { llvm.emit_c_interface } {
+                    %0 = arith.constant 0 : index
+                    %1 = memref.load %arg0[%0] : memref<1xf32>
+                    %2 = memref.load %arg1[] : memref<f32>
+                    %3 = arith.addf %1, %2 : f32
+                    memref.store %3, %arg2[%0] : memref<1xf32>
+                    return %3 : f32
+                  }
+                }
+                """
+            )
+        )
+
+        module = lowerToLLVM(module)
+
+        arg1 = np.array([32.5]).astype(np.float32)
+        arg2 = np.array(6).astype(np.float32)
+        res = np.array([0]).astype(np.float32)
+
+        arg1_memref_ptr = ctypes.pointer(
+            ctypes.pointer(get_ranked_memref_descriptor(arg1))
+        )
+        arg2_memref_ptr = ctypes.pointer(
+            ctypes.pointer(get_ranked_memref_descriptor(arg2))
+        )
+        res_memref_ptr = ctypes.pointer(
+            ctypes.pointer(get_ranked_memref_descriptor(res))
+        )
+
+        # print(module)
+        wasm_ee = WasmExecutionEngine(module.operation, module_name="bar")
+        try:
+            print(wasm_ee.lookup("main"))
+        except ValueError as e:
+            assert e.args[0] == "functions named `main` are not supported on wasm"
+
+        res_ = wasm_ee.invoke_with_return_type(
+            "_mlir_ciface_main",
+            [arg1_memref_ptr, arg2_memref_ptr, res_memref_ptr],
+            return_type=ctypes.c_float,
+        )
+        print(res_)
+        # CHECK: [32.5] + 6.0 = [38.5]
+        print("{0} + {1} = {2}".format(arg1, arg2, res))
+
+        ctp = as_ctype(arg2.dtype)
+        func = _mlirWasmExecutionEngine.get_symbol_address("main2")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            arg2.ctypes.data,
+            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+        )
+        print(res_)
+
+        ctp = as_ctype(arg2.dtype)
+        func = _mlirWasmExecutionEngine.get_symbol_address("main3")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            arg1.ctypes.data,
+            arg1.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+        )
+        print(res_)
+
+        size_of_void_p = ctypes.sizeof(ctypes.c_void_p)
+        print(f"The size of ctypes.c_void_p is: {size_of_void_p} bytes")
+
+        size_of_longlong = ctypes.sizeof(ctypes.c_longlong)
+        print(f"The size of ctypes.c_longlong is: {size_of_longlong} bytes")
+
+        func = _mlirWasmExecutionEngine.get_symbol_address("main4")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            # arg1
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # res
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            # arg1
+            arg1.ctypes.data,
+            arg1.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # # # arg2
+            # arg2.ctypes.data,
+            # arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            # 0,
+            # res
+            res.ctypes.data,
+            res.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+        )
+        print(res_)
+
+        func = _mlirWasmExecutionEngine.get_symbol_address("main5")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            # arg1
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # res
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # arg2
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            # arg1
+            arg1.ctypes.data,
+            arg1.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # res
+            res.ctypes.data,
+            res.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # arg2
+            arg2.ctypes.data,
+            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+        )
+        print(res_)
+
+        func = _mlirWasmExecutionEngine.get_symbol_address("main6")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            # arg1
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # res
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # arg2
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            # arg1
+            arg1.ctypes.data,
+            arg1.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # res
+            res.ctypes.data,
+            res.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # arg2
+            arg2.ctypes.data,
+            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+        )
+        print(res_)
+
+        func = _mlirWasmExecutionEngine.get_symbol_address("main7")
+        func = ctypes.CFUNCTYPE(
+            ctypes.c_float,
+            # arg1
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+            # arg2
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            # res
+            ctypes.c_long,
+            ctypes.POINTER(ctp),
+            ctypes.c_long,
+            ctypes.c_long,
+            ctypes.c_long,
+        )(func)
+        res_ = func(
+            # arg1
+            arg1.ctypes.data,
+            arg1.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+            # arg2
+            arg2.ctypes.data,
+            arg2.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            # res
+            res.ctypes.data,
+            res.ctypes.data_as(ctypes.POINTER(ctp)),
+            0,
+            1,
+            1,
+        )
+        print(res_)
+
+        wasm_ee.invoke_with_return_type(
+            "_mlir_ciface_main7",
+            [arg1_memref_ptr, arg2_memref_ptr, res_memref_ptr],
+            return_type=ctypes.c_float,
+        )
+        # CHECK: [32.5] + 6.0 = [38.5]
+        print("{0} + {1} = {2}".format(arg1, arg2, res))
+        assert res[0] == 38.5
+
+
+@run
+def testSharedLibLoad():
+    with Context():
+        module = Module.parse(
+            dedent(
+                """
+                module {
+                  func.func @foo(%arg0: memref<1xf32>) attributes { llvm.emit_c_interface } {
+                    %c0 = arith.constant 0 : index
+                    %u_memref = memref.cast %arg0 : memref<1xf32> to memref<*xf32>
+                    call @myPrintMemrefShapeF32(%u_memref) : (memref<*xf32>) -> ()
+                    return
+                  }
+                  func.func private @myPrintMemrefShapeF32(memref<*xf32>) attributes { llvm.emit_c_interface }
+                }
+                """
+            )
+        )
+
+        arg0 = np.array([0.0]).astype(np.float32)
+        arg0_memref_ptr = ctypes.pointer(
+            ctypes.pointer(get_ranked_memref_descriptor(arg0))
+        )
+
+        execution_engine = WasmExecutionEngine(
+            lowerToLLVM(module),
+            opt_level=3,
+            shared_libs=[
+                str(Path(_mlir_libs.__file__).parent / "lib32b_mlir_runner_utils.so")
+            ],
+        )
+        execution_engine.invoke("foo", arg0_memref_ptr)
+        # Unranked Memref base@ = 0 rank = 1 offset = 0 sizes = [0] strides = [0]
