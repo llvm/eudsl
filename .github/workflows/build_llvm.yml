@@ -140,7 +140,7 @@ jobs:
           # double nested so that upload artifacts uploads a folder 
           export LLVM_INSTALL_DIR="$PWD/llvm-install/llvm-install"
           pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT="$(git rev-parse --short HEAD)" && popd
-          export WHEEL_VERSION="$(date +'%Y%m%d')_$LLVM_SHA_SHORT"
+          export WHEEL_VERSION="$(date +'%Y%m%d')+$LLVM_SHA_SHORT"
           echo "WHEEL_VERSION=$WHEEL_VERSION" >> $GITHUB_OUTPUT
           
           ccache -z
@@ -163,6 +163,7 @@ jobs:
           ###############################
           # Build mlir-native-tools wheel
           ###############################
+          
           for TOOL in "llvm-tblgen" "mlir-tblgen" "mlir-linalg-ods-yaml-gen" "mlir-pdll" "llvm-config" "FileCheck" "mlir-opt" "mlir-translate"; do
             if [ x"${{ matrix.os }}" == x"windows" ]; then
              TOOL="$TOOL.exe"
@@ -186,8 +187,20 @@ jobs:
           ###############################
           # Tar up MLIR/LLVM distro
           ###############################
+          
           tar -czf "mlir_${{ matrix.name }}_$WHEEL_VERSION.tar.gz" -C "$LLVM_INSTALL_DIR/.." llvm-install
           rm -rf "$LLVM_BUILD_DIR" "$LLVM_SOURCE_DIR"
+          
+          ###############################
+          # Build mlir_wheel
+          ###############################
+          
+          pushd projects/mlir-wheel
+          cp -R $LLVM_INSTALL_DIR/* mlir_wheel
+          # remove so no one is confused (the distro wheel is for arbitrary python version)
+          rm -rf mlir_wheel/python_packages
+          $python3_command setup.py bdist_wheel --dist-dir ../../wheelhouse --plat $PLAT
+          popd
 
       - name: Upload LLVM distro artifacts
         uses: actions/upload-artifact@v4
@@ -200,7 +213,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mlir_native_tools_${{ matrix.name }}_artifact
-          path: wheelhouse
+          path: wheelhouse/mlir_native_tools*
+          if-no-files-found: warn
+
+      - name: Upload mlir-wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlir_wheel_${{ matrix.name }}_artifact
+          path: wheelhouse/mlir_wheel*
           if-no-files-found: warn
 
       - name: Upload ccache log
