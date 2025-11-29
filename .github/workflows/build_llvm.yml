@@ -18,11 +18,6 @@ on:
         description: 'Run the build with a tmate session ONLY in case of failure'
         required: false
         default: false
-      release:
-        description: 'whether to release'
-        type: boolean
-        required: false
-        default: true
   pull_request:
     paths:
       - ".github/actions/setup_base"
@@ -215,7 +210,7 @@ jobs:
           path: ${{ startsWith(matrix.os, 'windows') && 'D:\a\ccache.log' || '/tmp/ccache.log' }}
 
       - name: Release current commit
-        if: (!cancelled() && ((github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'workflow_dispatch' && inputs.release)))
+        if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "*.tar.gz,wheelhouse/*.whl"
@@ -257,7 +252,6 @@ jobs:
       wheel_version: ${{ needs.build.outputs.WHEEL_VERSION }}
       workflow_call: true
       workflow_caller_run_id: ${{ github.run_id }}
-      release: ${{ inputs.release }}
 
   call-build-eudsl:
 
@@ -274,11 +268,10 @@ jobs:
     with:
       workflow_call: true
       workflow_caller_run_id: ${{ github.run_id }}
-      release: ${{ inputs.release }}
 
   call-deploy-pip-page:
 
-    if: (github.event_name == 'push' && github.ref_name == 'main') || (github.event_name == 'workflow_dispatch' && inputs.release)
+    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
 
     needs: [build]
 
