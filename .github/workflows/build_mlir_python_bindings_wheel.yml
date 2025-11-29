@@ -390,13 +390,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           
-          # emsdk install ccache-git-emscripten-64bit
-          # emsdk activate ccache-git-emscripten-64bit
-          # export PATH=$EMSDK/ccache/git-emscripten_64bit/bin:$PATH
-          # export CCACHE_COMPILERCHECK=""
-          # export LLVM_CCACHE_BUILD=ON
-          # export CMAKE_C_COMPILER_LAUNCHER="$(which ccache)"
-          # export CMAKE_CXX_COMPILER_LAUNCHER="$(which ccache)"
+          # so that ccache-git-emscripten-64bit can be compiled...
+          export CMAKE_C_COMPILER_LAUNCHER=
+          export CMAKE_CXX_COMPILER_LAUNCHER=
+          
+          # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/cmake/StandardWarnings.cmake#L5
+          # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/CMakeLists.txt#L61
+          # error: builtin __has_trivial_copy is deprecated; use __is_trivially_copyable instead [-Werror,-Wdeprecated-builtins]
+          CC=gcc CXX=g++ emsdk install ccache-git-emscripten-64bit
+          emsdk activate ccache-git-emscripten-64bit
+          
+          export PATH=$EMSDK/ccache/git-emscripten_64bit/bin:$PATH
+          export CCACHE_COMPILERCHECK="$($EMSDK/upstream/bin/clang --version | head -n 1)"
+          export LLVM_CCACHE_BUILD=ON
+          export CMAKE_C_COMPILER_LAUNCHER="$EMSDK/ccache/git-emscripten_64bit/bin/ccache"
+          export CMAKE_CXX_COMPILER_LAUNCHER="$EMSDK/ccache/git-emscripten_64bit/bin/ccache"
           
           pip download mlir_native_tools -f https://llvm.github.io/eudsl
           unzip -o -j mlir_native_tools-*whl -d mlir_native_tools
