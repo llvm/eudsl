@@ -75,28 +75,17 @@ add_mlir_python_modules(MLIRPythonWasmModules
     MLIRPythonWasmCAPI
 )
 
-set(_runtimes
-  mlir_async_runtime
-  mlir_c_runner_utils
-  mlir_float16_utils
-  mlir_runner_utils
+add_mlir_library(32b_mlir_runner_utils
+  SHARED
+  32bRunnerUtils.cpp
+
+  PARTIAL_SOURCES_INTENDED
+  EXCLUDE_FROM_LIBMLIR
 )
 
-if (TARGET mlir_rocm_runtime)
-  list(APPEND _runtimes mlir_rocm_runtime)
-endif()
-
-if (TARGET mlir_cuda_runtime)
-  list(APPEND _runtimes mlir_cuda_runtime)
-endif()
-
-if (TARGET omp)
-  list(APPEND _runtimes omp)
-endif()
-
-if (TARGET vulkan-runtime-wrappers)
-  list(APPEND _runtimes vulkan-runtime-wrappers)
-endif()
+set(_runtimes
+  32b_mlir_runner_utils
+)
 
 foreach(r ${_runtimes})
   add_custom_command(
@@ -111,5 +100,3 @@ install(
   LIBRARY DESTINATION "mlir/_mlir_libs"
   COMPONENT MLIRPythonWasmModules
 )
-
-# TODO(max): look up CMP0002 policy

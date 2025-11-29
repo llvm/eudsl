@@ -13,31 +13,37 @@
 #include "WasmCompilerLinkerLoaderCAPI.h"
 #include "mlir/Bindings/Python/Nanobind.h"
 #include "mlir/Bindings/Python/NanobindAdaptors.h"
-#include "mlir/CAPI/IR.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 #include "llvm/ExecutionEngine/Orc/Shared/ExecutorAddress.h"
-#include "llvm/IR/LegacyPassManager.h"
-#include "llvm/IR/Module.h"
-#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Target/TargetMachine.h"
 
 #include <string>
 
 namespace nb = nanobind;
+using namespace nb::literals;
 
 NB_MODULE(_mlirWasmExecutionEngine, m) {
-  m.def("compile", [](MlirOperation module, const std::string &moduleName) {
-    MlirStringRef name =
-        compile(module, mlirStringRefCreateFromCString(moduleName.c_str()));
-    return std::string(name.data, name.length);
-  });
-  m.def("link_load", [](const std::string &objectFileName,
-                        const std::string &binaryFileName) {
-    linkLoad(mlirStringRefCreateFromCString(objectFileName.c_str()),
-             mlirStringRefCreateFromCString(binaryFileName.c_str()));
-  });
-  m.def("get_symbol_address", [](const std::string &name) {
-    return reinterpret_cast<uintptr_t>(
-        getSymbolAddress(mlirStringRefCreateFromCString(name.c_str())));
-  });
+  m.def(
+      "compile_module",
+      [](MlirOperation module, const std::string &moduleName, int optLevel) {
+        MlirStringRef name = compileModule(
+            module, mlirStringRefCreateFromCString(moduleName.c_str()),
+            optLevel);
+        return std::string(name.data, name.length);
+      },
+      "module"_a, "module_name"_a, "opt_level"_a = 2);
+  m.def(
+      "link_load_module",
+      [](const std::string &objectFileName, const std::string &binaryFileName) {
+        linkLoadModule(mlirStringRefCreateFromCString(objectFileName.c_str()),
+                       mlirStringRefCreateFromCString(binaryFileName.c_str()));
+      },
+      "object_filename"_a, "binary_filename"_a);
+  m.def(
+      "get_symbol_address",
+      [](const std::string &name) {
+        return reinterpret_cast<uintptr_t>(
+            getSymbolAddress(mlirStringRefCreateFromCString(name.c_str())));
+      },
+      "name"_a);
 }

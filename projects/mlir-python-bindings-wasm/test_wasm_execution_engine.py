@@ -1,14 +1,16 @@
 import gc
 import sys
+from pathlib import Path
 from textwrap import dedent
 import ctypes
+
+from mlir import _mlir_libs
 
 from mlir.wasm_execution_engine import (
     _mlirWasmExecutionEngine,
     WasmExecutionEngine,
-    get_ranked_memref_descriptor,
-    _as_ctype,
 )
+from mlir.runtime.np_to_memref import get_ranked_memref_descriptor, as_ctype
 from mlir.ir import *
 from mlir.passmanager import *
 
@@ -30,18 +32,19 @@ def testapis():
     with Context():
         module = Module.parse(
             dedent(
-                r"""
-                llvm.func @none(%arg0: i32) -> i32 {
-                  %0 = llvm.mlir.constant(333 : i32) : i32
-                  %t0 = llvm.add %arg0, %0 : i32
-                  llvm.return %t0 : i32
+                """
+                module attributes {llvm.target_triple = "wasm32-unknown-emscripten"} {
+                  llvm.func @none(%arg0: i32) -> i32 {
+                    %0 = llvm.mlir.constant(333 : i32) : i32
+                    %t0 = llvm.add %arg0, %0 : i32
+                    llvm.return %t0 : i32
+                  }
                 }
                 """
             )
         )
         wasm_ee = WasmExecutionEngine(module.operation)
         func = _mlirWasmExecutionEngine.get_symbol_address("none")
-        print(func)
         func = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int)(func)
         assert func(20) == 353
 
@@ -60,7 +63,7 @@ def testMemrefAdd():
         module = Module.parse(
             dedent(
                 """
-                module  {
+                module {
                   func.func @main(%arg0: memref<1xf32>, %arg1: memref<f32>, %arg2: memref<1xf32>) -> (f32) attributes { llvm.emit_c_interface } {
                     %0 = arith.constant 0 : index
                     %1 = memref.load %arg0[%0] : memref<1xf32>
@@ -104,7 +107,8 @@ def testMemrefAdd():
                     memref.store %3, %arg2[%0] : memref<1xf32>
                     return %3 : f32
                   }
-                } """
+                }
+                """
             )
         )
 
@@ -125,13 +129,13 @@ def testMemrefAdd():
         )
 
         # print(module)
-        wasm_ee = WasmExecutionEngine(module.operation, "bar")
+        wasm_ee = WasmExecutionEngine(module.operation, module_name="bar")
         try:
             print(wasm_ee.lookup("main"))
         except ValueError as e:
             assert e.args[0] == "functions named `main` are not supported on wasm"
 
-        res_ = wasm_ee.invoke(
+        res_ = wasm_ee.invoke_with_return_type(
             "_mlir_ciface_main",
             [arg1_memref_ptr, arg2_memref_ptr, res_memref_ptr],
             return_type=ctypes.c_float,
@@ -140,7 +144,7 @@ def testMemrefAdd():
         # CHECK: [32.5] + 6.0 = [38.5]
         print("{0} + {1} = {2}".format(arg1, arg2, res))
 
-        ctp = _as_ctype(arg2.dtype)
+        ctp = as_ctype(arg2.dtype)
         func = _mlirWasmExecutionEngine.get_symbol_address("main2")
         func = ctypes.CFUNCTYPE(
             ctypes.c_float,
@@ -155,7 +159,7 @@ def testMemrefAdd():
         )
         print(res_)
 
-        ctp = _as_ctype(arg2.dtype)
+        ctp = as_ctype(arg2.dtype)
         func = _mlirWasmExecutionEngine.get_symbol_address("main3")
         func = ctypes.CFUNCTYPE(
             ctypes.c_float,
@@ -189,10 +193,6 @@ def testMemrefAdd():
             ctypes.c_long,
             ctypes.c_long,
             ctypes.c_long,
-            # # arg2
-            # ctypes.c_long,
-            # ctypes.POINTER(ctp),
-            # ctypes.c_long,
             # res
             ctypes.c_long,
             ctypes.POINTER(ctp),
@@ -340,7 +340,7 @@ def testMemrefAdd():
         )
         print(res_)
 
-        wasm_ee.invoke(
+        wasm_ee.invoke_with_return_type(
             "_mlir_ciface_main7",
             [arg1_memref_ptr, arg2_memref_ptr, res_memref_ptr],
             return_type=ctypes.c_float,
@@ -348,3 +348,38 @@ def testMemrefAdd():
         # CHECK: [32.5] + 6.0 = [38.5]
         print("{0} + {1} = {2}".format(arg1, arg2, res))
         assert res[0] == 38.5
+
+
+@run
+def testSharedLibLoad():
+    with Context():
+        module = Module.parse(
+            dedent(
+                """
+                module {
+                  func.func @foo(%arg0: memref<1xf32>) attributes { llvm.emit_c_interface } {
+                    %c0 = arith.constant 0 : index
+                    %u_memref = memref.cast %arg0 : memref<1xf32> to memref<*xf32>
+                    call @myPrintMemrefShapeF32(%u_memref) : (memref<*xf32>) -> ()
+                    return
+                  }
+                  func.func private @myPrintMemrefShapeF32(memref<*xf32>) attributes { llvm.emit_c_interface }
+                }
+                """
+            )
+        )
+
+        arg0 = np.array([0.0]).astype(np.float32)
+        arg0_memref_ptr = ctypes.pointer(
+            ctypes.pointer(get_ranked_memref_descriptor(arg0))
+        )
+
+        execution_engine = WasmExecutionEngine(
+            lowerToLLVM(module),
+            opt_level=3,
+            shared_libs=[
+                str(Path(_mlir_libs.__file__).parent / "lib32b_mlir_runner_utils.so")
+            ],
+        )
+        execution_engine.invoke("foo", arg0_memref_ptr)
+        # Unranked Memref base@ = 0 rank = 1 offset = 0 sizes = [0] strides = [0]

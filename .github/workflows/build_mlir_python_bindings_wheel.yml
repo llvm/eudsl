@@ -441,6 +441,13 @@ jobs:
           path: wheelhouse/*.whl
           name: build_artifact_python_bindings-ubuntu-wasm
 
+      - name: "Save cache"
+        uses: actions/cache/save@v3
+        if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
+        with:
+          path: ${{ steps.setup_base.outputs.cache-dir }}
+          key: ${{ env.cache-key }}
+
       - name: Release current commit
         if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
         uses: ncipollo/release-action@v1.12.0

@@ -8,9 +8,9 @@
 extern "C" {
 #endif
 
-MLIR_CAPI_EXPORTED MlirStringRef compile(MlirOperation module,
-                                         MlirStringRef moduleName);
-MLIR_CAPI_EXPORTED void linkLoad(MlirStringRef objectFileName,
+MLIR_CAPI_EXPORTED MlirStringRef compileModule(MlirOperation module,
+                                         MlirStringRef moduleName, int optLevel);
+MLIR_CAPI_EXPORTED void linkLoadModule(MlirStringRef objectFileName,
                                  MlirStringRef binaryFileName);
 
 MLIR_CAPI_EXPORTED void *getSymbolAddress(MlirStringRef name);

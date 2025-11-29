@@ -59,7 +59,8 @@ bool link(llvm::ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
 
 #include <dlfcn.h>
 
-MlirStringRef compile(MlirOperation module, MlirStringRef moduleName) {
+MlirStringRef compileModule(MlirOperation module, MlirStringRef moduleName,
+                            int optLevel) {
   static bool initOnce = [] {
     // TODO(max): why doesn't this work? "no targets registered"
     // LLVMInitializeWebAssemblyTarget();
@@ -78,8 +79,6 @@ MlirStringRef compile(MlirOperation module, MlirStringRef moduleName) {
   if (!llvmModule)
     llvm::report_fatal_error("could not convert to LLVM IR");
 
-  // TODO(max): remove this, set on the module itself
-  llvmModule->setTargetTriple(llvm::Triple("wasm32-unknown-emscripten"));
   std::string errorString;
   const llvm::Target *target = llvm::TargetRegistry::lookupTarget(
       llvmModule->getTargetTriple(), errorString);
@@ -91,6 +90,8 @@ MlirStringRef compile(MlirOperation module, MlirStringRef moduleName) {
   llvm::TargetOptions to = llvm::TargetOptions();
   llvm::TargetMachine *targetMachine = target->createTargetMachine(
       llvmModule->getTargetTriple(), "", "", to, llvm::Reloc::Model::PIC_);
+  assert(optLevel >= 0 && optLevel <= 3 && "expected optLevel between 0 and 3");
+  targetMachine->setOptLevel(static_cast<llvm::CodeGenOptLevel>(optLevel));
   llvmModule->setDataLayout(targetMachine->createDataLayout());
   std::string moduleNameStr(unwrap(moduleName));
   std::string objectFileName = moduleNameStr + ".o";
@@ -111,7 +112,8 @@ MlirStringRef compile(MlirOperation module, MlirStringRef moduleName) {
   return mlirStringRefCreateFromCString(objectFileName.c_str());
 }
 
-void linkLoad(MlirStringRef objectFileName, MlirStringRef binaryFileName) {
+void linkLoadModule(MlirStringRef objectFileName,
+                    MlirStringRef binaryFileName) {
   std::string objectFileNameStr(unwrap(objectFileName));
   std::string binaryFileNameStr(unwrap(binaryFileName));
   std::vector<const char *> linkerArgs = {"wasm-ld",
