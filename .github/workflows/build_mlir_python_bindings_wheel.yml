@@ -410,7 +410,6 @@ jobs:
         run: |
           
           git clone https://github.com/emscripten-core/emsdk.git
-          
           pushd emsdk
           ./emsdk install ${{ env.EMSCRIPTEN_VERSION }}
           ./emsdk activate ${{ env.EMSCRIPTEN_VERSION }} 
