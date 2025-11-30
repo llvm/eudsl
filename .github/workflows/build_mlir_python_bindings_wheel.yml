@@ -454,7 +454,7 @@ jobs:
 
       - name: "Save cache"
         uses: actions/cache/save@v3
-        # if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
+        if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
         with:
           path: ${{ steps.setup_base.outputs.cache-dir }}
           key: ${{ env.cache-key }}
