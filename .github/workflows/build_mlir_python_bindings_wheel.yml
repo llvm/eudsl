@@ -407,31 +407,58 @@ jobs:
           echo "WHEEL_VERSION=${DATETIME}+${LLVM_PROJECT_COMMIT}" >> $GITHUB_ENV
 
       - name: Setup Emscripten
-        uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: ${{ env.EMSCRIPTEN_VERSION }}
+        run: |
+          
+          git clone https://github.com/emscripten-core/emsdk.git
+          
+          pushd emsdk
+          ./emsdk install ${{ env.EMSCRIPTEN_VERSION }}
+          ./emsdk activate ${{ env.EMSCRIPTEN_VERSION }} 
+          echo "EMSDK=$PWD" >> $GITHUB_ENV
+          popd
 
       - name: Setup ccache
         run: |
           
+          source "$EMSDK/emsdk_env.sh"
+          
+          $CMAKE_C_COMPILER_LAUNCHER -z
           # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/cmake/StandardWarnings.cmake#L5
           # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/CMakeLists.txt#L61
           # error: builtin __has_trivial_copy is deprecated; use __is_trivially_copyable instead [-Werror,-Wdeprecated-builtins]
-          VERBOSE=1 CCACHE_COMPILERCHECK="$(g++ --version | head -n 1)" CC=gcc CXX=g++ emsdk install ccache-git-emscripten-64bit
+          VERBOSE=1 CCACHE_COMPILERCHECK="string:$(g++ --version | head -n 1)" CC=gcc CXX=g++ emsdk install ccache-git-emscripten-64bit
+          $CMAKE_C_COMPILER_LAUNCHER -s
           emsdk activate ccache-git-emscripten-64bit
           
           echo "PATH=$EMSDK/ccache/git-emscripten_64bit/bin:$PATH" >> $GITHUB_ENV
-          export CCACHE_COMPILERCHECK="$($EMSDK/upstream/bin/clang --version | head -n 1)"
+          export CCACHE_COMPILERCHECK="string:$($EMSDK/upstream/bin/clang --version | head -n 1)"
           echo "CCACHE_COMPILERCHECK=$CCACHE_COMPILERCHECK" >> $GITHUB_ENV
           export CCACHE="$EMSDK/ccache/git-emscripten_64bit/bin/ccache"
-          $CCACHE -p
           echo "CMAKE_C_COMPILER_LAUNCHER=$CCACHE" >> $GITHUB_ENV
           echo "CMAKE_CXX_COMPILER_LAUNCHER=$CCACHE" >> $GITHUB_ENV
+          $CCACHE -p
+          $CCACHE -s
 
       - name: build wasm python wheel
         run: |
           
+          source "$EMSDK/emsdk_env.sh"
+          $CMAKE_C_COMPILER_LAUNCHER -z
           pyodide build projects/mlir-python-bindings-wasm -o wheelhouse --compression-level 10
+          $CMAKE_C_COMPILER_LAUNCHER -s
+
+      - name: Upload ccache log
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm_ccache_log_wasm32
+          path: '/tmp/ccache.log'
+
+      - name: "Save cache"
+        uses: actions/cache/save@v3
+        # if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
+        with:
+          path: ${{ steps.setup_base.outputs.cache-dir }}
+          key: ${{ env.cache-key }}
 
       - name: Install pyodide and test
         shell: bash
@@ -457,13 +484,6 @@ jobs:
         with:
           path: wheelhouse/*.whl
           name: build_artifact_python_bindings-ubuntu-wasm
-
-      - name: "Save cache"
-        uses: actions/cache/save@v3
-        # if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
-        with:
-          path: ${{ steps.setup_base.outputs.cache-dir }}
-          key: ${{ env.cache-key }}
 
       - name: Release current commit
         if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'

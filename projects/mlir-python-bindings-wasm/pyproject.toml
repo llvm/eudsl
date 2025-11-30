@@ -36,10 +36,13 @@ metadata.version.provider-path = "."
 minimum-version = "0.10"
 build-dir = "build"
 cmake.source-dir = "../../third_party/llvm-project/llvm"
-wheel.exclude = ["bin", "include", "lib", "src", "share"]
+#wheel.exclude = ["bin", "include", "lib", "src", "share"]
+## for installing/distributing only the python stuff
+#build.targets = ["MLIRPythonWasmModules"]
+#install.components = ["MLIRPythonWasmModules"]
 # for installing/distributing only the python stuff
-build.targets = ["MLIRPythonWasmModules"]
-install.components = ["MLIRPythonWasmModules"]
+build.targets = ["MLIRTblgenLib"]
+install.components = ["MLIRTblgenLib"]
 
 [tool.scikit-build.cmake.define]
 CMAKE_BUILD_TYPE = { env = "CMAKE_BUILD_TYPE", default = "Release" }
