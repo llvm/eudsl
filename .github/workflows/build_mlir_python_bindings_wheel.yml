@@ -124,7 +124,7 @@ jobs:
           curl -sLO $RELEASE_URL
           RELEASE_NAME="$RELEASE_PREFIX*.tar.gz"
           tar xf $RELEASE_NAME
-          echo WHEEL_VERSION="$(echo $RELEASE_NAME | sed "s/${RELEASE_PREFIX}_//g" | sed "s/.tar.gz//g" | sed "s/_/+/g")" >> $GITHUB_ENV
+          echo WHEEL_VERSION="$(echo $RELEASE_NAME | sed "s/${RELEASE_PREFIX}_//g" | sed "s/.tar.gz//g" | sed "s/_/+/g" | sed "s/%2B/+/g" )" >> $GITHUB_ENV
 
       - name: Download LLVM distro artifacts
         if: ${{ inputs.workflow_call }}
