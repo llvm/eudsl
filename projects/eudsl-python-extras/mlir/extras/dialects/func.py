@@ -3,11 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import inspect
 import sys
-from dataclasses import dataclass
 from functools import update_wrapper
 from typing import Optional, List, Union, TypeVar
 
-from .. import types as T
+from .. import types
 from ..ast.py_type import PyTypeVarObject, _Ptr, PyObject
 from ..ast.util import copy_func
 from ..meta import op_region_builder
@@ -25,6 +24,7 @@ from ...ir import (
     TypeAttr,
     Value,
 )
+
 
 _call = call
 
@@ -131,11 +131,89 @@ def prep_func_types(sig, return_types):
     return input_types, return_types, user_locs
 
 
-@dataclass
+def get_type_var_default_bound(tvar):
+    type_var = PyTypeVarObject.from_object(tvar)
+    type_var_bound = type_var.bound
+    type_var_default = None
+    if sys.version_info >= (3, 13) and tvar.has_default():
+        type_var_default = type_var.default_value
+
+    return type_var_default, type_var_bound
+
+
 class ReifiedTypeParams:
     name: str
-    val: object
+    concrete_val: object
     type: Optional[type]
+
+    def __init__(
+        self,
+        tvar,
+        concrete_val=None,
+        already_reified_type_params: dict[str, object] = None,
+    ):
+        self.name = tvar.__name__
+        if already_reified_type_params is None:
+            already_reified_type_params = {}
+
+        type_var_default, type_var_bound = get_type_var_default_bound(tvar)
+
+        if concrete_val is None and not bool(type_var_default):
+            raise ValueError(
+                "either concrete_val must be provided or typevar must have a default"
+            )
+
+        if bool(type_var_bound):
+            type_var_bound = maybe_eval_type_data_closure_vals(
+                type_var_bound, already_reified_type_params
+            )
+        elif not bool(type_var_default):
+            if isinstance(concrete_val, Type):
+                type_var_bound = "type"
+            else:
+                type_var_bound = type(concrete_val).__name__
+
+        if bool(type_var_default):
+            type_var_default = maybe_eval_type_data_closure_vals(
+                type_var_default, already_reified_type_params
+            )
+            type_var_bound = type(type_var_default).__name__
+            self.concrete_val = type_var_default
+        else:
+            assert concrete_val is not None, "expected non-null concrete_val"
+            self.concrete_val = concrete_val
+
+        self.type = type_var_bound
+
+    def add_replace_in_closure(self, fn):
+        # only in the closure if used in the body
+        if self.name in fn.__code__.co_freevars:
+            free_i = fn.__code__.co_freevars.index(self.name)
+            fn.__closure__[free_i].cell_contents = self.concrete_val
+
+
+# For "generics" (i.e. typevars) which are dependent on previous generics (identified by the fact that they have vals in their own closures),
+# we collect all such previous generics along with the concrete vals (into already_reified_type_params) and then
+# evaluate the typevars in the fully-populated closure. Note, in order to get the unevaled typevar bound and default value
+# we access them in the PyTypeVarObject C struct itself instead of the API that python provides.
+def maybe_eval_type_data_closure_vals(
+    unevaled_type_data: _Ptr[PyObject],
+    already_reified_type_params: dict[str, object],
+):
+    assert type(unevaled_type_data) == _Ptr[PyObject]
+    unevaled_type_data = unevaled_type_data.contents.into_object()
+    cvrs = inspect.getclosurevars(unevaled_type_data).nonlocals
+    if len(cvrs):
+        for k, v in cvrs.items():
+            if not isinstance(v, TypeVar):
+                continue
+            if k not in already_reified_type_params:
+                raise RuntimeError(
+                    f"typevar {k} not reified prior to evaluating dependent typevar {v}"
+                )
+            cvrs[k] = already_reified_type_params[k]
+        unevaled_type_data = copy_func(unevaled_type_data, cvrs)
+    return unevaled_type_data()
 
 
 class FuncBase:
@@ -222,12 +300,18 @@ class FuncBase:
             if self.function_type is None:
                 if len(call_args) == 0:
                     input_types = self.input_types[:]
-                    locals = {"T": T}
+                    locals = {}
                     if self.generics is not None:
                         for t in self.generics:
                             if not isinstance(t, ReifiedTypeParams):
-                                raise RuntimeError(f"{t=} must be reified")
-                            locals[t.name] = t.val
+                                assert isinstance(
+                                    t, TypeVar
+                                ), f"expected {t=} to be a TypeVar"
+                                t = ReifiedTypeParams(t, None, locals)
+                                t.add_replace_in_closure(self.body_builder)
+                            locals[t.name] = t.concrete_val
+                    locals["T"] = types
+                    locals["S"] = ShapedType.get_dynamic_size()
                     for i, v in enumerate(input_types):
                         if isinstance(v, TypeVar):
                             v = v.__name__
@@ -303,76 +387,24 @@ class FuncBase:
             )
         # this also copies the function so that the original body_builder remains "generic" (via its closure)
         body_builder = copy_func(self.body_builder)
+        generics = list(self.generics)
         reified_type_params = []
-
-        # For "generics" (i.e. typevars) which are dependent on previous generics (identified by the fact that they have vals in their own closures),
-        # we collect all such previous generics along with the concrete vals (into already_reified_type_params) and then
-        # evaluate the typevars in the fully-populated closure. Note, in order to get the unevaled typevar bound and default value
-        # we access them in the PyTypeVarObject C struct itself instead of the API that python provides.
         already_reified_type_params = {}
+        while len(generics) and isinstance(generics[0], ReifiedTypeParams):
+            reified_type_params.append(generics.pop(0))
 
-        def maybe_eval_type_data_closure_vals(unevaled_type_data: _Ptr[PyObject]):
-            assert type(unevaled_type_data) == _Ptr[PyObject]
-            unevaled_type_data = unevaled_type_data.contents.into_object()
-            cvrs = inspect.getclosurevars(unevaled_type_data).nonlocals
-            if len(cvrs):
-                for k, v in cvrs.items():
-                    if not isinstance(v, TypeVar):
-                        continue
-                    if k not in already_reified_type_params:
-                        raise RuntimeError(
-                            f"typevar {k} not reified prior to evaluating dependent typevar {v}"
-                        )
-                    cvrs[k] = already_reified_type_params[k]
-                unevaled_type_data = copy_func(unevaled_type_data, cvrs)
-            return unevaled_type_data()
-
-        for i, tvar in enumerate(self.generics):
+        for it in item:
+            tvar = generics.pop(0)
             if tvar.__name__ in body_builder.__globals__:
                 raise RuntimeError("global typevars for generics are not supported")
-
-            type_var_default = None
-            type_var = PyTypeVarObject.from_object(tvar)
-            type_var_bound = type_var.bound
-            if sys.version_info >= (3, 13) and tvar.has_default():
-                type_var_default = type_var.default_value
-
-            if bool(type_var_bound):
-                type_var_bound = maybe_eval_type_data_closure_vals(type_var_bound)
-            elif not bool(type_var_default):
-                if i >= len(item):
-                    raise RuntimeError(f"generic {tvar=} must have concrete val")
-                if isinstance(item[i], Type):
-                    type_var_bound = "type"
-                else:
-                    type_var_bound = type(item[i]).__name__
-
-            if bool(type_var_default):
-                type_var_default = maybe_eval_type_data_closure_vals(type_var_default)
-                type_var_bound = type(type_var_default).__name__
-                val = type_var_default
-            else:
-                if i >= len(item):
-                    raise RuntimeError(f"generic {tvar=} must have concrete val")
-                val = item[i]
-
-            r = ReifiedTypeParams(tvar.__name__, val, type_var_bound)
-
+            r = ReifiedTypeParams(tvar, it, already_reified_type_params)
+            already_reified_type_params[r.name] = r.concrete_val
             reified_type_params.append(r)
-            already_reified_type_params[r.name] = r.val
-
-            # only in the closure if used in the body
-            if r.name in body_builder.__code__.co_freevars:
-                free_i = body_builder.__code__.co_freevars.index(r.name)
-                if body_builder.__closure__[free_i].cell_contents != tvar:
-                    raise RuntimeError(
-                        f"typevars don't match: {id(body_builder.__closure__[free_i].cell_contents)=}, {id(tvar)=}"
-                    )
-                body_builder.__closure__[free_i].cell_contents = r.val
+            r.add_replace_in_closure(body_builder)
 
         name_mangled_generics = []
         for r in reified_type_params:
-            tvar, v = r.type, r.val
+            tvar, v = r.type, r.concrete_val
             if callable(v):
                 v = v.__name__
             name_mangled_generics.append(f"{tvar}_{v}")
@@ -384,11 +416,13 @@ class FuncBase:
             self.call_op_ctor,
             return_types=self.return_types,
             sym_visibility=self.sym_visibility,
-            sym_name=(self.func_name + "_" + "_".join(name_mangled_generics)),
+            sym_name=(
+                self.body_builder.__name__ + "_" + "_".join(name_mangled_generics)
+            ),
             arg_attrs=self.arg_attrs,
             res_attrs=self.res_attrs,
             func_attrs=self.func_attrs,
-            generics=reified_type_params,
+            generics=reified_type_params + generics,
             qualname=self.qualname,
             loc=self.loc,
             ip=self.ip,

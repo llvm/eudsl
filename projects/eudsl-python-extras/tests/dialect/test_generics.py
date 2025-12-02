@@ -343,21 +343,21 @@ def test_generic_type_var_closure_patching_dependent_generics(ctx: MLIRContext):
         test_2_with_rewrite[4, 5, 6, T.f16()].emit()  # noqa: F821
 
     # CHECK: gpu.module @mod1 [#nvvm.target] {
-    # CHECK:   gpu.func @"test_plain_int_1_int_2_int_3_type_f32_MemRefType_memref<1x2xf32>_MemRefType_memref<2x3xf32>_MemRefType_memref<1x3xf32>"(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) kernel {
+    # CHECK:   gpu.func @test_plain_int_1_int_2_int_3_type_f32(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) kernel {
     # CHECK:     %cst = arith.constant 1.000000e+00 : f32
     # CHECK:     gpu.return
     # CHECK:   }
-    # CHECK:   gpu.func @"test_2_with_rewrite_int_1_int_2_int_3_type_f32_MemRefType_memref<1x2xf32>_MemRefType_memref<2x3xf32>_MemRefType_memref<1x3xf32>"(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) kernel {
+    # CHECK:   gpu.func @test_2_with_rewrite_int_1_int_2_int_3_type_f32(%arg0: memref<1x2xf32>, %arg1: memref<2x3xf32>, %arg2: memref<1x3xf32>) kernel {
     # CHECK:     %cst = arith.constant 1.000000e+00 : f32
     # CHECK:     gpu.return
     # CHECK:   }
     # CHECK: }
     # CHECK: gpu.module @mod2 [#nvvm.target] {
-    # CHECK:   gpu.func @"test_plain_int_4_int_5_int_6_type_f16_MemRefType_memref<4x5xf16>_MemRefType_memref<5x6xf16>_MemRefType_memref<4x6xf16>"(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) kernel {
+    # CHECK:   gpu.func @test_plain_int_4_int_5_int_6_type_f16(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) kernel {
     # CHECK:     %cst = arith.constant 1.000000e+00 : f16
     # CHECK:     gpu.return
     # CHECK:   }
-    # CHECK:   gpu.func @"test_2_with_rewrite_int_4_int_5_int_6_type_f16_MemRefType_memref<4x5xf16>_MemRefType_memref<5x6xf16>_MemRefType_memref<4x6xf16>"(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) kernel {
+    # CHECK:   gpu.func @test_2_with_rewrite_int_4_int_5_int_6_type_f16(%arg0: memref<4x5xf16>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) kernel {
     # CHECK:     %cst = arith.constant 1.000000e+00 : f16
     # CHECK:     gpu.return
     # CHECK:   }
@@ -370,15 +370,12 @@ def test_pooling_nchw_max(ctx: MLIRContext):
 
     @func
     def maxpool2d[
-        kernel_size_0, kernel_size_1, stride_0, stride_1, dilation_0, dilation_1
+        kernel_size_0, kernel_size_1, stride_0, stride_1, dilation_0, dilation_1, dtype
     ](
-        input: T.memref(S, S, S, S, T.f32()),
-        output: T.memref(S, S, S, S, T.f32()),
+        input: "T.memref(S, S, S, S, dtype)",
+        output: "T.memref(S, S, S, S, dtype)",
     ):
-        kernel_shape_surrogate = memref.alloca(
-            (kernel_size_0, kernel_size_1),
-            T.f32(),
-        )
+        kernel_shape_surrogate = memref.alloca((kernel_size_0, kernel_size_1), dtype)
 
         linalg.pooling_nchw_max(
             input,
@@ -391,19 +388,22 @@ def test_pooling_nchw_max(ctx: MLIRContext):
     kernel_sizes = [2, 3]
     strides = [4, 5]
     dilations = [6, 7]
-    maxpool2d_k = maxpool2d[
+    maxpool2d_k_dtype = maxpool2d[
         kernel_sizes[0],
         kernel_sizes[1],
         strides[0],
         strides[1],
         dilations[0],
         dilations[1],
-    ].emit()
+    ]
+
+    maxpool2d_k_f32 = maxpool2d_k_dtype[T.f32()].emit()
+    maxpool2d_k_f64 = maxpool2d_k_dtype[T.f64()].emit()
     module = run_pipeline(
         ctx.module,
         Pipeline().bufferize().Func(Pipeline().convert_linalg_to_parallel_loops()),
     )
-    # CHECK: func.func @maxpool2d_int_2_int_3_int_4_int_5_int_6_int_7(%arg0: memref<?x?x?x?xf32>, %arg1: memref<?x?x?x?xf32>) {
+    # CHECK: func.func @maxpool2d_int_2_int_3_int_4_int_5_int_6_int_7_type_f32(%arg0: memref<?x?x?x?xf32>, %arg1: memref<?x?x?x?xf32>) {
     # CHECK:   %c3 = arith.constant 3 : index
     # CHECK:   %c2 = arith.constant 2 : index
     # CHECK:   %c1 = arith.constant 1 : index
@@ -421,6 +421,31 @@ def test_pooling_nchw_max(ctx: MLIRContext):
     # CHECK:         %3 = memref.load %arg1[%arg2, %arg3, %arg4, %arg5] : memref<?x?x?x?xf32>
     # CHECK:         %4 = arith.maximumf %3, %2 : f32
     # CHECK:         memref.store %4, %arg1[%arg2, %arg3, %arg4, %arg5] : memref<?x?x?x?xf32>
+    # CHECK:       }
+    # CHECK:     }
+    # CHECK:     scf.reduce
+    # CHECK:   }
+    # CHECK:   return
+    # CHECK: }
+
+    # CHECK: func.func @maxpool2d_int_2_int_3_int_4_int_5_int_6_int_7_type_f64(%arg0: memref<?x?x?x?xf64>, %arg1: memref<?x?x?x?xf64>) {
+    # CHECK:   %c3 = arith.constant 3 : index
+    # CHECK:   %c2 = arith.constant 2 : index
+    # CHECK:   %c1 = arith.constant 1 : index
+    # CHECK:   %c0 = arith.constant 0 : index
+    # CHECK:   %dim = memref.dim %arg0, %c0 : memref<?x?x?x?xf64>
+    # CHECK:   %dim_0 = memref.dim %arg0, %c1 : memref<?x?x?x?xf64>
+    # CHECK:   %dim_1 = memref.dim %arg1, %c2 : memref<?x?x?x?xf64>
+    # CHECK:   %dim_2 = memref.dim %arg1, %c3 : memref<?x?x?x?xf64>
+    # CHECK:   scf.parallel (%arg2, %arg3, %arg4, %arg5) = (%c0, %c0, %c0, %c0) to (%dim, %dim_0, %dim_1, %dim_2) step (%c1, %c1, %c1, %c1) {
+    # CHECK:     scf.for %arg6 = %c0 to %c2 step %c1 {
+    # CHECK:       scf.for %arg7 = %c0 to %c3 step %c1 {
+    # CHECK:         %0 = affine.apply #map(%arg4, %arg6)
+    # CHECK:         %1 = affine.apply #map1(%arg5, %arg7)
+    # CHECK:         %2 = memref.load %arg0[%arg2, %arg3, %0, %1] : memref<?x?x?x?xf64>
+    # CHECK:         %3 = memref.load %arg1[%arg2, %arg3, %arg4, %arg5] : memref<?x?x?x?xf64>
+    # CHECK:         %4 = arith.maximumf %3, %2 : f64
+    # CHECK:         memref.store %4, %arg1[%arg2, %arg3, %arg4, %arg5] : memref<?x?x?x?xf64>
     # CHECK:       }
     # CHECK:     }
     # CHECK:     scf.reduce
