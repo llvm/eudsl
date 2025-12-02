@@ -415,7 +415,7 @@ def sgemm_shared_mem_1d_block_tiling[
     inner_row_B = tid / BN
 
     thread_results = memref.alloca((TM,), dtype)
-    linalg.fill(0, thread_results)
+    linalg.fill(0.0, thread_results)
 
     for bk_idx in range_(0, K, BK):
         # Move blocktile to beginning of A's row and B's column
@@ -483,13 +483,13 @@ def sgemm_shared_mem_2d_block_tiling[
     stride_B = num_threads_blocktile // BN
 
     thread_results = memref.alloca((TM, TN), dtype)
-    linalg.fill(0, thread_results)
+    linalg.fill(0.0, thread_results)
 
     reg_M = memref.alloca((TM,), dtype)
-    linalg.fill(0, reg_M)
+    linalg.fill(0.0, reg_M)
 
     reg_N = memref.alloca((TN,), dtype)
-    linalg.fill(0, reg_N)
+    linalg.fill(0.0, reg_N)
 
     for bk_idx in range_(0, K, BK):
         A_ = A[c_row : c_row + BM, bk_idx : bk_idx + BK]
@@ -579,13 +579,13 @@ def sgemm_shared_mem_2d_block_tiling_vectorize[
     inner_row_B = tid / (BN // VECTOR_WIDTH)
 
     thread_results = memref.alloca((TM, TN), dtype)
-    linalg.fill(0, thread_results)
+    linalg.fill(0.0, thread_results)
 
     reg_M = memref.alloca((TM,), dtype)
-    linalg.fill(0, reg_M)
+    linalg.fill(0.0, reg_M)
 
     reg_N = memref.alloca((TN,), dtype)
-    linalg.fill(0, reg_N)
+    linalg.fill(0.0, reg_N)
 
     for bk_idx in range_(0, K, BK):
         A_ = A[c_row : c_row + BM, bk_idx : bk_idx + BK]
@@ -708,13 +708,13 @@ def sgemm_warp_tiling[
 
     # allocate thread-local cache for results in registerfile
     thread_results = memref.alloca((WMITER * TM, WNITER * TN), dtype)
-    linalg.fill(0, thread_results)
+    linalg.fill(0.0, thread_results)
 
     reg_M = memref.alloca((WMITER, TM), dtype)
-    linalg.fill(0, reg_M)
+    linalg.fill(0.0, reg_M)
 
     reg_N = memref.alloca((WNITER, TN), dtype)
-    linalg.fill(0, reg_N)
+    linalg.fill(0.0, reg_N)
 
     for bk_idx in range_(0, K, BK):
         A_ = A[c_row : c_row + BM, bk_idx : bk_idx + BK]

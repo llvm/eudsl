@@ -702,7 +702,7 @@ def test_matmul_schedule(ctx: MLIRContext):
         B: T.tensor(K, N, T.i8()),
     ):
         empty = tensor.empty(M, N, T.i8())
-        filled = linalg_dialect.fill(arith.constant(0), outs=[empty])
+        filled = linalg_dialect.fill(arith.constant(0, type=T.i8()), outs=[empty])
         return linalg.matmul(A, B, filled)
 
     @module(attrs={"transform.target_tag": StringAttr.get("payload")})
@@ -856,8 +856,8 @@ def test_matmul_schedule(ctx: MLIRContext):
           module attributes {transform.target_tag = "payload"} {
             func.func @matmul_i8_i8(%arg0: tensor<16x256xi8>, %arg1: tensor<256x256xi8>) -> tensor<16x256xi8> {
               %0 = tensor.empty() : tensor<16x256xi8>
-              %c0_i32 = arith.constant 0 : i32
-              %1 = linalg.fill ins(%c0_i32 : i32) outs(%0 : tensor<16x256xi8>) -> tensor<16x256xi8>
+              %c0_i8 = arith.constant 0 : i8
+              %1 = linalg.fill ins(%c0_i8 : i8) outs(%0 : tensor<16x256xi8>) -> tensor<16x256xi8>
               %2 = linalg.matmul {cast = #linalg.type_fn<cast_signed>} ins(%arg0, %arg1 : tensor<16x256xi8>, tensor<256x256xi8>) outs(%1 : tensor<16x256xi8>) -> tensor<16x256xi8>
               return %2 : tensor<16x256xi8>
             }
@@ -924,7 +924,7 @@ def test_matmul_schedule_run(ctx: MLIRContext):
         B: T.tensor(K, N, T.i8()),
     ):
         empty = tensor.empty(M, N, T.i8())
-        filled = linalg_dialect.fill(arith.constant(0), outs=[empty])
+        filled = linalg_dialect.fill(arith.constant(0, type=T.i8()), outs=[empty])
         return linalg.matmul(A, B, filled)
 
     @module(attrs={"transform.target_tag": StringAttr.get("payload")})
@@ -997,13 +997,13 @@ def test_matmul_schedule_run(ctx: MLIRContext):
         module {
           module attributes {transform.target_tag = "payload"} {
             func.func @matmul_i8_i8(%arg0: tensor<16x256xi8>, %arg1: tensor<256x256xi8>) -> tensor<16x256xi8> {
-              %c0_i32 = arith.constant 0 : i32
+              %c0_i8 = arith.constant 0 : i8
               %0 = tensor.empty() : tensor<16x256xi8>
               %1 = tensor.empty() : tensor<1x4x16x64xi8>
               %pack = linalg.pack %arg0 inner_dims_pos = [0, 1] inner_tiles = [16, 64] into %1 : tensor<16x256xi8> -> tensor<1x4x16x64xi8>
               %2 = tensor.empty() : tensor<4x1x64x64xi8>
               %3 = tensor.empty() : tensor<1x1x16x64xi8>
-              %4 = linalg.fill ins(%c0_i32 : i32) outs(%3 : tensor<1x1x16x64xi8>) -> tensor<1x1x16x64xi8>
+              %4 = linalg.fill ins(%c0_i8 : i8) outs(%3 : tensor<1x1x16x64xi8>) -> tensor<1x1x16x64xi8>
               %5 = scf.forall (%arg2, %arg3) in (1, 4) shared_outs(%arg4 = %0) -> (tensor<16x256xi8>) {
                 %6 = affine.apply #map(%arg3)
                 %extracted_slice = tensor.extract_slice %arg1[0, %6] [256, 64] [1, 1] : tensor<256x256xi8> to tensor<256x64xi8>
