@@ -141,7 +141,7 @@ def get_type_var_default_bound(tvar):
     return type_var_default, type_var_bound
 
 
-class ReifiedTypeParams:
+class ReifiedTypeParam:
     name: str
     concrete_val: object
     type: Optional[type]
@@ -173,12 +173,13 @@ class ReifiedTypeParams:
             else:
                 type_var_bound = type(concrete_val).__name__
 
-        if bool(type_var_default):
+        if bool(type_var_default) and concrete_val is None:
             type_var_default = maybe_eval_type_data_closure_vals(
                 type_var_default, already_reified_type_params
             )
-            type_var_bound = type(type_var_default).__name__
             self.concrete_val = type_var_default
+            if not bool(type_var_bound):
+                type_var_bound = type(type_var_default).__name__
         else:
             assert concrete_val is not None, "expected non-null concrete_val"
             self.concrete_val = concrete_val
@@ -231,7 +232,7 @@ class FuncBase:
         res_attrs=None,
         func_attrs=None,
         function_type=None,
-        generics: List[Union[TypeVar, ReifiedTypeParams]] = None,
+        generics: List[Union[TypeVar, ReifiedTypeParam]] = None,
         qualname=None,
         loc=None,
         ip=None,
@@ -251,6 +252,8 @@ class FuncBase:
         self.call_op_ctor = call_op_ctor
         self.arg_attrs = arg_attrs
         self.res_attrs = res_attrs
+        if generics is None:
+            generics = []
         self.generics = generics
         self.loc = loc
         self.ip = ip
@@ -301,17 +304,36 @@ class FuncBase:
                 if len(call_args) == 0:
                     input_types = self.input_types[:]
                     locals = {}
-                    if self.generics is not None:
-                        for t in self.generics:
-                            if not isinstance(t, ReifiedTypeParams):
-                                assert isinstance(
-                                    t, TypeVar
-                                ), f"expected {t=} to be a TypeVar"
-                                t = ReifiedTypeParams(t, None, locals)
-                                t.add_replace_in_closure(self.body_builder)
-                            locals[t.name] = t.concrete_val
+                    generics = list(self.generics)
+
+                    while generics and isinstance(generics[0], ReifiedTypeParam):
+                        g = generics.pop(0)
+                        locals[g.name] = g.concrete_val
+
+                    # (potentially) reify generics with defaults (i.e., fully specialize i.e., do __getitem__ with defaults)
+                    default_vals = []
+                    while generics:
+                        g = generics.pop(0)
+                        if not isinstance(g, TypeVar):
+                            raise ValueError(f"expected {g=} to be a TypeVar")
+                        # explicit None means use default
+                        default_vals.append(None)
+                    if default_vals:
+                        return self.__getitem__(tuple(default_vals)).emit()
+
+                    # pre-load locals with useful things (TODO(max): this probably should go away)
+                    if "T" in locals:
+                        raise ValueError(
+                            f"T is a reserved generic name; use a different one for {locals['T']}"
+                        )
                     locals["T"] = types
+                    if "S" in locals:
+                        raise ValueError(
+                            f"S is a reserved generic name; use a different one for {locals['S']}"
+                        )
                     locals["S"] = ShapedType.get_dynamic_size()
+
+                    # evaluate type annotations (which could be strings or lambdas)
                     for i, v in enumerate(input_types):
                         if isinstance(v, TypeVar):
                             v = v.__name__
@@ -387,19 +409,25 @@ class FuncBase:
             )
         # this also copies the function so that the original body_builder remains "generic" (via its closure)
         body_builder = copy_func(self.body_builder)
-        generics = list(self.generics)
         reified_type_params = []
         already_reified_type_params = {}
-        while len(generics) and isinstance(generics[0], ReifiedTypeParams):
-            reified_type_params.append(generics.pop(0))
+        generics = list(self.generics)
+
+        while len(generics) and isinstance(generics[0], ReifiedTypeParam):
+            g = generics.pop(0)
+            reified_type_params.append(g)
+            already_reified_type_params[g.name] = g.concrete_val
 
         for it in item:
             tvar = generics.pop(0)
+            # we're entering __getitem__ from emit (i.e., we're reifying generics with defaults)
             if tvar.__name__ in body_builder.__globals__:
                 raise RuntimeError("global typevars for generics are not supported")
-            r = ReifiedTypeParams(tvar, it, already_reified_type_params)
+            r = ReifiedTypeParam(tvar, it, already_reified_type_params)
             already_reified_type_params[r.name] = r.concrete_val
             reified_type_params.append(r)
+
+        for r in reified_type_params:
             r.add_replace_in_closure(body_builder)
 
         name_mangled_generics = []
