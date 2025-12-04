@@ -38,8 +38,15 @@ outputs:
 runs:
   using: "composite"
   steps:
+
+    - name: "Install sudo"
+      if: inputs.os == 'almalinux'
+      shell: bash
+      run: |
+        
+        dnf install -y sudo
+
     - name: "Set unified TZ"
-      if: (inputs.container != 'quay.io/pypa/manylinux_2_34_aarch64')
       uses: szenius/set-timezone@v2.0
       with:
         # this is an arbitrary choice
