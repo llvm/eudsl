@@ -424,7 +424,6 @@ class FuncBase:
 
         for it in item:
             tvar = generics.pop(0)
-            # we're entering __getitem__ from emit (i.e., we're reifying generics with defaults)
             if tvar.__name__ in body_builder.__globals__:
                 raise RuntimeError("global typevars for generics are not supported")
             r = ReifiedTypeParam(tvar, it, already_reified_type_params)

@@ -31,14 +31,16 @@ from mlir.extras.testing import (
 pytest.mark.usefixtures("ctx")
 
 
+@func
+def matmul_i32_i32[M, N](
+    A: "T.memref(M, N, T.i32())",
+    B: "T.memref(M, N, T.i32())",
+    C: "T.memref(M, N, T.i32())",
+):
+    linalg.matmul(A, B, C)
+
+
 def test_func_no_context_2(ctx: MLIRContext):
-    @func
-    def matmul_i32_i32[M, N](
-        A: "T.memref(M, N, T.i32())",
-        B: "T.memref(M, N, T.i32())",
-        C: "T.memref(M, N, T.i32())",
-    ):
-        linalg.matmul(A, B, C)
 
     # CHECK: func.func @matmul_i32_i32_int_16_int_16(%[[VAL_0:.*]]: memref<16x16xi32>, %[[VAL_1:.*]]: memref<16x16xi32>, %[[VAL_2:.*]]: memref<16x16xi32>) {
     # CHECK:   linalg.matmul {cast = #linalg.type_fn<cast_signed>} ins(%[[VAL_0]], %[[VAL_1]] : memref<16x16xi32>, memref<16x16xi32>) outs(%[[VAL_2]] : memref<16x16xi32>)
@@ -58,11 +60,11 @@ def test_generics_just_args(ctx: MLIRContext):
     ):
         one = arith.constant(1.0, dtype)
 
-    # CHECK: func.func @mat_product_kernel_int_32_int_32_int_32_type_f32(%[[VAL_0:.*]]: memref<32x32xf32>, %[[VAL_1:.*]]: memref<32x32xf32>, %[[VAL_2:.*]]: memref<32x32xf32>) {
+    # CHECK: func.func @mat_product_kernel_int_32_int_64_int_96_type_f32(%arg0: memref<32x64xf32>, %arg1: memref<64x96xf32>, %arg2: memref<32x96xf32>) {
     # CHECK:   %[[VAL_3:.*]] = arith.constant 1.000000e+00 : f32
     # CHECK:   return
     # CHECK: }
-    mat_product_kernel[32, 32, 32, T.f32()].emit()
+    mat_product_kernel[32, 64, 96, T.f32()].emit()
 
     filecheck_with_comments(ctx.module)
 
@@ -76,17 +78,17 @@ def test_generics_closure(ctx: MLIRContext):
     ):
         one = arith.constant(1, dtype)
 
-    # CHECK: func.func @mat_product_kernel_int_32_int_32_int_32_type_i32(%[[VAL_0:.*]]: memref<32x32xi32>, %[[VAL_1:.*]]: memref<32x32xi32>, %[[VAL_2:.*]]: memref<32x32xi32>) {
+    # CHECK: func.func @mat_product_kernel_int_32_int_64_int_96_type_i32(%arg0: memref<32x64xi32>, %arg1: memref<64x96xi32>, %arg2: memref<32x96xi32>) {
     # CHECK:   %[[VAL_3:.*]] = arith.constant 1 : i32
     # CHECK:   return
     # CHECK: }
-    mat_product_kernel[32, 32, 32, T.i32()].emit()
+    mat_product_kernel[32, 64, 96, T.i32()].emit()
 
-    # CHECK: func.func @mat_product_kernel_int_32_int_32_int_32_type_f32(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>, %arg2: memref<32x32xf32>) {
-    # CHECK:   %cst = arith.constant 1.000000e+00 : f32
+    # CHECK: func.func @mat_product_kernel_int_32_int_64_int_96_type_f32(%arg0: memref<32x64xf32>, %arg1: memref<64x96xf32>, %arg2: memref<32x96xf32>) {
+    # CHECK:   %[[VAL_3:.*]] = arith.constant 1.000000e+00 : f32
     # CHECK:   return
     # CHECK: }
-    mat_product_kernel[32, 32, 32, T.f32()].emit()
+    mat_product_kernel[32, 64, 96, T.f32()].emit()
 
     filecheck_with_comments(ctx.module)
 
@@ -145,25 +147,25 @@ def test_generics_with_canonicalizations(ctx: MLIRContext):
             tmp = yield tmp
         C[x, y] = tmp + one
 
-    # CHECK: func.func @mat_product_kernel_int_32_int_32_int_32_type_f32(%[[VAL_0:.*]]: memref<32x32xf32>, %[[VAL_1:.*]]: memref<32x32xf32>, %[[VAL_2:.*]]: memref<32x32xf32>) {
-    # CHECK:   %[[VAL_3:.*]] = arith.constant 1 : index
-    # CHECK:   %[[VAL_4:.*]] = arith.constant 1 : index
-    # CHECK:   %[[VAL_5:.*]] = arith.constant 1.000000e+00 : f32
-    # CHECK:   %[[VAL_6:.*]] = arith.constant 0.000000e+00 : f32
-    # CHECK:   %[[VAL_7:.*]] = arith.constant 0 : index
-    # CHECK:   %[[VAL_8:.*]] = arith.constant 32 : index
-    # CHECK:   %[[VAL_9:.*]] = arith.constant 1 : index
-    # CHECK:   %[[VAL_10:.*]] = scf.for %[[VAL_11:.*]] = %[[VAL_7]] to %[[VAL_8]] step %[[VAL_9]] iter_args(%[[VAL_12:.*]] = %[[VAL_6]]) -> (f32) {
-    # CHECK:     %[[VAL_13:.*]] = memref.load %[[VAL_0]]{{\[}}%[[VAL_3]], %[[VAL_11]]] : memref<32x32xf32>
-    # CHECK:     %[[VAL_14:.*]] = memref.load %[[VAL_1]]{{\[}}%[[VAL_11]], %[[VAL_4]]] : memref<32x32xf32>
-    # CHECK:     %[[VAL_15:.*]] = math.fma %[[VAL_13]], %[[VAL_14]], %[[VAL_12]] : f32
-    # CHECK:     scf.yield %[[VAL_15]] : f32
+    # CHECK: func.func @mat_product_kernel_int_32_int_64_int_96_type_f32(%arg0: memref<32x64xf32>, %arg1: memref<64x96xf32>, %arg2: memref<32x96xf32>) {
+    # CHECK:   %c1 = arith.constant 1 : index
+    # CHECK:   %c1_0 = arith.constant 1 : index
+    # CHECK:   %cst = arith.constant 1.000000e+00 : f32
+    # CHECK:   %cst_1 = arith.constant 0.000000e+00 : f32
+    # CHECK:   %c0 = arith.constant 0 : index
+    # CHECK:   %c64 = arith.constant 64 : index
+    # CHECK:   %c1_2 = arith.constant 1 : index
+    # CHECK:   %0 = scf.for %arg3 = %c0 to %c64 step %c1_2 iter_args(%arg4 = %cst_1) -> (f32) {
+    # CHECK:     %2 = memref.load %arg0[%c1, %arg3] : memref<32x64xf32>
+    # CHECK:     %3 = memref.load %arg1[%arg3, %c1_0] : memref<64x96xf32>
+    # CHECK:     %4 = math.fma %2, %3, %arg4 : f32
+    # CHECK:     scf.yield %4 : f32
     # CHECK:   }
-    # CHECK:   %[[VAL_16:.*]] = arith.addf %[[VAL_17:.*]], %[[VAL_5]] : f32
-    # CHECK:   memref.store %[[VAL_16]], %[[VAL_2]]{{\[}}%[[VAL_3]], %[[VAL_4]]] : memref<32x32xf32>
+    # CHECK:   %1 = arith.addf %0, %cst : f32
+    # CHECK:   memref.store %1, %arg2[%c1, %c1_0] : memref<32x96xf32>
     # CHECK:   return
     # CHECK: }
-    mat_product_kernel[32, 32, 32, T.f32()].emit()
+    mat_product_kernel[32, 64, 96, T.f32()].emit()
 
     filecheck_with_comments(ctx.module)
 
@@ -188,20 +190,20 @@ def test_generics_assignment(ctx: MLIRContext):
         y = arith.constant(1, index=True)
         n = arith.constant(L)
 
-    # CHECK: func.func @type_bound_int_32_int_32_i32_10(%arg0: memref<32x32xf32>, %arg1: memref<32x10xf32>, %arg2: memref<32x10xf32>) {
+    # CHECK: func.func @type_bound_int_32_int_64_i32_10(%arg0: memref<32x64xf32>, %arg1: memref<64x10xf32>, %arg2: memref<32x10xf32>) {
     # CHECK:   %c1 = arith.constant 1 : index
     # CHECK:   %c1_0 = arith.constant 1 : index
     # CHECK:   return
     # CHECK: }
-    type_bound[32, 32, 10].emit()
+    type_bound[32, 64, 10].emit()
 
-    # CHECK: func.func @type_bound_and_default_int_32_int_32_i32_10_f32_10.0(%arg0: memref<32x32xf32>, %arg1: memref<32x10xf32>, %arg2: memref<32x10xf32>) {
+    # CHECK: func.func @type_bound_and_default_int_32_int_64_i32_10_f32_10.0(%arg0: memref<32x64xf32>, %arg1: memref<64x10xf32>, %arg2: memref<32x10xf32>) {
     # CHECK:   %c1 = arith.constant 1 : index
     # CHECK:   %c1_0 = arith.constant 1 : index
     # CHECK:   %cst = arith.constant 1.000000e+01 : f32
     # CHECK:   return
     # CHECK: }
-    type_bound_and_default[32, 32].emit()
+    type_bound_and_default[32, 64].emit()
 
     # CHECK: func.func @type_bound_and_default_int_33_int_11_i32_10_f32_10.0(%arg0: memref<33x11xf32>, %arg1: memref<11x10xf32>, %arg2: memref<33x10xf32>) {
     # CHECK:   %c1 = arith.constant 1 : index
@@ -234,31 +236,32 @@ def test_partial_specialization(ctx: MLIRContext):
         y = arith.constant(1, index=True)
         n = arith.constant(L)
 
-    partial = type_bound[32, 32]
-    # CHECK: func.func @type_bound_int_32_int_32_i32_10(%arg0: memref<32x32xf32>, %arg1: memref<32x10xf32>, %arg2: memref<32x10xf32>) {
+    partial = type_bound[32, 64]
+    # CHECK: func.func @type_bound_int_32_int_64_i32_10(%arg0: memref<32x64xf32>, %arg1: memref<64x10xf32>, %arg2: memref<32x10xf32>) {
     # CHECK:   %c1 = arith.constant 1 : index
     # CHECK:   %c1_0 = arith.constant 1 : index
     # CHECK:   return
     # CHECK: }
     partial[10].emit()
 
-    # CHECK: func.func @type_bound_int_32_int_32_i32_16(%arg0: memref<32x32xf32>, %arg1: memref<32x16xf32>, %arg2: memref<32x16xf32>) {
+    # CHECK: func.func @type_bound_int_32_int_64_i32_16(%arg0: memref<32x64xf32>, %arg1: memref<64x16xf32>, %arg2: memref<32x16xf32>) {
     # CHECK:   %c1 = arith.constant 1 : index
     # CHECK:   %c1_0 = arith.constant 1 : index
     # CHECK:   return
     # CHECK: }
     partial[16].emit()
 
-    partial_with_defaults = type_bound_and_default[32, 32]
+    partial_with_defaults = type_bound_and_default[32, 64]
 
-    # CHECK: func.func @type_bound_and_default_int_32_int_32_i32_20_f32_10.0(%arg0: memref<32x32xf32>, %arg1: memref<32x20xf32>, %arg2: memref<32x20xf32>) {
+    # CHECK: func.func @type_bound_and_default_int_32_int_64_i32_20_f32_10.0(%arg0: memref<32x64xf32>, %arg1: memref<64x20xf32>, %arg2: memref<32x20xf32>) {
     # CHECK:   %c1 = arith.constant 1 : index
     # CHECK:   %c1_0 = arith.constant 1 : index
     # CHECK:   %cst = arith.constant 1.000000e+01 : f32
     # CHECK:   return
     # CHECK: }
     partial_with_defaults[20].emit()
-    # CHECK: func.func @type_bound_and_default_int_32_int_32_i32_26_f32_10.0(%arg0: memref<32x32xf32>, %arg1: memref<32x26xf32>, %arg2: memref<32x26xf32>) {
+
+    # CHECK: func.func @type_bound_and_default_int_32_int_64_i32_26_f32_10.0(%arg0: memref<32x64xf32>, %arg1: memref<64x26xf32>, %arg2: memref<32x26xf32>) {
     # CHECK:   %c1 = arith.constant 1 : index
     # CHECK:   %c1_0 = arith.constant 1 : index
     # CHECK:   %cst = arith.constant 1.000000e+01 : f32
@@ -266,7 +269,7 @@ def test_partial_specialization(ctx: MLIRContext):
     # CHECK: }
     partial_with_defaults[26].emit()
 
-    # CHECK: func.func @type_bound_and_default_int_32_int_32_i32_20_f32_66.0(%arg0: memref<32x32xf32>, %arg1: memref<32x20xf32>, %arg2: memref<32x20xf32>) {
+    # CHECK: func.func @type_bound_and_default_int_32_int_64_i32_20_f32_66.0(%arg0: memref<32x64xf32>, %arg1: memref<64x20xf32>, %arg2: memref<32x20xf32>) {
     # CHECK:   %c1 = arith.constant 1 : index
     # CHECK:   %c1_0 = arith.constant 1 : index
     # CHECK:   %cst = arith.constant 6.600000e+01 : f32
@@ -274,7 +277,7 @@ def test_partial_specialization(ctx: MLIRContext):
     # CHECK: }
     partial_with_defaults[20][66.0].emit()
 
-    # CHECK: func.func @type_bound_and_default_int_32_int_32_i32_26_f32_88.0(%arg0: memref<32x32xf32>, %arg1: memref<32x26xf32>, %arg2: memref<32x26xf32>) {
+    # CHECK: func.func @type_bound_and_default_int_32_int_64_i32_26_f32_88.0(%arg0: memref<32x64xf32>, %arg1: memref<64x26xf32>, %arg2: memref<32x26xf32>) {
     # CHECK:   %c1 = arith.constant 1 : index
     # CHECK:   %c1_0 = arith.constant 1 : index
     # CHECK:   %cst = arith.constant 8.800000e+01 : f32
@@ -282,7 +285,7 @@ def test_partial_specialization(ctx: MLIRContext):
     # CHECK: }
     partial_with_defaults[26][88.0].emit()
 
-    # CHECK: func.func @type_bound_and_default_int_32_int_32_i32_30_f32_76.0(%arg0: memref<32x32xf32>, %arg1: memref<32x30xf32>, %arg2: memref<32x30xf32>) {
+    # CHECK: func.func @type_bound_and_default_int_32_int_64_i32_30_f32_76.0(%arg0: memref<32x64xf32>, %arg1: memref<64x30xf32>, %arg2: memref<32x30xf32>) {
     # CHECK:   %c1 = arith.constant 1 : index
     # CHECK:   %c1_0 = arith.constant 1 : index
     # CHECK:   %cst = arith.constant 7.600000e+01 : f32
@@ -290,7 +293,7 @@ def test_partial_specialization(ctx: MLIRContext):
     # CHECK: }
     partial_with_defaults[30][76.0].emit()
 
-    # CHECK: func.func @type_bound_and_default_int_32_int_32_i32_36_f32_98.0(%arg0: memref<32x32xf32>, %arg1: memref<32x36xf32>, %arg2: memref<32x36xf32>) {
+    # CHECK: func.func @type_bound_and_default_int_32_int_64_i32_36_f32_98.0(%arg0: memref<32x64xf32>, %arg1: memref<64x36xf32>, %arg2: memref<32x36xf32>) {
     # CHECK:   %c1 = arith.constant 1 : index
     # CHECK:   %c1_0 = arith.constant 1 : index
     # CHECK:   %cst = arith.constant 9.800000e+01 : f32
@@ -356,37 +359,35 @@ def test_generics(ctx: MLIRContext):
 
     @module("naive", ["#nvvm.target"])
     def _():
-        mat_product_kernel[32, 32, 32, T.f32()].emit()  # noqa: F821
+        mat_product_kernel[32, 64, 96, T.f32()].emit()  # noqa: F821
 
-    # CHECK: module attributes {gpu.container_module} {
-    # CHECK:   gpu.module @naive [#nvvm.target]  {
-    # CHECK:     gpu.func @mat_product_kernel_int_32_int_32_int_32_type_f32(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>, %arg2: memref<32x32xf32>) kernel {
-    # CHECK:       %block_dim_x = gpu.block_dim  x
-    # CHECK:       %block_id_x = gpu.block_id  x
-    # CHECK:       %0 = arith.muli %block_dim_x, %block_id_x : index
-    # CHECK:       %thread_id_x = gpu.thread_id  x
-    # CHECK:       %1 = arith.addi %0, %thread_id_x : index
-    # CHECK:       %block_dim_y = gpu.block_dim  y
-    # CHECK:       %block_id_y = gpu.block_id  y
-    # CHECK:       %2 = arith.muli %block_dim_y, %block_id_y : index
-    # CHECK:       %thread_id_y = gpu.thread_id  y
-    # CHECK:       %3 = arith.addi %2, %thread_id_y : index
-    # CHECK:       %cst = arith.constant 1.000000e+00 : f32
-    # CHECK:       %cst_0 = arith.constant 0.000000e+00 : f32
-    # CHECK:       %c0 = arith.constant 0 : index
-    # CHECK:       %c32 = arith.constant 32 : index
-    # CHECK:       %c1 = arith.constant 1 : index
-    # CHECK:       %4 = scf.for %arg3 = %c0 to %c32 step %c1 iter_args(%arg4 = %cst_0) -> (f32) {
-    # CHECK:         %6 = memref.load %arg0[%1, %arg3] : memref<32x32xf32>
-    # CHECK:         %7 = memref.load %arg1[%arg3, %3] : memref<32x32xf32>
-    # CHECK:         %8 = arith.mulf %6, %7 : f32
-    # CHECK:         %9 = arith.addf %arg4, %8 : f32
-    # CHECK:         scf.yield %9 : f32
-    # CHECK:       }
-    # CHECK:       %5 = arith.addf %4, %cst : f32
-    # CHECK:       memref.store %5, %arg2[%1, %3] : memref<32x32xf32>
-    # CHECK:       gpu.return
+    # CHECK: gpu.module @naive [#nvvm.target] {
+    # CHECK:   gpu.func @mat_product_kernel_int_32_int_64_int_96_type_f32(%arg0: memref<32x64xf32>, %arg1: memref<64x96xf32>, %arg2: memref<32x96xf32>) kernel {
+    # CHECK:     %block_dim_x = gpu.block_dim  x
+    # CHECK:     %block_id_x = gpu.block_id  x
+    # CHECK:     %0 = arith.muli %block_dim_x, %block_id_x : index
+    # CHECK:     %thread_id_x = gpu.thread_id  x
+    # CHECK:     %1 = arith.addi %0, %thread_id_x : index
+    # CHECK:     %block_dim_y = gpu.block_dim  y
+    # CHECK:     %block_id_y = gpu.block_id  y
+    # CHECK:     %2 = arith.muli %block_dim_y, %block_id_y : index
+    # CHECK:     %thread_id_y = gpu.thread_id  y
+    # CHECK:     %3 = arith.addi %2, %thread_id_y : index
+    # CHECK:     %cst = arith.constant 1.000000e+00 : f32
+    # CHECK:     %cst_0 = arith.constant 0.000000e+00 : f32
+    # CHECK:     %c0 = arith.constant 0 : index
+    # CHECK:     %c64 = arith.constant 64 : index
+    # CHECK:     %c1 = arith.constant 1 : index
+    # CHECK:     %4 = scf.for %arg3 = %c0 to %c64 step %c1 iter_args(%arg4 = %cst_0) -> (f32) {
+    # CHECK:       %6 = memref.load %arg0[%1, %arg3] : memref<32x64xf32>
+    # CHECK:       %7 = memref.load %arg1[%arg3, %3] : memref<64x96xf32>
+    # CHECK:       %8 = arith.mulf %6, %7 : f32
+    # CHECK:       %9 = arith.addf %arg4, %8 : f32
+    # CHECK:       scf.yield %9 : f32
     # CHECK:     }
+    # CHECK:     %5 = arith.addf %4, %cst : f32
+    # CHECK:     memref.store %5, %arg2[%1, %3] : memref<32x96xf32>
+    # CHECK:     gpu.return
     # CHECK:   }
     # CHECK: }
 
@@ -468,6 +469,14 @@ def test_generic_type_var_closure_patching_dependent_generics(ctx: MLIRContext):
         # CHECK:   gpu.return
         # CHECK: }
         test_2_with_rewrite[4, 5, 6, T.f16()].emit()  # noqa: F821
+
+        # CHECK: gpu.func @"test_2_with_rewrite_int_4_int_5_int_6_type_f16_MemRefType_memref<7x8xf32>_MemRefType_memref<5x6xf16>_MemRefType_memref<4x6xf16>"(%arg0: memref<7x8xf32>, %arg1: memref<5x6xf16>, %arg2: memref<4x6xf16>) kernel {
+        # CHECK:   %cst = arith.constant 1.000000e+00 : f16
+        # CHECK:   gpu.return
+        # CHECK: }
+        test_2_with_rewrite[
+            4, 5, 6, T.f16(), T.memref(7, 8, T.f32())
+        ].emit()  # noqa: F821
 
     filecheck_with_comments(ctx.module)
 
