@@ -213,6 +213,14 @@ def test_generics_assignment(ctx: MLIRContext):
     # CHECK: }
     type_bound_and_default[33, 11].emit()
 
+    # CHECK: func.func @type_bound_and_default_int_66_int_22_i32_10_f32_10.0(%arg0: memref<66x22xf32>, %arg1: memref<22x10xf32>, %arg2: memref<66x10xf32>) {
+    # CHECK:   %c1 = arith.constant 1 : index
+    # CHECK:   %c1_0 = arith.constant 1 : index
+    # CHECK:   %cst = arith.constant 1.000000e+01 : f32
+    # CHECK:   return
+    # CHECK: }
+    type_bound_and_default[66, 22, None, None].emit()
+
     filecheck_with_comments(ctx.module)
 
 
