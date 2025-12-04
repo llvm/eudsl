@@ -302,102 +302,110 @@ class FuncBase:
     def __str__(self):
         return str(f"{self.__class__} {self.__dict__}")
 
+    def _build_input_types(self) -> Union[list[Type], OpView]:
+        """Either build all input types (if no generics or all generics reified) or return a further specialized funcop thing (the return of __getitem__)."""
+        locals = {}
+        generics = list(self.generics)
+        while generics and isinstance(generics[0], ReifiedTypeParam):
+            g = generics.pop(0)
+            locals[g.name] = g.concrete_val
+
+        # (potentially) reify generics with defaults (i.e., fully specialize i.e., do __getitem__ with defaults)
+        default_vals = []
+        while generics:
+            g = generics.pop(0)
+            if not isinstance(g, TypeVar):
+                raise ValueError(f"expected {g=} to be a TypeVar")
+            # explicit None means use default
+            default_vals.append(None)
+        if default_vals:
+            return self.__getitem__(tuple(default_vals)).emit()
+
+        # pre-load locals with useful things (TODO(max): this probably should go away)
+        if "T" in locals:
+            raise ValueError(
+                f"T is a reserved generic name; use a different one for {locals['T']}"
+            )
+        locals["T"] = types
+        if "S" in locals:
+            raise ValueError(
+                f"S is a reserved generic name; use a different one for {locals['S']}"
+            )
+        locals["S"] = ShapedType.get_dynamic_size()
+
+        # evaluate type annotations (which could be strings or lambdas)
+        input_types = self.input_types[:]
+        for i, v in enumerate(input_types):
+            if isinstance(v, TypeVar):
+                v = v.__name__
+            if isinstance(v, str):
+                input_types[i] = Type(eval(v, self.body_builder.__globals__, locals))
+            elif isalambda(v):
+                input_types[i] = v()
+
+        return input_types
+
     def emit(self, *call_args, decl=False, force=False) -> FuncOp:
-        if self._func_op is None or decl or force:
-            if self.function_type is None:
-                if len(call_args) == 0:
-                    input_types = self.input_types[:]
-                    locals = {}
-                    generics = list(self.generics)
+        if self._func_op and not (decl or force):
+            return self._func_op
 
-                    while generics and isinstance(generics[0], ReifiedTypeParam):
-                        g = generics.pop(0)
-                        locals[g.name] = g.concrete_val
+        if self.function_type is not None:
+            input_types = self.function_type.inputs
+        elif len(call_args):
+            input_types = [a.type for a in call_args]
+        else:
+            input_types = self._build_input_types()
+            assert isinstance(
+                input_types, (list, self.func_op_ctor)
+            ), "expected self._build_input_types to either return a list of types or a partially specialized funcop thing."
+            if isinstance(input_types, self.func_op_ctor):
+                return input_types
 
-                    # (potentially) reify generics with defaults (i.e., fully specialize i.e., do __getitem__ with defaults)
-                    default_vals = []
-                    while generics:
-                        g = generics.pop(0)
-                        if not isinstance(g, TypeVar):
-                            raise ValueError(f"expected {g=} to be a TypeVar")
-                        # explicit None means use default
-                        default_vals.append(None)
-                    if default_vals:
-                        return self.__getitem__(tuple(default_vals)).emit()
-
-                    # pre-load locals with useful things (TODO(max): this probably should go away)
-                    if "T" in locals:
-                        raise ValueError(
-                            f"T is a reserved generic name; use a different one for {locals['T']}"
-                        )
-                    locals["T"] = types
-                    if "S" in locals:
-                        raise ValueError(
-                            f"S is a reserved generic name; use a different one for {locals['S']}"
-                        )
-                    locals["S"] = ShapedType.get_dynamic_size()
-
-                    # evaluate type annotations (which could be strings or lambdas)
-                    for i, v in enumerate(input_types):
-                        if isinstance(v, TypeVar):
-                            v = v.__name__
-                        if isinstance(v, str):
-                            input_types[i] = Type(
-                                eval(v, self.body_builder.__globals__, locals)
-                            )
-                        elif isalambda(v):
-                            input_types[i] = v()
-                else:
-                    input_types = [a.type for a in call_args]
-
-                function_type = TypeAttr.get(
-                    FunctionType.get(
-                        inputs=input_types,
-                        results=self.return_types,
-                    )
-                )
-            else:
-                input_types = self.function_type.inputs
-                function_type = TypeAttr.get(self.function_type)
-
-            self._func_op = self.func_op_ctor(
-                self.func_name,
-                function_type,
-                sym_visibility=self.sym_visibility,
-                arg_attrs=self.arg_attrs,
-                res_attrs=self.res_attrs,
-                loc=self.loc,
-                ip=self.ip or InsertionPoint.current,
-            )
-            for k, v in self.func_attrs.items():
-                self._func_op.attributes[k] = v
-            if self._is_decl() or decl:
-                return self._func_op
-
-            self._func_op.regions[0].blocks.append(*input_types, arg_locs=self.arg_locs)
-            builder_wrapper = op_region_builder(
-                self._func_op, self._func_op.regions[0], terminator=self.return_op_ctor
+        if self.function_type is not None:
+            function_type = TypeAttr.get(self.function_type)
+        else:
+            function_type = TypeAttr.get(
+                FunctionType.get(inputs=input_types, results=self.return_types)
             )
 
-            return_types = []
+        self._func_op = self.func_op_ctor(
+            self.func_name,
+            function_type,
+            sym_visibility=self.sym_visibility,
+            arg_attrs=self.arg_attrs,
+            res_attrs=self.res_attrs,
+            loc=self.loc,
+            ip=self.ip or InsertionPoint.current,
+        )
+        for k, v in self.func_attrs.items():
+            self._func_op.attributes[k] = v
+        # if only a decl, don't build body
+        if self._is_decl() or decl:
+            return self._func_op
 
-            def grab_results(*args):
-                nonlocal return_types
-                results = self.body_builder(*args)
-                if isinstance(results, (tuple, list, OpResultList)):
-                    return_types.extend([r.type for r in results])
-                elif results is not None:
-                    return_types.append(results.type)
-                return results
+        self._func_op.regions[0].blocks.append(*input_types, arg_locs=self.arg_locs)
+        builder_wrapper = op_region_builder(
+            self._func_op, self._func_op.regions[0], terminator=self.return_op_ctor
+        )
 
-            if self.function_type is None:
-                builder_wrapper(grab_results)
-                function_type = FunctionType.get(
-                    inputs=input_types, results=return_types
-                )
-                self._func_op.attributes["function_type"] = TypeAttr.get(function_type)
-            else:
-                builder_wrapper(self.body_builder)
+        return_types = []
+
+        # infer result types from returned values in the body_builder
+        def grab_results(*args):
+            nonlocal return_types
+            results = self.body_builder(*args)
+            if isinstance(results, (tuple, list, OpResultList)):
+                return_types.extend([r.type for r in results])
+            elif results is not None:
+                return_types.append(results.type)
+            return results
+
+        if self.function_type is None:
+            builder_wrapper(grab_results)
+            function_type = FunctionType.get(inputs=input_types, results=return_types)
+            self._func_op.attributes["function_type"] = TypeAttr.get(function_type)
+        else:
+            builder_wrapper(self.body_builder)
 
         return self._func_op
 
