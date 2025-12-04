@@ -144,7 +144,7 @@ def get_type_var_default_bound(tvar):
 class ReifiedTypeParam:
     name: str
     concrete_val: object
-    type: Optional[type]
+    type_name: Optional[type]
 
     def __init__(
         self,
@@ -173,18 +173,22 @@ class ReifiedTypeParam:
             else:
                 type_var_bound = type(concrete_val).__name__
 
-        if bool(type_var_default) and concrete_val is None:
+        if bool(type_var_default):
             type_var_default = maybe_eval_type_data_closure_vals(
                 type_var_default, already_reified_type_params
             )
-            self.concrete_val = type_var_default
             if not bool(type_var_bound):
                 type_var_bound = type(type_var_default).__name__
+
+        if bool(type_var_default) and concrete_val is None:
+            self.concrete_val = type_var_default
         else:
             assert concrete_val is not None, "expected non-null concrete_val"
             self.concrete_val = concrete_val
 
-        self.type = type_var_bound
+        self.type_name = type_var_bound
+        # TODO(max): implement _some_ kind of type checking to make sure
+        # self.concrete_val matches either the type bound or the type of the default
 
     def add_replace_in_closure(self, fn):
         # only in the closure if used in the body
@@ -409,8 +413,8 @@ class FuncBase:
             )
         # this also copies the function so that the original body_builder remains "generic" (via its closure)
         body_builder = copy_func(self.body_builder)
-        reified_type_params = []
-        already_reified_type_params = {}
+        reified_type_params: list[ReifiedTypeParam] = []
+        already_reified_type_params: dict[str, object] = {}
         generics = list(self.generics)
 
         while len(generics) and isinstance(generics[0], ReifiedTypeParam):
@@ -432,7 +436,7 @@ class FuncBase:
 
         name_mangled_generics = []
         for r in reified_type_params:
-            tvar, v = r.type, r.concrete_val
+            tvar, v = r.type_name, r.concrete_val
             if callable(v):
                 v = v.__name__
             name_mangled_generics.append(f"{tvar}_{v}")

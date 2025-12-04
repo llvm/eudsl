@@ -2,7 +2,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import sys
-from textwrap import dedent
 from typing import TypeVar
 
 import mlir.extras.types as T
@@ -13,6 +12,7 @@ from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.ast.py_type import PyTypeVarObject
 from mlir.extras.dialects import linalg, arith, scf, memref, gpu
 from mlir.extras.dialects.func import func
+from mlir.extras.dialects.gpu import block_idx
 from mlir.extras.dialects.gpu import (
     set_container_module,
     module,
@@ -39,7 +39,6 @@ def test_func_no_context_2(ctx: MLIRContext):
         C: "T.memref(M, N, T.i32())",
     ):
         linalg.matmul(A, B, C)
-
 
     # CHECK: func.func @matmul_i32_i32_int_16_int_16(%[[VAL_0:.*]]: memref<16x16xi32>, %[[VAL_1:.*]]: memref<16x16xi32>, %[[VAL_2:.*]]: memref<16x16xi32>) {
     # CHECK:   linalg.matmul {cast = #linalg.type_fn<cast_signed>} ins(%[[VAL_0]], %[[VAL_1]] : memref<16x16xi32>, memref<16x16xi32>) outs(%[[VAL_2]] : memref<16x16xi32>)
@@ -76,7 +75,6 @@ def test_generics_closure(ctx: MLIRContext):
         C: "T.memref(M, N, dtype)",
     ):
         one = arith.constant(1, dtype)
-
 
     # CHECK: func.func @mat_product_kernel_int_32_int_32_int_32_type_i32(%[[VAL_0:.*]]: memref<32x32xi32>, %[[VAL_1:.*]]: memref<32x32xi32>, %[[VAL_2:.*]]: memref<32x32xi32>) {
     # CHECK:   %[[VAL_3:.*]] = arith.constant 1 : i32
@@ -411,34 +409,36 @@ def test_generic_type_var_closure_patching_dependent_generics(ctx: MLIRContext):
     # fmt: off
     @gpu.func
     def test_plain[
-        M,
-        K,
-        N,
-        dtype,
-        A_t = T.memref(M, K, dtype),
-        B_t = T.memref(K, N, dtype),
-        C_t = T.memref(M, N, dtype)
+    M,
+    K,
+    N,
+    dtype,
+    A_t = T.memref(M, K, dtype),
+    B_t = T.memref(K, N, dtype),
+    C_t = T.memref(M, N, dtype)
     ](
-        A: A_t, B: B_t, C: C_t
+            A: A_t, B: B_t, C: C_t
     ):
         one = arith.constant(1.0, type=dtype)
+
     # fmt: on
 
     # fmt: off
     @gpu.func
     @canonicalize(using=(arith.canonicalizer, scf.canonicalizer))
     def test_2_with_rewrite[
-        M,
-        K,
-        N,
-        dtype,
-        A_t = T.memref(M, K, dtype),
-        B_t = T.memref(K, N, dtype),
-        C_t = T.memref(M, N, dtype)
+    M,
+    K,
+    N,
+    dtype,
+    A_t = T.memref(M, K, dtype),
+    B_t = T.memref(K, N, dtype),
+    C_t = T.memref(M, N, dtype)
     ](
-        A: A_t, B: B_t, C: C_t
+            A: A_t, B: B_t, C: C_t
     ):
         one = arith.constant(1.0, type=dtype)
+
     # fmt: on
 
     @module("mod1", ["#nvvm.target"])
@@ -709,5 +709,32 @@ def test_pooling_ncdhw_max_parallel(ctx: MLIRContext):
         Pipeline().bufferize().Func(Pipeline().convert_linalg_to_parallel_loops()),
     )
 
-
     filecheck_with_comments(module)
+
+
+@pytest.mark.xfail(
+    reason="type checking between self.concrete_val and type_bound/type_var_default not implemented"
+)
+def test_wrong_generics_types(ctx: MLIRContext):
+    # fmt: off
+    @gpu.func
+    @canonicalize(using=(arith.canonicalizer, scf.canonicalizer))
+    def sgemm_shared_mem_1d_block_tiling[
+        M, K, N, dtype,
+        BM, BN, BK, TM,
+        A_t = T.memref(M, K, dtype),
+        B_t = T.memref(K, N, dtype),
+        C_t = T.memref(M, N, dtype)
+    ](
+        A: A_t, B: B_t, C: C_t
+    ):
+    # fmt: on
+        base = gpu.dynamic_shared_memory()
+        A_shared = memref.view(base, (BM, BK), dtype=dtype)
+        B_shared = memref.view(base, (BK, BN), dtype=dtype, shift=BM * BK)
+
+        c_row = block_idx.y * BM
+        c_col = block_idx.x * BN
+
+    # the last 8 sets the reified param for A_t (which is wrong)
+    sgemm_shared_mem_1d_block_tiling[128, 128, 128, T.f32(), 64, 64, 8, 8, 8].emit()
