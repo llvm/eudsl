@@ -143,15 +143,43 @@ Alternatively, this [colab notebook](https://drive.google.com/file/d/1NAtf2Yxj_V
 In reality, this package is meant to work in concert with "host bindings" (some distribution of the actual MLIR Python bindings).
 Practically speaking that means you need to have *some* package installed that includes mlir python bindings.
 
-So that means the second line should be amended to
+So that means the pip install should be
 
 ```shell
 $ EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX=<YOUR_HOST_MLIR_PYTHON_PACKAGE_PREFIX> \
       pip install eudsl-python-extras -f https://llvm.github.io/eudsl
 ```
 
+or 
+
+```shell
+$ pip install eudsl-python-extras -f https://llvm.github.io/eudsl \
+    --config-settings=EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX=<YOUR_HOST_MLIR_PYTHON_PACKAGE_PREFIX>
+```
+
 where `YOUR_HOST_MLIR_PYTHON_PACKAGE_PREFIX` is (as it says) the package prefix for your chosen host bindings.
-**When in doubt about this prefix**, it is everything up until `ir` when you import your bindings, e.g., in `import torch_mlir.ir`, `torch_mlir` is the `EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX` for the torch-mlir bindings.
+**When in doubt about this prefix**, it is everything up until `ir` when you import your bindings, e.g., 
+in `import jaxlib.mlir.ir`, `jaxlib.mlir` is the `EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX` for the jaxlib bindings.
+
+Note, the second form (using `--config-settings`) is useful for including `eudsl-python-extras` in your own dependencies:
+
+```
+# requirements.txt
+jax[cpu]
+eudsl-python-extras; --config-settings=EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX=jaxlib.mlir
+```
+
+or
+
+```toml
+# pyproject.toml
+[project]
+name = ...
+dependencies = [
+  "jax[cpu]",
+  "eudsl-python-extras; --config-settings=EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX=jaxlib.mlir"
+]
+```
 
 ## Examples/Demo
 

@@ -5,7 +5,8 @@
 [build-system]
 # https://stackoverflow.com/a/69711730
 requires = ["setuptools>=64.0.0", "wheel", "pip"]
-build-backend = "setuptools.build_meta"
+build-backend = "backend"
+backend-path = ["_custom_build"]
 
 [tool.pytest.ini_options]
 log_cli = false
