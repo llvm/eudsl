@@ -394,6 +394,9 @@ def sgemm_shared_mem_1d_block_tiling[
     BN,
     BK,
     TM,
+    # make the tests happy which expect 9 generic params...
+    # see test_generics.py/test_wrong_generics_types
+    _TN,
     A_t = T.memref(M, K, dtype),
     B_t = T.memref(K, N, dtype),
     C_t = T.memref(M, N, dtype),
