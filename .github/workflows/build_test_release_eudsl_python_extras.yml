@@ -60,16 +60,17 @@ jobs:
           python-version: "3.12"
 
       - name: "Install prereqs"
-        run: python -m pip install setuptools
+        run: python -m pip install setuptools build
 
       - name: "Build eudsl-python-extras sdist"
         run: |
           
           SHA_SHORT="$(git rev-parse --short HEAD)"
           WHEEL_VERSION="$(date +'%Y%m%d.%H%M')+$SHA_SHORT"
+          
           pushd projects/eudsl-python-extras 
           sed -i.bak "s/XXXWHEEL_VERSIONXXX/$WHEEL_VERSION/g" setup.py
-          python setup.py sdist 
+          python -m build . --sdist
           popd
 
       - name: Upload eudsl-python-extras sdist
@@ -220,6 +221,16 @@ jobs:
           #   jupyter execute projects/eudsl-python-extras/examples/cuda_e2e.ipynb --output=cuda_e2e_output
           #   cat projects/eudsl-python-extras/examples/cuda_e2e_output.ipynb | jq '.cells[].outputs | select(length > 0) | .[0] | .text'
           # fi
+
+      - name: "Test other hosts"
+        # ImportError: DLL load failed while importing _mlir: The specified module could not be found.
+        if: matrix.os != 'windows'
+        run: |
+          
+          pip uninstall -y eudsl-python-extras
+          pip install -r projects/eudsl-python-extras/tests/other_host_reqs.txt -f dist --no-cache-dir
+          
+          pytest -v --capture=tee-sys projects/eudsl-python-extras/tests/test_other_hosts.py
 
   release-eudsl-python-extras:
 

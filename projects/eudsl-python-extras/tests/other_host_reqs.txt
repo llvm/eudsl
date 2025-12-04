@@ -1,0 +1,2 @@
+jax[cpu]
+eudsl-python-extras; --config-settings=EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX=jaxlib.mlir

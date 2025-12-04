@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import os
-from datetime import datetime
 from pathlib import Path
 
 from pip._internal.req import parse_requirements
@@ -37,8 +36,12 @@ packages = (
 
 version = "0.1.0"
 WHEEL_VERSION = os.getenv("WHEEL_VERSION", "XXXWHEEL_VERSIONXXX")
-if WHEEL_VERSION is not None and not WHEEL_VERSION.startswith("XXX"):
-    version += "." + WHEEL_VERSION
+if WHEEL_VERSION is None or WHEEL_VERSION.startswith("XXX"):
+    # for some insane reason, without this, EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX
+    # doesn't work (package won't be installed under EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX)
+    WHEEL_VERSION = "20000000.000+deadbeef"
+
+version += "." + WHEEL_VERSION
 
 setup(
     name="eudsl-python-extras",
