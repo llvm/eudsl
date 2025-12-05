@@ -29,6 +29,9 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Download pip links
         shell: bash
         run: |
@@ -40,6 +43,45 @@ jobs:
           cat mlir-python-bindings eudsl llvm eudsl-python-extras > index.html
           sed -i.bak 's/\/llvm\/eudsl/https:\/\/github.com\/llvm\/eudsl/g' index.html
           mkdir -p page && mv index.html page
+
+      - name: Fetch latest WASM wheel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p page/static
+
+          MLIR_PYTHON_WHEEL_NAME=$(gh release view mlir-python-bindings --repo llvm/eudsl --json 'assets' -q '[.assets[] | select(.name | contains("cp312-pyodide")) | .name] | last')
+          MLIR_PYTHON_WHEEL_URL=$(gh release view mlir-python-bindings --repo llvm/eudsl --json 'assets' -q '[.assets[] | select(.name | contains("cp312-pyodide")) | .url] | last')
+          echo "Downloading ${MLIR_PYTHON_WHEEL_NAME} from ${MLIR_PYTHON_WHEEL_URL}"
+          wget -O page/static/${MLIR_PYTHON_WHEEL_NAME} "${MLIR_PYTHON_WHEEL_URL}"
+          echo "MLIR_PYTHON_WHEEL_NAME=$MLIR_PYTHON_WHEEL_NAME" >> $GITHUB_ENV
+
+      - name: Create WASM console page
+        run: |
+          mkdir -p page/console
+
+          cp pages/console/index.template.html page/console/index.html
+          sed -i 's/{{PYODIDE_VERSION}}/v0.27.7/g' page/console/index.html
+          sed -i "s#{{MLIR_PYTHON_WHEEL_PATH}}#../static/${MLIR_PYTHON_WHEEL_NAME}#g" page/console/index.html
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Create WASM jupyterlite page
+        run: |
+          mkdir -p page/jupyter
+
+          python -m pip install -r pages/jupyter/requirements.txt
+          jupyter lite build \
+            --contents pages/jupyter/contents \
+            --output-dir page/jupyter \
+            --piplite-wheels ./page/static/$MLIR_PYTHON_WHEEL_NAME
+
+      - name: Show directory structure
+        run: |
+          tree page
 
       - uses: geekyeggo/delete-artifact@v5
         with:
