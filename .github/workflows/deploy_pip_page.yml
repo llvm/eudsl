@@ -48,17 +48,15 @@ jobs:
 
       - name: Fetch latest WASM wheel
         run: |
-          mkdir -p page/static
-
-          pip download mlir-python-bindings --plat pyodide_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl -d page/static
-          echo "MLIR_PYTHON_WHEEL_NAME=$(basename $(ls page/static/mlir_python_bindings*))" >> $GITHUB_ENV
+          pip download mlir-python-bindings --plat pyodide_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl
+          echo "MLIR_PYTHON_WHEEL_NAME=$(ls mlir_python_bindings*)" >> $GITHUB_ENV
 
       - name: Create WASM console page
         run: |
           mkdir -p page/console
 
-          cp pages/console/index.template.html page/console/index.html
-          sed -i "s#{{MLIR_PYTHON_WHEEL_PATH}}#../static/${MLIR_PYTHON_WHEEL_NAME}#g" page/console/index.html
+          cp pages/console/index.html page/console/index.html
+          cp $MLIR_PYTHON_WHEEL_NAME page/console/mlir_python_bindings-0.0.1-cp312-cp312-pyodide_2024_0_wasm32.whl
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -73,7 +71,7 @@ jobs:
           jupyter lite build \
             --contents pages/jupyter/contents \
             --output-dir page/jupyter \
-            --piplite-wheels ./page/static/$MLIR_PYTHON_WHEEL_NAME
+            --piplite-wheels $MLIR_PYTHON_WHEEL_NAME
 
       - name: Show directory structure
         run: |

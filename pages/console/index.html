@@ -109,7 +109,7 @@
         });
 
         // load mlir-python-bindings wheel package
-        await pyodide.loadPackage("{{MLIR_PYTHON_WHEEL_PATH}}");
+        await pyodide.loadPackage("mlir_python_bindings-0.0.1-cp312-cp312-pyodide_2024_0_wasm32.whl");
 
         let { repr_shorten, BANNER, PyodideConsole } =
           pyodide.pyimport("pyodide.console");
