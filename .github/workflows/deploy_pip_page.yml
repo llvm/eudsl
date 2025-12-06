@@ -33,6 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: false
+
       - name: Download pip links
         shell: bash
         run: |
@@ -46,23 +47,17 @@ jobs:
           mkdir -p page && mv index.html page
 
       - name: Fetch latest WASM wheel
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p page/static
 
-          MLIR_PYTHON_WHEEL_NAME=$(gh release view mlir-python-bindings --repo llvm/eudsl --json 'assets' -q '[.assets[] | select(.name | contains("cp312-pyodide")) | .name] | last')
-          MLIR_PYTHON_WHEEL_URL=$(gh release view mlir-python-bindings --repo llvm/eudsl --json 'assets' -q '[.assets[] | select(.name | contains("cp312-pyodide")) | .url] | last')
-          echo "Downloading ${MLIR_PYTHON_WHEEL_NAME} from ${MLIR_PYTHON_WHEEL_URL}"
-          wget -O page/static/${MLIR_PYTHON_WHEEL_NAME} "${MLIR_PYTHON_WHEEL_URL}"
-          echo "MLIR_PYTHON_WHEEL_NAME=$MLIR_PYTHON_WHEEL_NAME" >> $GITHUB_ENV
+          pip download mlir-python-bindings --plat pyodide_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl -d page/static
+          echo "MLIR_PYTHON_WHEEL_NAME=$(basename $(ls page/static/mlir_python_bindings*))" >> $GITHUB_ENV
 
       - name: Create WASM console page
         run: |
           mkdir -p page/console
 
           cp pages/console/index.template.html page/console/index.html
-          sed -i 's/{{PYODIDE_VERSION}}/v0.27.7/g' page/console/index.html
           sed -i "s#{{MLIR_PYTHON_WHEEL_PATH}}#../static/${MLIR_PYTHON_WHEEL_NAME}#g" page/console/index.html
 
       - name: Setup Python
