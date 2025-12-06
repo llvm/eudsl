@@ -31,6 +31,14 @@ Currently, there are five components:
      **When in doubt about this prefix**, it is everything up until `ir` when you import your bindings, e.g., in `import torch_mlir.ir`, 
      `torch_mlir` is the `EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX` for the torch-mlir bindings.
 
+## Wasm Playground
+
+We currently provide two online playgrounds where you can try out the WebAssembly version of the MLIR Python bindings directly in your browser:
+
+* https://llvm.github.io/eudsl/jupyter/ – A JupyterLite instance with a Pyodide kernel. You can install the MLIR Python bindings with: `await piplite.install("mlir-python-bindings")`.
+
+* https://llvm.github.io/eudsl/console/ – A Pyodide-based REPL with `mlir-python-bindings` preloaded. Just run: `from mlir.ir import *` to start coding.
+
 ## Getting started
 
 Python wheels of all the tools are available at the [`eudsl` release page](https://github.com/llvm/eudsl/releases/tag/eudsl).

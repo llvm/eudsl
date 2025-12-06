@@ -29,6 +29,11 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
       - name: Download pip links
         shell: bash
         run: |
@@ -40,6 +45,37 @@ jobs:
           cat mlir-python-bindings eudsl llvm eudsl-python-extras > index.html
           sed -i.bak 's/\/llvm\/eudsl/https:\/\/github.com\/llvm\/eudsl/g' index.html
           mkdir -p page && mv index.html page
+
+      - name: Fetch latest WASM wheel
+        run: |
+          pip download mlir-python-bindings --plat pyodide_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl
+          echo "MLIR_PYTHON_WHEEL_NAME=$(ls mlir_python_bindings*)" >> $GITHUB_ENV
+
+      - name: Create WASM console page
+        run: |
+          mkdir -p page/console
+
+          cp pages/console/index.html page/console/index.html
+          cp $MLIR_PYTHON_WHEEL_NAME page/console/mlir_python_bindings-0.0.1-cp312-cp312-pyodide_2024_0_wasm32.whl
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Create WASM jupyterlite page
+        run: |
+          mkdir -p page/jupyter
+
+          python -m pip install -r pages/jupyter/requirements.txt
+          jupyter lite build \
+            --contents pages/jupyter/contents \
+            --output-dir page/jupyter \
+            --piplite-wheels $MLIR_PYTHON_WHEEL_NAME
+
+      - name: Show directory structure
+        run: |
+          tree page
 
       - uses: geekyeggo/delete-artifact@v5
         with:
