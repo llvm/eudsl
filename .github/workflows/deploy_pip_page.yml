@@ -31,7 +31,8 @@ jobs:
 
       - name: Check out repository
         uses: actions/checkout@v4
-
+        with:
+          submodules: false
       - name: Download pip links
         shell: bash
         run: |
