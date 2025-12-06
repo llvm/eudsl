@@ -33,7 +33,7 @@ Currently, there are five components:
 
 ## Wasm Playground
 
-We currently provide two online playgrounds where you can try out the WebAssembly version of the MLIR Python bindings directly in your browser:
+We currently provide two online playgrounds where you can try out the WebAssembly version of mlir-python-bindings and eudsl-python-extras directly in your browser:
 
 * https://llvm.github.io/eudsl/jupyter/ – A JupyterLite instance with a Pyodide kernel. You can install the MLIR Python bindings with: `await piplite.install("mlir-python-bindings")`.
 
