@@ -110,6 +110,7 @@
 
         // load mlir-python-bindings wheel package
         await pyodide.loadPackage("mlir_python_bindings-0.0.1-cp312-cp312-pyodide_2024_0_wasm32.whl");
+        await pyodide.loadPackage("eudsl_python_extras-0.0.1-py3-none-any.whl");
 
         let { repr_shorten, BANNER, PyodideConsole } =
           pyodide.pyimport("pyodide.console");
