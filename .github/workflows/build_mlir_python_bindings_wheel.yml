@@ -62,23 +62,23 @@ jobs:
           - name: "ubuntu_x86_64"
             runs-on: "ubuntu-22.04"
             os: "ubuntu"
-            arch: "x86_64"
+            host-arch: "x86_64"
           - name: "ubuntu_aarch64"
             runs-on: "ubuntu-22.04-arm"
             os: "ubuntu"
-            arch: "aarch64"
+            host-arch: "aarch64"
           - name: "windows_amd64"
             runs-on: "windows-2022"
             os: "windows"
-            arch: "amd64"
+            host-arch: "amd64"
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
-            arch: "arm64"
+            host-arch: "arm64"
 #          - name: "macos_x86_64"
 #            runs-on: "macos-13"
 #            os: "macos"
-#            arch: "x86_64"
+#            host-arch: "x86_64"
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -107,7 +107,8 @@ jobs:
           cache-key: ${{ env.cache-key }}
           restore-key: "mlir_python_bindings_${{ matrix.name }}_clang"
           os: ${{ matrix.os }}
-          arch: ${{ matrix.arch }}
+          host-arch: ${{ matrix.host-arch }}
+          target-arch: ${{ matrix.target-arch }}
 
       - name: "Download MLIR from releases"
         if: ${{ !inputs.workflow_call }}
@@ -116,7 +117,7 @@ jobs:
         run: |
           
           if [[ "${{ matrix.os }}" == "almalinux" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export RELEASE_PREFIX="mlir_manylinux_${{ matrix.arch }}"
+            export RELEASE_PREFIX="mlir_manylinux_${{ matrix.host-arch }}"
           else
             export RELEASE_PREFIX="mlir_${{ matrix.name }}"
           fi
@@ -130,7 +131,7 @@ jobs:
         if: ${{ inputs.workflow_call }}
         uses: dawidd6/action-download-artifact@v11
         with:
-          name: mlir_${{ matrix.os == 'ubuntu' && 'manylinux' || matrix.os }}_${{ matrix.arch }}_artifact
+          name: mlir_${{ matrix.os == 'ubuntu' && 'manylinux' || matrix.os }}_${{ matrix.host-arch }}_artifact
           path: "./"
           run_id: ${{ inputs.workflow_caller_run_id }}
 
@@ -159,7 +160,7 @@ jobs:
           
           $python3_command -m pip install cibuildwheel
           
-          if [[ "${{ matrix.os }}" == "ubuntu" ]] && [[ "${{ matrix.arch }}" == "aarch64" ]]; then
+          if [[ "${{ matrix.os }}" == "ubuntu" ]] && [[ "${{ matrix.host-arch }}" == "aarch64" ]]; then
             sudo apt-get install libarchive-dev antlr libxml2-dev libxslt-dev libcurl4-openssl-dev
           fi
           if [[ "${{ matrix.os }}" == "macos" ]]; then
@@ -347,7 +348,7 @@ jobs:
       contents: write
 
     env:
-      cache-key: mlir_python_bindings_wasm_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+      cache-key: mlir_python_bindings_wasm_emscripten_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
 
     steps:
       - name: "Check out repository"
@@ -360,15 +361,10 @@ jobs:
         id: setup_base
         with:
           cache-key: ${{ env.cache-key }}
-          restore-key: "mlir_python_bindings_wasm_clang"
+          restore-key: "mlir_python_bindings_wasm_emscripten"
           os: "ubuntu"
-          arch: "x86_64"
-
-      - name: Install pyodide
-        run: |
-          
-          pip install pyodide-build>=0.28.0
-          echo "EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version)" >> $GITHUB_ENV
+          host-arch: "x86_64"
+          target-arch: "wasm32"
 
       - name: Download mlir-native-tools artifacts
         if: ${{ inputs.workflow_call }}
@@ -406,50 +402,26 @@ jobs:
           DATETIME=$(date +"%Y%m%d%H")
           echo "WHEEL_VERSION=${DATETIME}+${LLVM_PROJECT_COMMIT}" >> $GITHUB_ENV
 
-      - name: Setup Emscripten
-        run: |
-          
-          git clone https://github.com/emscripten-core/emsdk.git
-          pushd emsdk
-          ./emsdk install ${{ env.EMSCRIPTEN_VERSION }}
-          ./emsdk activate ${{ env.EMSCRIPTEN_VERSION }} 
-          echo "EMSDK=$PWD" >> $GITHUB_ENV
-          popd
-
-      - name: Setup ccache
-        run: |
-          
-          source "$EMSDK/emsdk_env.sh"
-          
-          $CMAKE_C_COMPILER_LAUNCHER -z
-          # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/cmake/StandardWarnings.cmake#L5
-          # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/CMakeLists.txt#L61
-          # error: builtin __has_trivial_copy is deprecated; use __is_trivially_copyable instead [-Werror,-Wdeprecated-builtins]
-          VERBOSE=1 CCACHE_COMPILERCHECK="string:$(g++ --version | head -n 1)" CC=gcc CXX=g++ emsdk install ccache-git-emscripten-64bit
-          $CMAKE_C_COMPILER_LAUNCHER -s
-          emsdk activate ccache-git-emscripten-64bit
-          
-          echo "PATH=$EMSDK/ccache/git-emscripten_64bit/bin:$PATH" >> $GITHUB_ENV
-          export CCACHE_COMPILERCHECK="string:$($EMSDK/upstream/bin/clang --version | head -n 1)"
-          echo "CCACHE_COMPILERCHECK=$CCACHE_COMPILERCHECK" >> $GITHUB_ENV
-          export CCACHE="$EMSDK/ccache/git-emscripten_64bit/bin/ccache"
-          echo "CMAKE_C_COMPILER_LAUNCHER=$CCACHE" >> $GITHUB_ENV
-          echo "CMAKE_CXX_COMPILER_LAUNCHER=$CCACHE" >> $GITHUB_ENV
-          $CCACHE -p
-          $CCACHE -s
-
       - name: build wasm python wheel
         run: |
           
           source "$EMSDK/emsdk_env.sh"
-          $CMAKE_C_COMPILER_LAUNCHER -z
+        
+          echo "PATH=$EMSDK/ccache/git-emscripten_64bit/bin:$PATH" >> $GITHUB_ENV
+          export CCACHE_COMPILERCHECK="string:$($EMSDK/upstream/bin/clang --version | head -n 1)"
+          echo "CCACHE_COMPILERCHECK=$CCACHE_COMPILERCHECK" >> $GITHUB_ENV
+          export CCACHE="$EMSDK/ccache/git-emscripten_64bit/bin/ccache"
+          export CMAKE_C_COMPILER_LAUNCHER="$CCACHE"
+          export CMAKE_CXX_COMPILER_LAUNCHER="$CCACHE"
+          
+          $CCACHE -z
           pyodide build projects/mlir-python-bindings-wasm -o wheelhouse --compression-level 10
-          $CMAKE_C_COMPILER_LAUNCHER -s
+          $CCACHE -s
 
       - name: Upload ccache log
         uses: actions/upload-artifact@v4
         with:
-          name: llvm_ccache_log_wasm32
+          name: llvm_ccache_log_mlir_python_bindings_wasm32
           path: '/tmp/ccache.log'
 
       - name: "Save cache"

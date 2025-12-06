@@ -4,7 +4,7 @@
 # Copyright (c) 2025.
 
 [project]
-name = "mlir-python-bindings"
+name = "mlir-wheel"
 dynamic = ["version"]
 requires-python = ">=3.8,<=3.14"
 dependencies = [
@@ -16,8 +16,8 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/llvm/llvm-project"
 Discussions = "https://discourse.llvm.org/"
-"Issue Tracker" = "https://github.com/llvm/llvm-project/issues?q=is%3Aissue%20state%3Aopen%20label%3Amlir%3Apython%20"
-"Source Code" = "https://github.com/llvm/llvm-project/tree/main/mlir/python"
+"Issue Tracker" = "https://github.com/llvm/llvm-project/issues"
+"Source Code" = "https://github.com/llvm/llvm-project"
 
 [build-system]
 requires = [
@@ -36,26 +36,20 @@ metadata.version.provider-path = "."
 minimum-version = "0.10"
 build-dir = "build"
 cmake.source-dir = "../../third_party/llvm-project/llvm"
-wheel.exclude = ["bin", "include", "lib", "src", "share"]
-# for installing/distributing only the python stuff
-build.targets = ["MLIRPythonWasmModules"]
-install.components = ["MLIRPythonWasmModules"]
+build.targets = ["install-mlirdevelopment-distribution"]
+install.components = ["install-mlirdevelopment-distribution"]
+
+cmake.args = ["-C", "llvm_wasm_cache.cmake"]
 
 [tool.scikit-build.cmake.define]
 CMAKE_BUILD_TYPE = { env = "CMAKE_BUILD_TYPE", default = "Release" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_FLAGS = "-sNO_DISABLE_EXCEPTION_CATCHING"
-CMAKE_VISIBILITY_INLINES_HIDDEN = "ON"
-CMAKE_C_VISIBILITY_PRESET = "hidden"
-CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
 CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
 CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
 CMAKE_VERBOSE_MAKEFILE = "ON"
-
-LLVM_EXTERNAL_PROJECTS = "MLIR_PYTHON_BINDINGS_WASM"
-LLVM_EXTERNAL_MLIR_PYTHON_BINDINGS_WASM_SOURCE_DIR = "."
 
 LLVM_ENABLE_EH = "ON"
 LLVM_ENABLE_PROJECTS = "mlir;lld"

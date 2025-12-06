@@ -20,23 +20,23 @@ on:
         default: false
   pull_request:
     paths:
-      - ".github/actions/setup_base"
+      - ".github/actions/setup_base/action.yml"
       - ".github/workflows/build_llvm.yml"
-      - "scripts/cmake/llvm_cache.cmake"
-      - "scripts/cmake/llvm_wasm_cache.cmake"
+      - "scripts/cmake/*"
+      - "scripts/llvm_wasm/*"
       - "scripts/build_llvm.sh"
-      - "scripts/build_llvm_wasi.sh"
+      - "scripts/build_mlir_native_tools.sh"
       - "third_party/llvm-project"
   push:
     branches:
       - main
     paths:
-      - ".github/actions/setup_base"
+      - ".github/actions/setup_base/action.yml"
       - ".github/workflows/build_llvm.yml"
-      - "scripts/cmake/llvm_cache.cmake"
-      - "scripts/cmake/llvm_wasm_cache.cmake"
+      - "scripts/cmake/*"
+      - "scripts/llvm_wasm/*"
       - "scripts/build_llvm.sh"
-      - "scripts/build_llvm_wasi.sh"
+      - "scripts/build_mlir_native_tools.sh"
       - "third_party/llvm-project"
 
 concurrency:
@@ -48,6 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
   build:
 
     strategy:
@@ -58,33 +59,24 @@ jobs:
             runs-on: "ubuntu-22.04"
             container: "quay.io/pypa/manylinux_2_28_x86_64"
             os: "almalinux"
-            arch: x86_64
+            host-arch: x86_64
+            target-arch: x86_64
           - name: "manylinux_aarch64"
             runs-on: "ubuntu-22.04-arm"
             container: "quay.io/pypa/manylinux_2_34_aarch64"
             os: "almalinux"
-            arch: aarch64
-#          - name: "ubuntu_aarch64"
-#            runs-on: "ubuntu-22.04-arm"
-#            os: "ubuntu"
-#            arch: aarch64
-#          - name: "wasm_wasi"
-#            runs-on: "ubuntu-22.04"
-#            container: "quay.io/pypa/manylinux_2_28_x86_64"
-#            os: "almalinux"
-#            arch: "wasm32-wasi"
+            host-arch: "aarch64"
+            target-arch: "aarch64"
           - name: "windows_amd64"
             runs-on: "windows-2022"
             os: "windows"
-            arch: amd64
+            host-arch: amd64
+            target-arch: amd64
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
-            arch: arm64
-#          - name: "macos_x86_64"
-#            runs-on: "macos-13"
-#            os: "macos"
-#            arch: x86_64
+            host-arch: arm64
+            target-arch: arm64
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -127,7 +119,8 @@ jobs:
           cache-key: ${{ env.cache-key }}
           restore-key: "mlir_${{ matrix.name }}_clang"
           os: ${{ matrix.os }}
-          arch: ${{ matrix.arch }}
+          host-arch: ${{ matrix.host-arch }}
+          target-arch: ${{ matrix.target-arch }}
           container: ${{ matrix.container }}
           runs-on: ${{ matrix.runs-on }}
 
@@ -150,14 +143,11 @@ jobs:
           ###############################
           # Build MLIR/LLVM distro
           ###############################
-          if [[ "${{ matrix.arch }}" == "wasm32-wasi" ]]; then
-            scripts/build_llvm_wasi.sh
-          else
-            scripts/build_llvm.sh
-            echo "*********************** SMOKE TEST *********************************"
-            "$LLVM_INSTALL_DIR/bin/mlir-tblgen" --version
-            echo "*********************** SMOKE TEST *********************************"
-          fi
+          
+          scripts/build_llvm.sh
+          echo "*********************** SMOKE TEST *********************************"
+          "$LLVM_INSTALL_DIR/bin/mlir-tblgen" --version
+          echo "*********************** SMOKE TEST *********************************"
           ccache -s
           
           ###############################
@@ -178,7 +168,7 @@ jobs:
           elif [ x"${{ matrix.os }}" == x"windows" ]; then
             PLAT="win"
           fi
-          PLAT="${PLAT}_${{ matrix.arch }}"
+          PLAT="${PLAT}_${{ matrix.host-arch }}"
           
           pushd projects/mlir-native-tools
           $python3_command setup.py bdist_wheel --dist-dir ../../wheelhouse --plat $PLAT
@@ -255,6 +245,114 @@ jobs:
         with:
           limit-access-to-actor: true
           install-dependencies: ${{ startsWith(matrix.runs-on, 'macos') || startsWith(matrix.runs-on, 'windows') }}
+
+  build-wasm:
+
+    runs-on: ubuntu-22.04
+
+    name: "Build llvm-mlir wasm"
+
+    defaults:
+      run:
+        shell: bash
+
+    permissions:
+      id-token: write
+      contents: write
+
+    env:
+      cache-key: mlir_wasm_emscripten_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: true
+
+      - name: "Setup base"
+        uses: ./.github/actions/setup_base
+        id: setup_base
+        with:
+          cache-key: ${{ env.cache-key }}
+          restore-key: "mlir_wasm_emscripten"
+          os: "ubuntu"
+          host-arch: "x86_64"
+          target-arch: "wasm32"
+
+      - name: Build MLIR and LLVM
+        run: |
+          
+          ###############################
+          # Build host mlir-native-tools wheel
+          ###############################
+          
+          scripts/build_mlir_native_tools.sh
+          export LLVM_NATIVE_TOOL_DIR="$PWD/mlir-native-tools-install/bin"
+          export LLVM_NATIVE_TOOL_DIR="$LLVM_NATIVE_TOOL_DIR"
+          export LLVM_TABLEGEN="$LLVM_NATIVE_TOOL_DIR/llvm-tblgen"
+          export MLIR_TABLEGEN="$LLVM_NATIVE_TOOL_DIR/mlir-tblgen"
+          export MLIR_LINALG_ODS_YAML_GEN="$LLVM_NATIVE_TOOL_DIR/mlir-linalg-ods-yaml-gen"
+          
+          source "$EMSDK/emsdk_env.sh"
+          
+          export PATH="$EMSDK/ccache/git-emscripten_64bit/bin:$PATH"
+          export CCACHE_COMPILERCHECK="string:$($EMSDK/upstream/bin/clang --version | head -n 1)"
+          export CCACHE="$EMSDK/ccache/git-emscripten_64bit/bin/ccache"
+          export "CMAKE_C_COMPILER_LAUNCHER=$CCACHE"
+          export "CMAKE_CXX_COMPILER_LAUNCHER=$CCACHE"
+          
+          export LLVM_SOURCE_DIR="$PWD/third_party/llvm-project"
+          pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT="$(git rev-parse --short HEAD)" && popd
+          export WHEEL_VERSION="$(date +'%Y%m%d')+$LLVM_SHA_SHORT"
+          
+          ###############################
+          # Build MLIR/LLVM distro
+          ###############################
+          
+          $CCACHE -z
+          pyodide build scripts/llvm_wasm -o wheelhouse --compression-level 10
+          $CCACHE -s
+
+      - name: Upload ccache log
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm_ccache_log_mlir_wasm32
+          path: '/tmp/ccache.log'
+
+      - name: "Save cache"
+        uses: actions/cache/save@v3
+        if: (!cancelled())
+        # if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
+        with:
+          path: ${{ steps.setup_base.outputs.cache-dir }}
+          key: ${{ env.cache-key }}
+
+      - name: Upload LLVM distro artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlir_wasm_artifact
+          path: llvm-install
+          if-no-files-found: warn
+
+      - name: Upload mlir-wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlir_wheel_wasm_artifact
+          path: wheelhouse/mlir_wheel*
+          if-no-files-found: warn
+
+      - name: Release current commit
+        if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+        uses: ncipollo/release-action@v1.12.0
+        with:
+          artifacts: "*.tar.gz,wheelhouse/*.whl"
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          tag: "llvm"
+          name: "llvm"
+          removeArtifacts: false
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
 
   call-build-python-bindings:
 

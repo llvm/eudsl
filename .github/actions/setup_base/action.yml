@@ -10,7 +10,10 @@ inputs:
   os:
     required: true
     description: ''
-  arch:
+  host-arch:
+    required: true
+    description: ''
+  target-arch:
     required: true
     description: ''
   container:
@@ -119,18 +122,18 @@ runs:
           dnf install -y sudo ncurses-compat-libs tmate python3-pip git
         
           # install ccache
-          if [[ "${{ inputs.arch }}" == "x86_64" ]]; then
+          if [[ "${{ inputs.host-arch }}" == "x86_64" ]]; then
             curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz
             tar -xf ccache-4.10.2-linux-x86_64.tar.xz
             pushd ccache-4.10.2-linux-x86_64 && make install && popd
-          elif [[ "${{ inputs.arch }}" == "aarch64" ]]; then
+          elif [[ "${{ inputs.host-arch }}" == "aarch64" ]]; then
             dnf install -y ccache
           fi
         
           # install gh-cli
-          if [[ "${{ inputs.arch }}" == "x86_64" ]]; then
+          if [[ "${{ inputs.host-arch }}" == "x86_64" ]]; then
             rpm_arch=amd64
-          elif [[ "${{ inputs.arch }}" == "aarch64" ]]; then
+          elif [[ "${{ inputs.host-arch }}" == "aarch64" ]]; then
             rpm_arch=arm64
           fi
           curl -sLO https://github.com/cli/cli/releases/download/v2.61.0/gh_2.61.0_linux_${rpm_arch}.rpm
@@ -235,3 +238,38 @@ runs:
           echo MACOSX_DEPLOYMENT_TARGET=11.0 >> $GITHUB_ENV
           echo CMAKE_OSX_DEPLOYMENT_TARGET=11.0 >> $GITHUB_ENV
         fi
+
+    - name: Install pyodide
+      if: inputs.target-arch == 'wasm32'
+      shell: bash
+      run: |
+        
+        pip install pyodide-build>=0.28.0
+        echo "EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version)" >> $GITHUB_ENV
+
+    - name: Setup Emscripten
+      if: inputs.target-arch == 'wasm32'
+      shell: bash
+      run: |
+        
+        git clone https://github.com/emscripten-core/emsdk.git
+        pushd emsdk
+        ./emsdk install ${{ env.EMSCRIPTEN_VERSION }}
+        ./emsdk activate ${{ env.EMSCRIPTEN_VERSION }} 
+        echo "EMSDK=$PWD" >> $GITHUB_ENV
+        popd
+
+    - name: Setup emscripten ccache
+      if: inputs.target-arch == 'wasm32'
+      shell: bash
+      run: |
+        
+        source "$EMSDK/emsdk_env.sh"
+        
+        $CMAKE_C_COMPILER_LAUNCHER -z
+        # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/cmake/StandardWarnings.cmake#L5
+        # https://github.com/juj/ccache/blob/c4284c78e9ff286ee5208f449af4c2aaba062d37/CMakeLists.txt#L61
+        # error: builtin __has_trivial_copy is deprecated; use __is_trivially_copyable instead [-Werror,-Wdeprecated-builtins]
+        VERBOSE=1 CCACHE_COMPILERCHECK="string:$(g++ --version | head -n 1)" CC=gcc CXX=g++ emsdk install ccache-git-emscripten-64bit
+        $CMAKE_C_COMPILER_LAUNCHER -s
+        emsdk activate ccache-git-emscripten-64bit
