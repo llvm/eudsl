@@ -37,7 +37,7 @@ We currently provide two online playgrounds where you can try out the WebAssembl
 
 * https://llvm.github.io/eudsl/jupyter/ – A JupyterLite instance with a Pyodide kernel. You can install the MLIR Python bindings with: `await piplite.install("mlir-python-bindings")`.
 
-* https://llvm.github.io/eudsl/console/ – A Pyodide-based REPL with `mlir-python-bindings` preloaded. Just run: `from mlir.ir import *` to start coding.
+* https://llvm.github.io/eudsl/console/ – A Pyodide-based REPL with `mlir-python-bindings` and `eudsl-python-extras` preloaded. Just run: `from mlir.ir import *` to start coding.
 
 ## Getting started
 
