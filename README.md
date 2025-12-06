@@ -92,6 +92,15 @@ cmake -GNinja -B build -S <EUDSL_CHECKOUT_DIR>/third_party/llvm-project/llvm \
   -DLLVM_ENABLE_PROJECTS=clang;mlir
 ```
 
+## Wasm Playground
+
+We currently provide two online playgrounds where you can try out the WebAssembly version of the MLIR Python bindings directly in your browser:
+
+* [https://llvm.github.io/eudsl/jupyter/](https://llvm.github.io/eudsl/jupyter/) – A JupyterLite instance with a Pyodide kernel. You can install the MLIR Python bindings with: `await piplite.install("mlir-python-bindings")`
+
+* [https://llvm.github.io/eudsl/console/](https://llvm.github.io/eudsl/console/) – A Pyodide-based REPL with `mlir-python-bindings` preloaded. Just run: `from mlir.ir import *` to start coding.
+
+
 ## Footnotes
 
 [^1]: Yes C++ headers...
