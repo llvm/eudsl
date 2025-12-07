@@ -31,7 +31,11 @@ inputs:
   python-version:
     required: false
     description: ''
-    default: '3.12'
+    default: '3.13'
+  emscripten-version:
+    required: false
+    description: ''
+    default: ''
 
 outputs:
   cache-dir:
@@ -244,8 +248,12 @@ runs:
       shell: bash
       run: |
         
-        pip install pyodide-build>=0.28.0
-        echo "EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version)" >> $GITHUB_ENV
+        pip install pyodide-build==0.30.9
+        if [[ "${{ inputs.emscripten-version }}" == "" ]]; then
+          echo "EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version)" >> $GITHUB_ENV
+        else
+          echo "EMSCRIPTEN_VERSION=${{ inputs.emscripten-version }}" >> $GITHUB_ENV
+        fi
 
     - name: Setup Emscripten
       if: inputs.target-arch == 'wasm32'

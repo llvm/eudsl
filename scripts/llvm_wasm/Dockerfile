@@ -2,16 +2,19 @@ FROM ubuntu
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get -y install python-is-python3 cmake ninja-build python3.12-venv python3-pip vim git unzip
+RUN apt-get update && apt-get -y install python-is-python3 cmake ninja-build python3-pip vim git unzip software-properties-common
+
+RUN add-apt-repository -y ppa:deadsnakes/ppa && apt update && apt -y install python3.13 python3.13-venv
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.13 99
 
 RUN python -m venv venv
-RUN /venv/bin/python -m pip install pip-tools pyodide-build
+RUN /venv/bin/python -m pip install pip-tools pyodide-build==0.30.9
 RUN echo 'source "/venv/bin/activate"' >> $HOME/.bashrc
 
 RUN git clone https://github.com/emscripten-core/emsdk.git
 # EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version)
 RUN cd emsdk && \
-    ./emsdk install 3.1.58 ccache-git-emscripten-64bit && \
-    ./emsdk activate 3.1.58 ccache-git-emscripten-64bit && \
+    ./emsdk install 4.0.9 ccache-git-emscripten-64bit && \
+    ./emsdk activate 4.0.9 ccache-git-emscripten-64bit && \
     cd ..
 RUN echo 'source "/emsdk/emsdk_env.sh"' >> $HOME/.bashrc

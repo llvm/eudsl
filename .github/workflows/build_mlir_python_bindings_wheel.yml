@@ -124,7 +124,7 @@ jobs:
         run: |
           
           if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
-            pip download mlir-wheel --plat pyodide_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl
+            pip download mlir-wheel --plat pyodide_2025_0_wasm32 --no-deps --python-version 3.13 -f https://llvm.github.io/eudsl
           else
             pip download mlir-wheel -f https://llvm.github.io/eudsl
           fi
