@@ -4,7 +4,7 @@
 # Copyright (c) 2025.
 
 [project]
-name = "mlir-python-bindings"
+name = "mlir-wheel"
 dynamic = ["version"]
 requires-python = ">=3.8,<=3.14"
 dependencies = [
@@ -16,8 +16,8 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/llvm/llvm-project"
 Discussions = "https://discourse.llvm.org/"
-"Issue Tracker" = "https://github.com/llvm/llvm-project/issues?q=is%3Aissue%20state%3Aopen%20label%3Amlir%3Apython%20"
-"Source Code" = "https://github.com/llvm/llvm-project/tree/main/mlir/python"
+"Issue Tracker" = "https://github.com/llvm/llvm-project/issues"
+"Source Code" = "https://github.com/llvm/llvm-project"
 
 [build-system]
 requires = [
@@ -35,31 +35,36 @@ metadata.version.provider-path = "."
 
 minimum-version = "0.10"
 build-dir = "build"
-cmake.source-dir = "."
-wheel.exclude = ["bin", "include", "lib", "src", "share"]
-# for installing/distributing only the python stuff
-build.targets = ["MLIRPythonWasmModules"]
-install.components = ["MLIRPythonWasmModules"]
+cmake.source-dir = "../../third_party/llvm-project/llvm"
+build.targets = ["install-mlirdevelopment-distribution"]
+install.components = ["install-mlirdevelopment-distribution"]
+
+cmake.args = ["-C", "llvm_wasm_cache.cmake"]
 
 [tool.scikit-build.cmake.define]
-MLIR_DIR = { env = "MLIR_DIR", default = "" }
-CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
 CMAKE_BUILD_TYPE = { env = "CMAKE_BUILD_TYPE", default = "Release" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
-# have no idea why but explicitly setting Ninja triggers EVEN THOUGH THE DEFAULT IS NINJA!!!
-# The install of MLIRPythonWasmModules.extension._mlirDialectsTransform.dso target requires changing an RPATH from the build tree, but this is not supported with the Ninja generator unless on an ELF-based or XCOFF-based platform. The CMAKE_BUILD_WITH_INSTALL_RPATH variable may be set to avoid this step.
-# (and setting CMAKE_BUILD_WITH_INSTALL_RPATH does nothing)
-# CMAKE_GENERATOR = { env = "CMAKE_GENERATOR", default = "Ninja" }
-CMAKE_PLATFORM_NO_VERSIONED_SONAME = "ON"
 CMAKE_CXX_FLAGS = "-sNO_DISABLE_EXCEPTION_CATCHING"
-CMAKE_VISIBILITY_INLINES_HIDDEN = "ON"
-CMAKE_C_VISIBILITY_PRESET = "hidden"
-CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
 CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
 CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
 CMAKE_VERBOSE_MAKEFILE = "ON"
+
+LLVM_ENABLE_EH = "ON"
+LLVM_ENABLE_PROJECTS = "mlir;lld"
+LLVM_ENABLE_RTTI = "ON"
+LLVM_ENABLE_THREADS = "OFF"
+# requires threads
+LLVM_INCLUDE_BENCHMARKS = "OFF"
+LLVM_INCLUDE_TESTS = "OFF"
+
+# for ExecutionEngine
+LLVM_ENABLE_PIC = "ON"
+LLVM_TARGET_ARCH = "wasm32"
+LLVM_HOST_TRIPLE = "wasm32-unknown-emscripten"
+LLVM_TARGETS_TO_BUILD = "WebAssembly"
+LLVM_DEFAULT_TARGET_TRIPLE = "wasm32-unknown-emscripten"
 
 # so that NATIVE doesn't try to get built
 LLVM_NATIVE_TOOL_DIR = { env = "LLVM_NATIVE_TOOL_DIR", default = "" }
@@ -67,6 +72,7 @@ LLVM_TABLEGEN = { env = "LLVM_TABLEGEN", default = "" }
 MLIR_LINALG_ODS_YAML_GEN = { env = "MLIR_LINALG_ODS_YAML_GEN", default = "" }
 MLIR_TABLEGEN = { env = "MLIR_TABLEGEN", default = "" }
 
+MLIR_BINDINGS_PYTHON_INSTALL_PREFIX = "mlir"
 MLIR_ENABLE_BINDINGS_PYTHON = "ON"
 MLIR_ENABLE_EXECUTION_ENGINE = "ON"
 MLIR_ENABLE_SPIRV_CPU_RUNNER = "ON"
