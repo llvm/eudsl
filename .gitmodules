@@ -4,3 +4,8 @@
 	ignore = dirty
 	shallow = true
 	branch = main
+[submodule "third_party/dawn"]
+	path = third_party/dawn
+	url = https://github.com/google/dawn.git
+	fetchRecurseSubmodules = false
+	shallow = true
