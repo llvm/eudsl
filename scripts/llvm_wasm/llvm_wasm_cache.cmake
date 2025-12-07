@@ -7,17 +7,27 @@
 
 set(LLVM_ENABLE_PROJECTS "mlir;llvm;lld" CACHE STRING "")
 
+set(LLVM_ENABLE_DUMP ON CACHE BOOL "")
+set(LLVM_ENABLE_ASSERTIONS ON CACHE BOOL "")
 set(LLVM_TARGETS_TO_BUILD "WebAssembly" CACHE STRING "")
 set(LLVM_TARGET_ARCH "wasm32" CACHE STRING "")
 set(LLVM_DEFAULT_TARGET_TRIPLE "wasm32-unknown-emscripten" CACHE STRING "")
 set(LLVM_HOST_TRIPLE "wasm32-unknown-emscripten" CACHE STRING "")
-set(LLVM_BUILD_STATIC ON CACHE BOOL "")
 set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
-set(LLVM_ENABLE_PIC ON CACHE BOOL "")
+
+# all of these are to try to solve this problem:
+# em++: error: undefined exported symbol: "_LLVMAddSymbol" [-Wundefined] [-Werror]
+# within mlir_runner_utils and mlir_c_runner_utils
+# for some mysterious reason (worked before!!!) but we can't use those libs anyway
+#set(LLVM_NO_DEAD_STRIP ON CACHE BOOL "")
+## sets the correct LLVM_C_ABI macro
+set(LLVM_ENABLE_LLVM_C_EXPORT_ANNOTATIONS ON CACHE BOOL "")
+## this doesn't do anything see https://github.com/llvm/llvm-project/pull/171060
+#set(MLIR_ENABLE_EXECUTION_ENGINE OFF CACHE BOOL "")
+# this fixes but i have no idea why
+set(LLVM_ENABLE_PIC OFF CACHE BOOL "")
 
 set(MLIR_ENABLE_BINDINGS_PYTHON ON CACHE BOOL "")
-set(MLIR_ENABLE_EXECUTION_ENGINE ON CACHE BOOL "")
-set(MLIR_ENABLE_SPIRV_CPU_RUNNER ON CACHE BOOL "")
 
 set(LLVM_BUILD_DOCS OFF CACHE BOOL "")
 set(LLVM_ENABLE_BACKTRACES OFF CACHE BOOL "")

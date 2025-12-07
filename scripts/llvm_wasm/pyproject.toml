@@ -37,6 +37,7 @@ minimum-version = "0.10"
 build-dir = "build"
 cmake.source-dir = "../../third_party/llvm-project/llvm"
 build.targets = ["install-mlirdevelopment-distribution"]
+build.tool-args = ["-k", "0"]
 install.components = ["install-mlirdevelopment-distribution"]
 
 cmake.args = ["-C", "llvm_wasm_cache.cmake"]
@@ -59,3 +60,4 @@ LLVM_NATIVE_TOOL_DIR = { env = "LLVM_NATIVE_TOOL_DIR", default = "" }
 LLVM_TABLEGEN = { env = "LLVM_TABLEGEN", default = "" }
 MLIR_LINALG_ODS_YAML_GEN = { env = "MLIR_LINALG_ODS_YAML_GEN", default = "" }
 MLIR_TABLEGEN = { env = "MLIR_TABLEGEN", default = "" }
+MLIR_ENABLE_EXECUTION_ENGINE = "OFF"
