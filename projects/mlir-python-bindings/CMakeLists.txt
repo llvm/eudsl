@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 # Copyright (c) 2025.
 
-project(mlir-python-bindings LANGUAGES CXX C)
 cmake_minimum_required(VERSION 3.29)
+project(mlir-python-bindings LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -129,6 +129,10 @@ set(_runtimes
   mlir_float16_utils
   mlir_runner_utils
 )
+
+if (TARGET mlir_apfloat_wrappers)
+  list(APPEND _runtimes mlir_apfloat_wrappers)
+endif()
 
 if (TARGET mlir_rocm_runtime)
   list(APPEND _runtimes mlir_rocm_runtime)

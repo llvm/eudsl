@@ -61,17 +61,20 @@ jobs:
             os: "almalinux"
             host-arch: x86_64
             target-arch: x86_64
+
           - name: "manylinux_aarch64"
             runs-on: "ubuntu-22.04-arm"
             container: "quay.io/pypa/manylinux_2_34_aarch64"
             os: "almalinux"
             host-arch: "aarch64"
             target-arch: "aarch64"
+
           - name: "windows_amd64"
             runs-on: "windows-2022"
             os: "windows"
             host-arch: amd64
             target-arch: amd64
+
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
@@ -304,6 +307,7 @@ jobs:
           export LLVM_SOURCE_DIR="$PWD/third_party/llvm-project"
           pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT="$(git rev-parse --short HEAD)" && popd
           export WHEEL_VERSION="$(date +'%Y%m%d')+$LLVM_SHA_SHORT"
+          echo "WHEEL_VERSION=$WHEEL_VERSION" >> $GITHUB_OUTPUT
           
           ###############################
           # Build MLIR/LLVM distro
@@ -321,8 +325,7 @@ jobs:
 
       - name: "Save cache"
         uses: actions/cache/save@v3
-        if: (!cancelled())
-        # if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
+        if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
         with:
           path: ${{ steps.setup_base.outputs.cache-dir }}
           key: ${{ env.cache-key }}
@@ -330,14 +333,14 @@ jobs:
       - name: Upload LLVM distro artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mlir_wasm_artifact
+          name: mlir_ubuntu_wasm32_artifact
           path: llvm-install
           if-no-files-found: warn
 
       - name: Upload mlir-wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mlir_wheel_wasm_artifact
+          name: mlir_wheel_ubuntu_wasm32_artifact
           path: wheelhouse/mlir_wheel*
           if-no-files-found: warn
 
@@ -356,7 +359,7 @@ jobs:
 
   call-build-python-bindings:
 
-    needs: [build]
+    needs: [build, build-wasm]
 
     permissions:
       contents: write

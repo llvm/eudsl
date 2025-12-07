@@ -64,22 +64,22 @@ jobs:
             runs-on: "ubuntu-22.04"
             os: "ubuntu"
             host-arch: "x86_64"
+            target-arch: "x86_64"
           - name: "ubuntu_aarch64"
             runs-on: "ubuntu-22.04-arm"
             os: "ubuntu"
             host-arch: "aarch64"
+            target-arch: "aarch64"
           - name: "windows_amd64"
             runs-on: "windows-2022"
             os: "windows"
             host-arch: "amd64"
+            target-arch: "amd64"
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
             host-arch: "arm64"
-#          - name: "macos_x86_64"
-#            runs-on: "macos-13"
-#            os: "macos"
-#            host-arch: "x86_64"
+            target-arch: "arm64"
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -109,34 +109,27 @@ jobs:
           restore-key: "eudsl_${{ matrix.name }}_clang"
           os: ${{ matrix.os }}
           host-arch: ${{ matrix.host-arch }}
+          target-arch: ${{ matrix.target-arch }}
 
-      - name: "Download MLIR and configure build"
+      - name: "Pip download MLIR from releases"
         if: ${{ !inputs.workflow_call }}
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           
-          set -x
-          
-          if [[ "${{ matrix.os }}" == "almalinux" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export RELEASE_PREFIX="mlir_manylinux_${{ matrix.host-arch }}"
-          else
-            export RELEASE_PREFIX="mlir_${{ matrix.name }}"
-          fi
-          RELEASE_URL=$(gh release view llvm --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains(env.RELEASE_PREFIX))) | .[-1] | .url')
-          curl -sLO $RELEASE_URL
-          tar xf $RELEASE_PREFIX*.tar.gz
+          pip download mlir-wheel -f https://llvm.github.io/eudsl
 
       - name: Download LLVM distro artifacts
         if: ${{ inputs.workflow_call }}
         uses: dawidd6/action-download-artifact@v11
         with:
-          name: mlir_${{ matrix.os == 'ubuntu' && 'manylinux' || matrix.os }}_${{ matrix.host-arch }}_artifact
+          name: mlir_wheel_${{ (matrix.name == 'ubuntu_x86_64' || matrix.name == 'ubuntu_aarch64') && 'manylinux' || matrix.os }}_${{ matrix.target-arch }}_artifact
           path: "./"
           run_id: ${{ inputs.workflow_caller_run_id }}
 
       - name: "Configure build"
         run: |
+          
+          unzip -q mlir_wheel*.whl
+          mv mlir_wheel llvm-install
           
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             echo "LLVM_DIR=/host/$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
@@ -157,14 +150,6 @@ jobs:
           fi
           if [[ "${{ matrix.os }}" == "macos" ]]; then
             brew install antlr boost libarchive
-          fi
-          if [[ "${{ matrix.runs-on }}" == "macos-13" ]]; then
-            sudo xcode-select -s /Library/Developer/CommandLineTools
-            echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
-            # https://github.com/pthom/srcml_caller/blob/a6431edf9ae4ab2aa19b78b5a4682ae3510b199c/setup.py#L38
-            # very dumb
-            cibw_dir="$(dirname $($python3_command -c "import cibuildwheel; import inspect; print(inspect.getfile(cibuildwheel))"))"
-            sed -i.bak 's/CIBUILDWHEEL/__CIBUILDWHEEL__/g' "$cibw_dir/__main__.py"
           fi
           
           $python3_command -m pip install -r requirements-dev.txt -v
@@ -274,7 +259,6 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: ["ubuntu-22.04", "ubuntu-22.04-arm",
-                  # "macos-13",
                   "macos-14", "windows-2022"]
         python-version: [
           "3.10", "3.11", "3.12",
@@ -285,12 +269,8 @@ jobs:
           {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
           {runs-on: "windows-2022", name: "windows_amd64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
-#          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
         ]
         exclude:
-          - runs-on: macos-13
-            python-version: "3.13"
-
           - runs-on: macos-14
             python-version: "3.10"
 
@@ -359,7 +339,6 @@ jobs:
           "ubuntu-22.04",
           "ubuntu-22.04-arm",
           "macos-14",
-          # "macos-13",
           "windows-2022"
         ]
         python-version: [
@@ -374,12 +353,8 @@ jobs:
           {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
           {runs-on: "windows-2022", name: "windows_amd64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
-#          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
         ]
         exclude:
-          - runs-on: macos-13
-            python-version: "3.13"
-
           - runs-on: macos-14
             python-version: "3.10"
 

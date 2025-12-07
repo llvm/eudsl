@@ -63,22 +63,31 @@ jobs:
             runs-on: "ubuntu-22.04"
             os: "ubuntu"
             host-arch: "x86_64"
+            target-arch: "x86_64"
+
           - name: "ubuntu_aarch64"
             runs-on: "ubuntu-22.04-arm"
             os: "ubuntu"
             host-arch: "aarch64"
+            target-arch: "aarch64"
+
+          - name: "ubuntu_wasm32"
+            runs-on: "ubuntu-22.04"
+            os: "ubuntu"
+            host-arch: "x86_64"
+            target-arch: "wasm32"
+
           - name: "windows_amd64"
             runs-on: "windows-2022"
             os: "windows"
             host-arch: "amd64"
+            target-arch: "amd64"
+
           - name: "macos_arm64"
             runs-on: "macos-14"
             os: "macos"
             host-arch: "arm64"
-#          - name: "macos_x86_64"
-#            runs-on: "macos-13"
-#            os: "macos"
-#            host-arch: "x86_64"
+            target-arch: "arm64"
 
     runs-on: ${{ matrix.runs-on }}
 
@@ -110,51 +119,67 @@ jobs:
           host-arch: ${{ matrix.host-arch }}
           target-arch: ${{ matrix.target-arch }}
 
-      - name: "Download MLIR from releases"
+      - name: "Pip download MLIR from releases"
         if: ${{ !inputs.workflow_call }}
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           
-          if [[ "${{ matrix.os }}" == "almalinux" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export RELEASE_PREFIX="mlir_manylinux_${{ matrix.host-arch }}"
+          if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
+            pip download mlir-wheel --plat pyodide_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl
           else
-            export RELEASE_PREFIX="mlir_${{ matrix.name }}"
+            pip download mlir-wheel -f https://llvm.github.io/eudsl
           fi
-          RELEASE_URL=$(gh release view llvm --json assets -q '.assets |= sort_by(.createdAt) | .assets | map(select(.name | contains(env.RELEASE_PREFIX))) | .[-1] | .url')
-          curl -sLO $RELEASE_URL
-          RELEASE_NAME="$RELEASE_PREFIX*.tar.gz"
-          tar xf $RELEASE_NAME
-          echo WHEEL_VERSION="$(echo $RELEASE_NAME | sed "s/${RELEASE_PREFIX}_//g" | sed "s/.tar.gz//g" | sed "s/_/+/g" | sed "s/%2B/+/g" )" >> $GITHUB_ENV
+          WHEEL_NAME=$(ls mlir_wheel*)
+          $python3_command -m pip install pkginfo
+          WHEEL_VERSION=$($python3_command -c "from pkginfo import Wheel; print(Wheel('$WHEEL_NAME').version)")
+          echo "WHEEL_VERSION=$WHEEL_VERSION" >> $GITHUB_ENV
+
+      - name: Pip download mlir-native-tools
+        if: ${{ !inputs.workflow_call }}
+        run: |
+          
+          pip download mlir_native_tools -f https://llvm.github.io/eudsl
 
       - name: Download LLVM distro artifacts
         if: ${{ inputs.workflow_call }}
         uses: dawidd6/action-download-artifact@v11
         with:
-          name: mlir_${{ matrix.os == 'ubuntu' && 'manylinux' || matrix.os }}_${{ matrix.host-arch }}_artifact
+          name: mlir_wheel_${{ (matrix.name == 'ubuntu_x86_64' || matrix.name == 'ubuntu_aarch64') && 'manylinux' || matrix.os }}_${{ matrix.target-arch }}_artifact
           path: "./"
           run_id: ${{ inputs.workflow_caller_run_id }}
 
       - name: "Set WHEEL_VERSION env var"
         if: ${{ inputs.workflow_call }}
         run: |
-          WHEEL_VERSION="${{ inputs.wheel_version }}"
-          echo "WHEEL_VERSION=${WHEEL_VERSION/_/+}" >> $GITHUB_ENV
+          
+          echo "WHEEL_VERSION=${{ inputs.wheel_version }}" >> $GITHUB_ENV
+
+      - name: Download mlir-native-tools artifacts
+        if: ${{ inputs.workflow_call }}
+        uses: dawidd6/action-download-artifact@v11
+        with:
+          name: mlir_native_tools_${{ (matrix.name == 'ubuntu_x86_64' || matrix.name == 'ubuntu_aarch64') && 'manylinux' || matrix.os }}_${{ matrix.target-arch }}_artifact
+          path: "./"
+          run_id: ${{ inputs.workflow_caller_run_id }}
 
       - name: "Configure build"
         run: |
           
-          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+          if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
+            unzip -q mlir_wheel*.whl -d llvm-install
+          else
+            unzip -q mlir_wheel*.whl
+            mv mlir_wheel llvm-install
+          fi
+          
+          if [[ "${{ matrix.os }}" == "ubuntu" ]] && [[ "${{ matrix.target-arch }}" != "wasm32" ]]; then
             echo "LLVM_DIR=/host/$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
             echo "MLIR_DIR=/host/$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
             echo "Clang_DIR=/host/$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
-            echo "PIP_FIND_LINKS=/host/$PWD/wheelhouse" >> $GITHUB_ENV
             echo "CMAKE_PREFIX_PATH=/host/$PWD/llvm-install" >> $GITHUB_ENV
           else
             echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
             echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
             echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
-            echo "PIP_FIND_LINKS=$PWD/wheelhouse" >> $GITHUB_ENV
             echo "CMAKE_PREFIX_PATH=$PWD/llvm-install" >> $GITHUB_ENV
           fi
           
@@ -166,22 +191,40 @@ jobs:
           if [[ "${{ matrix.os }}" == "macos" ]]; then
             brew install antlr boost libarchive
           fi
-          if [[ "${{ matrix.runs-on }}" == "macos-13" ]]; then
-            sudo xcode-select -s /Library/Developer/CommandLineTools
-            echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
+          
+          if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
+            # currently only necessary for wasm32
+            unzip -o -j mlir_native_tools-*whl -d mlir_native_tools
+            export LLVM_NATIVE_TOOL_DIR="$PWD/mlir_native_tools"
+            echo "LLVM_NATIVE_TOOL_DIR=$LLVM_NATIVE_TOOL_DIR" >> $GITHUB_ENV
+            echo "LLVM_TABLEGEN=$LLVM_NATIVE_TOOL_DIR/llvm-tblgen" >> $GITHUB_ENV
+            echo "MLIR_TABLEGEN=$LLVM_NATIVE_TOOL_DIR/mlir-tblgen" >> $GITHUB_ENV
+            echo "MLIR_LINALG_ODS_YAML_GEN=$LLVM_NATIVE_TOOL_DIR/mlir-linalg-ods-yaml-gen" >> $GITHUB_ENV
+          
+            source "$EMSDK/emsdk_env.sh"
+            echo "PATH=$EMSDK/ccache/git-emscripten_64bit/bin:$PATH" >> $GITHUB_ENV
+            export CCACHE_COMPILERCHECK="string:$($EMSDK/upstream/bin/clang --version | head -n 1)"
+            echo "CCACHE_COMPILERCHECK=$CCACHE_COMPILERCHECK" >> $GITHUB_ENV
+            export CCACHE="$EMSDK/ccache/git-emscripten_64bit/bin/ccache"
+            echo "CMAKE_C_COMPILER_LAUNCHER=$CCACHE" >> $GITHUB_ENV
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=$CCACHE" >> $GITHUB_ENV
           fi
 
       - name: "Build mlir-python-bindings"
         run: |
           
-          $python3_command -m cibuildwheel "$PWD/projects/mlir-python-bindings" --output-dir wheelhouse
+          if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
+            pyodide build "$PWD/projects/mlir-python-bindings-wasm" -o wheelhouse --compression-level 10
+          else
+            $python3_command -m cibuildwheel "$PWD/projects/mlir-python-bindings" --output-dir wheelhouse
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mlir_python_bindings_${{ matrix.name }}_artifact
           path: wheelhouse/*.whl
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: "Setup tmate session"
         if: (failure() && inputs.debug_with_tmate) || inputs.force_debug_with_tmate
@@ -202,7 +245,6 @@ jobs:
         runs-on: [
           "ubuntu-22.04",
           "ubuntu-22.04-arm",
-          # "macos-13",
           "macos-14",
           "windows-2022"
         ]
@@ -215,7 +257,6 @@ jobs:
           {runs-on: "ubuntu-22.04-arm", name: "ubuntu_aarch64", os: "ubuntu"},
           {runs-on: "windows-2022", name: "windows_amd64", os: "windows"},
           {runs-on: "macos-14", name: "macos_arm64", os: "macos"},
-#          {runs-on: "macos-13", name: "macos_x86_64", os: "macos"}
         ]
         exclude:
           # <frozen importlib._bootstrap>:491: Warning: Numpy built with MINGW-W64 on Windows 64 bits is experimental, and only available for testing. You are advised not to use it for production.
@@ -223,12 +264,6 @@ jobs:
             python-version: "3.14"
 
           - runs-on: windows-2022
-            python-version: "3.14t"
-
-          - runs-on: macos-13
-            python-version: "3.13"
-
-          - runs-on: macos-13
             python-version: "3.14t"
 
           - runs-on: macos-14
@@ -273,9 +308,6 @@ jobs:
           name: mlir_python_bindings_${{ matrix.name }}_artifact
           path: wheelhouse
 
-      - name: "Install mlir-python-bindings"
-        run: python -m pip install mlir-python-bindings -f wheelhouse
-
       - name: "Test mlir-python-bindings"
         run: |
           
@@ -287,6 +319,56 @@ jobs:
             fi
             python $f
           done
+
+  test-mlir-python-bindings-wasm:
+
+    if: github.event_name == 'pull_request'
+
+    needs: [build-mlir-python-bindings]
+
+    runs-on: ubuntu-22.04
+
+    name: "Test mlir-python-bindings wasm"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mlir_python_bindings_ubuntu_wasm32_artifact
+          path: wheelhouse
+
+      - name: "Install Python"
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install pyodide and test
+        shell: bash
+        run: |
+          
+          pip install pyodide-build>=0.28.0
+          pyodide venv venv
+          . venv/bin/activate
+          pip install mlir-python-bindings -f wheelhouse
+          
+          pushd third_party/llvm-project/mlir/test/python/dialects
+          for f in *.py; do
+            if [[ "$f" == "python_test.py" ]]; then
+              continue
+            fi
+            python $f
+          done
+          popd
+          
+          python projects/mlir-python-bindings-wasm/test_wasm_execution_engine.py
 
   release-mlir-python-bindings:
 
@@ -306,8 +388,8 @@ jobs:
         name: [
          "ubuntu_x86_64",
          "ubuntu_aarch64",
+         "ubuntu_wasm32",
          "macos_arm64",
-#         "macos_x86_64",
          "windows_amd64"
         ]
 
@@ -321,143 +403,6 @@ jobs:
           path: wheelhouse
 
       - name: Release current commit
-        uses: ncipollo/release-action@v1.12.0
-        with:
-          artifacts: "wheelhouse/mlir_python_bindings*.whl"
-          token: "${{ secrets.GITHUB_TOKEN }}"
-          tag: mlir-python-bindings
-          name: mlir-python-bindings
-          removeArtifacts: false
-          allowUpdates: true
-          replacesArtifacts: true
-          makeLatest: true
-          omitBody: true
-
-  build-mlir-python-bindings-wasm:
-
-    runs-on: ubuntu-22.04
-
-    name: "Build mlir-python-bindings wasm"
-
-    defaults:
-      run:
-        shell: bash
-
-    permissions:
-      id-token: write
-      contents: write
-
-    env:
-      cache-key: mlir_python_bindings_wasm_emscripten_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
-
-    steps:
-      - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
-        with:
-          submodules: true
-
-      - name: "Setup base"
-        uses: ./.github/actions/setup_base
-        id: setup_base
-        with:
-          cache-key: ${{ env.cache-key }}
-          restore-key: "mlir_python_bindings_wasm_emscripten"
-          os: "ubuntu"
-          host-arch: "x86_64"
-          target-arch: "wasm32"
-
-      - name: Download mlir-native-tools artifacts
-        if: ${{ inputs.workflow_call }}
-        uses: dawidd6/action-download-artifact@v11
-        with:
-          name: mlir_native_tools_manylinux_x86_64_artifact
-          path: "./"
-          run_id: ${{ inputs.workflow_caller_run_id }}
-
-      - name: Pip download mlir-native-tools
-        if: ${{ !inputs.workflow_call }}
-        run: |
-          
-          pip download mlir_native_tools -f https://llvm.github.io/eudsl
-
-      - name: Configure mlir-native-tools
-        run: |
-          
-          unzip -o -j mlir_native_tools-*whl -d mlir_native_tools
-          rm -rf mlir_native_tools-*whl
-          
-          export LLVM_NATIVE_TOOL_DIR="$PWD/mlir_native_tools"
-          echo "LLVM_NATIVE_TOOL_DIR=$LLVM_NATIVE_TOOL_DIR" >> $GITHUB_ENV
-          echo "LLVM_TABLEGEN=$LLVM_NATIVE_TOOL_DIR/llvm-tblgen" >> $GITHUB_ENV
-          echo "MLIR_TABLEGEN=$LLVM_NATIVE_TOOL_DIR/mlir-tblgen" >> $GITHUB_ENV
-          echo "MLIR_LINALG_ODS_YAML_GEN=$LLVM_NATIVE_TOOL_DIR/mlir-linalg-ods-yaml-gen" >> $GITHUB_ENV
-
-      - name: Wheel version
-        run: |
-          
-          pushd third_party/llvm-project
-          LLVM_PROJECT_COMMIT=$(git rev-parse --short HEAD)
-          popd
-          
-          DATETIME=$(date +"%Y%m%d%H")
-          echo "WHEEL_VERSION=${DATETIME}+${LLVM_PROJECT_COMMIT}" >> $GITHUB_ENV
-
-      - name: build wasm python wheel
-        run: |
-          
-          source "$EMSDK/emsdk_env.sh"
-        
-          echo "PATH=$EMSDK/ccache/git-emscripten_64bit/bin:$PATH" >> $GITHUB_ENV
-          export CCACHE_COMPILERCHECK="string:$($EMSDK/upstream/bin/clang --version | head -n 1)"
-          echo "CCACHE_COMPILERCHECK=$CCACHE_COMPILERCHECK" >> $GITHUB_ENV
-          export CCACHE="$EMSDK/ccache/git-emscripten_64bit/bin/ccache"
-          export CMAKE_C_COMPILER_LAUNCHER="$CCACHE"
-          export CMAKE_CXX_COMPILER_LAUNCHER="$CCACHE"
-          
-          $CCACHE -z
-          pyodide build projects/mlir-python-bindings-wasm -o wheelhouse --compression-level 10
-          $CCACHE -s
-
-      - name: Upload ccache log
-        uses: actions/upload-artifact@v4
-        with:
-          name: llvm_ccache_log_mlir_python_bindings_wasm32
-          path: '/tmp/ccache.log'
-
-      - name: "Save cache"
-        uses: actions/cache/save@v3
-        if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
-        with:
-          path: ${{ steps.setup_base.outputs.cache-dir }}
-          key: ${{ env.cache-key }}
-
-      - name: Install pyodide and test
-        shell: bash
-        run: |
-          
-          pyodide venv venv
-          . venv/bin/activate
-          pip install mlir-python-bindings -f wheelhouse
-          
-          pushd third_party/llvm-project/mlir/test/python/dialects
-          for f in *.py; do
-            if [[ "$f" == "python_test.py" ]]; then
-              continue
-            fi
-            python $f
-          done
-          popd
-          
-          python projects/mlir-python-bindings-wasm/test_wasm_execution_engine.py
-
-      - name: Upload wasm32 wheels
-        uses: actions/upload-artifact@v4
-        with:
-          path: wheelhouse/*.whl
-          name: build_artifact_python_bindings-ubuntu-wasm
-
-      - name: Release current commit
-        if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "wheelhouse/mlir_python_bindings*.whl"
