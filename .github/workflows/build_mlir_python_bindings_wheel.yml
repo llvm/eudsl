@@ -157,7 +157,7 @@ jobs:
         if: ${{ inputs.workflow_call }}
         uses: dawidd6/action-download-artifact@v11
         with:
-          name: mlir_${{ matrix.os == 'ubuntu' && 'manylinux' || matrix.os }}_${{ matrix.host-arch }}_artifact
+          name: mlir_native_tools_${{ matrix.os == 'ubuntu' && 'manylinux' || matrix.os }}_${{ matrix.host-arch }}_artifact
           path: "./"
           run_id: ${{ inputs.workflow_caller_run_id }}
 
