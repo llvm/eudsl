@@ -37,7 +37,6 @@ minimum-version = "0.10"
 build-dir = "build"
 cmake.source-dir = "../../third_party/llvm-project/llvm"
 build.targets = ["install-mlirdevelopment-distribution"]
-build.tool-args = ["-k", "0"]
 install.components = ["install-mlirdevelopment-distribution"]
 
 cmake.args = ["-C", "llvm_wasm_cache.cmake"]
@@ -46,13 +45,11 @@ cmake.args = ["-C", "llvm_wasm_cache.cmake"]
 CMAKE_BUILD_TYPE = { env = "CMAKE_BUILD_TYPE", default = "Release" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
-#CMAKE_CXX_FLAGS = "-sNO_DISABLE_EXCEPTION_CATCHING"
-#CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
-#CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
-#CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sNO_DISABLE_EXCEPTION_CATCHING -sWASM_BIGINT"
-CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
-CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
-CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
+# re -Wno-undefined see https://github.com/emscripten-core/emscripten/issues/21516
+# missing symbol: _LLVMAddSymbol
+CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wno-undefined"
+CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wno-undefined"
+CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wno-undefined"
 CMAKE_VERBOSE_MAKEFILE = "ON"
 
 # so that NATIVE doesn't try to get built
@@ -60,4 +57,3 @@ LLVM_NATIVE_TOOL_DIR = { env = "LLVM_NATIVE_TOOL_DIR", default = "" }
 LLVM_TABLEGEN = { env = "LLVM_TABLEGEN", default = "" }
 MLIR_LINALG_ODS_YAML_GEN = { env = "MLIR_LINALG_ODS_YAML_GEN", default = "" }
 MLIR_TABLEGEN = { env = "MLIR_TABLEGEN", default = "" }
-MLIR_ENABLE_EXECUTION_ENGINE = "OFF"

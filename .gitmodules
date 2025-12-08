@@ -9,3 +9,9 @@
 	url = https://github.com/google/dawn.git
 	fetchRecurseSubmodules = false
 	shallow = true
+[submodule "third_party/SPIRV-Headers"]
+	path = third_party/SPIRV-Headers
+	url = https://github.com/KhronosGroup/SPIRV-Headers.git
+[submodule "third_party/SPIRV-Tools"]
+	path = third_party/SPIRV-Tools
+	url = https://github.com/KhronosGroup/SPIRV-Tools.git
