@@ -23,7 +23,9 @@ Discussions = "https://discourse.llvm.org/"
 requires = [
     "scikit-build-core==0.10.7",
     "typing_extensions==4.12.2",
-    "nanobind>=2.4, <3.0",
+    # https://github.com/wjakob/nanobind/commit/dd350fe81931a1b362196cb415d188c36422766e#diff-8599263e788c107944d356ce118965942735cfbe16289ccf98ee5f8a33f0e808
+    # error: static assertion failed due to requirement 'pyobj_name::total_count * sizeof(_object *) == 96'
+    "nanobind>=2.4, <=2.9.2",
     "pybind11>=2.10.0, <=2.13.6",
 ]
 build-backend = "scikit_build_core.build"
@@ -45,27 +47,15 @@ cmake.args = ["-C", "llvm_wasm_cache.cmake"]
 CMAKE_BUILD_TYPE = { env = "CMAKE_BUILD_TYPE", default = "Release" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
-# https://github.com/emscripten-core/emscripten/issues/25911
-# https://github.com/pyodide/pyodide/blob/7f2feb1a673b7b610cf17bfc8a48727687843cd3/docs/development/abi.md?plain=1#L40C34-L40C49
-# Linking a shared libraries with `-sSIDE_MODULE=1` will pass `-whole-archive` to
-#`wasm-ld` and so force inclusion of all object files and all symbols. Linking
-# with `-sSIDE_MODULE=2` will only include symbols that are explicitly listed with
-#`-sEXPORTED_FUNCTIONS=<export list>`. The name of each symbol in the list must
-# be prefixed with an underscore.
-# https://github.com/emscripten-core/emscripten/blob/04fda5c8e488985bd5825a11e21373316dd133e4/site/source/docs/getting_started/FAQ.rst?plain=1#L461-L463
-# https://github.com/pyodide/pyodide/blob/7f2feb1a673b7b610cf17bfc8a48727687843cd3/docs/development/abi.md
-
-#CMAKE_C_FLAGS = "-sLINKABLE -Wl,-allow-multiple-definition"
-#CMAKE_CXX_FLAGS = "-sLINKABLE -Wl,-allow-multiple-definition"
-CMAKE_C_FLAGS = "-sLINKABLE"
-CMAKE_CXX_FLAGS = "-sLINKABLE"
-CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
+#CMAKE_C_FLAGS = "-sLINKABLE"
+#CMAKE_CXX_FLAGS = "-sLINKABLE"
+CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT "
 CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
 CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
+CMAKE_VERBOSE_MAKEFILE = "ON"
 # De-duplicate libraries on link lines based on linker capabilities.
 # minimum cmake version is 3.29
 CMAKE_POLICY_DEFAULT_CMP0156 = "NEW"
-CMAKE_VERBOSE_MAKEFILE = "ON"
 
 # so that NATIVE doesn't try to get built
 LLVM_NATIVE_TOOL_DIR = { env = "LLVM_NATIVE_TOOL_DIR", default = "" }

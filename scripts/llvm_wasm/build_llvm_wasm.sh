@@ -40,4 +40,4 @@ if [ -x "$(command -v $EMSDK/ccache/git-emscripten_64bit/bin/ccache)" ]; then
   export CMAKE_CXX_COMPILER_LAUNCHER="$CCACHE"
 fi
 
-pyodide build $TD -o wheelhouse --compression-level 10
+PYODIDE_SOURCEMAPS=1 PYODIDE_BUILD_EXPORTS=whole_archive pyodide build $TD -o wheelhouse --compression-level 10
