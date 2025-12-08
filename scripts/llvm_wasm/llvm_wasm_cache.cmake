@@ -13,7 +13,9 @@ set(LLVM_HOST_TRIPLE "wasm32-unknown-emscripten" CACHE STRING "")
 set(LLVM_TARGETS_TO_BUILD "WebAssembly" CACHE STRING "")
 set(LLVM_TARGET_ARCH "wasm32" CACHE STRING "")
 
-set(LLVM_BUILD_STATIC ON CACHE BOOL "")
+# For LLVM_ABI and LLVM_C_ABI
+set(LLVM_ENABLE_LLVM_EXPORT_ANNOTATIONS ON CACHE BOOL "")
+set(LLVM_BUILD_STATIC OFF CACHE BOOL "")
 # for ExecutionEngine
 set(LLVM_ENABLE_PIC ON CACHE BOOL "")
 
@@ -58,7 +60,6 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     lld-cmake-exports
     lld-mlirdevelopment-cmake-exports
 
-    llvm-config
     llvm-headers
     llvm-libraries
 

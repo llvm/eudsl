@@ -2,7 +2,8 @@ FROM ubuntu
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get -y install python-is-python3 cmake ninja-build python3-pip vim git unzip software-properties-common
+RUN apt-get update && apt-get -y install python-is-python3 ninja-build python3-pip vim git unzip software-properties-common wget
+RUN wget https://github.com/Kitware/CMake/releases/download/v4.2.0/cmake-4.2.0-linux-aarch64.sh && bash cmake-4.2.0-linux-aarch64.sh --skip-license --prefix=/usr
 
 RUN add-apt-repository -y ppa:deadsnakes/ppa && apt update && apt -y install python3.13 python3.13-venv
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.13 99
