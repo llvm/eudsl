@@ -10,7 +10,7 @@ from typing import TypeVar
 
 from . import (
     add_function,
-    append_basic_block,
+    append_basic_block_in_context,
     position_builder_at_end,
     TypeRef,
     type_of,
@@ -108,7 +108,9 @@ class FuncOp:
         if self._is_decl():
             return
 
-        entry_bb = append_basic_block(function, self.entry_bb_name)
+        entry_bb = append_basic_block_in_context(
+            ctx.context, function, self.entry_bb_name
+        )
         position_builder_at_end(ctx.builder, entry_bb)
 
         params = [get_param(function, i) for i in range(len(input_types))]
