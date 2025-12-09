@@ -23,7 +23,9 @@ Discussions = "https://discourse.llvm.org/"
 requires = [
     "scikit-build-core==0.10.7",
     "typing_extensions==4.12.2",
-    "nanobind>=2.4, <3.0",
+    # https://github.com/wjakob/nanobind/commit/dd350fe81931a1b362196cb415d188c36422766e#diff-8599263e788c107944d356ce118965942735cfbe16289ccf98ee5f8a33f0e808
+    # error: static assertion failed due to requirement 'pyobj_name::total_count * sizeof(_object *) == 96'
+    "nanobind>=2.4, <=2.9.2",
     "pybind11>=2.10.0, <=2.13.6",
 ]
 build-backend = "scikit_build_core.build"
