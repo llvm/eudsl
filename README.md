@@ -35,9 +35,9 @@ Currently, there are five components:
 
 We currently provide two online playgrounds where you can try out the WebAssembly version of mlir-python-bindings and eudsl-python-extras directly in your browser:
 
-* https://llvm.github.io/eudsl/jupyter/ – A JupyterLite instance with a Pyodide kernel. You can install the MLIR Python bindings with: `await piplite.install("mlir-python-bindings")`.
+* [https://llvm.github.io/eudsl/jupyter](https://llvm.github.io/eudsl/jupyter/lab/index.html?path=mlir-python-starter.ipynb) – A JupyterLite instance with a Pyodide kernel. You can install the MLIR Python bindings with: `await piplite.install("mlir-python-bindings")`.
 
-* https://llvm.github.io/eudsl/console/ – A Pyodide-based REPL with `mlir-python-bindings` and `eudsl-python-extras` preloaded. Just run: `from mlir.ir import *` to start coding.
+* https://llvm.github.io/eudsl/console – A Pyodide-based REPL with `mlir-python-bindings` and `eudsl-python-extras` preloaded. Just run: `from mlir.ir import *` to start coding.
 
 ## Getting started
 
