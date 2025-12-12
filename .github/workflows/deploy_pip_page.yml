@@ -49,11 +49,11 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
       - name: Fetch latest WASM wheel
         run: |
-          pip download mlir-python-bindings --plat pyodide_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl
+          pip download mlir-python-bindings --plat pyodide_2025_0_wasm32 --no-deps --python-version 3.13 -f https://llvm.github.io/eudsl
           echo "MLIR_PYTHON_WHEEL_NAME=$(ls mlir_python_bindings*)" >> $GITHUB_ENV
           pip wheel eudsl-python-extras -f https://llvm.github.io/eudsl --no-deps -w .
           echo "EUDSL_PYTHON_EXTRAS_WHEEL_NAME=$(ls eudsl_python_extras*)" >> $GITHUB_ENV

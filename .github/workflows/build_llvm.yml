@@ -314,7 +314,7 @@ jobs:
           ###############################
           
           $CCACHE -z
-          pyodide build scripts/llvm_wasm -o wheelhouse --compression-level 10
+          PYODIDE_BUILD_EXPORTS=whole_archive pyodide build scripts/llvm_wasm -o wheelhouse --compression-level 10
           $CCACHE -s
 
       - name: Upload ccache log
