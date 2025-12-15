@@ -412,9 +412,7 @@ class ArithValue(Value, metaclass=ArithValueMeta):
         super().__init__(val)
 
     def is_constant(self) -> bool:
-        return isinstance(self.owner, Operation) and isinstance(
-            self.owner.opview, ConstantOp
-        )
+        return isinstance(self.owner, OpView) and isinstance(self.owner, ConstantOp)
 
     @property
     @abstractmethod
