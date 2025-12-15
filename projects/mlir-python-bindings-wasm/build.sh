@@ -1,5 +1,7 @@
 #!/bin/bash
 
+TD="$(cd $(dirname $0) && pwd)"
+REPO_ROOT="$(cd $TD/../.. && pwd)"
 
 if ! command -v pyodide >/dev/null 2>&1
 then
@@ -33,4 +35,4 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
   # the above doesn't work so you need to run in docker
 fi
 
-pyodide build . -o wheelhouse --compression-level 10
+PYODIDE_SOURCEMAPS=1 PYODIDE_BUILD_EXPORTS=whole_archive pyodide build $TD -o $REPO_ROOT/wheelhouse --compression-level 10
