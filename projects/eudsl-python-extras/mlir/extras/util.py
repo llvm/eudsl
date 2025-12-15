@@ -132,6 +132,7 @@ def find_ops(op, pred: Callable[[OpView, Operation, Module], bool], single=False
 
 
 _np_dtype_to_mlir_type_ctor = {
+    np.bool: T.bool,
     np.int8: T.i8,
     np.int16: T.i16,
     np.int32: T.i32,
