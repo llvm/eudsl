@@ -55,8 +55,6 @@ setup(
             "mlir-native-tools",
             "astpretty",
             "black",
-            "pre-commit",
-            "pre-commit-hooks",
         ],
         "mlir": ["mlir-python-bindings"],
     },
