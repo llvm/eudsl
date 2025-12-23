@@ -336,7 +336,7 @@ def _if(cond, results=None, *, has_else=False, loc=None, ip=None):
         results = []
     if results:
         has_else = True
-    return IfOp(cond, results, hasElse=has_else, loc=loc, ip=ip)
+    return IfOp(cond, results, has_else=has_else, loc=loc, ip=ip)
 
 
 if_ = region_op(_if, terminator=yield__)
