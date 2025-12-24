@@ -67,6 +67,7 @@ CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
 # Non-optional
 CMAKE_BUILD_TYPE = { env = "CMAKE_BUILD_TYPE", default = "Release" }
 MLIR_ENABLE_BINDINGS_PYTHON = "ON"
+MLIR_BINDINGS_PYTHON_NB_DOMAIN = "mlir"
 
 [tool.cibuildwheel]
 enable = "cpython-prerelease cpython-freethreading"
