@@ -84,6 +84,17 @@ runs:
         echo "after"
         df -h
 
+    - name: "Clean ubuntu"
+      if: (!inputs.container && startsWith(inputs.runs-on, 'ubuntu'))
+      uses: descriptinc/free-disk-space@main
+      with:
+        tool-cache: true
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        swap-storage: false # This frees space on the wrong partition.
+
     # notes for next time i bash my head against this:
     # 1. github.workspace and $GITHUB_WORKSPACE are different between container actions and non-container actions
     # 2. action/save-restore claims it expands ~ but that's a lie

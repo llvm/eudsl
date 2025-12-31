@@ -123,6 +123,7 @@ jobs:
           os: ${{ matrix.os }}
           host-arch: ${{ matrix.host-arch }}
           target-arch: ${{ matrix.target-arch }}
+          runs-on: ${{ matrix.runs-on }}
 
       - name: "Pip download MLIR from releases"
         if: ${{ !inputs.workflow_call }}
