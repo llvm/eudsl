@@ -85,7 +85,7 @@ runs:
         df -h
 
     - name: "Clean ubuntu"
-      if: (!inputs.container && startsWith(inputs.runs-on, 'ubuntu'))
+      if: (!inputs.container && startsWith(inputs.runs-on, 'ubuntu') && inputs.host-arch != 'aarch64')
       uses: descriptinc/free-disk-space@main
       with:
         tool-cache: true
