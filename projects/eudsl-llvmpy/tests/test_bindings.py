@@ -67,13 +67,13 @@ def test_builder():
       ret i32 %5
     }
 
-    ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+    ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
     declare <2 x i16> @llvm.amdgcn.cvt.pk.i16(i32, i32) #0
 
-    ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+    ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
     declare float @llvm.amdgcn.frexp.mant.f32(float) #0
 
-    attributes #0 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
+    attributes #0 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
     """
     )
 
