@@ -347,7 +347,7 @@ jobs:
         run: |
           
           pip install standalone-python-bindings -f wheelhouse
-          python third_party/llvm-project/mlir/examples/standalone/test/python/smoketest.py
+          python projects/mlir-python-bindings/smoketest.py
 
   test-mlir-python-bindings-wasm:
 
