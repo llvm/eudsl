@@ -24,10 +24,9 @@ from ..util import (
 from ..._mlir_libs._mlir import register_value_caster
 from ...dialects import tensor
 from ...dialects._ods_common import _dispatch_mixed_values, get_op_result_or_op_results
-from ...dialects.linalg.opdsl.lang.emitter import _is_index_type
 from ...dialects.tensor import *
 from ...dialects.transform.structured import _get_int_array_array_attr
-from ...ir import RankedTensorType, ShapedType, Type, Value
+from ...ir import RankedTensorType, ShapedType, Type, Value, IndexType
 
 S = ShapedType.get_dynamic_size()
 
@@ -111,7 +110,9 @@ def insert_slice(
 def _is_index_tensor(x):
     """Returns True if x is a TensorValue with index dtype, False otherwise."""
     return (
-        isinstance(x, Value) and isinstance(x, TensorValue) and _is_index_type(x.dtype)
+        isinstance(x, Value)
+        and isinstance(x, TensorValue)
+        and isinstance(x.dtype, IndexType)
     )
 
 

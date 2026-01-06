@@ -18,15 +18,15 @@ except ImportError:
 
 
 def mlir_type_to_llvm_type(mlir_type, llvm_ctx):
-    if F16Type.isinstance(mlir_type):
+    if isinstance(mlir_type, F16Type):
         return types_.half_type_in_context(llvm_ctx)
-    if F32Type.isinstance(mlir_type):
+    if isinstance(mlir_type, F32Type):
         return types_.float_type_in_context(llvm_ctx)
-    if F64Type.isinstance(mlir_type):
+    if isinstance(mlir_type, F64Type):
         return types_.double_type_in_context(llvm_ctx)
-    if BF16Type.isinstance(mlir_type):
+    if isinstance(mlir_type, BF16Type):
         return types_.b_float_type_in_context(llvm_ctx)
-    if IntegerType.isinstance(mlir_type):
+    if isinstance(mlir_type, IntegerType):
         return types_.int_type_in_context(llvm_ctx, mlir_type.width)
 
     raise NotImplementedError(f"{mlir_type} is not supported")

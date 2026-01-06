@@ -21,15 +21,10 @@ from ...dialects._arith_enum_gen import (
 )
 from ...dialects._ods_common import get_op_result_or_op_results, get_op_result_or_value
 from ...dialects.arith import *
-from ...dialects.arith import _is_integer_like_type
-from ...dialects.linalg.opdsl.lang.emitter import (
-    _is_complex_type,
-    _is_floating_point_type,
-    _is_index_type,
-)
 from ...ir import (
     Attribute,
     BF16Type,
+    ComplexType,
     ComplexType,
     Context,
     DenseElementsAttr,
@@ -37,6 +32,7 @@ from ...ir import (
     F32Type,
     F64Type,
     FloatAttr,
+    FloatType,
     IndexType,
     InsertionPoint,
     IntegerType,
@@ -85,7 +81,7 @@ def constant(
 
     assert type is not None
 
-    if _is_complex_type(type):
+    if isinstance(type, ComplexType):
         value = complex(value)
         return get_op_result_or_op_results(
             complex_dialect.ConstantOp(
@@ -101,10 +97,10 @@ def constant(
             )
         )
 
-    if _is_floating_point_type(type) and not isinstance(value, np.ndarray):
+    if isinstance(type, FloatType) and not isinstance(value, np.ndarray):
         value = float(value)
 
-    if ShapedType.isinstance(type) and isinstance(value, (int, float, bool)):
+    if isinstance(type, ShapedType) and isinstance(value, (int, float, bool)):
         ranked_tensor_type = ShapedType(type)
         value = np.full(
             ranked_tensor_type.shape,
@@ -340,15 +336,15 @@ def _binary_op(
         op = "rem"
 
     op = op.capitalize()
-    if _is_floating_point_type(lhs.dtype):
+    if isinstance(lhs.dtype, FloatType):
         if op == "Floordiv":
             raise ValueError(f"floordiv not supported for {lhs=}")
         op += "F"
-    elif _is_integer_like_type(lhs.dtype):
+    elif isinstance(lhs.dtype, (IntegerType, IndexType)):
         # TODO(max): this needs to all be regularized
         if "div" in op.lower() or "rem" in op.lower():
             # TODO(max): should be using index ops here
-            if not _is_index_type(lhs.dtype) and not lhs.dtype.is_signless:
+            if not isinstance(lhs.dtype, IndexType) and not lhs.dtype.is_signless:
                 raise ValueError(f"{op.lower()}i not supported for {lhs=}")
             if op == "Floordiv":
                 op = "FloorDiv"
@@ -361,16 +357,16 @@ def _binary_op(
     op = globals()[f"{op}Op"]
 
     if predicate is not None:
-        if _is_floating_point_type(lhs.dtype):
+        if isinstance(lhs.dtype, FloatType):
             # ordered comparison - see above
             predicate = "o" + predicate
-        elif _is_integer_like_type(lhs.dtype):
+        elif isinstance(lhs.dtype, (IntegerType, IndexType)):
             # eq, ne signs don't matter
             if predicate not in {"eq", "ne"}:
                 if signedness is not None:
                     predicate = signedness + predicate
                 else:
-                    if _is_index_type(lhs.dtype) or lhs.dtype.is_unsigned:
+                    if isinstance(lhs.dtype, IndexType) or lhs.dtype.is_unsigned:
                         predicate = "u" + predicate
                     else:
                         assert lhs.dtype.is_signed or lhs.dtype.is_signless
@@ -524,7 +520,7 @@ class ScalarValue(ArithValue):
         if isinstance(other, (int, float, bool)):
             other = ScalarValue(other, dtype=self.dtype)
         elif isinstance(other, ScalarValue) and (
-            _is_index_type(self.type) or _is_index_type(other.type)
+            isinstance(self.type, IndexType) or isinstance(other.type, IndexType)
         ):
             other = index_cast(other, to=self.type)
         else:

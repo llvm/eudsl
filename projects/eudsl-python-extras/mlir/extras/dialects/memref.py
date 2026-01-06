@@ -21,7 +21,6 @@ from ..util import (
 )
 from ..._mlir_libs._mlir import register_value_caster
 from ...dialects import memref, arith, vector, builtin
-from ...dialects.linalg.opdsl.lang.emitter import _is_index_type
 from ...dialects._ods_common import (
     get_op_result_or_op_results,
     MixedValues,
@@ -134,7 +133,7 @@ def load(memref: Value, indices: Sequence[Union[Value, int]], *, loc=None, ip=No
         if isinstance(i, int):
             indices[idx] = constant(i, index=True)
         elif isinstance(i, Value):
-            if not _is_index_type(i.type):
+            if not isinstance(i.type, IndexType):
                 i = index_cast(i, to=IndexType.get(), loc=loc, ip=ip)
                 indices[idx] = i
         else:
@@ -155,7 +154,7 @@ def store(
         if isinstance(i, int):
             indices[idx] = constant(i, index=True)
         elif isinstance(i, Value):
-            if not _is_index_type(i.type):
+            if not isinstance(i.type, IndexType):
                 i = index_cast(i, to=IndexType.get(), loc=loc, ip=ip)
                 indices[idx] = i
         else:
@@ -244,7 +243,7 @@ class MemRefValue(Value):
                 return d
         if isinstance(idx, int):
             idx = constant(idx, IndexType.get())
-        if not _is_index_type(idx.type):
+        if not isinstance(idx.type, IndexType):
             idx = index_cast(idx, to=IndexType.get(), loc=loc, ip=ip)
         return DimOp(self, idx, loc=loc, ip=ip).result
 
@@ -550,11 +549,11 @@ def view(source, shape, dtype=None, shift=0, memory_space=None, loc=None, ip=Non
     if isinstance(byte_shift, int):
         byte_shift = constant(byte_shift, index=True)
     elif isinstance(byte_shift, Value):
-        if not _is_index_type(byte_shift.type):
+        if not isinstance(byte_shift.type, IndexType):
             byte_shift = index_cast(byte_shift, to=IndexType.get(), loc=loc, ip=ip)
     else:
         raise TypeError(f"expected {byte_shift=} to be either int or Value")
-    assert _is_index_type(byte_shift.type), "expected index type for byte-shift"
+    assert isinstance(byte_shift.type, IndexType), "expected index type for byte-shift"
     if memory_space is None and source:
         memory_space = source.type.memory_space
 
@@ -565,7 +564,7 @@ def view(source, shape, dtype=None, shift=0, memory_space=None, loc=None, ip=Non
             memref_shape.append(s)
         else:
             memref_shape.append(ShapedType.get_dynamic_size())
-            if not _is_index_type(s.type):
+            if not isinstance(s.type, IndexType):
                 s = index_cast(s, to=IndexType.get(), loc=loc, ip=ip)
             dynamic_sizes.append(s)
 

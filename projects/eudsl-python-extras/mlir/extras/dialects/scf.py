@@ -17,7 +17,6 @@ from ...dialects._ods_common import (
     get_default_loc_context,
     get_op_result_or_op_results,
 )
-from ...dialects.linalg.opdsl.lang.emitter import _is_index_type
 
 # gotta come first
 from ...dialects.scf import *
@@ -120,7 +119,7 @@ def _parfor(op_ctor):
             for j, pp in enumerate(p):
                 if isinstance(pp, int):
                     pp = _ext_arith_constant(pp, index=True)
-                if not _is_index_type(pp.type):
+                if not isinstance(pp.type, IndexType):
                     pp = index_cast(pp)
                 p[j] = pp
             params[i] = p
