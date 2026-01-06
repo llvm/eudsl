@@ -111,9 +111,9 @@ def convert_arg_to_ctype(arg, unranked=True):
     if isinstance(arg, CData) or isinstance(arg, (int, float, bool)):
         return arg
     elif isinstance(arg, np.ndarray):
-        assert np_dtype_to_mlir_type(arg.dtype.type), (
-            f"unsupported numpy array type {arg.dtype}"
-        )
+        assert np_dtype_to_mlir_type(
+            arg.dtype.type
+        ), f"unsupported numpy array type {arg.dtype}"
         if unranked:
             return ctypes.pointer(ctypes.pointer(get_unranked_memref_descriptor(arg)))
         else:
@@ -152,9 +152,9 @@ class LLVMJITBackendInvoker:
         )
         self.results = None
         if return_func_types is not None:
-            assert return_func_name is not None, (
-                f"must provide return func name when providing return func types"
-            )
+            assert (
+                return_func_name is not None
+            ), f"must provide return func name when providing return func types"
             ctype_wrapper, ret_types = get_ctype_func(return_func_types)
             self.ret_types = ret_types
             if consume_return_callback is None:
@@ -186,7 +186,7 @@ class LLVMJITBackendInvoker:
 # this is done because you can't return structs etc from C APIs.
 def make_return_consumer(kernel_func):
     c_api_compatible_types = [
-        T.memref(element_type=t.element_type) if MemRefType.isinstance(t) else t
+        T.memref(element_type=t.element_type) if isinstance(t, MemRefType) else t
         for t in kernel_func.function_type.value.results
     ]
     cb = FuncOp(
@@ -211,7 +211,7 @@ def make_kernel_wrapper(kernel_func, return_consumer=None):
         if return_consumer is not None:
             c_api_compatible_results = []
             for i, a in enumerate(results):
-                if MemRefType.isinstance(a.type):
+                if isinstance(a.type, MemRefType):
                     a = cast(T.memref(element_type=a.type.element_type), a)
                 c_api_compatible_results.append(a)
             CallOp(return_consumer, c_api_compatible_results)

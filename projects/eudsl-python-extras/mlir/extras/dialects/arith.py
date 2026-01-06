@@ -100,7 +100,7 @@ def constant(
     if isinstance(type, FloatType) and not isinstance(value, np.ndarray):
         value = float(value)
 
-    if ShapedType.isinstance(type) and isinstance(value, (int, float, bool)):
+    if isinstance(type, ShapedType) and isinstance(value, (int, float, bool)):
         ranked_tensor_type = ShapedType(type)
         value = np.full(
             ranked_tensor_type.shape,

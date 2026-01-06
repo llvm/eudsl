@@ -37,9 +37,9 @@ def ast_call(name, args=None, keywords=None):
 def get_module_cst(f):
     f_src = dedent(inspect.getsource(f))
     tree = ast.parse(f_src)
-    assert isinstance(tree.body[0], ast.FunctionDef), (
-        f"unexpected ast node {tree.body[0]}"
-    )
+    assert isinstance(
+        tree.body[0], ast.FunctionDef
+    ), f"unexpected ast node {tree.body[0]}"
     return tree
 
 
@@ -139,9 +139,9 @@ def copy_func(f, new_closure: Dict = None):
 
 def append_hidden_node(node_body, new_node):
     last_statement = node_body[-1]
-    assert last_statement.end_lineno is not None, (
-        f"last_statement {ast.unparse(last_statement)} must have end_lineno"
-    )
+    assert (
+        last_statement.end_lineno is not None
+    ), f"last_statement {ast.unparse(last_statement)} must have end_lineno"
     new_node = ast.fix_missing_locations(
         set_lineno(new_node, last_statement.end_lineno)
     )

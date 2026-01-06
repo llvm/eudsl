@@ -50,9 +50,9 @@ def get_filecheck_path():
     # try to find using which
     if not filecheck_path.exists():
         filecheck_path = shutil.which(filecheck_name)
-    assert filecheck_path is not None and Path(filecheck_path).exists() is not None, (
-        "couldn't find FileCheck"
-    )
+    assert (
+        filecheck_path is not None and Path(filecheck_path).exists() is not None
+    ), "couldn't find FileCheck"
 
     return filecheck_path
 
