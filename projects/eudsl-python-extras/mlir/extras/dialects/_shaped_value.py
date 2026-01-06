@@ -6,9 +6,15 @@ from functools import cached_property, reduce
 import numpy as np
 from typing import Tuple, Union, List, Any
 
-from ...dialects.linalg.opdsl.lang.emitter import _is_index_type
 from .arith import ScalarValue
-from ...ir import DenseElementsAttr, ShapedType, Type, Value, RankedTensorType
+from ...ir import (
+    DenseElementsAttr,
+    ShapedType,
+    Type,
+    Value,
+    RankedTensorType,
+    IndexType,
+)
 
 S = ShapedType.get_dynamic_size()
 
@@ -304,9 +310,9 @@ def _has_index_type(e: Any) -> bool:
         or isinstance(e, np.ndarray)
         and e.dtype in {np.intp}
         or isinstance(e, Value)
-        and _is_index_type(e.type)
+        and isinstance(e.type, IndexType)
         or isinstance(e.type, RankedTensorType)
-        and _is_index_type(e.type.element_type)
+        and isinstance(e.type.element_type, IndexType)
     )
 
 
