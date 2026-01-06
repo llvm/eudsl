@@ -141,6 +141,7 @@ jobs:
           
           ccache -z
           $python3_command -m pip install -r third_party/llvm-project/mlir/python/requirements.txt
+          $python3_command -m pip install "nanobind @ git+https://github.com/wjakob/nanobind.git" --force
           $python3_command -m pip install setuptools wheel
           
           ###############################
