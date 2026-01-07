@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -51,23 +51,43 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Fetch latest WASM wheel
+      - name: Pip download latest WASM wheel
+        if: ${{ !inputs.workflow_call }}
         run: |
+          
           pip download mlir-python-bindings --plat pyodide_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl
-          echo "MLIR_PYTHON_WHEEL_NAME=$(ls mlir_python_bindings*)" >> $GITHUB_ENV
+
+      - name: Download latest WASM wheel
+        if: ${{ inputs.workflow_call }}
+        uses: dawidd6/action-download-artifact@v11
+        with:
+          name: mlir_python_bindings_ubuntu_wasm32_artifact
+          path: "./"
+          run_id: ${{ inputs.workflow_caller_run_id }}
+
+      - name: Get eudsl-python-extras
+        run: |
+          
           pip wheel eudsl-python-extras -f https://llvm.github.io/eudsl --no-deps -w .
-          echo "EUDSL_PYTHON_EXTRAS_WHEEL_NAME=$(ls eudsl_python_extras*)" >> $GITHUB_ENV
 
       - name: Create WASM console page
         run: |
+          
           mkdir -p page/console
 
+          export MLIR_PYTHON_WHEEL_NAME="$(ls mlir_python_bindings*)"
+          export EUDSL_PYTHON_EXTRAS_WHEEL_NAME="$(ls eudsl_python_extras*)"
+          
           cp pages/console/index.html page/console/index.html
           cp $MLIR_PYTHON_WHEEL_NAME page/console/mlir_python_bindings-0.0.1-cp312-cp312-pyodide_2024_0_wasm32.whl
           cp $EUDSL_PYTHON_EXTRAS_WHEEL_NAME page/console/eudsl_python_extras-0.0.1-py3-none-any.whl
+          
+          echo "MLIR_PYTHON_WHEEL_NAME=$MLIR_PYTHON_WHEEL_NAME" >> $GITHUB_ENV
+          echo "EUDSL_PYTHON_EXTRAS_WHEEL_NAME=$EUDSL_PYTHON_EXTRAS_WHEEL_NAME" >> $GITHUB_ENV
 
       - name: Create WASM jupyterlite page
         run: |
+          
           mkdir -p page/jupyter
 
           python -m pip install -r pages/jupyter/requirements.txt
@@ -77,20 +97,13 @@ jobs:
             --piplite-wheels $MLIR_PYTHON_WHEEL_NAME \
             --piplite-wheels $EUDSL_PYTHON_EXTRAS_WHEEL_NAME
 
-      - name: Show directory structure
-        run: |
-          tree page
-
-      - uses: geekyeggo/delete-artifact@v5
-        with:
-          name: github-pages
-          failOnError: false
-        
       - name: Upload artifact
+        if: (!cancelled())
         uses: actions/upload-pages-artifact@v3
         with:
           path: page
-          
+
       - name: Deploy to GitHub Pages
+        if: (!cancelled())
         id: deployment
         uses: actions/deploy-pages@v4
