@@ -5,6 +5,12 @@ on:
     branches: ["main"]
   workflow_dispatch:
   workflow_call:
+    inputs:
+      workflow_call:
+        description: 'To distinguish workflow_call from regular push'
+        type: boolean
+        required: false
+        default: true
   pull_request:
     paths:
       - ".github/workflows/deploy_pip_page.yml"
