@@ -31,3 +31,17 @@ jobs:
           
           pip install PyGithub
           GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} python scripts/clean_gh_releases.py
+
+  call-deploy-pip-page:
+
+    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+
+    needs: [delete_releases]
+
+    permissions:
+      contents: read
+      id-token: write
+      pages: write
+
+    uses: ./.github/workflows/deploy_pip_page.yml
+    secrets: inherit # pass all secrets
