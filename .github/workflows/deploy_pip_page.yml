@@ -103,6 +103,11 @@ jobs:
             --piplite-wheels $MLIR_PYTHON_WHEEL_NAME \
             --piplite-wheels $EUDSL_PYTHON_EXTRAS_WHEEL_NAME
 
+      - uses: geekyeggo/delete-artifact@v5
+        with:
+          name: github-pages
+          failOnError: false
+
       - name: Upload artifact
         if: (!cancelled())
         uses: actions/upload-pages-artifact@v3
