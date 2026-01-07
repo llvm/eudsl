@@ -124,8 +124,7 @@ jobs:
           host-arch: ${{ matrix.host-arch }}
           target-arch: ${{ matrix.target-arch }}
           runs-on: ${{ matrix.runs-on }}
-          arch: ${{ matrix.arch }}
-          python-version: '3.15.0-alpha.2'
+          python-version: ${{ matrix.target-arch == 'wasm32' && '3.12' || '3.15.0-alpha.2' }}
 
       - name: "Pip download MLIR from releases"
         if: ${{ !inputs.workflow_call }}
