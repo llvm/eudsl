@@ -224,9 +224,18 @@ jobs:
             pyodide build "$PWD/projects/mlir-python-bindings-wasm" -o wheelhouse --compression-level 10
           else
             $python3_command -m cibuildwheel "$PWD/projects/mlir-python-bindings" --output-dir wheelhouse
-            echo "build using ${{ matrix.python-version }}"
-            $python3_command -m pip wheel "$PWD/projects/mlir-python-bindings" --wheel-dir wheelhouse
           fi
+
+      - name: "Build mlir-python-bindings pre-release"
+        if: matrix.target-arch != 'wasm32'
+        run: |
+          
+          echo "build using ${{ matrix.python-version }}"
+          export LLVM_DIR="$PWD/llvm-install/lib/cmake/llvm"
+          export MLIR_DIR="$PWD/llvm-install/lib/cmake/mlir"
+          export Clang_DIR="$PWD/llvm-install/lib/cmake/clang"
+          export CMAKE_PREFIX_PATH="$PWD/llvm-install"
+          $python3_command -m pip wheel "$PWD/projects/mlir-python-bindings" --wheel-dir wheelhouse
 
       - name: "Build standalone-python-bindings"
         if: matrix.target-arch != 'wasm32'
