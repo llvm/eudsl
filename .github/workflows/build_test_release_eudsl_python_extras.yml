@@ -189,6 +189,12 @@ jobs:
           if [[ $(python -c "print(__import__('sys').version_info >= (3, 13))") == "True" ]]; then
             python projects/eudsl-python-extras/examples/cuda_matmul_opt.py
           fi
+          
+          pip install py-cpuinfo
+          IS_ARM_9=$(python -c "import cpuinfo; info = cpuinfo.get_cpu_info(); info['arch'].lower().startswith('arm') and info['cpuinfo_version'][0] >= 9")
+          if [[ "$IS_ARM_9" == "True" ]]; then
+            python projects/eudsl-python-extras/examples/tiled_arm_matmul.py
+          fi
 
       - name: Test jupyter notebooks
         # sed: can't read C:\hostedtoolcache\windows\Python\3.12.10\x64/jupyter_client/runapp.py: No such file or directory
