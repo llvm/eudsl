@@ -142,6 +142,14 @@ if (TARGET mlir_cuda_runtime)
   list(APPEND _runtimes mlir_cuda_runtime)
 endif()
 
+if (TARGET mlir_arm_sme_abi_stubs)
+  list(APPEND _runtimes mlir_arm_sme_abi_stubs)
+endif()
+
+if (TARGET mlir_arm_runner_utils)
+  list(APPEND _runtimes mlir_arm_runner_utils)
+endif()
+
 if (TARGET omp)
   list(APPEND _runtimes omp)
 endif()
