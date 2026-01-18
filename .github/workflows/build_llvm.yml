@@ -181,6 +181,9 @@ jobs:
           # Tar up MLIR/LLVM distro
           ###############################
           
+          # if timezone causes datetime to be ahead of local datetime then ninja will go into a loop... 
+          find $LLVM_INSTALL_DIR -exec touch -a -m -t 197001010000 {} \;
+          
           tar -czf "mlir_${{ matrix.name }}_$WHEEL_VERSION.tar.gz" -C "$LLVM_INSTALL_DIR/.." llvm-install
           rm -rf "$LLVM_BUILD_DIR" "$LLVM_SOURCE_DIR"
           

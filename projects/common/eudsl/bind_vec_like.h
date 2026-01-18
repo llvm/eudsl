@@ -25,13 +25,13 @@ extern nanobind::class_<_SmallVector> smallVector;
 extern nanobind::class_<_ArrayRef> arrayRef;
 extern nanobind::class_<_MutableArrayRef> mutableArrayRef;
 
-template <typename Element, typename... Args>
-std::tuple<nanobind::class_<llvm::SmallVector<Element>>,
+template <typename Element, int Size = 4, typename... Args>
+std::tuple<nanobind::class_<llvm::SmallVector<Element, Size>>,
            nanobind::class_<llvm::ArrayRef<Element>>,
            nanobind::class_<llvm::MutableArrayRef<Element>>>
 bind_array_ref(nanobind::handle scope, Args &&...args) {
   using ArrayRef = llvm::ArrayRef<Element>;
-  using SmallVec = llvm::SmallVector<Element>;
+  using SmallVec = llvm::SmallVector<Element, Size>;
   using MutableArrayRef = llvm::MutableArrayRef<Element>;
   using ValueRef = Element &;
 

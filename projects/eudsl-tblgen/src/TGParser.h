@@ -90,7 +90,6 @@ class TGVarScope {
 public:
   enum ScopeKind { SK_Local, SK_Record, SK_ForeachLoop, SK_MultiClass };
 
-private:
   ScopeKind Kind;
   std::unique_ptr<TGVarScope> Parent;
   // A scope to hold variable definitions from defvar.
@@ -142,6 +141,9 @@ class TGParser {
   std::vector<SmallVector<LetRecord, 4>> LetStack;
   std::map<std::string, std::unique_ptr<MultiClass>> MultiClasses;
   std::map<std::string, const RecTy *> TypeAliases;
+  DenseSet<const VarDefInit *> TheVarDefInitPool;
+  std::unordered_map<std::string, SmallVector<const ArgumentInit *, 4>>
+      recordTemplateArgs;
 
   /// Loops - Keep track of any foreach loops we are within.
   ///
@@ -181,6 +183,12 @@ public:
         NoWarnOnUnusedTemplateArgs(NoWarnOnUnusedTemplateArgs),
         TrackReferenceLocs(TrackReferenceLocs) {}
 
+  DenseSet<const VarDefInit *> getVarDefInits() { return TheVarDefInitPool; }
+  std::unordered_map<std::string, SmallVector<const ArgumentInit *, 4>>
+  getRecordTemplateArgs() {
+    return recordTemplateArgs;
+  }
+
   /// ParseFile - Main entrypoint for parsing a tblgen file. These parser
   /// routines return true on error, or false on success.
   bool ParseFile();
@@ -219,7 +227,6 @@ public:
     CurScope = CurScope->extractParent();
   }
 
-private: // Semantic analysis methods.
   bool AddValue(Record *TheRec, SMLoc Loc, const RecordVal &RV);
   /// Set the value of a RecordVal within the given record. If `OverrideDefLoc`
   /// is set, the provided location overrides any existing location of the
@@ -253,7 +260,6 @@ private: // Semantic analysis methods.
                                     ArrayRef<const ArgumentInit *> ArgValues,
                                     const Init *DefmName, SMLoc Loc);
 
-private: // Parser methods.
   bool consume(tgtok::TokKind K);
   bool ParseObjectList(MultiClass *MC = nullptr);
   bool ParseObject(MultiClass *MC);

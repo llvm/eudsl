@@ -320,14 +320,15 @@ def generate_amdgcn_intrinsics(llvm_include_root: Path, llvmpy_module_dir: Path)
         ),
         file=amdgcn_f,
     )
-    intrins = RecordKeeper().parse_td(
+    rk = RecordKeeper()
+    rk.parse_td(
         str(llvm_include_root / "llvm" / "IR" / "Intrinsics.td"),
         include_dirs=[str(llvm_include_root)],
     )
     int_regex = re.compile(r"_i(\d+)")
     fp_regex = re.compile(r"_f(\d+)")
 
-    defs = intrins.get_defs()
+    defs = rk.get_defs()
     for d in defs:
         intr = defs[d]
         if (

@@ -13,7 +13,7 @@ Homepage = "https://github.com/llvm/eudsl"
 
 [build-system]
 requires = [
-    "nanobind>=2.2.0",
+    "nanobind>=2.9.2",
     "scikit-build-core>=0.10.7",
     "typing_extensions>=4.12.2"
 ]
@@ -99,3 +99,6 @@ before-build = [
 before-build = [
     "ccache -z"
 ]
+
+[tool.pytest.ini_options]
+addopts = "-s"

@@ -12,9 +12,6 @@ from eudsl_tblgen import (
     collect_all_attr_or_type_defs,
 )
 from eudsl_tblgen.mlir import (
-    emit_c_attr_or_type_builder,
-    emit_c_attr_or_type_field_getter,
-    emit_attr_or_type_nanobind_class,
     emit_decls_defns_nbclasses,
     CClassKind,
 )
@@ -23,17 +20,17 @@ from eudsl_tblgen.mlir import (
 @pytest.fixture(scope="function")
 def record_keeper_triton_gpu_attrs():
     here = Path(__file__).parent
-    return RecordKeeper().parse_td(
-        str(here / "td" / "TritonGPUAttrDefs.td"), [str(here / "td")]
-    )
+    rk = RecordKeeper()
+    rk.parse_td(str(here / "td" / "TritonGPUAttrDefs.td"), [str(here / "td")])
+    return rk
 
 
 @pytest.fixture(scope="function")
 def record_keeper_triton_gpu_types():
     here = Path(__file__).parent
-    return RecordKeeper().parse_td(
-        str(here / "td" / "TritonGPUTypes.td"), [str(here / "td")]
-    )
+    rk = RecordKeeper()
+    rk.parse_td(str(here / "td" / "TritonGPUTypes.td"), [str(here / "td")])
+    return rk
 
 
 def test_attrs(record_keeper_triton_gpu_attrs):
@@ -41,7 +38,9 @@ def test_attrs(record_keeper_triton_gpu_attrs):
         collect_all_defs(record_keeper_triton_gpu_attrs)
     )
     decls, defns, nbclasses = emit_decls_defns_nbclasses(
-        CClassKind.ATTRIBUTE, all_defs, exclude={"BlockedEncodingAttr", "SliceEncodingAttr"}
+        CClassKind.ATTRIBUTE,
+        all_defs,
+        exclude={"BlockedEncodingAttr", "SliceEncodingAttr"},
     )
 
     dump_dir = Path(__file__).parent
