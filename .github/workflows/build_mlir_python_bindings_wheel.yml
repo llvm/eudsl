@@ -124,6 +124,7 @@ jobs:
           host-arch: ${{ matrix.host-arch }}
           target-arch: ${{ matrix.target-arch }}
           runs-on: ${{ matrix.runs-on }}
+          python-version: ${{ matrix.target-arch == 'wasm32' && '3.12' || '3.15.0-alpha.2' }}
 
       - name: "Pip download MLIR from releases"
         if: ${{ !inputs.workflow_call }}
@@ -225,6 +226,17 @@ jobs:
             $python3_command -m cibuildwheel "$PWD/projects/mlir-python-bindings" --output-dir wheelhouse
           fi
 
+      - name: "Build mlir-python-bindings pre-release"
+        if: matrix.target-arch != 'wasm32'
+        run: |
+          
+          echo "build using ${{ matrix.python-version }}"
+          export LLVM_DIR="$PWD/llvm-install/lib/cmake/llvm"
+          export MLIR_DIR="$PWD/llvm-install/lib/cmake/mlir"
+          export Clang_DIR="$PWD/llvm-install/lib/cmake/clang"
+          export CMAKE_PREFIX_PATH="$PWD/llvm-install"
+          $python3_command -m pip wheel "$PWD/projects/mlir-python-bindings" --wheel-dir wheelhouse
+
       - name: "Build standalone-python-bindings"
         if: matrix.target-arch != 'wasm32'
         run: |
@@ -273,7 +285,8 @@ jobs:
         ]
         python-version: [
           "3.10", "3.11", "3.12",
-          "3.13", "3.14", "3.14t"
+          "3.13", "3.14", "3.14t",
+          "3.15.0-alpha.2"
         ]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
@@ -331,10 +344,12 @@ jobs:
           name: mlir_python_bindings_${{ matrix.name }}_artifact
           path: wheelhouse
 
+      - name: "Install mlir-python-bindings"
+        run: python -m pip install mlir-python-bindings numpy --pre -f wheelhouse
+
       - name: "Test mlir-python-bindings"
         run: |
           
-          pip install mlir-python-bindings numpy -v -f wheelhouse
           cd third_party/llvm-project/mlir/test/python/dialects
           for f in *.py; do
             if [[ "$f" == "python_test.py" ]]; then
