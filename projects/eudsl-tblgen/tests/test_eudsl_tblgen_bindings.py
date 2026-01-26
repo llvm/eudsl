@@ -4,8 +4,24 @@
 #  Copyright (c) 2024.
 
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
+from eudsl_tblgen.eudsl_tblgen_ext import (
+    ArgumentInit,
+    ArrayRef,
+    Init,
+    Record,
+    RecordVal,
+    StringInit,
+    StringRecTy,
+    UnsetInit,
+    DagInit,
+    DefInit,
+    BinOpInit,
+    BinaryOp,
+)
+
 from eudsl_tblgen import (
     RecordKeeper,
     get_requested_op_definitions,
@@ -16,7 +32,9 @@ from eudsl_tblgen import (
 
 @pytest.fixture(scope="function")
 def json_record_keeper():
-    return RecordKeeper().parse_td(str(Path(__file__).parent / "td" / "JSON.td"))
+    rk = RecordKeeper()
+    rk.parse_td(str(Path(__file__).parent / "td" / "JSON.td"))
+    return rk
 
 
 def test_json_record_keeper(json_record_keeper):
@@ -81,6 +99,10 @@ def test_record(json_record_keeper):
     assert (
         repr(variab_cl.get_values())
         == "RecordValues(i=?, s=?, b=?, bs={ ?, ?, ?, ?, ?, ?, ?, ? }, c=?, li=?, base=?, d=?)"
+    )
+    assert (
+        repr(variab_cl.get_values()["bs"].get_value())
+        == "BitsInit({ ?, ?, ?, ?, ?, ?, ?, ? })"
     )
 
     assert interm_cl.has_direct_super_class(interm_cl.get_direct_super_classes()[0])
@@ -150,9 +172,9 @@ def test_record_rec_ty(json_record_keeper):
 @pytest.fixture(scope="function")
 def record_keeper_test_dialect():
     here = Path(__file__).parent
-    return RecordKeeper().parse_td(
-        str(here / "td" / "TestDialect.td"), [str(here / "td")]
-    )
+    rk = RecordKeeper()
+    rk.parse_td(str(here / "td" / "TestDialect.td"), [str(here / "td")])
+    return rk
 
 
 def test_init_complex(record_keeper_test_dialect):
@@ -179,7 +201,7 @@ def test_init_complex(record_keeper_test_dialect):
 
     assert (
         repr(op.get_values())
-        == "RecordValues(opDialect=Test_Dialect, opName=types, cppNamespace=test, summary=, description=, opDocGroup=?, arguments=(ins I32:$a, SI64:$b, UI8:$c, Index:$d, F32:$e, NoneType:$f, anonymous_348), results=(outs), regions=(region), successors=(successor), builders=?, skipDefaultBuilders=0, assemblyFormat=?, hasCustomAssemblyFormat=0, hasVerifier=0, hasRegionVerifier=0, hasCanonicalizer=0, hasCanonicalizeMethod=0, hasFolder=0, useCustomPropertiesEncoding=0, traits=[], extraClassDeclaration=?, extraClassDefinition=?)"
+        == 'RecordValues(opDialect=Test_Dialect, opName=types, cppNamespace=test, summary=, description=, opDocGroup=?, arguments=(ins I32:$a, SI64:$b, UI8:$c, Index:$d, F32:$e, NoneType:$f, anonymous_348), results=(outs), regions=(region), successors=(successor), builders=?, skipDefaultBuilders=0, assemblyFormat=?, hasCustomAssemblyFormat=0, hasVerifier=0, hasRegionVerifier=0, hasCanonicalizer=0, hasCanonicalizeMethod=0, hasFolder=0, useCustomPropertiesEncoding=0, traits=[], extraClassDeclaration=?, extraClassDefinition=?, 0: "types"=?)'
     )
 
     arguments = op.get_values().arguments
@@ -241,3 +263,139 @@ def test_mlir_tblgen(record_keeper_test_dialect):
     all_defs = collect_all_defs(record_keeper_test_dialect)
     for d in all_defs:
         print(d.get_name())
+
+
+def test_intrinsic_args(record_keeper_test_dialect):
+    op = get_requested_op_definitions(record_keeper_test_dialect)[1]
+
+    base_correct_dump = dedent(
+        """\
+    Test_AndConcatOp<string Test_AndConcatOp:othermnemonic = ?> {	// Op Test_Op
+      Dialect opDialect = Test_Dialect;
+      string opName = !strconcat(Test_AndConcatOp:othermnemonic, "and");
+      string cppNamespace = "test";
+      string summary = "";
+      string description = "";
+      OpDocGroup opDocGroup = ?;
+      dag arguments = (ins anonymous_336:$in);
+      dag results = (outs);
+      dag regions = (region);
+      dag successors = (successor);
+      list<OpBuilder> builders = ?;
+      bit skipDefaultBuilders = 0;
+      string assemblyFormat = ?;
+      bit hasCustomAssemblyFormat = 0;
+      bit hasVerifier = 0;
+      bit hasRegionVerifier = 0;
+      bit hasCanonicalizer = 0;
+      bit hasCanonicalizeMethod = 0;
+      bit hasFolder = 0;
+      bit useCustomPropertiesEncoding = 0;
+      list<Trait> traits = [];
+      string extraClassDeclaration = ?;
+      string extraClassDefinition = ?;
+    }
+    """
+    )
+
+    base_class = op.get_direct_super_classes()
+    assert len(base_class) == 1
+    base_class = base_class[0]
+    assert isinstance(base_class, Record)
+    assert base_class.dump(to_str=True) == base_correct_dump
+
+    base_template_args = base_class.get_template_args()
+    assert isinstance(base_template_args, ArrayRef[Init])
+    assert len(base_template_args) == 1
+
+    mnemonic = base_template_args[0]
+    assert isinstance(mnemonic, StringInit)
+    assert mnemonic.dump(True) == '"Test_AndConcatOp:othermnemonic"'
+
+    mnemonic = base_class.get_value(mnemonic.get_value())
+    assert mnemonic.is_template_arg()
+    assert mnemonic.is_used()
+
+    assert isinstance(mnemonic, RecordVal)
+    assert mnemonic.dump(True).strip() == "string Test_AndConcatOp:othermnemonic = ?;"
+    assert mnemonic.get_name() == "Test_AndConcatOp:othermnemonic"
+    assert isinstance(mnemonic.get_value(), UnsetInit)
+    assert mnemonic.is_template_arg()
+
+    op_name = base_class.get_value("opName")
+    assert isinstance(op_name, RecordVal)
+    assert op_name.get_name() == "opName"
+    assert isinstance(op_name.get_type(), StringRecTy)
+    v = op_name.get_value()
+    assert isinstance(v, BinOpInit)
+    assert v.get_opcode() == BinaryOp.STRCONCAT
+    assert v.get_lhs().get_name() == "Test_AndConcatOp:othermnemonic"
+    assert v.get_rhs().get_value() == "and"
+
+    op_correct_dump = dedent(
+        """\
+    Test_AndOrOpConcat<Test_AndOrOpConcat 0: "or" = ?> {	// Op Test_Op Test_AndConcatOp
+      Dialect opDialect = Test_Dialect;
+      string opName = "orand";
+      string cppNamespace = "test";
+      string summary = "";
+      string description = "";
+      OpDocGroup opDocGroup = ?;
+      dag arguments = (ins anonymous_336:$in);
+      dag results = (outs);
+      dag regions = (region);
+      dag successors = (successor);
+      list<OpBuilder> builders = ?;
+      bit skipDefaultBuilders = 0;
+      string assemblyFormat = ?;
+      bit hasCustomAssemblyFormat = 0;
+      bit hasVerifier = 0;
+      bit hasRegionVerifier = 0;
+      bit hasCanonicalizer = 0;
+      bit hasCanonicalizeMethod = 0;
+      bit hasFolder = 0;
+      bit useCustomPropertiesEncoding = 0;
+      list<Trait> traits = [];
+      string extraClassDeclaration = ?;
+      string extraClassDefinition = ?;
+    }
+    """
+    )
+
+    assert op.dump(True) == op_correct_dump
+
+    template_args = op.get_template_args()
+    assert isinstance(template_args, ArrayRef[ArgumentInit])
+    assert len(template_args) == 1
+    init = template_args[0]
+    assert isinstance(init, ArgumentInit)
+    assert init.is_positional()
+    assert init.get_index() == 0
+    v = init.get_value()
+    assert isinstance(v, StringInit)
+    assert v.get_value() == "or"
+
+    arguments = op.get_value("arguments").get_value()
+    assert isinstance(arguments, DagInit)
+    assert repr(arguments) == "DagInit((ins anonymous_336:$in))"
+    assert isinstance(arguments.get_operator(), DefInit)
+    assert arguments.get_num_args() == 1
+    assert arguments.get_arg_name(0).get_value() == "in"
+    arg0 = arguments.get_arg(0)
+    assert repr(arg0) == "DefInit(anonymous_336)"
+
+    arg0_correct = dedent(
+        """\
+    anonymous_336 {	// Constraint TypeConstraint Type AllOfType
+      Pred predicate = anonymous_337;
+      string summary = " and any type";
+      string cppType = "::mlir::Type";
+      string cppFunctionName = "";
+      string description = "";
+      string builderCall = "";
+      list<Type> allowedTypes = [Test_SingletonAType, AnyType];
+    }
+    """
+    )
+
+    assert arg0.get_def().dump(True) == arg0_correct

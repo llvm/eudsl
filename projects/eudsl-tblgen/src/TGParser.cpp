@@ -48,6 +48,7 @@ struct SubClassReference {
   SubClassReference() = default;
 
   bool isInvalid() const { return Rec == nullptr; }
+  void dump() const;
 };
 
 struct SubMultiClassReference {
@@ -71,6 +72,19 @@ LLVM_DUMP_METHOD void SubMultiClassReference::dump() const {
   errs() << "Template args:\n";
   for (const Init *TA : TemplateArgs)
     TA->dump();
+}
+
+LLVM_DUMP_METHOD void SubClassReference::dump() const {
+  errs() << "Subclass:\n";
+
+  Rec->dump();
+
+  errs() << "Template args:\n";
+  for (const Init *TA : TemplateArgs) {
+    TA->dump();
+    errs() << "\n";
+  }
+  errs() << "\n";
 }
 #endif
 
@@ -307,6 +321,66 @@ bool TGParser::SetValue(Record *CurRec, SMLoc Loc, const Init *ValName,
   return false;
 }
 
+static std::string getCanonicalRecName(Record *CurRec) {
+  const Init *Name;
+  if (CurRec->isClass())
+    Name = VarInit::get(QualifiedNameOfImplicitName(*CurRec),
+                        StringRecTy::get(CurRec->getRecords()));
+  else
+    Name = CurRec->getNameInit();
+  return Name->getAsUnquotedString();
+}
+
+// https://nimrod.blog/posts/cpp-how-to-access-private-members-validly/
+template <typename Tag>
+struct Storage {
+  inline static typename Tag::type ptr;
+};
+
+template <typename Tag, typename Tag::type V>
+struct PtrTaker {
+  struct Transferer {
+    Transferer() { Storage<Tag>::ptr = V; }
+  };
+  inline static Transferer tr;
+};
+
+struct TemplateArgsTag {
+  using type = SmallVector<const Init *, 0> Record::*;
+};
+
+template struct PtrTaker<TemplateArgsTag, &Record::TemplateArgs>;
+
+static void
+addOrReplaceTemplateArgs(Record *rec,
+                         SmallVector<const ArgumentInit *, 4> newTemplateArgs) {
+  SmallVector<const Init *, 0> *mutableTemplateArgs =
+      &(*rec.*Storage<TemplateArgsTag>::ptr);
+  std::string recName = getCanonicalRecName(rec);
+  for (const ArgumentInit *newTemplateArg : newTemplateArgs) {
+    const Init **i = llvm::find_if(*mutableTemplateArgs, [&](const Init *tArg) {
+      const auto *oTArg = llvm::dyn_cast<ArgumentInit>(tArg);
+      if (oTArg->isNamed()) {
+        if (newTemplateArg->isNamed())
+          return oTArg->getName() == newTemplateArg->getName();
+        return false;
+      }
+      if (newTemplateArg->isPositional())
+        return oTArg->getIndex() == newTemplateArg->getIndex();
+      return false;
+    });
+    auto newVal = RecordVal(newTemplateArg, RecordRecTy::get(rec),
+                            RecordVal::FK_TemplateArg);
+    if (i == mutableTemplateArgs->end()) {
+      mutableTemplateArgs->push_back(newTemplateArg);
+    } else {
+      rec->removeValue(*i);
+      *i = newTemplateArg;
+    }
+    rec->addValue(newVal);
+  }
+}
+
 /// AddSubClass - Add SubClass as a subclass to CurRec, resolving its template
 /// args as SubClass's template arguments.
 bool TGParser::AddSubClass(Record *CurRec, SubClassReference &SubClass) {
@@ -336,9 +410,15 @@ bool TGParser::AddSubClass(Record *CurRec, SubClassReference &SubClass) {
                         StringRecTy::get(Records));
   else
     Name = CurRec->getNameInit();
+  auto canName = getCanonicalRecName(CurRec);
+  recordTemplateArgs[canName] = SubClass.TemplateArgs;
   R.set(QualifiedNameOfImplicitName(*SC), Name);
 
   CurRec->resolveReferences(R);
+  // we only want to keep args for defs not classes which pass
+  // args to other classes (i think so?)
+  if (!CurRec->isClass() && !SubClass.TemplateArgs.empty())
+    addOrReplaceTemplateArgs(CurRec, SubClass.TemplateArgs);
 
   // Since everything went well, we can now set the "superclass" list for the
   // current record.
@@ -531,7 +611,20 @@ bool TGParser::resolve(const std::vector<RecordsEntry> &Source,
       MapResolver R(Rec.get());
       for (const auto &S : Substs)
         R.set(S.first, S.second);
+      std::string eName = getCanonicalRecName(E.Rec.get());
+      assert(recordTemplateArgs.count(eName));
+      auto templateArgs = recordTemplateArgs[eName];
       Rec->resolveReferences(R);
+      SmallVector<const ArgumentInit *, 4> resolvedTemplateArgs;
+      for (const ArgumentInit *templateArg : templateArgs)
+        resolvedTemplateArgs.emplace_back(
+            llvm::cast<ArgumentInit>(templateArg->resolveReferences(R)));
+      std::string recName = getCanonicalRecName(Rec.get());
+      recordTemplateArgs[recName] = resolvedTemplateArgs;
+      // we only want to keep args for defs not classes which pass
+      // args to other classes (i think so?)
+      if (!Rec->isClass() && !resolvedTemplateArgs.empty())
+        addOrReplaceTemplateArgs(Rec.get(), resolvedTemplateArgs);
 
       if (Dest)
         Dest->push_back(std::move(Rec));
@@ -574,7 +667,7 @@ bool TGParser::addDefOne(std::unique_ptr<Record> Rec) {
   Rec->emitRecordDumps();
 
   // If ObjectBody has template arguments, it's an error.
-  assert(Rec->getTemplateArgs().empty() && "How'd this get template args?");
+  // assert(Rec->getTemplateArgs().empty() && "How'd this get template args?");
 
   for (DefsetRecord *Defset : Defsets) {
     DefInit *I = Rec->getDefInit();
@@ -2872,7 +2965,9 @@ const Init *TGParser::ParseSimpleValue(Record *CurRec, const RecTy *ItemType,
 
     if (TrackReferenceLocs)
       Class->appendReferenceLoc(NameLoc);
-    return VarDefInit::get(NameLoc.Start, Class, Args)->Fold();
+    const VarDefInit *v = VarDefInit::get(NameLoc.Start, Class, Args);
+    TheVarDefInitPool.insert(v);
+    return v->Fold();
   }
   case tgtok::l_brace: { // Value ::= '{' ValueList '}'
     SMLoc BraceLoc = Lex.getLoc();

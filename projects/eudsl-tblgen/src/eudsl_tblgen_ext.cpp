@@ -62,6 +62,18 @@ namespace eudsl {
 nb::class_<_SmallVector> smallVector;
 nb::class_<_ArrayRef> arrayRef;
 nb::class_<_MutableArrayRef> mutableArrayRef;
+
+template <typename T>
+static std::optional<std::string> dump(const T &self, bool toStr = false) {
+  std::string dump;
+  llvm::raw_string_ostream os(dump);
+  os << self;
+  if (!toStr) {
+    nb::print(nb::cast(dump));
+    return std::nullopt;
+  }
+  return dump;
+}
 } // namespace eudsl
 
 NB_MODULE(eudsl_tblgen_ext, m) {
@@ -83,8 +95,18 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            nb::rv_policy::reference_internal)
       .def("get_as_string", &llvm::RecTy::getAsString)
       .def("__str__", &llvm::RecTy::getAsString)
+      .def("__repr__", &llvm::RecTy::getAsString)
+      .def("__repr__",
+           [](nb::object in) {
+             std::string t = nb::cast<std::string>(
+                 nb::getattr(nb::getattr(in, "__class__"), "__name__"));
+             t += "(";
+             t += nb::cast<llvm::RecTy *>(in)->getAsString();
+             t += ")";
+             return t;
+           })
       .def("print", &llvm::RecTy::print, "os"_a)
-      .def("dump", &llvm::RecTy::dump)
+      .def("dump", eudsl::dump<llvm::RecTy>, "to_str"_a = false)
       .def("type_is_convertible_to", &llvm::RecTy::typeIsConvertibleTo, "rhs"_a)
       .def("type_is_a", &llvm::RecTy::typeIsA, "rhs"_a)
       .def("get_list_ty", &llvm::RecTy::getListTy,
@@ -195,6 +217,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .value("IK_UnsetInit", HackInit::InitKind::IK_UnsetInit)
       .value("IK_ArgumentInit", HackInit::InitKind::IK_ArgumentInit);
 
+  std::hash<std::string> hasher;
   nb::class_<llvm::Init>(m, "Init")
       .def("get_kind", &llvm::Init::getKind)
       .def("get_record_keeper", &llvm::Init::getRecordKeeper,
@@ -204,8 +227,17 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("print", &llvm::Init::print, "os"_a)
       .def("get_as_string", &llvm::Init::getAsString)
       .def("__str__", &llvm::Init::getAsUnquotedString)
+      .def("__repr__",
+           [](nb::object in) {
+             std::string t = nb::cast<std::string>(
+                 nb::getattr(nb::getattr(in, "__class__"), "__name__"));
+             t += "(";
+             t += nb::cast<llvm::Init *>(in)->getAsUnquotedString();
+             t += ")";
+             return t;
+           })
       .def("get_as_unquoted_string", &llvm::Init::getAsUnquotedString)
-      .def("dump", &llvm::Init::dump)
+      .def("dump", eudsl::dump<llvm::Init>, "to_str"_a = false)
       .def("get_cast_to", &llvm::Init::getCastTo, "ty"_a,
            nb::rv_policy::reference_internal)
       .def("convert_initializer_to", &llvm::Init::convertInitializerTo, "ty"_a,
@@ -218,7 +250,21 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("resolve_references", &llvm::Init::resolveReferences, "r"_a,
            nb::rv_policy::reference_internal)
       .def("get_bit", &llvm::Init::getBit, "bit"_a,
-           nb::rv_policy::reference_internal);
+           nb::rv_policy::reference_internal)
+      .def("__eq__",
+           [](const llvm::Init &self, const llvm::Init &other) {
+             // structural equality
+             // probably not accurate?
+             return self.getAsUnquotedString() == other.getAsUnquotedString();
+           })
+      .def("__lt__",
+           [](const llvm::Init &self, const llvm::Init &other) {
+             // alphabetical order
+             return self.getAsUnquotedString() < other.getAsUnquotedString();
+           })
+      .def("__hash__", [&hasher](const llvm::Init &self) {
+        return hasher(self.getAsUnquotedString());
+      });
 
   nb::class_<llvm::TypedInit, llvm::Init>(m, "TypedInit")
       .def_static("classof", &llvm::TypedInit::classof, "i"_a)
@@ -253,7 +299,8 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_as_string", &llvm::UnsetInit::getAsString)
       .def("__str__", &llvm::UnsetInit::getAsString);
 
-  auto llvm_ArgumentInit = nb::class_<llvm::ArgumentInit>(m, "ArgumentInit");
+  auto llvm_ArgumentInit =
+      nb::class_<llvm::ArgumentInit, llvm::Init>(m, "ArgumentInit");
 
   nb::enum_<llvm::ArgumentInit::Kind>(llvm_ArgumentInit, "Kind")
       .value("Positional", llvm::ArgumentInit::Positional)
@@ -575,10 +622,14 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("is_complete", &llvm::CondOpInit::isComplete)
       .def("get_as_string", &llvm::CondOpInit::getAsString)
       .def("__str__", &llvm::CondOpInit::getAsUnquotedString)
-      .def("arg_begin", &llvm::CondOpInit::arg_begin,
-           nb::rv_policy::reference_internal)
-      .def("arg_end", &llvm::CondOpInit::arg_end,
-           nb::rv_policy::reference_internal)
+      .def(
+          "__iter__",
+          [](llvm::CondOpInit &v) {
+            return nb::make_iterator<nb::rv_policy::reference_internal>(
+                nb::type<const llvm::Init *>(), "Iterator", v.arg_begin(),
+                v.arg_end());
+          },
+          nb::rv_policy::reference_internal)
       .def("case_size", &llvm::CondOpInit::case_size)
       .def("case_empty", &llvm::CondOpInit::case_empty)
       .def("name_begin", &llvm::CondOpInit::name_begin,
@@ -846,12 +897,19 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("get_reference_locs", &llvm::RecordVal::getReferenceLocs)
       .def("set_used", &llvm::RecordVal::setUsed, "used"_a)
       .def("is_used", &llvm::RecordVal::isUsed)
-      .def("dump", &llvm::RecordVal::dump)
+      .def("dump", eudsl::dump<llvm::RecordVal>, "to_str"_a = false)
       .def("print", &llvm::RecordVal::print, "os"_a, "print_sem"_a)
       .def("__str__",
            [](const llvm::RecordVal &self) {
              return self.getValue() ? self.getValue()->getAsUnquotedString()
                                     : "<<NULL>>";
+           })
+      .def("__repr__",
+           [](const llvm::RecordVal &self) {
+             return "RecordVal(" +
+                    (self.getValue() ? self.getValue()->getAsUnquotedString()
+                                     : "<<NULL>>") +
+                    ")";
            })
       .def("is_used", &llvm::RecordVal::isUsed);
 
@@ -882,6 +940,15 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           },
           nb::rv_policy::reference_internal)
       .def(
+          "__getitem__",
+          [](const nb::object &self, std::string key) {
+            auto d = nb::cast<nb::dict>(getattr(self, "__dict__"));
+            if (d.contains(key))
+              return d.get(key.c_str(), nb::none());
+            throw nb::key_error();
+          },
+          nb::rv_policy::reference_internal)
+      .def(
           "keys",
           [](const nb::object &self) {
             return getattr(getattr(self, "__dict__"), "keys")();
@@ -900,14 +967,19 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           },
           nb::rv_policy::reference_internal);
 
+  eudsl::bind_array_ref<const llvm::Init *>(m);
   nb::class_<llvm::Record>(m, "Record")
-      .def("get_direct_super_classes",
-           [](const llvm::Record &self) -> std::vector<const llvm::Record *> {
-             llvm::SmallVector<const llvm::Record *> Classes;
-             for (auto [rec, _] : self.getDirectSuperClasses())
-               Classes.push_back(rec);
-             return {Classes.begin(), Classes.end()};
-           })
+      .def(
+          "get_direct_super_classes",
+          [](const llvm::Record &self)
+              -> std::vector<const llvm::Record *,
+                             std::allocator<const llvm::Record *>> {
+            llvm::SmallVector<const llvm::Record *> Classes;
+            for (auto [rec, _] : self.getDirectSuperClasses())
+              Classes.push_back(rec);
+            return {Classes.begin(), Classes.end()};
+          },
+          nb::rv_policy::reference_internal)
       .def(
           "get_values",
           [](llvm::Record &self) {
@@ -921,15 +993,24 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                    !nb::inst_ready(recordValsInst));
 
             for (const llvm::RecordVal &recordVal : self.getValues()) {
-              nb::setattr(recordValsInst, recordVal.getName().str().c_str(),
+              std::string name;
+              if (const auto *nameInit = llvm::dyn_cast<llvm::StringInit>(
+                      recordVal.getNameInit())) {
+                name = nameInit->getValue().str();
+              } else if (llvm::isa<llvm::ArgumentInit>(
+                             recordVal.getNameInit())) {
+                name = recordVal.getNameInitAsString();
+              } else {
+                self.dump();
+                throw std::runtime_error("unexpected RecordVal::Name");
+              }
+              nb::setattr(recordValsInst, name.c_str(),
                           nb::borrow(nb::cast(recordVal)));
             }
             return recordValsInst;
           },
           nb::rv_policy::reference_internal)
-      .def("get_template_args",
-           eudsl::coerceReturn<std::vector<const llvm::Init *>>(
-               &llvm::Record::getTemplateArgs, nb::const_),
+      .def("get_template_args", &llvm::Record::getTemplateArgs,
            nb::rv_policy::reference_internal)
       .def_static("get_new_uid", &llvm::Record::getNewUID, "rk"_a)
       .def("get_id", &llvm::Record::getID)
@@ -1036,7 +1117,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           "r"_a, "skip_val"_a)
       .def("get_records", &llvm::Record::getRecords,
            nb::rv_policy::reference_internal)
-      .def("dump", [](llvm::Record &self) { self.dump(); })
+      .def("dump", eudsl::dump<llvm::Record>, "to_str"_a = false)
       .def("get_field_loc", &llvm::Record::getFieldLoc, "field_name"_a)
       .def("get_value_init", &llvm::Record::getValueInit, "field_name"_a,
            nb::rv_policy::reference_internal)
@@ -1064,8 +1145,12 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            "field_name"_a, "unset"_a)
       .def("get_value_as_int", &llvm::Record::getValueAsInt, "field_name"_a)
       .def("get_value_as_dag", &llvm::Record::getValueAsDag, "field_name"_a,
-           nb::rv_policy::reference_internal);
+           nb::rv_policy::reference_internal)
+      .def("__repr__", [](llvm::Record &self) {
+        return "Record(" + self.getNameInitAsString() + ")";
+      });
 
+  // Because of the unique_ptr key we have to do this...
   using RecordMap =
       std::map<std::string, std::unique_ptr<llvm::Record>, std::less<>>;
   using GlobalMap = std::map<std::string, const llvm::Init *, std::less<>>;
@@ -1104,6 +1189,16 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           },
           nb::rv_policy::reference_internal);
 
+  eudsl::bind_array_ref<const llvm::ArgumentInit *, 4>(m);
+  using RecordTemplateArgMap =
+      std::unordered_map<std::string,
+                         llvm::SmallVector<const llvm::ArgumentInit *, 4>>;
+  nb::bind_map<RecordTemplateArgMap, nb::rv_policy::reference_internal>(
+      m, "RecordTemplateArgMap");
+  nb::class_<llvm::TGParser>(m, "TGParser")
+      .def("get_record_template_args",
+           [](llvm::TGParser &self) { return self.getRecordTemplateArgs(); });
+
   nb::class_<llvm::RecordKeeper>(m, "RecordKeeper")
       .def(nb::init<>())
       .def(
@@ -1128,7 +1223,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
             if (tgParser.ParseFile())
               throw std::runtime_error("Could not parse file '" +
                                        inputFilename);
-            return &self;
+            return tgParser;
           },
           "input_filename"_a, "include_dirs"_a = nb::list(),
           "macro_names"_a = nb::list(),
@@ -1163,7 +1258,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
             return self.getAllDerivedDefinitions(ClassNames);
           },
           "class_names"_a)
-      .def("dump", &llvm::RecordKeeper::dump)
+      .def("dump", eudsl::dump<llvm::RecordKeeper>, "to_str"_a = false)
       .def(
           "get_all_derived_definitions",
           [](llvm::RecordKeeper &self, const std::string &className)
@@ -1847,9 +1942,14 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def(nb::init<mlir::tblgen::FmtObjectBase &&>(), "that"_a)
           .def("format", &mlir::tblgen::FmtObjectBase::format, "s"_a)
           .def("str", &mlir::tblgen::FmtObjectBase::str)
-          .def("__str__", [](mlir::tblgen::FmtObjectBase &self) -> std::string {
-            return self.str();
-          });
+          .def("__str__",
+               [](mlir::tblgen::FmtObjectBase &self) -> std::string {
+                 return self.str();
+               })
+          .def("__repr__",
+               [](mlir::tblgen::FmtObjectBase &self) -> std::string {
+                 return self.str();
+               });
 
   auto mlir_tblgen_FmtStrVecObject =
       nb::class_<mlir::tblgen::FmtStrVecObject, mlir::tblgen::FmtObjectBase>(

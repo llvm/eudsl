@@ -27,6 +27,12 @@ def Test_AndOp : Test_Op<"and"> {
   let arguments = (ins AllOfType<[Test_SingletonAType, AnyType]>:$in);
 }
 
+class Test_AndConcatOp<string othermnemonic> : Test_Op<!strconcat(othermnemonic, "and")> {
+  let arguments = (ins AllOfType<[Test_SingletonAType, AnyType]>:$in);
+}
+
+def Test_AndOrOpConcat : Test_AndConcatOp<"or">;
+
 
 def Test_AnyOp : Test_Op<"any"> {
   let arguments = (ins AnyType:$in);
