@@ -736,7 +736,7 @@ auto mlir_DenseElementsAttr = nb::class_<mlir::DenseElementsAttr, mlir::Attribut
 .def_static("get", [](mlir::ShapedType type, llvm::ArrayRef<llvm::APFloat> values){ return mlir::DenseElementsAttr::get(type, values); }, "type"_a, "values"_a)
 .def_static("get", [](mlir::ShapedType type, llvm::ArrayRef<std::complex<llvm::APFloat>> values){ return mlir::DenseElementsAttr::get(type, values); }, "type"_a, "values"_a)
 .def_static("get_from_raw_buffer", &mlir::DenseElementsAttr::getFromRawBuffer, "type"_a, "raw_buffer"_a)
-.def_static("is_valid_raw_buffer", &mlir::DenseElementsAttr::isValidRawBuffer, "type"_a, "raw_buffer"_a, "detected_splat"_a)
+.def_static("is_valid_raw_buffer", &mlir::DenseElementsAttr::isValidRawBuffer, "type"_a, "raw_buffer"_a)
 .def("is_splat", &mlir::DenseElementsAttr::isSplat)
 .def_prop_ro("raw_data", &mlir::DenseElementsAttr::getRawData)
 .def_prop_ro("raw_string_data", &mlir::DenseElementsAttr::getRawStringData)
