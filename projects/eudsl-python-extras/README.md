@@ -169,18 +169,6 @@ jax[cpu]
 eudsl-python-extras; --config-settings=EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX=jaxlib.mlir
 ```
 
-or
-
-```toml
-# pyproject.toml
-[project]
-name = ...
-dependencies = [
-  "jax[cpu]",
-  "eudsl-python-extras; --config-settings=EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX=jaxlib.mlir"
-]
-```
-
 ## Examples/Demo
 
 Check [examples](examples) and [tests](tests) for a plethora of example code.
