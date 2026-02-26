@@ -1558,8 +1558,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def("use_default_type_printer_parser",
                &mlir::tblgen::Dialect::useDefaultTypePrinterParser)
           .def("is_extensible", &mlir::tblgen::Dialect::isExtensible)
-          .def("use_properties_for_attributes",
-               &mlir::tblgen::Dialect::usePropertiesForAttributes)
           .def("get_discardable_attributes",
                &mlir::tblgen::Dialect::getDiscardableAttributes,
                nb::rv_policy::reference_internal)
