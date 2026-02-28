@@ -20,6 +20,8 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
 
@@ -93,11 +95,18 @@ MlirStringRef compileModule(MlirOperation module, MlirStringRef moduleName,
   assert(optLevel >= 0 && optLevel <= 3 && "expected optLevel between 0 and 3");
   targetMachine->setOptLevel(static_cast<llvm::CodeGenOptLevel>(optLevel));
   llvmModule->setDataLayout(targetMachine->createDataLayout());
-  std::string moduleNameStr(unwrap(moduleName));
-  std::string objectFileName = moduleNameStr + ".o";
+
+  llvm::SmallString<256> TempDir;
+  std::error_code EC = llvm::sys::fs::createUniqueDirectory("wasm-module", TempDir);
+  if (EC)
+    llvm::report_fatal_error("Failed to create temporary directory: " + EC.message());
+
+  llvm::SmallString<256> objectFileName(TempDir);
+  llvm::sys::path::append(objectFileName, unwrap(moduleName));
+  objectFileName.append(".o");
 
   std::error_code error;
-  llvm::raw_fd_ostream objectFileOutput(llvm::StringRef(objectFileName), error);
+  llvm::raw_fd_ostream objectFileOutput(objectFileName, error);
 
   llvm::legacy::PassManager pm;
   if (targetMachine->addPassesToEmitFile(pm, objectFileOutput, nullptr,
@@ -114,17 +123,20 @@ MlirStringRef compileModule(MlirOperation module, MlirStringRef moduleName,
 
 void linkLoadModule(MlirStringRef objectFileName,
                     MlirStringRef binaryFileName) {
-  std::string objectFileNameStr(unwrap(objectFileName));
-  std::string binaryFileNameStr(unwrap(binaryFileName));
+  llvm::SmallString<256> ObjectFileName(unwrap(objectFileName));
+
+  llvm::SmallString<256> BinaryFileName(llvm::sys::path::parent_path(ObjectFileName));
+  llvm::sys::path::append(BinaryFileName, unwrap(binaryFileName));
+
   std::vector<const char *> linkerArgs = {"wasm-ld",
                                           "-shared",
                                           "--import-memory",
                                           "--experimental-pic",
                                           "--stack-first",
                                           "--allow-undefined",
-                                          objectFileNameStr.c_str(),
+                                          ObjectFileName.c_str(),
                                           "-o",
-                                          binaryFileNameStr.c_str()};
+                                          BinaryFileName.c_str()};
 
   const lld::DriverDef wasmDriver = {lld::Flavor::Wasm, &lld::wasm::link};
   std::vector<lld::DriverDef> wasmDriverArgs;
@@ -136,7 +148,7 @@ void linkLoadModule(MlirStringRef objectFileName,
     llvm::report_fatal_error("Failed to link incremental module");
 
   void *loadedLibModule =
-      dlopen(binaryFileNameStr.c_str(), RTLD_NOW | RTLD_GLOBAL);
+      dlopen(BinaryFileName.c_str(), RTLD_NOW | RTLD_GLOBAL);
   if (!loadedLibModule)
     llvm::report_fatal_error("Failed to link incremental module");
 }
@@ -145,6 +157,6 @@ void *getSymbolAddress(MlirStringRef name) {
   std::string nameStr(unwrap(name));
   void *sym = dlsym(RTLD_DEFAULT, nameStr.c_str());
   if (!sym)
-    llvm::report_fatal_error("dlsym failed for symbol: ");
+    llvm::report_fatal_error("dlsym failed for symbol: " + nameStr);
   return sym;
 }
