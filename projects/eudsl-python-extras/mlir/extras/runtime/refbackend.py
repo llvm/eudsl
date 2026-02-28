@@ -58,6 +58,8 @@ def _try_find_runtime_libraries(local_vars: dict):
         "c_runner_utils",
         "runner_utils",
         "cuda_runtime",
+        "arm_sme_abi_stubs",
+        "arm_runner_utils"
     }
     # TODO(max): for some reason adding cuda runtime lib to execengine
     # causes a segfault (or something)
