@@ -76,7 +76,7 @@ def mod_transform():
                 lowering_strategy=VectorContractLowering.OuterProduct
             )
             transform.apply_patterns.vector.transfer_permutation_patterns()
-            transform.apply_patterns.vector.reorder_and_expand_multi_reduction_dims(
+            transform.apply_patterns.vector.reorder_multi_reduction_dims(
                 lowering_strategy=VectorMultiReductionLowering.InnerParallel
             )
             transform.apply_patterns.vector.multi_reduction_flattening(
