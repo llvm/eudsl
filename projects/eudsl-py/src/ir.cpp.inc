@@ -1826,7 +1826,7 @@ auto mlir_Operation = nb::class_<mlir::Operation>(m, "Operation")
 
 auto mlir_Operation_CloneOptions = nb::class_<mlir::Operation::CloneOptions>(mlir_Operation, "CloneOptions")
 .def(nb::init<>())
-.def(nb::init<bool, bool>(), "clone_regions"_a, "clone_operands"_a)
+.def(nb::init<bool, bool, std::optional<SmallVector<mlir::Type>>>(), "clone_regions"_a, "clone_operands"_a, "result_types"_a)
 .def_static("all", &mlir::Operation::CloneOptions::all)
 .def("clone_regions", &mlir::Operation::CloneOptions::cloneRegions, "enable"_a, nb::rv_policy::reference_internal)
 .def("should_clone_regions", &mlir::Operation::CloneOptions::shouldCloneRegions)
