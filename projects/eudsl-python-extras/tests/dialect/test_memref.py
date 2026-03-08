@@ -9,7 +9,12 @@ import mlir.extras.types as T
 import numpy as np
 import pytest
 from mlir.dialects.memref import subview
-from mlir.ir import MLIRError, Type, Value
+from mlir.ir import (
+    MLIRError,
+    Type,
+    UnrankedMemRefType,
+    Value,
+)
 
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.dialects import memref, arith
@@ -21,6 +26,7 @@ from mlir.extras.dialects.memref import (
     alloca_scope_return,
     global_,
     rank_reduce,
+    reinterpret_cast,
     S,
 )
 from mlir.extras.dialects.scf import (
@@ -721,3 +727,122 @@ def test_dim(ctx: MLIRContext):
 
     dims = mem_dynamic.dims()
     assert isinstance(dims[1], Value) and isinstance(dims[1].owner.opview, memref.DimOp)
+
+
+def test_cast_ranked_memref_to_static_shape(ctx: MLIRContext):
+    input = alloc((2, 3), T.f32())
+    reinterpret_cast(input, offsets=[0], sizes=[6, 1], strides=[1, 1])
+
+    # CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x3xf32>
+    # CHECK: %[[OUT:.*]] = memref.reinterpret_cast %[[ALLOC]] to offset: [0], sizes: [6, 1], strides: [1, 1] : memref<2x3xf32> to memref<6x1xf32>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_cast_ranked_memref_to_dynamic_shape(ctx: MLIRContext):
+    input = alloc((2, 3), T.f32())
+    c0 = constant(0, index=True)
+    c1 = constant(1, index=True)
+    c6 = constant(6, index=True)
+    reinterpret_cast(input, offsets=[c0], sizes=[c1, c6], strides=[c6, c1])
+
+    # CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x3xf32>
+    # CHECK: %[[C0:.*]] = arith.constant 0 : index
+    # CHECK: %[[C1:.*]] = arith.constant 1 : index
+    # CHECK: %[[C6:.*]] = arith.constant 6 : index
+    # CHECK: %[[OUT:.*]] = memref.reinterpret_cast %[[ALLOC]] to offset: [%[[C0]]], sizes: [%[[C1]], %[[C6]]], strides: [%[[C6]], %[[C1]]] : memref<2x3xf32> to memref<?x?xf32, strided<[?, ?], offset: ?>>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_cast_unranked_memref_to_static_shape(ctx: MLIRContext):
+    f32 = T.f32()
+    input = alloc((2, 3), f32)
+    unranked = memref.CastOp(UnrankedMemRefType.get(f32, None), input).result
+    reinterpret_cast(unranked, offsets=[0], sizes=[6, 1], strides=[1, 1])
+
+    # CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x3xf32>
+    # CHECK: %[[CAST:.*]] = memref.cast %[[ALLOC]] : memref<2x3xf32> to memref<*xf32>
+    # CHECK: %[[OUT:.*]] = memref.reinterpret_cast %[[CAST]] to offset: [0], sizes: [6, 1], strides: [1, 1] : memref<*xf32> to memref<6x1xf32>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_cast_unranked_memref_to_dynamic_shape(ctx: MLIRContext):
+    f32 = T.f32()
+    input = alloc((2, 3), f32)
+    unranked = memref.CastOp(UnrankedMemRefType.get(f32, None), input).result
+    c0 = constant(0, index=True)
+    c1 = constant(1, index=True)
+    c6 = constant(6, index=True)
+    reinterpret_cast(unranked, offsets=[c0], sizes=[c1, c6], strides=[c6, c1])
+
+    # CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x3xf32>
+    # CHECK: %[[CAST:.*]] = memref.cast %[[ALLOC]] : memref<2x3xf32> to memref<*xf32>
+    # CHECK: %[[C0:.*]] = arith.constant 0 : index
+    # CHECK: %[[C1:.*]] = arith.constant 1 : index
+    # CHECK: %[[C6:.*]] = arith.constant 6 : index
+    # CHECK: %[[OUT:.*]] = memref.reinterpret_cast %[[CAST]] to offset: [%[[C0]]], sizes: [%[[C1]], %[[C6]]], strides: [%[[C6]], %[[C1]]] : memref<*xf32> to memref<?x?xf32, strided<[?, ?], offset: ?>>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_reinterpret_cast_mixed_sizes(ctx: MLIRContext):
+    # Static first dim, dynamic second dim; static offset and strides.
+    input = alloc((2, 3), T.f32())
+    c1 = constant(1, index=True)
+    reinterpret_cast(input, offsets=[0], sizes=[6, c1], strides=[1, 1])
+
+    # CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x3xf32>
+    # CHECK: %[[C1:.*]] = arith.constant 1 : index
+    # CHECK: %[[OUT:.*]] = memref.reinterpret_cast %[[ALLOC]] to offset: [0], sizes: [6, %[[C1]]], strides: [1, 1] : memref<2x3xf32> to memref<6x?xf32, strided<[1, 1]>>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_reinterpret_cast_mixed_strides(ctx: MLIRContext):
+    # Static sizes and offset; dynamic first stride, static second stride.
+    input = alloc((2, 3), T.f32())
+    c6 = constant(6, index=True)
+    reinterpret_cast(input, offsets=[0], sizes=[6, 1], strides=[c6, 1])
+
+    # CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x3xf32>
+    # CHECK: %[[C6:.*]] = arith.constant 6 : index
+    # CHECK: %[[OUT:.*]] = memref.reinterpret_cast %[[ALLOC]] to offset: [0], sizes: [6, 1], strides: [%[[C6]], 1] : memref<2x3xf32> to memref<6x1xf32, strided<[?, 1]>>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_reinterpret_cast_mixed_offset(ctx: MLIRContext):
+    # Dynamic offset; static sizes and strides.
+    input = alloc((2, 3), T.f32())
+    c0 = constant(0, index=True)
+    reinterpret_cast(input, offsets=[c0], sizes=[6, 1], strides=[1, 1])
+
+    # CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x3xf32>
+    # CHECK: %[[C0:.*]] = arith.constant 0 : index
+    # CHECK: %[[OUT:.*]] = memref.reinterpret_cast %[[ALLOC]] to offset: [%[[C0]]], sizes: [6, 1], strides: [1, 1] : memref<2x3xf32> to memref<6x1xf32, strided<[1, 1], offset: ?>>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_reinterpret_cast_nonzero_static_offset(ctx: MLIRContext):
+    input = alloc((2, 3), T.f32())
+    reinterpret_cast(input, offsets=[3], sizes=[6, 1], strides=[1, 1])
+
+    # CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x3xf32>
+    # CHECK: %[[OUT:.*]] = memref.reinterpret_cast %[[ALLOC]] to offset: [3], sizes: [6, 1], strides: [1, 1] : memref<2x3xf32> to memref<6x1xf32, strided<[1, 1], offset: 3>>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_reinterpret_cast_nonzero_dynamic_offset(ctx: MLIRContext):
+    input = alloc((2, 3), T.f32())
+    c3 = constant(3, index=True)
+    reinterpret_cast(input, offsets=[c3], sizes=[6, 1], strides=[1, 1])
+
+    # CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x3xf32>
+    # CHECK: %[[C3:.*]] = arith.constant 3 : index
+    # CHECK: %[[OUT:.*]] = memref.reinterpret_cast %[[ALLOC]] to offset: [%[[C3]]], sizes: [6, 1], strides: [1, 1] : memref<2x3xf32> to memref<6x1xf32, strided<[1, 1], offset: ?>>
+
+    filecheck_with_comments(ctx.module)
