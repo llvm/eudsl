@@ -636,27 +636,35 @@ def reinterpret_cast(
     sizes_, _packed_sizes, static_sizes = _dispatch_mixed_values(sizes)
     strides_, _packed_strides, static_strides = _dispatch_mixed_values(strides)
 
-    if offsets_ or sizes_ or strides_:
-        raise NotImplementedError("only static offsets and sizes and strides supported")
+    sizes_list = list(static_sizes)
+    strides_list = list(static_strides)
+    offsets_list = list(static_offsets)
 
+    # Compute default (row-major) strides when all sizes and strides are static
     default_strides = None
-    if not static_strides and all(_is_static_int_like(s) for s in static_sizes):
-        default_strides = list(accumulate(list(static_sizes)[1:][::-1], operator.mul))[
-            ::-1
-        ] + [1]
-        static_strides = default_strides
+    if not sizes_ and not strides_ and sizes_list and all(s != S for s in sizes_list):
+        default_strides = list(accumulate(sizes_list[1:][::-1], operator.mul))[::-1] + [
+            1
+        ]
 
-    target_offset = 0
-    for offset, target_stride in zip(static_offsets, static_strides):
-        target_offset += offset * target_stride
+    if not strides_list and default_strides is not None:
+        strides_list = default_strides
 
-    if static_strides == default_strides and target_offset == 0:
+    # The layout offset is the flat element offset (single value in offsets)
+    target_offset = offsets_list[0] if offsets_list else 0
+
+    # Omit layout when strides are default row-major and offset is 0
+    if (
+        default_strides is not None
+        and strides_list == default_strides
+        and target_offset == 0
+    ):
         layout = None
     else:
-        layout = StridedLayoutAttr.get(target_offset, static_strides)
+        layout = StridedLayoutAttr.get(target_offset, strides_list)
 
     result = MemRefType.get(
-        static_sizes, source.type.element_type, layout, source.type.memory_space
+        sizes_list, source.type.element_type, layout, source.type.memory_space
     )
     return ReinterpretCastOp(
         result=result,
@@ -666,7 +674,7 @@ def reinterpret_cast(
         strides=strides_,
         static_offsets=static_offsets,
         static_sizes=static_sizes,
-        static_strides=static_strides,
+        static_strides=strides_list,
         loc=loc,
         ip=ip,
     ).result
