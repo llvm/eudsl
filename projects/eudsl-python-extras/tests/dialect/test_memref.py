@@ -846,3 +846,18 @@ def test_reinterpret_cast_nonzero_dynamic_offset(ctx: MLIRContext):
     # CHECK: %[[OUT:.*]] = memref.reinterpret_cast %[[ALLOC]] to offset: [%[[C3]]], sizes: [6, 1], strides: [1, 1] : memref<2x3xf32> to memref<6x1xf32, strided<[1, 1], offset: ?>>
 
     filecheck_with_comments(ctx.module)
+
+
+def test_reinterpret_cast_zero_sized_to_dynamic(ctx: MLIRContext):
+    input = alloc((0,), T.f32())
+    c0 = constant(0, index=True)
+    c1 = constant(1, index=True)
+    reinterpret_cast(input, offsets=[c0], sizes=[c1], strides=[c1])
+
+    # CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<0xf32>
+    # CHECK: %[[C0:.*]] = arith.constant 0 : index
+    # CHECK: %[[C1:.*]] = arith.constant 1 : index
+    # CHECK: %[[OUT:.*]] = memref.reinterpret_cast %[[ALLOC]] to offset: [%[[C0]]], sizes: [%[[C1]]], strides: [%[[C1]]] : memref<0xf32> to memref<?xf32, strided<[?], offset: ?>>
+
+    filecheck_with_comments(ctx.module)
+
