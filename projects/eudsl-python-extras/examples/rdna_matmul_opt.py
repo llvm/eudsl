@@ -741,7 +741,8 @@ for g in gep:
 
 
 kernel_funcs = find_ops(
-    lowered_module.operation, lambda o: isinstance(o.opview, llvm.LLVMFuncOp)
+    lowered_module.operation,
+    lambda o: isinstance(o.opview, llvm.LLVMFuncOp) and "kernel" in o.sym_name.value,
 )
 target_flags = "+16-bit-insts,+atomic-fadd-rtn-insts,+ci-insts,+dl-insts,+dot10-insts,+dot5-insts,+dot7-insts,+dot8-insts,+dot9-insts,+dpp,+gfx10-3-insts,+gfx10-insts,+gfx11-insts,+gfx8-insts,+gfx9-insts,+wavefrontsize32".split(
     ","
