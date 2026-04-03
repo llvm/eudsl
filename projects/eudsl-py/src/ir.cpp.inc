@@ -1267,8 +1267,7 @@ auto mlir_AttrTypeSubElementHandler__TypeRange__ = nb::class_<mlir::AttrTypeSubE
 .def_static("replace", &mlir::AttrTypeSubElementHandler<TypeRange>::replace, "param"_a, "attr_repls"_a, "type_repls"_a)
 ;
 
-auto mlir_OpaqueProperties = nb::class_<mlir::OpaqueProperties>(m, "OpaqueProperties")
-.def(nb::init<void *>(), "prop"_a)
+auto mlir_PropertyRef = nb::class_<mlir::PropertyRef>(m, "PropertyRef")
 ;
 
 auto mlir_OperationName = nb::class_<mlir::OperationName>(m, "OperationName")
@@ -1691,10 +1690,10 @@ nb::enum_<mlir::detail::OpProperties>(m, "OpProperties")
 ;
 
 auto mlir_Operation = nb::class_<mlir::Operation>(m, "Operation")
-.def_static("create", [](mlir::Location location, mlir::OperationName name, mlir::TypeRange resultTypes, mlir::ValueRange operands, mlir::NamedAttrList && attributes, mlir::OpaqueProperties properties, mlir::BlockRange successors, unsigned int numRegions){ return mlir::Operation::create(location, name, resultTypes, operands, std::move(attributes), properties, successors, numRegions); }, "location"_a, "name"_a, "result_types"_a, "operands"_a, "attributes"_a, "properties"_a, "successors"_a, "num_regions"_a, nb::rv_policy::reference_internal)
-.def_static("create", [](mlir::Location location, mlir::OperationName name, mlir::TypeRange resultTypes, mlir::ValueRange operands, mlir::DictionaryAttr attributes, mlir::OpaqueProperties properties, mlir::BlockRange successors, unsigned int numRegions){ return mlir::Operation::create(location, name, resultTypes, operands, attributes, properties, successors, numRegions); }, "location"_a, "name"_a, "result_types"_a, "operands"_a, "attributes"_a, "properties"_a, "successors"_a, "num_regions"_a, nb::rv_policy::reference_internal)
+.def_static("create", [](mlir::Location location, mlir::OperationName name, mlir::TypeRange resultTypes, mlir::ValueRange operands, mlir::NamedAttrList && attributes, mlir::PropertyRef properties, mlir::BlockRange successors, unsigned int numRegions){ return mlir::Operation::create(location, name, resultTypes, operands, std::move(attributes), properties, successors, numRegions); }, "location"_a, "name"_a, "result_types"_a, "operands"_a, "attributes"_a, "properties"_a, "successors"_a, "num_regions"_a, nb::rv_policy::reference_internal)
+.def_static("create", [](mlir::Location location, mlir::OperationName name, mlir::TypeRange resultTypes, mlir::ValueRange operands, mlir::DictionaryAttr attributes, mlir::PropertyRef properties, mlir::BlockRange successors, unsigned int numRegions){ return mlir::Operation::create(location, name, resultTypes, operands, attributes, properties, successors, numRegions); }, "location"_a, "name"_a, "result_types"_a, "operands"_a, "attributes"_a, "properties"_a, "successors"_a, "num_regions"_a, nb::rv_policy::reference_internal)
 .def_static("create", [](const mlir::OperationState & state){ return mlir::Operation::create(state); }, "state"_a, nb::rv_policy::reference_internal)
-.def_static("create", [](mlir::Location location, mlir::OperationName name, mlir::TypeRange resultTypes, mlir::ValueRange operands, mlir::NamedAttrList && attributes, mlir::OpaqueProperties properties, mlir::BlockRange successors, mlir::RegionRange regions){ return mlir::Operation::create(location, name, resultTypes, operands, std::move(attributes), properties, successors, regions); }, "location"_a, "name"_a, "result_types"_a, "operands"_a, "attributes"_a, "properties"_a, "successors"_a, "regions"_a, nb::rv_policy::reference_internal)
+.def_static("create", [](mlir::Location location, mlir::OperationName name, mlir::TypeRange resultTypes, mlir::ValueRange operands, mlir::NamedAttrList && attributes, mlir::PropertyRef properties, mlir::BlockRange successors, mlir::RegionRange regions){ return mlir::Operation::create(location, name, resultTypes, operands, std::move(attributes), properties, successors, regions); }, "location"_a, "name"_a, "result_types"_a, "operands"_a, "attributes"_a, "properties"_a, "successors"_a, "regions"_a, nb::rv_policy::reference_internal)
 .def_prop_ro("name", &mlir::Operation::getName)
 .def_prop_ro("registered_info", &mlir::Operation::getRegisteredInfo)
 .def("is_registered", &mlir::Operation::isRegistered)
@@ -1810,8 +1809,6 @@ auto mlir_Operation = nb::class_<mlir::Operation>(m, "Operation")
 .def("emit_remark", &mlir::Operation::emitRemark, "message"_a)
 .def_prop_ro("properties_storage_size", &mlir::Operation::getPropertiesStorageSize)
 .def_prop_ro("properties_storage", [](mlir::Operation& self){ return self.getPropertiesStorage(); })
-.def_prop_ro("properties_storage", [](mlir::Operation& self){ return self.getPropertiesStorage(); })
-.def_prop_ro("properties_storage_unsafe", &mlir::Operation::getPropertiesStorageUnsafe)
 .def_prop_ro("properties_as_attribute", &mlir::Operation::getPropertiesAsAttribute)
 .def("set_properties_from_attribute", &mlir::Operation::setPropertiesFromAttribute, "attr"_a, "emit_error"_a)
 .def("copy_properties", &mlir::Operation::copyProperties, "rhs"_a)
