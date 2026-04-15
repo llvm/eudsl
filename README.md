@@ -46,6 +46,10 @@ They are also `pip install`-able with .e.g
 
 ```shell
 $ pip install eudsl-py -f https://llvm.github.io/eudsl
+// or
+$ pip install mlir-python-bindings -f https://llvm.github.io/eudsl
+// or
+$ pip install eudsl-python-extras -f https://llvm.github.io/eudsl
 ```
 
 `eudsl-py` has a slowly growing set of tests @ [projects/eudsl-py/tests](./projects/eudsl-py/tests).
