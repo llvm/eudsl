@@ -52,7 +52,7 @@ if(EUDSLPY_STANDALONE_BUILD)
   endif()
   # for out-of-tree MLIR_INCLUDE_DIR points to the build dir by default
   # and MLIR_INCLUDE_DIRS points to the correct place
-  set(MLIR_INCLUDE_DIR ${MLIR_INCLUDE_DIRS})
+  list(GET MLIR_INCLUDE_DIRS 0 MLIR_INCLUDE_DIR)
 
   include_directories(${CMAKE_CURRENT_LIST_DIR}/../common)
 endif()
