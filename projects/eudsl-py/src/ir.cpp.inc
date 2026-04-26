@@ -804,8 +804,8 @@ auto mlir_DenseArrayAttr = nb::class_<mlir::DenseArrayAttr,  mlir::Attribute>(m,
 .def_prop_ro("raw_data", &mlir::DenseArrayAttr::getRawData)
 ;
 
-auto mlir_DenseIntOrFPElementsAttr = nb::class_<mlir::DenseIntOrFPElementsAttr,  mlir::DenseElementsAttr>(m, "DenseIntOrFPElementsAttr")
-.def_static("convert_endian_of_array_ref_for_b_emachine", &mlir::DenseIntOrFPElementsAttr::convertEndianOfArrayRefForBEmachine, "in_raw_data"_a, "out_raw_data"_a, "type"_a)
+auto mlir_DenseTypedElementsAttr = nb::class_<mlir::DenseTypedElementsAttr,  mlir::DenseElementsAttr>(m, "DenseTypedElementsAttr")
+.def_static("convert_endian_of_array_ref_for_b_emachine", &mlir::DenseTypedElementsAttr::convertEndianOfArrayRefForBEmachine, "in_raw_data"_a, "out_raw_data"_a, "type"_a)
 ;
 
 auto mlir_DenseStringElementsAttr = nb::class_<mlir::DenseStringElementsAttr,  mlir::DenseElementsAttr>(m, "DenseStringElementsAttr")
@@ -950,8 +950,8 @@ auto mlir_detail_TypeIDResolver___mlir_DenseArrayAttr__ = nb::class_<mlir::detai
 .def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::DenseArrayAttr>::resolveTypeID)
 ;
 
-auto mlir_detail_TypeIDResolver___mlir_DenseIntOrFPElementsAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::DenseIntOrFPElementsAttr>>(m, "TypeIDResolver[DenseIntOrFPElementsAttr]")
-.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::DenseIntOrFPElementsAttr>::resolveTypeID)
+auto mlir_detail_TypeIDResolver___mlir_DenseTypedElementsAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::DenseTypedElementsAttr>>(m, "TypeIDResolver[DenseTypedElementsAttr]")
+.def_static("resolve_type_id", &mlir::detail::TypeIDResolver< ::mlir::DenseTypedElementsAttr>::resolveTypeID)
 ;
 
 auto mlir_detail_TypeIDResolver___mlir_DenseStringElementsAttr__ = nb::class_<mlir::detail::TypeIDResolver< ::mlir::DenseStringElementsAttr>>(m, "TypeIDResolver[DenseStringElementsAttr]")
@@ -1075,14 +1075,14 @@ auto mlir_FlatSymbolRefAttr = nb::class_<mlir::FlatSymbolRefAttr, mlir::SymbolRe
 .def_static("classof", &mlir::FlatSymbolRefAttr::classof, "attr"_a)
 ;
 
-auto mlir_DenseFPElementsAttr = nb::class_<mlir::DenseFPElementsAttr, mlir::DenseIntOrFPElementsAttr>(m, "DenseFPElementsAttr")
+auto mlir_DenseFPElementsAttr = nb::class_<mlir::DenseFPElementsAttr, mlir::DenseTypedElementsAttr>(m, "DenseFPElementsAttr")
 .def("map_values", &mlir::DenseFPElementsAttr::mapValues, "new_element_type"_a, "mapping"_a)
 .def("begin", &mlir::DenseFPElementsAttr::begin)
 .def("end", &mlir::DenseFPElementsAttr::end)
 .def_static("classof", &mlir::DenseFPElementsAttr::classof, "attr"_a)
 ;
 
-auto mlir_DenseIntElementsAttr = nb::class_<mlir::DenseIntElementsAttr, mlir::DenseIntOrFPElementsAttr>(m, "DenseIntElementsAttr")
+auto mlir_DenseIntElementsAttr = nb::class_<mlir::DenseIntElementsAttr, mlir::DenseTypedElementsAttr>(m, "DenseIntElementsAttr")
 .def("map_values", &mlir::DenseIntElementsAttr::mapValues, "new_element_type"_a, "mapping"_a)
 .def("begin", &mlir::DenseIntElementsAttr::begin)
 .def("end", &mlir::DenseIntElementsAttr::end)
