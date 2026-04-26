@@ -99,7 +99,8 @@ static void populateIRModule(nb::module_ &m) {
           .def("get_dialect_allocator",
                &mlir::DialectRegistry::getDialectAllocator, "name"_a)
           .def("append_to", &mlir::DialectRegistry::appendTo, "destination"_a)
-          .def_prop_ro("dialect_names", &mlir::DialectRegistry::getDialectNames)
+          .def_prop_ro("dialect_registered_names",
+                       &mlir::DialectRegistry::getRegisteredDialectNames)
           .def(
               "apply_extensions",
               [](mlir::DialectRegistry &self, mlir::Dialect *dialect) {
