@@ -97,6 +97,7 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     llvm-libraries
     llvm-tblgen
 
+    split-file
     count
     FileCheck
     not
