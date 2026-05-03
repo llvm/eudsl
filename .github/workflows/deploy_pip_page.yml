@@ -61,7 +61,7 @@ jobs:
         if: ${{ !inputs.workflow_call }}
         run: |
           
-          pip download mlir-python-bindings --plat pyodide_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl
+          pip download mlir-python-bindings --plat pyemscripten_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl
 
       - name: Download latest WASM wheel
         if: ${{ inputs.workflow_call }}
@@ -85,7 +85,7 @@ jobs:
           export EUDSL_PYTHON_EXTRAS_WHEEL_NAME="$(ls eudsl_python_extras*)"
           
           cp pages/console/index.html page/console/index.html
-          cp $MLIR_PYTHON_WHEEL_NAME page/console/mlir_python_bindings-0.0.1-cp312-cp312-pyodide_2024_0_wasm32.whl
+          cp $MLIR_PYTHON_WHEEL_NAME page/console/mlir_python_bindings-0.0.1-cp312-cp312-pyemscripten_2024_0_wasm32.whl
           cp $EUDSL_PYTHON_EXTRAS_WHEEL_NAME page/console/eudsl_python_extras-0.0.1-py3-none-any.whl
           
           echo "MLIR_PYTHON_WHEEL_NAME=$MLIR_PYTHON_WHEEL_NAME" >> $GITHUB_ENV
