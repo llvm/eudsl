@@ -200,6 +200,8 @@ jobs:
             unzip -qqP "${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD }}" Payload.zip
             cat Payload | gunzip | cpio -i
             sudo ditto usr /usr
+            echo MACOSX_DEPLOYMENT_TARGET=13.0 >> $GITHUB_ENV
+            echo CMAKE_OSX_DEPLOYMENT_TARGET=13.0 >> $GITHUB_ENV
           fi
           
           if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then

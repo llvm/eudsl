@@ -78,8 +78,13 @@ add_compile_definitions("MLIR_PYTHON_PACKAGE_PREFIX=${MLIR_PYTHON_PACKAGE_PREFIX
 mlir_configure_python_dev_packages()
 
 find_library(METAL_IR_CONVERTER_LIB metalirconverter PATHS /usr/local/lib)
-if(NOT METAL_IR_CONVERTER_LIB_FOUND)
-  set(METAL_IR_CONVERTER_LIB)
+# find_library does not set a companion _FOUND variable; check the result
+# itself (empty / *-NOTFOUND both read as false in `if`).
+if(METAL_IR_CONVERTER_LIB)
+  set(METAL_IR_CONVERTER_LIB_FOUND TRUE)
+else()
+  set(METAL_IR_CONVERTER_LIB_FOUND FALSE)
+  set(METAL_IR_CONVERTER_LIB "")
 endif()
 
 if(METAL_IR_CONVERTER_LIB_FOUND)
