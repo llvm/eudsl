@@ -71,6 +71,5 @@ Testing/
 .idea
 cmake-build-debug
 *.metallib
-*.air
 *.ll
 *.dxil

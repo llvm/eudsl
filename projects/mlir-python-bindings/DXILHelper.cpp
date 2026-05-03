@@ -50,10 +50,45 @@ namespace llvm {
 void lowerMLIRToDXIL(llvm::Module &M);
 } // namespace llvm
 
+// Reflection entry describing a single resource in the top-level Argument
+// Buffer that the compiled metallib reads from. Bound to Python as
+// `ResourceLocation` so the test (and other callers) can use attribute
+// access instead of tuple indexing.
+struct ResourceLocation {
+  int resource_type;
+  unsigned space;
+  unsigned slot;
+  unsigned top_level_offset;
+  uint64_t size_bytes;
+  std::string name;
+};
+
 namespace nb = nanobind;
 using namespace nb::literals;
 
 NB_MODULE(_mlirDXILHelper, m) {
+
+  nb::class_<ResourceLocation>(m, "ResourceLocation")
+      .def_ro("resource_type", &ResourceLocation::resource_type,
+              "IRResourceType enum value (3=SRV, 4=UAV, 5=Sampler, ...)")
+      .def_ro("space", &ResourceLocation::space, "DXIL register space")
+      .def_ro("slot", &ResourceLocation::slot, "DXIL register slot")
+      .def_ro("top_level_offset", &ResourceLocation::top_level_offset,
+              "Byte offset of the 24-byte descriptor within the top-level "
+              "Argument Buffer")
+      .def_ro("size_bytes", &ResourceLocation::size_bytes,
+              "Size of the descriptor entry (typically 24)")
+      .def_ro("name", &ResourceLocation::name,
+              "Resource name, or empty string if unnamed")
+      .def("__repr__", [](const ResourceLocation &r) {
+        return "ResourceLocation(resource_type=" +
+               std::to_string(r.resource_type) +
+               ", space=" + std::to_string(r.space) +
+               ", slot=" + std::to_string(r.slot) +
+               ", top_level_offset=" + std::to_string(r.top_level_offset) +
+               ", size_bytes=" + std::to_string(r.size_bytes) + ", name='" +
+               r.name + "')";
+      });
 
   nb::class_<llvm::LLVMContext>(m, "LLVMContext").def(nb::init<>());
 
@@ -196,10 +231,7 @@ NB_MODULE(_mlirDXILHelper, m) {
   m.def(
       "translate_dxil_to_metallib",
       [](nb::bytes dxil, IRShaderStage stage, const std::string &entryPoint)
-          -> std::tuple<
-              nb::bytes,
-              std::vector<std::tuple<int, unsigned, unsigned, unsigned,
-                                     uint64_t, std::string>>> {
+          -> std::tuple<nb::bytes, std::vector<ResourceLocation>> {
         IRCompiler *compiler = IRCompilerCreate();
         IRObject *input = IRObjectCreateFromDXIL(
             reinterpret_cast<const uint8_t *>(dxil.c_str()), dxil.size(),
@@ -234,9 +266,7 @@ NB_MODULE(_mlirDXILHelper, m) {
         std::vector<uint8_t> buf(sz);
         IRMetalLibGetBytecode(lib, buf.data());
 
-        std::vector<std::tuple<int, unsigned, unsigned, unsigned, uint64_t,
-                               std::string>>
-            locations;
+        std::vector<ResourceLocation> locations;
         IRShaderReflection *reflection = IRShaderReflectionCreate();
         if (IRObjectGetReflection(out, stage, reflection)) {
           size_t n = IRShaderReflectionGetResourceCount(reflection);
@@ -244,10 +274,11 @@ NB_MODULE(_mlirDXILHelper, m) {
           if (n > 0)
             IRShaderReflectionGetResourceLocations(reflection, rls.data());
           for (const IRResourceLocation &rl : rls)
-            locations.emplace_back(
-                static_cast<int>(rl.resourceType), rl.space, rl.slot,
-                rl.topLevelOffset, rl.sizeBytes,
-                rl.resourceName ? std::string(rl.resourceName) : std::string{});
+            locations.push_back(
+                ResourceLocation{static_cast<int>(rl.resourceType), rl.space,
+                                 rl.slot, rl.topLevelOffset, rl.sizeBytes,
+                                 rl.resourceName ? std::string(rl.resourceName)
+                                                 : std::string{}});
         }
         IRShaderReflectionDestroy(reflection);
 
@@ -260,5 +291,31 @@ NB_MODULE(_mlirDXILHelper, m) {
             nb::bytes(reinterpret_cast<const char *>(buf.data()), buf.size()),
             locations};
       },
-      "dxil"_a, "stage"_a = IRShaderStageCompute, "entry_point"_a = "");
+      "dxil"_a, "stage"_a = IRShaderStageCompute, "entry_point"_a = "",
+      R"doc(Compile a DXIL container into a metallib and report resource layout.
+
+Args:
+    dxil: DXContainer bytes (as produced by ``translate_llvm_to_dxil``) holding
+        the DXIL shader to convert.
+    stage: Shader stage to extract from the converted object. Defaults to
+        ``IRShaderStage.Compute``.
+    entry_point: Optional entry-point function name. Pass the empty string
+        (the default) when the input DXIL has a single entry point.
+
+Returns:
+    A ``(metallib_bytes, reflection)`` tuple.
+
+    * ``metallib_bytes`` (``bytes``): the compiled metallib for the requested
+      stage.
+    * ``reflection`` (``list[ResourceLocation]``): one entry per resource
+      referenced by the top-level Argument Buffer that the compiled kernel
+      reads from, in the order they appear in the buffer. See
+      ``ResourceLocation`` for the per-entry fields; each resource's
+      24-byte descriptor (``gpuAddress``, ``resourceID``, ``flags``) is to
+      be written at ``entry.top_level_offset``.
+
+Raises:
+    RuntimeError: on compilation failure or when the compiled object has no
+        bytecode for the requested shader stage.
+)doc");
 }

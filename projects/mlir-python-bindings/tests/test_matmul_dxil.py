@@ -155,11 +155,10 @@ metallib_bytes, reflection = translate_dxil_to_metallib(
 )
 print(f"metallib: {len(metallib_bytes)} bytes")
 print("top-level argument buffer layout:")
-for entry in reflection:
-    res_type, space, slot, offset, size, name = entry
+for r in reflection:
     print(
-        f"  type={res_type} space={space} slot={slot} "
-        f"offset={offset} size={size} name={name!r}"
+        f"  type={r.resource_type} space={r.space} slot={r.slot} "
+        f"offset={r.top_level_offset} size={r.size_bytes} name={r.name!r}"
     )
 
 metallib_fp = out_dir / f"{KERNEL_NAME}.metallib"
@@ -214,11 +213,13 @@ buf_C = make_buffer(M * N * np.dtype(np.float32).itemsize)
 # The offset of each slot comes from the reflection returned above.
 BIND_POINT = 2  # kIRArgumentBufferBindPoint from the runtime header
 slot_to_buf = {0: buf_A, 1: buf_B, 2: buf_C}
-table_size = max(off + sz for _, _, _, off, sz, _ in reflection)
+table_size = max(r.top_level_offset + r.size_bytes for r in reflection)
 top_level = bytearray(table_size)
-for _, _, slot, offset, _, _ in reflection:
-    b = slot_to_buf[slot]
-    struct.pack_into("<QQQ", top_level, offset, b.gpuAddress(), 0, b.length())
+for r in reflection:
+    b = slot_to_buf[r.slot]
+    struct.pack_into(
+        "<QQQ", top_level, r.top_level_offset, b.gpuAddress(), 0, b.length()
+    )
 
 queue = device.newCommandQueue()
 cmd_buf = queue.commandBuffer()

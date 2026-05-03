@@ -181,7 +181,7 @@ if(TARGET LLVMDirectXCodeGen)
     LLVMDirectXCodeGen
     LLVMDirectXDesc
     LLVMDirectXInfo)
-else()
+endif()
 
 if(APPLE)
   list(APPEND eudslllvm_ext_libs ${LLVM_AVAILABLE_LIBS})
