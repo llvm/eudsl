@@ -41,6 +41,17 @@
 #include <string>
 #include <tuple>
 
+// For sysctlbyname("kern.osproductversion", ...), which lets us read the
+// running macOS product version (e.g. "14.5") at runtime without pulling in
+// Objective-C.  We use this to configure the metal_irconverter's minimum
+// deployment target so the emitted metallib targets an MSL version the
+// runtime OS actually supports -- otherwise the compiler picks the newest
+// MSL it knows (3.2 on macOS 15 SDK) and older macOS runtimes reject the
+// library at pipeline-creation time with "language version X.Y is
+// incompatible with this OS".
+#include <sys/sysctl.h>
+#include <sys/types.h>
+
 extern "C" void LLVMInitializeDirectXTargetInfo();
 extern "C" void LLVMInitializeDirectXTarget();
 extern "C" void LLVMInitializeDirectXTargetMC();
@@ -49,6 +60,32 @@ extern "C" void LLVMInitializeDirectXAsmPrinter();
 namespace llvm {
 void lowerMLIRToDXIL(llvm::Module &M);
 } // namespace llvm
+
+// Return the running macOS product version (e.g. "14.5" or "13.6.1") by
+// querying the sysctl `kern.osproductversion`.  Falls back to an empty
+// string if the query fails for any reason; callers treat that as "leave
+// the compiler's default deployment target alone".
+static std::string getRunningMacOSProductVersion() {
+  char buf[64] = {0};
+  size_t len = sizeof(buf) - 1;
+  if (::sysctlbyname("kern.osproductversion", buf, &len, nullptr, 0) != 0)
+    return {};
+  if (len == 0)
+    return {};
+  // Normalise to an "X.Y.Z" string that IRCompilerSetMinimumDeploymentTarget
+  // accepts (the docs show examples like "13.0.0" and "16.0.0").  sysctl
+  // may return "14" or "14.5", so pad missing components with ".0".
+  std::string v(buf);
+  size_t dots = 0;
+  for (char c : v)
+    if (c == '.')
+      ++dots;
+  while (dots < 2) {
+    v += ".0";
+    ++dots;
+  }
+  return v;
+}
 
 // Reflection entry describing a single resource in the top-level Argument
 // Buffer that the compiled metallib reads from. Bound to Python as
@@ -233,6 +270,17 @@ NB_MODULE(_mlirDXILHelper, m) {
       [](nb::bytes dxil, IRShaderStage stage, const std::string &entryPoint)
           -> std::tuple<nb::bytes, std::vector<ResourceLocation>> {
         IRCompiler *compiler = IRCompilerCreate();
+
+        // Pin the MSL version emitted by the converter to one the running
+        // OS supports.  If we leave this unset, metal_irconverter targets
+        // the newest MSL it knows (e.g. 3.2 for macOS 15) and older macOS
+        // runtimes reject the metallib at compute-pipeline-creation time
+        // with "language version 3.2 is incompatible with this OS".
+        std::string osVersion = getRunningMacOSProductVersion();
+        if (!osVersion.empty())
+          IRCompilerSetMinimumDeploymentTarget(
+              compiler, IROperatingSystem_macOS, osVersion.c_str());
+
         IRObject *input = IRObjectCreateFromDXIL(
             reinterpret_cast<const uint8_t *>(dxil.c_str()), dxil.size(),
             IRBytecodeOwnershipNone);

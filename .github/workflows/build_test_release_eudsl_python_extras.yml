@@ -214,6 +214,13 @@ jobs:
           #   cat projects/eudsl-python-extras/examples/cuda_e2e_output.ipynb | jq '.cells[].outputs | select(length > 0) | .[0] | .text'
           # fi
 
+      - name: "DXIL matmul"
+        if: matrix.runs-on == 'macos-14'
+        run: |
+          
+          pip install pyobjc-framework-Metal
+          python projects/eudsl-python-extras/examples/matmul_dxil.py
+
       - name: "Test other hosts"
         # ImportError: DLL load failed while importing _mlir: The specified module could not be found.
         if: matrix.os != 'windows'
@@ -223,13 +230,6 @@ jobs:
           pip install -r projects/eudsl-python-extras/tests/other_host_reqs.txt -f dist --no-cache-dir
           
           pytest -v --capture=tee-sys projects/eudsl-python-extras/tests/test_other_hosts.py
-
-      - name: "DXIL matmul"
-        if: matrix.runs-on == 'macos-14'
-        run: |
-          
-          pip install pyobjc-framework-Metal
-          python projects/eudsl-python-extras/examples/matmul_dxil.py
 
   release-eudsl-python-extras:
 
