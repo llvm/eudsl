@@ -78,8 +78,11 @@ add_compile_definitions("MLIR_PYTHON_PACKAGE_PREFIX=${MLIR_PYTHON_PACKAGE_PREFIX
 mlir_configure_python_dev_packages()
 
 find_library(METAL_IR_CONVERTER_LIB metalirconverter PATHS /usr/local/lib)
+if(NOT METAL_IR_CONVERTER_LIB_FOUND)
+  set(METAL_IR_CONVERTER_LIB)
+endif()
 
-if(METAL_IR_CONVERTER_LIB)
+if(METAL_IR_CONVERTER_LIB_FOUND)
   declare_mlir_python_sources(MLIRPythonExtension.DXILHelper
     ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mlir"
     ADD_TO_PARENT MLIRPythonSources
@@ -112,10 +115,9 @@ add_mlir_python_common_capi_library(MLIRPythonCAPI
     MLIRPythonExtension.RegisterEverything
 )
 
-if(METAL_IR_CONVERTER_LIB)
+if(METAL_IR_CONVERTER_LIB_FOUND)
   target_link_libraries(MLIRPythonCAPI
-    PRIVATE ${METAL_IR_CONVERTER_LIB}
-  )
+    PRIVATE ${METAL_IR_CONVERTER_LIB})
 endif()
 
 if(TARGET LLVMDirectXCodeGen)

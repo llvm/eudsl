@@ -16,7 +16,7 @@ try:
     import Foundation
 except ImportError:
     print("Metal / Foundation (pyobjc) not available; skipping.")
-    raise SystemExit(0)
+    raise exit(0)
 
 from mlir.ir import (
     Context,

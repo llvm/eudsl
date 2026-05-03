@@ -224,6 +224,13 @@ jobs:
           
           pytest -v --capture=tee-sys projects/eudsl-python-extras/tests/test_other_hosts.py
 
+      - name: "DXIL matmul"
+        if: matrix.runs-on == 'macos-14'
+        run: |
+          
+          pip install pyobjc-framework-Metal
+          python projects/eudsl-python-extras/examples/matmul_dxil.py
+
   release-eudsl-python-extras:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'

@@ -195,7 +195,11 @@ jobs:
             sudo apt-get install libarchive-dev antlr libxml2-dev libxslt-dev libcurl4-openssl-dev
           fi
           if [[ "${{ matrix.os }}" == "macos" ]]; then
-            brew install antlr boost libarchive
+            brew install antlr boost libarchive wget
+            wget https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
+            unzip -qqP "${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD }}" Payload.zip
+            cat Payload | gunzip | cpio -i
+            sudo ditto usr /usr
           fi
           
           if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
