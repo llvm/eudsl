@@ -349,18 +349,24 @@ jobs:
             python $f
           done
 
+      - name: "Test DXIL matmul"
+        if: matrix.runs-on == 'macos-14'
+        run: |
+          
+          brew install wget
+          wget https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
+          unzip -qqP "${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD }}" Payload.zip
+          cat Payload | gunzip | cpio -i
+          sudo ditto usr /usr
+          
+          pip install pyobjc-framework-Metal
+          python projects/mlir-python-bindings/tests/test_matmul_dxil.py
+
       - name: "Test standalone-python-bindings"
         run: |
 
           pip install standalone-python-bindings -f wheelhouse
           python projects/mlir-python-bindings/tests/smoketest.py
-
-      - name: "Test DXIL matmul"
-        if: matrix.runs-on == 'macos-14'
-        run: |
-          
-          pip install pyobjc-framework-Metal
-          python projects/mlir-python-bindings/tests/test_matmul_dxil.py
 
   test-mlir-python-bindings-wasm:
 
