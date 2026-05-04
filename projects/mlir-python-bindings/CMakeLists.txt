@@ -177,7 +177,7 @@ if(METAL_IR_CONVERTER_LIB_FOUND)
     POST_BUILD
     COMMAND install_name_tool -change
       "@rpath/libmetalirconverter.dylib"
-      "@loader_path/libmetalirconverter.dylib"
+      "/usr/local/lib/libmetalirconverter.dylib"
       "$<TARGET_FILE:${_mlirDXILHelper_tgt}>"
   )
 endif()
