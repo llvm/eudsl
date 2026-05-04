@@ -91,14 +91,19 @@ if(METAL_IR_CONVERTER_LIB_FOUND)
   declare_mlir_python_sources(MLIRPythonExtension.DXILHelper
     ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mlir"
     ADD_TO_PARENT MLIRPythonSources
-    SOURCES dxil.py
+    SOURCES
+      dxil.py
   )
   declare_mlir_python_extension(MLIRPythonExtension.DXILHelper.extension
     MODULE_NAME _mlirDXILHelper
     ADD_TO_PARENT MLIRPythonExtension.DXILHelper
     ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
     PYTHON_BINDINGS_LIBRARY nanobind
-    SOURCES DXILHelper.cpp DXILLowering.cpp
+    SOURCES
+      DXILHelper.cpp
+      DXILLowering.cpp
+    PRIVATE_LINK_LIBS
+      ${METAL_IR_CONVERTER_LIB}
   )
 endif()
 
@@ -120,11 +125,6 @@ add_mlir_python_common_capi_library(MLIRPythonCAPI
     MLIRPythonExtension.RegisterEverything
 )
 
-if(METAL_IR_CONVERTER_LIB_FOUND)
-  target_link_libraries(MLIRPythonCAPI
-    PRIVATE ${METAL_IR_CONVERTER_LIB})
-endif()
-
 if(TARGET LLVMDirectXCodeGen)
   target_link_libraries(MLIRPythonCAPI
     PRIVATE
@@ -133,9 +133,7 @@ if(TARGET LLVMDirectXCodeGen)
     LLVMDirectXInfo
     LLVMDirectXIRPasses
     LLVMDXILBitWriter
-    ${METAL_IR_CONVERTER_LIB}
   )
-
   # DirectXAsmPrinter.cpp's LLVMInitializeDirectXAsmPrinter is only referenced
   # from the extension, so the linker dead-strips the TU when linking the CAPI
   # dylib. Force-load the archive to keep every TU.
@@ -171,6 +169,18 @@ add_mlir_python_modules(MLIRPythonModules
   COMMON_CAPI_LINK_LIBS
     MLIRPythonCAPI
 )
+
+if(METAL_IR_CONVERTER_LIB_FOUND)
+  set(_mlirDXILHelper_tgt MLIRPythonModules.extension._mlirDXILHelper.dso)
+  add_custom_command(
+    TARGET ${_mlirDXILHelper_tgt}
+    POST_BUILD
+    COMMAND install_name_tool -change
+      "@rpath/libmetalirconverter.dylib"
+      "@loader_path/libmetalirconverter.dylib"
+      "$<TARGET_FILE:${_mlirDXILHelper_tgt}>"
+  )
+endif()
 
 set(_runtimes
   mlir_async_runtime
