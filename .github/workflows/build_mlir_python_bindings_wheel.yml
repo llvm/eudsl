@@ -196,6 +196,12 @@ jobs:
           fi
           if [[ "${{ matrix.os }}" == "macos" ]]; then
             brew install antlr boost libarchive
+            wget -q https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
+            unzip -qqP "${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD }}" Payload.zip
+            cat Payload | gunzip | cpio -i
+            sudo ditto usr /usr
+            echo MACOSX_DEPLOYMENT_TARGET=13.0 >> $GITHUB_ENV
+            echo CMAKE_OSX_DEPLOYMENT_TARGET=13.0 >> $GITHUB_ENV
           fi
           
           if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
@@ -343,11 +349,23 @@ jobs:
             python $f
           done
 
-      - name: "Test standalone-python-bindings"
+      - name: "Test DXIL matmul"
+        if: matrix.runs-on == 'macos-14'
         run: |
           
+          wget -q https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
+          unzip -qqP "${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD }}" Payload.zip
+          cat Payload | gunzip | cpio -i
+          sudo ditto usr /usr
+          
+          pip install pyobjc-framework-Metal
+          python projects/mlir-python-bindings/tests/test_matmul_dxil.py
+
+      - name: "Test standalone-python-bindings"
+        run: |
+
           pip install standalone-python-bindings -f wheelhouse
-          python projects/mlir-python-bindings/smoketest.py
+          python projects/mlir-python-bindings/tests/smoketest.py
 
   test-mlir-python-bindings-wasm:
 

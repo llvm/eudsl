@@ -34,6 +34,8 @@ for rel in [
         release = repo.get_release(rel)
         assets = release.get_assets()
         for ass in assets:
+            if ass.name == "Payload.zip":
+                continue
             if ass.created_at.date() < thirty_days_ago:
                 print(ass.name)
                 assert ass.delete_asset()

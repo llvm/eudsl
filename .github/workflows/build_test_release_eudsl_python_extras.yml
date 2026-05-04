@@ -190,6 +190,18 @@ jobs:
             python projects/eudsl-python-extras/examples/cuda_matmul_opt.py
           fi
 
+      - name: "Test DXIL matmul"
+        if: matrix.runs-on == 'macos-14'
+        run: |
+          
+          wget -q https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
+          unzip -qqP "${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD }}" Payload.zip
+          cat Payload | gunzip | cpio -i
+          sudo ditto usr /usr
+          
+          pip install pyobjc-framework-Metal
+          python projects/eudsl-python-extras/examples/matmul_dxil.py
+
       - name: Test jupyter notebooks
         # sed: can't read C:\hostedtoolcache\windows\Python\3.12.10\x64/jupyter_client/runapp.py: No such file or directory
         if: matrix.os != 'windows'

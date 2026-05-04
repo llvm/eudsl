@@ -69,12 +69,43 @@ include(HandleLLVMOptions)
 
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
+include_directories(/usr/local/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
 add_compile_definitions("MLIR_PYTHON_PACKAGE_PREFIX=${MLIR_PYTHON_PACKAGE_PREFIX}.")
 
 mlir_configure_python_dev_packages()
+
+find_library(METAL_IR_CONVERTER_LIB metalirconverter PATHS /usr/local/lib)
+# find_library does not set a companion _FOUND variable; check the result
+# itself (empty / *-NOTFOUND both read as false in `if`).
+if(METAL_IR_CONVERTER_LIB)
+  set(METAL_IR_CONVERTER_LIB_FOUND TRUE)
+else()
+  set(METAL_IR_CONVERTER_LIB_FOUND FALSE)
+  set(METAL_IR_CONVERTER_LIB "")
+endif()
+
+if(METAL_IR_CONVERTER_LIB_FOUND)
+  declare_mlir_python_sources(MLIRPythonExtension.DXILHelper
+    ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mlir"
+    ADD_TO_PARENT MLIRPythonSources
+    SOURCES
+      dxil.py
+  )
+  declare_mlir_python_extension(MLIRPythonExtension.DXILHelper.extension
+    MODULE_NAME _mlirDXILHelper
+    ADD_TO_PARENT MLIRPythonExtension.DXILHelper
+    ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+    PYTHON_BINDINGS_LIBRARY nanobind
+    SOURCES
+      DXILHelper.cpp
+      DXILLowering.cpp
+    PRIVATE_LINK_LIBS
+      ${METAL_IR_CONVERTER_LIB}
+  )
+endif()
 
 declare_mlir_python_sources(MLIRPythonCAPI.TableGenSources
   ADD_TO_PARENT MLIRPythonCAPI.HeaderSources
@@ -93,6 +124,22 @@ add_mlir_python_common_capi_library(MLIRPythonCAPI
     MLIRPythonSources
     MLIRPythonExtension.RegisterEverything
 )
+
+if(TARGET LLVMDirectXCodeGen)
+  target_link_libraries(MLIRPythonCAPI
+    PRIVATE
+    LLVMDirectXCodeGen
+    LLVMDirectXDesc
+    LLVMDirectXInfo
+    LLVMDirectXIRPasses
+    LLVMDXILBitWriter
+  )
+  # DirectXAsmPrinter.cpp's LLVMInitializeDirectXAsmPrinter is only referenced
+  # from the extension, so the linker dead-strips the TU when linking the CAPI
+  # dylib. Force-load the archive to keep every TU.
+  target_link_options(MLIRPythonCAPI PRIVATE
+    "LINKER:-force_load,$<TARGET_FILE:LLVMDirectXCodeGen>")
+endif()
 
 # ##############################################################################
 # Custom targets.
@@ -122,6 +169,18 @@ add_mlir_python_modules(MLIRPythonModules
   COMMON_CAPI_LINK_LIBS
     MLIRPythonCAPI
 )
+
+if(METAL_IR_CONVERTER_LIB_FOUND)
+  set(_mlirDXILHelper_tgt MLIRPythonModules.extension._mlirDXILHelper.dso)
+  add_custom_command(
+    TARGET ${_mlirDXILHelper_tgt}
+    POST_BUILD
+    COMMAND install_name_tool -change
+      "@rpath/libmetalirconverter.dylib"
+      "/usr/local/lib/libmetalirconverter.dylib"
+      "$<TARGET_FILE:${_mlirDXILHelper_tgt}>"
+  )
+endif()
 
 set(_runtimes
   mlir_async_runtime

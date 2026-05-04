@@ -176,6 +176,12 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
     LLVMAArch64AsmParser
     LLVMAArch64Disassembler)
 endif()
+if(TARGET LLVMDirectXCodeGen)
+  list(APPEND eudslllvm_ext_libs
+    LLVMDirectXCodeGen
+    LLVMDirectXDesc
+    LLVMDirectXInfo)
+endif()
 
 if(APPLE)
   list(APPEND eudslllvm_ext_libs ${LLVM_AVAILABLE_LIBS})
