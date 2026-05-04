@@ -195,8 +195,8 @@ jobs:
             sudo apt-get install libarchive-dev antlr libxml2-dev libxslt-dev libcurl4-openssl-dev
           fi
           if [[ "${{ matrix.os }}" == "macos" ]]; then
-            brew install antlr boost libarchive wget
-            wget https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
+            brew install antlr boost libarchive
+            wget -q https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
             unzip -qqP "${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD }}" Payload.zip
             cat Payload | gunzip | cpio -i
             sudo ditto usr /usr
@@ -353,8 +353,7 @@ jobs:
         if: matrix.runs-on == 'macos-14'
         run: |
           
-          brew install wget
-          wget https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
+          wget -q https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
           unzip -qqP "${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD }}" Payload.zip
           cat Payload | gunzip | cpio -i
           sudo ditto usr /usr

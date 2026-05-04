@@ -194,8 +194,7 @@ jobs:
         if: matrix.runs-on == 'macos-14'
         run: |
           
-          brew install wget
-          wget https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
+          wget -q https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
           unzip -qqP "${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD }}" Payload.zip
           cat Payload | gunzip | cpio -i
           sudo ditto usr /usr
