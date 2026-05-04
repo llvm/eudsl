@@ -1,5 +1,6 @@
 <p align="center">
     <img width="300" alt="image" src="https://raw.githubusercontent.com/llvm/eudsl/refs/heads/main/docs/images/eudslpurple.svg">
+    <br>
     (pronounced "u-dsl")
 </p>
 
