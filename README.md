@@ -1,5 +1,6 @@
 <p align="center">
     <img width="300" alt="image" src="https://raw.githubusercontent.com/llvm/eudsl/refs/heads/main/docs/images/eudslpurple.svg">
+    (pronounced "u-dsl")
 </p>
 
 # Embedded Universal DSL: a good DSL for us, by us
