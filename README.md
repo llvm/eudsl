@@ -1,7 +1,7 @@
 <p align="center">
     <img width="300" alt="image" src="https://raw.githubusercontent.com/llvm/eudsl/refs/heads/main/docs/images/eudslpurple.svg">
     <br><br>
-    <b>(pronounced "u-dsl")</b>
+    <b>(pronounced "you-dsl")</b>
 </p>
 
 # Embedded Universal DSL: a good DSL for us, by us
