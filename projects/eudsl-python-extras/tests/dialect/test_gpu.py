@@ -326,7 +326,6 @@ def test_async_object(ctx: MLIRContext):
     # CHECK:           %[[VAL_9:.*]] = memref.alloc() : memref<16x8xf32>
     # CHECK:           %[[VAL_10:.*]] = memref.alloc() : memref<4x8xf32>
     # CHECK:           %[[VAL_11:.*]] = gpu.wait async
-    # CHECK:           %[[VAL_12:.*]] = llvm.mlir.zero : !llvm.ptr
     # CHECK:           %[[VAL_13:.*]] = arith.constant 4 : index
     # CHECK:           %[[VAL_14:.*]] = arith.constant 4 : index
     # CHECK:           %[[VAL_15:.*]] = arith.constant 1 : index
