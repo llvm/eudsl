@@ -304,10 +304,9 @@ def test_async_object(ctx: MLIRContext):
         c = memref.alloc((M, K), T.f32())
 
         w = wait()
-        stream = mlir_zero(llvm_ptr_t())
         MyClass1
         eval(
-            "MyClass1.mat_product_kernel[grid_size:= [4, 4, 1], block_size:= [1, 1, 1]](a, b, c, async_dependencies=[w], stream=stream)"
+            "MyClass1.mat_product_kernel[grid_size:= [4, 4, 1], block_size:= [1, 1, 1]](a, b, c, async_dependencies=[w])"
         )
 
     # CHECK-LABEL: module attributes {gpu.container_module} {
@@ -334,7 +333,7 @@ def test_async_object(ctx: MLIRContext):
     # CHECK:           %[[VAL_16:.*]] = arith.constant 1 : index
     # CHECK:           %[[VAL_17:.*]] = arith.constant 1 : index
     # CHECK:           %[[VAL_18:.*]] = arith.constant 1 : index
-    # CHECK:           %[[VAL_19:.*]] = gpu.launch_func async {{\[}}%[[VAL_11]]]<%[[VAL_12]] : !llvm.ptr> @MyClass1::@mat_product_kernel blocks in (%[[VAL_13]], %[[VAL_14]], %[[VAL_15]]) threads in (%[[VAL_16]], %[[VAL_17]], %[[VAL_18]])  args(%[[VAL_8]] : memref<4x16xf32>, %[[VAL_9]] : memref<16x8xf32>, %[[VAL_10]] : memref<4x8xf32>)
+    # CHECK:           %[[VAL_19:.*]] = gpu.launch_func async {{\[}}%[[VAL_11]]] @MyClass1::@mat_product_kernel blocks in (%[[VAL_13]], %[[VAL_14]], %[[VAL_15]]) threads in (%[[VAL_16]], %[[VAL_17]], %[[VAL_18]])  args(%[[VAL_8]] : memref<4x16xf32>, %[[VAL_9]] : memref<16x8xf32>, %[[VAL_10]] : memref<4x8xf32>)
     # CHECK:           return
     # CHECK:         }
     # CHECK:       }
