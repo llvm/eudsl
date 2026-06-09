@@ -96,6 +96,7 @@ before-build = [
 ]
 
 [tool.cibuildwheel.windows]
+audit-command = ""
 before-build = [
     "ccache -z"
 ]
