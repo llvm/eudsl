@@ -1,0 +1,41 @@
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+[build-system]
+requires = ["setuptools>=64.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlir-python-mcp"
+version = "0.1.0"
+description = "MCP server providing a persistent MLIR Python REPL via mlir-python-bindings"
+requires-python = ">=3.10"
+dependencies = ["mcp>=1.1.2", "mlir-python-bindings"]
+license = "Apache-2.0 WITH LLVM-exception"
+keywords = ["mcp", "mlir", "llvm", "compiler", "ir"]
+
+[project.urls]
+Homepage = "https://github.com/llvm/eudsl"
+
+[project.scripts]
+mlir-python-mcp = "mlir_python_mcp:main"
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-cov", "pytest-asyncio"]
+
+[tool.uv]
+find-links = ["https://llvm.github.io/eudsl"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["mlir_python_mcp"]
+branch = true
+omit = ["mlir_python_mcp/__main__.py", "mlir_python_mcp/passes.py", "mlir_python_mcp/_passes_base.py"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+exclude_lines = ["if __name__", "pragma: no cover"]
