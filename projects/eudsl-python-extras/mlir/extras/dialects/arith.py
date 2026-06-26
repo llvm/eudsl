@@ -132,92 +132,6 @@ def index_cast(
     return get_op_result_or_op_results(IndexCastOp(res_type, in_, loc=loc, ip=ip))
 
 
-class ArithValueMeta(type(Value)):
-    """Metaclass that orchestrates the Python object protocol
-    (i.e., calling __new__ and __init__) for Indexing dialect extension values
-    (created using `mlir_value_subclass`).
-
-    The purpose/benefit of handling the `__new__` and `__init__` calls
-    explicitly/manually is we can then wrap arbitrary Python objects; e.g.
-    all three of the following wrappers are equivalent:
-
-    ```
-    s1 = ScalarValue(arith.ConstantOp(f64, 0.0).result)
-    s2 = ScalarValue(arith.ConstantOp(f64, 0.0))
-    s3 = ScalarValue(0.0)
-    ```
-
-    In general the Python object protocol for an object instance is determined
-    by `__call__` of the object class's metaclass, thus here we overload
-    `__call__` and branch on what we're wrapping there.
-
-    Why not just overload __new__ and be done with it? Because then we can't
-    choose what get's passed to __init__: by default (i.e., without overloading
-    __call__ here) the same arguments are passed to both __new__ and __init__.
-
-    Note, this class inherits from `type(Value)` (i.e., the metaclass of
-    `ir.Value`) rather than `type` or `abc.ABCMeta` or something like this because
-    the metaclass of a derived class must be a (non-strict) subclass of the
-    metaclasses of all its bases and so all the extension classes
-    (`ScalarValue`, `TensorValue`), which are derived classes of `ir.Value` must
-    have metaclasses that inherit from the metaclass of `ir.Value`. Without this
-    hierarchy Python will throw `TypeError: metaclass conflict`.
-    """
-
-    def __call__(cls, *args, **kwargs):
-        """Orchestrate the Python object protocol for mlir
-        values in order to handle wrapper arbitrary Python objects.
-
-        Args:
-          *args: Position arguments to the class constructor. Note, currently,
-            only one positional arg is supported (so constructing something like a
-            tuple type from element objects isn't supported).
-          **kwargs: Keyword arguments to the class constructor. Note, currently,
-            we only look for `dtype` (an `ir.Type`).
-
-        Returns:
-          A fully constructed and initialized instance of the class.
-        """
-        if len(args) != 1:
-            raise ValueError("Only one non-kw arg supported.")
-        arg = args[0]
-        fold = None
-        if isinstance(arg, (OpView, Operation, Value)):
-            # wrap an already created Value (or op the produces a Value)
-            if isinstance(arg, (Operation, OpView)):
-                assert len(arg.results) == 1
-            val = get_op_result_or_value(arg)
-        elif isinstance(arg, (int, float, bool, np.ndarray)):
-            # wrap a Python value, effectively a scalar or tensor literal
-            dtype = kwargs.get("dtype")
-            if dtype is not None and not isinstance(dtype, Type):
-                raise ValueError(f"{dtype=} is expected to be an ir.Type.")
-            fold = kwargs.get("fold")
-            if fold is not None and not isinstance(fold, bool):
-                raise ValueError(f"{fold=} is expected to be a bool.")
-            loc = kwargs.get("loc")
-            ip = kwargs.get("ip")
-            # If we're wrapping a numpy array (effectively a tensor literal),
-            # then we want to make sure no one else has access to that memory.
-            # Otherwise, the array will get funneled down to DenseElementsAttr.get,
-            # which by default (through the Python buffer protocol) does not copy;
-            # see mlir/lib/Bindings/Python/IRAttributes.cpp#L556
-            val = constant(deepcopy(arg), dtype, loc=loc, ip=ip)
-        else:
-            raise NotImplementedError(f"{cls.__name__} doesn't support wrapping {arg}.")
-
-        # The mlir_value_subclass mechanism works through __new__
-        # (see mlir/Bindings/Python/PybindAdaptors.h#L502)
-        # So we have to pass the wrapped Value to the __new__ of the subclass
-        cls_obj = cls.__new__(cls, val)
-        # We also have to pass it to __init__ because that is required by
-        # the Python object protocol; first an object is new'ed and then
-        # it is init'ed. Note we pass arg_copy here in case a subclass wants to
-        # inspect the literal.
-        cls.__init__(cls_obj, val, fold=fold)
-        return cls_obj
-
-
 @register_attribute_builder("Arith_CmpIPredicateAttr", replace=True)
 def _arith_CmpIPredicateAttr(predicate: Union[str, Attribute], context: Context):
     predicates = {
@@ -390,20 +304,36 @@ def _rbinary_op(
 
 # TODO(max): these could be generic in the dtype
 # TODO(max): hit .verify() before constructing (maybe)
-class ArithValue(Value, metaclass=ArithValueMeta):
+class ArithValue(Value):
     """Class for functionality shared by Value subclasses that support
     arithmetic operations.
-
-    Note, since we bind the ArithValueMeta here, it is here that the __new__ and
-    __init__ must be defined. To be precise, the callchain, starting from
-    ArithValueMeta is:
-
-    ArithValueMeta.__call__ -> mlir_value_subclass.__new__ ->
-                          (mlir_value_subclass.__init__ == ArithValue.__init__) ->
-                          Value.__init__
     """
 
-    def __init__(self, val, *, fold: Optional[bool] = None):
+    def __init__(self, arg, *, fold=None, **kwargs):
+        if isinstance(arg, (OpView, Operation, Value)):
+            # wrap an already created Value (or op the produces a Value)
+            if isinstance(arg, (Operation, OpView)):
+                assert len(arg.results) == 1
+            val = get_op_result_or_value(arg)
+        elif isinstance(arg, (int, float, bool, np.ndarray)):
+            # wrap a Python value, effectively a scalar or tensor literal
+            dtype = kwargs.get("dtype")
+            if dtype is not None and not isinstance(dtype, Type):
+                raise ValueError(f"{dtype=} is expected to be an ir.Type.")
+            loc = kwargs.get("loc")
+            ip = kwargs.get("ip")
+            # If we're wrapping a numpy array (effectively a tensor literal),
+            # then we want to make sure no one else has access to that memory.
+            # Otherwise, the array will get funneled down to DenseElementsAttr.get,
+            # which by default (through the Python buffer protocol) does not copy;
+            # see mlir/lib/Bindings/Python/IRAttributes.cpp#L556
+            val = constant(deepcopy(arg), dtype, loc=loc, ip=ip)
+        else:
+            raise NotImplementedError(
+                f"{self.__class__.__name__} doesn't support wrapping {arg}."
+            )
+        if fold is not None and not isinstance(fold, bool):
+            raise ValueError(f"{fold=} is expected to be a bool.")
         self._fold = fold if fold is not None else False
         super().__init__(val)
 
