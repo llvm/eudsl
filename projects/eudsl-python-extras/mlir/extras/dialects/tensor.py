@@ -123,8 +123,7 @@ class TensorValue(ArithValue):
     def __getitem__(self, idx: tuple) -> "TensorValue":
         loc = get_user_code_loc()
 
-        if not self.has_rank():
-            raise ValueError("only ranked tensor slicing/indexing supported")
+        assert self.has_rank(), "only ranked tensor slicing/indexing supported"
 
         if idx is None:
             return expand_dims(self, (0,), loc=loc)
@@ -136,7 +135,10 @@ class TensorValue(ArithValue):
             nones = [i for i, n in enumerate(idx) if n is None]
             return expand_dims(self, nones, loc=loc)
 
-        idx = list((idx,) if isinstance(idx, int) else idx)
+        if isinstance(idx, Value) and not isinstance(idx, ScalarValue):
+            raise ValueError("indexing by tensor is not currently supported")
+
+        idx = list((idx,) if isinstance(idx, (int, ScalarValue, slice)) else idx)
         for i, d in enumerate(idx):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)
@@ -170,10 +172,8 @@ class TensorValue(ArithValue):
     def __setitem__(self, idx, source):
         loc = get_user_code_loc()
 
-        if not self.has_rank():
-            raise ValueError("only ranked tensor slicing/indexing supported")
-        if not source.has_rank():
-            raise ValueError("only ranked tensor slicing/indexing supported")
+        assert self.has_rank(), "only ranked tensor slicing/indexing supported"
+        assert source.has_rank(), "only ranked tensor slicing/indexing supported"
 
         if (
             idx == Ellipsis
@@ -185,7 +185,10 @@ class TensorValue(ArithValue):
             ), f"Expected matching shape for dest slice {self.shape=} and source {source.shape=}"
             return self
 
-        idx = list((idx,) if isinstance(idx, int) else idx)
+        if isinstance(idx, Value) and not isinstance(idx, ScalarValue):
+            raise ValueError("indexing by tensor is not currently supported")
+
+        idx = list((idx,) if isinstance(idx, (int, ScalarValue, slice)) else idx)
         for i, d in enumerate(idx):
             if isinstance(d, int):
                 idx[i] = constant(d, index=True, loc=loc)

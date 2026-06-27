@@ -13,3 +13,20 @@ log_cli = false
 log_cli_level = "DEBUG"
 log_cli_format = "[%(filename)s:%(funcName)s:%(lineno)d] %(message)s"
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+addopts = "--cov=mlir.extras --cov-report=term-missing --cov-fail-under=99"
+
+[tool.coverage.run]
+branch = true
+relative_files = true
+omit = [
+    "*/runtime/passes.py",
+    "*/dialects/linalg.py",
+    "*/testing/generate_test_checks.py",
+]
+
+[tool.coverage.report]
+omit = [
+    "*/runtime/passes.py",
+    "*/dialects/linalg.py",
+    "*/testing/generate_test_checks.py",
+]

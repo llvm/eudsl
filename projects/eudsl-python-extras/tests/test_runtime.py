@@ -6,14 +6,12 @@ import platform
 import re
 from textwrap import dedent
 
-import mlir.extras.types as T
 import numpy as np
 import pytest
+
+import mlir.extras.types as T
 from mlir.dialects.arith import sitofp, index_cast
 from mlir.dialects.memref import cast
-from mlir.ir import UnitAttr, Module, StridedLayoutAttr, InsertionPoint, Context
-from mlir.runtime import get_unranked_memref_descriptor, get_ranked_memref_descriptor
-
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.context import RAIIMLIRContext, ExplicitlyManagedModule
 from mlir.extras.dialects import linalg
@@ -39,6 +37,8 @@ from mlir.extras.testing import (
     MLIRContext,
     backend,
 )
+from mlir.ir import UnitAttr, Module, StridedLayoutAttr, InsertionPoint, Context
+from mlir.runtime import get_unranked_memref_descriptor, get_ranked_memref_descriptor
 
 # needed since the fix isn't defined here nor conftest.py
 pytest.mark.usefixtures("ctx")
@@ -98,15 +98,13 @@ def test_smoke(ctx: MLIRContext, backend: LLVMJITBackend, capfd):
     A = np.ones((4, 4)).astype(np.float32)
     AA = ctypes.pointer(ctypes.pointer(get_unranked_memref_descriptor(A)))
     backend.load(module).foo(AA)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Unranked Memref base@ =  rank = 2 offset = 0 sizes = [4, 4] strides = [4, 1] data = 
     [[1,   1,   1,   1], 
      [1,   1,   1,   1], 
      [1,   1,   1,   1], 
      [1,   1,   1,   1]]
-    """
-    )
+    """)
     out, err = capfd.readouterr()
     filecheck(correct, re.sub(r"0x\w+", "", out))
 
@@ -469,15 +467,13 @@ def test_munge_calling_conventions_setup_auto_cb_auto_wrapper_run_cast_np_array(
     A = np.ones((4, 4)).astype(np.float32)
     invoker.foo(A)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Unranked Memref base@ =  rank = 2 offset = 0 sizes = [4, 4] strides = [4, 1] data = 
     [[2,   1,   1,   1], 
      [1,   1,   1,   1], 
      [1,   1,   1,   1], 
      [1,   1,   1,   1]]
-    """
-    )
+    """)
     out, err = capfd.readouterr()
     filecheck(correct, re.sub(r"0x\w+", "", out))
 
@@ -657,8 +653,7 @@ def _memref_tiled_add(K, D, ctx: MLIRContext, backend: LLVMJITBackend):
 
     memfoo.emit()
     module = run_pipeline(ctx.module, str(Pipeline().cse()))
-    correct = dedent(
-        f"""\
+    correct = dedent(f"""\
     module {{
       func.func @tile(%arg0: memref<{D}x{D}xf32, strided<[{K}, 1], offset: ?>>, %arg1: memref<{D}x{D}xf32, strided<[{K}, 1], offset: ?>>, %arg2: memref<{D}x{D}xf32, strided<[{K}, 1], offset: ?>>) {{
         %c0 = arith.constant 0 : index
@@ -694,8 +689,7 @@ def _memref_tiled_add(K, D, ctx: MLIRContext, backend: LLVMJITBackend):
         return
       }}
     }}
-    """
-    )
+    """)
     filecheck(correct, module)
 
     module = Module.parse(str(module))
@@ -894,3 +888,165 @@ def test_explicit_module():
     # CHECK:  }
 
     filecheck_with_comments(mod)
+
+
+def test_refbackend_get_ctype_func_memref(ctx: MLIRContext):
+    """Lines 99-101: get_ctype_func with unranked MemRefType returns"""
+    from mlir.extras.runtime.refbackend import get_ctype_func
+
+    unranked_memref_type = T.memref(element_type=T.f32())
+    ctype_wrapper, legal_ret_types = get_ctype_func([unranked_memref_type])
+    assert len(legal_ret_types) == 1
+    assert legal_ret_types[0] == unranked_memref_type
+
+
+@pytest.mark.xfail(
+    reason="mlir_type_to_ctype has a bug: line 176 lookups use _mlir_type_to_ctype (keys are constructors like T.f32) "
+    "instead of __mlir_type_to_ctype (keys are instances like T.f32()). Scalar ctype path is unreachable."
+)
+def test_refbackend_get_ctype_func_scalar(ctx: MLIRContext):
+    """Lines 97-98: get_ctype_func with scalar type returns (ctype path)"""
+    from mlir.extras.runtime.refbackend import get_ctype_func
+
+    f32_type = T.f32()
+    ctype_wrapper, legal_ret_types = get_ctype_func([f32_type])
+    assert len(legal_ret_types) == 1
+    assert legal_ret_types[0] == f32_type
+
+
+def test_refbackend_get_ctype_func_unsupported(ctx: MLIRContext):
+    """Line 103: get_ctype_func raises ValueError for unsupported types"""
+    from mlir.extras.runtime.refbackend import get_ctype_func
+
+    # An index type is not a memref and not in mlir_type_to_ctype
+    index_type = T.index()
+    with pytest.raises(ValueError, match="Not supported type"):
+        get_ctype_func([index_type])
+
+
+def test_refbackend_convert_arg_unranked(ctx: MLIRContext):
+    """Line 120: convert_arg_to_ctype with unranked=True"""
+    from mlir.extras.runtime.refbackend import convert_arg_to_ctype
+
+    A = np.ones((4, 4)).astype(np.float32)
+    result = convert_arg_to_ctype(A, unranked=True)
+    assert result is not None
+
+
+def test_refbackend_convert_arg_unsupported():
+    """Line 126: convert_arg_to_ctype raises ValueError for unsupported arg"""
+    from mlir.extras.runtime.refbackend import convert_arg_to_ctype
+
+    with pytest.raises(ValueError, match="unsupported"):
+        convert_arg_to_ctype("not_a_valid_arg")
+
+
+def test_refbackend_invoker_getitem(ctx: MLIRContext, backend: LLVMJITBackend):
+    """Line 184: LLVMJITBackendInvoker.__getitem__"""
+    ranked_memref_4x4_f32 = T.memref(4, 4, T.f32())
+
+    @func
+    def foo(x: ranked_memref_4x4_f32):
+        return x
+
+    foo.emit()
+
+    module = backend.compile(
+        ctx.module,
+        kernel_name="foo",
+        pipeline=Pipeline().bufferize().lower_to_llvm(),
+        generate_kernel_wrapper=True,
+        generate_return_consumer=True,
+    )
+    invoker = backend.load(module)
+    # __getitem__ delegates to __getattr__
+    invoke_fn = invoker["foo_capi_wrapper"]
+    assert callable(invoke_fn)
+
+
+def test_refbackend_kernel_not_found(ctx: MLIRContext, backend: LLVMJITBackend):
+    """Line 260: ValueError when kernel_func not found"""
+
+    @func
+    def bar(x: T.i32()):
+        return x
+
+    bar.emit()
+
+    with pytest.raises(ValueError, match="couldn't find kernel_func"):
+        backend.compile(
+            ctx.module,
+            kernel_name="nonexistent_kernel",
+            pipeline=Pipeline(),
+            generate_kernel_wrapper=True,
+            generate_return_consumer=True,
+        )
+
+
+def test_refbackend_invoker_shared_lib_paths_none(
+    ctx: MLIRContext, backend: LLVMJITBackend
+):
+    """Line 151: LLVMJITBackendInvoker with shared_lib_paths=None"""
+    from mlir.extras.runtime.refbackend import LLVMJITBackendInvoker
+
+    @func
+    def noop():
+        return
+
+    noop.emit()
+
+    module = backend.compile(
+        ctx.module,
+        kernel_name="noop",
+        pipeline=Pipeline().bufferize().lower_to_llvm(),
+        generate_kernel_wrapper=False,
+        generate_return_consumer=False,
+    )
+    invoker = LLVMJITBackendInvoker(module, shared_lib_paths=None)
+    assert invoker is not None
+
+
+def test_refbackend_compile_no_llvm_no_wrapper(
+    ctx: MLIRContext, backend: LLVMJITBackend
+):
+    """Branch 294->303: compile with pipeline that skips generate_c_api"""
+
+    @func
+    def noop():
+        return
+
+    noop.emit()
+
+    module = backend.compile(
+        ctx.module,
+        kernel_name="noop",
+        pipeline=Pipeline().cse(),
+        generate_kernel_wrapper=False,
+        generate_return_consumer=False,
+    )
+    assert module is not None
+
+
+def test_refbackend_with_shared_lib_paths():
+    """Branch 230->232: LLVMJITBackend with explicit shared_lib_paths"""
+    backend = LLVMJITBackend(shared_lib_paths={"/nonexistent/path.so"})
+    assert "/nonexistent/path.so" in [str(p) for p in backend.shared_lib_paths]
+
+
+def test_refbackend_scalar_return_wrapper(ctx: MLIRContext, backend: LLVMJITBackend):
+    """Branch 216->218: make_kernel_wrapper with scalar (non-MemRefType) return"""
+
+    @func
+    def scalar_ret(x: T.i32()):
+        return x
+
+    scalar_ret.emit()
+
+    module = backend.compile(
+        ctx.module,
+        kernel_name="scalar_ret",
+        pipeline=Pipeline(),
+        generate_kernel_wrapper=True,
+        generate_return_consumer=True,
+    )
+    ctx.module.operation.verify()

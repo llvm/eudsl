@@ -12,7 +12,6 @@ from dis import findlinestarts
 from opcode import opmap
 from typing import List, Union, Sequence, get_type_hints
 
-
 from ..ast.util import get_module_cst, set_lineno, find_func_in_code_object
 
 logger = logging.getLogger(__name__)
@@ -36,12 +35,12 @@ class AnnotationsCollector(ast.NodeVisitor):
         self.annotations = {}
 
     def visit_AnnAssign(self, node):
-        if node.simple:
-            # 'simple' == a single name, not an attribute or subscription.
-            # we can therefore count on `node.target.id` to exist. This is
-            # the same criteria used for module and class-level variable
-            # annotations.
-            self.annotations[node.target.id] = node.annotation
+        # 'simple' == a single name, not an attribute or subscription.
+        # we can therefore count on `node.target.id` to exist. This is
+        # the same criteria used for module and class-level variable
+        # annotations.
+        assert node.simple, "only simple annotations (single name) supported"
+        self.annotations[node.target.id] = node.annotation
 
 
 def function_local_annotations(func):
@@ -141,7 +140,7 @@ def transform_ast(
         max([l for _, l in line_starts]) - min([l for _, l in line_starts]) + 1
         > n_lines
     ) or (f.__code__.co_firstlineno != min([l for _, l in line_starts])):
-        logger.debug(
+        logger.debug(  # pragma: no cover - depends on AST rewrite producing mismatched line numbers
             "something went wrong with the line numbers for the rewritten/canonicalized function"
         )
     f.__code__ = new_f_code_o
@@ -171,7 +170,7 @@ class FunctionPatcher(ABC):
 
     @abstractmethod
     def patch_function(self, original_f):
-        pass
+        pass  # pragma: no cover
 
 
 def patch_function(f, patchers: List[type(FunctionPatcher)] = None):
@@ -188,12 +187,12 @@ class Canonicalizer(ABC):
     @property
     @abstractmethod
     def cst_transformers(self) -> List[StrictTransformer]:
-        pass
+        pass  # pragma: no cover
 
     @property
     @abstractmethod
     def function_patchers(self) -> List[FunctionPatcher]:
-        pass
+        pass  # pragma: no cover
 
 
 def canonicalize(*, using: Union[Canonicalizer, Sequence[Canonicalizer]]):

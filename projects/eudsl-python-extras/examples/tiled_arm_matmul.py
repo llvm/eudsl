@@ -1,7 +1,11 @@
 # NB: this only works on aarch64/arm64 which supports SME
 
-import mlir.extras.types as T
 import numpy as np
+
+# you need this to register the memref value caster
+# noinspection PyUnresolvedReferences
+import mlir.extras.dialects.memref
+import mlir.extras.types as T
 from mlir.dialects import builtin
 from mlir.dialects.transform import any_op_t
 from mlir.dialects.transform.extras import named_sequence, apply_patterns
@@ -9,11 +13,6 @@ from mlir.dialects.transform.structured import MatchInterfaceEnum, VectorizeOp
 from mlir.dialects.transform.vector import (
     VectorContractLowering,
 )
-from mlir.ir import StringAttr, UnitAttr, Attribute
-
-# you need this to register the memref value caster
-# noinspection PyUnresolvedReferences
-import mlir.extras.dialects.memref
 from mlir.extras.context import RAIIMLIRContext, ExplicitlyManagedModule
 from mlir.extras.dialects import linalg
 from mlir.extras.dialects import transform, llvm
@@ -25,6 +24,7 @@ from mlir.extras.dialects.transform import (
 from mlir.extras.runtime.passes import Pipeline, run_pipeline
 from mlir.extras.runtime.refbackend import LLVMJITBackend
 from mlir.extras.util import find_ops
+from mlir.ir import StringAttr, UnitAttr, Attribute
 
 ctx = RAIIMLIRContext()
 backend = LLVMJITBackend()

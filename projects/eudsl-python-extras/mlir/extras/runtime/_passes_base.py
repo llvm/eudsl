@@ -13,10 +13,9 @@ from ..context import disable_multithreading
 from ...ir import Module, StringAttr
 from ...passmanager import PassManager
 
-
 try:
     from enum import StrEnum
-except ImportError:
+except ImportError:  # pragma: no cover
     from enum import Enum
 
     class StrEnum(str, Enum):
@@ -228,20 +227,6 @@ class Pipeline:
             enable_x86vector=enable_x86vector,
         )
         return self
-
-    def lower_to_vulkan(self, index_bitwidth=None):
-        return (
-            self.gpu_kernel_outlining()
-            .fold_memref_alias_ops()
-            .convert_gpu_to_spirv()
-            .Spirv(self.__class__().spirv_lower_abi_attrs().spirv_update_vce())
-            .convert_gpu_launch_to_vulkan_launch()
-            .finalize_memref_to_llvm()
-            .Func(self.__class__().llvm_request_c_wrappers())
-            .convert_func_to_llvm(index_bitwidth=index_bitwidth)
-            .reconcile_unrealized_casts()
-            .launch_func_to_vulkan()
-        )
 
 
 class GreedySimplifyRegionLevel(StrEnum):

@@ -1,13 +1,12 @@
 from pathlib import Path
 
-import mlir.extras.types as T
 import numpy as np
-from mlir.ir import InsertionPoint, IntegerAttr, UnitAttr
 
+import mlir.extras.types as T
+from mlir.dialects import math
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.context import RAIIMLIRContextModule
 from mlir.extras.dialects import memref, scf, arith, gpu, llvm
-from mlir.dialects import math
 
 # noinspection PyUnresolvedReferences
 from mlir.extras.dialects.gpu import (
@@ -21,6 +20,7 @@ from mlir.extras.dialects.gpu import (
 )
 from mlir.extras.runtime.passes import run_pipeline, Pipeline
 from mlir.extras.util import find_ops
+from mlir.ir import InsertionPoint, IntegerAttr, UnitAttr
 
 # noinspection PyUnresolvedReferences
 from util import (

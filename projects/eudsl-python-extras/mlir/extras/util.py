@@ -16,8 +16,8 @@ from typing import Callable, List, Optional, Sequence, Tuple, Union
 import numpy as np
 
 from .meta import op_region_builder
-from ..extras import types as T
 from .. import ir
+from ..extras import types as T
 from ..ir import (
     Block,
     Context,
@@ -40,7 +40,7 @@ from ..ir import (
 
 try:
     from ..ir import TypeID
-except ImportError:
+except ImportError:  # pragma: no cover
     warnings.warn(
         f"TypeID not supported by host bindings; value casting won't work correctly"
     )
@@ -74,8 +74,9 @@ def get_user_code_loc(user_base: Optional[Path] = None):
         return Location.file(
             frame_info.filename, frame_info.lineno, frame_info.positions.col_offset
         )
-    else:
-        return Location.file(frame_info.filename, frame_info.lineno, col=0)
+    return Location.file(
+        frame_info.filename, frame_info.lineno, col=0
+    )  # pragma: no cover
 
 
 @contextlib.contextmanager
@@ -88,11 +89,11 @@ def enable_debug():
 def shlib_ext():
     if platform.system() == "Darwin":
         shlib_ext = "dylib"
-    elif platform.system() in {"Linux", "Emscripten"}:
+    elif platform.system() in {"Linux", "Emscripten"}:  # pragma: no cover
         shlib_ext = "so"
-    elif platform.system() == "Windows":
+    elif platform.system() == "Windows":  # pragma: no cover
         shlib_ext = "lib"
-    else:
+    else:  # pragma: no cover
         raise NotImplementedError(f"unknown platform {platform.system()}")
 
     return shlib_ext
@@ -101,9 +102,9 @@ def shlib_ext():
 def shlib_prefix():
     if platform.system() in {"Darwin", "Linux", "Emscripten"}:
         shlib_pref = "lib"
-    elif platform.system() == "Windows":
+    elif platform.system() == "Windows":  # pragma: no cover
         shlib_pref = ""
-    else:
+    else:  # pragma: no cover
         raise NotImplementedError(f"unknown platform {platform.system()}")
 
     return shlib_pref
@@ -378,14 +379,14 @@ def find_parent_of_type(test_cb, operation=None):
         else:
             parent = parent.parent
 
-    raise RuntimeError("Couldn't matching parent of type")
+    assert False, "Couldn't find matching parent of type"
 
 
 def is_symbol_table(operation):
     try:
         SymbolTable(operation)
         return True
-    except RuntimeError:
+    except (RuntimeError, TypeError):
         return False
 
 

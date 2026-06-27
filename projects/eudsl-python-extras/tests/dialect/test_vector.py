@@ -1,11 +1,11 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-from mlir.extras.context import mlir_mod_ctx
 import platform
 
 import numpy as np
 import pytest
+
 from mlir.dialects import builtin
 from mlir.dialects.bufferization import LayoutMapOption
 from mlir.dialects.transform import (
@@ -18,23 +18,13 @@ from mlir.dialects.transform.vector import (
     VectorTransferSplit,
     VectorTransposeLowering,
 )
-from mlir.ir import (
-    StringAttr,
-    UnitAttr,
-    ShapedType,
-    AffineMap,
-    AffineConstantExpr,
-)
-
 from mlir.extras import types as T
 from mlir.extras.context import ExplicitlyManagedModule
+from mlir.extras.context import mlir_mod_ctx
 
 # you need this to register the memref value caster
 # noinspection PyUnresolvedReferences
 from mlir.extras.dialects import arith, linalg, memref, vector, scf, func
-from mlir.extras.dialects.vector import outer, shuffle, load
-from mlir.extras.runtime.passes import Pipeline, run_pipeline
-from mlir.extras.runtime.refbackend import LLVMJITBackend
 from mlir.extras.dialects import transform
 from mlir.extras.dialects.transform import (
     get_parent_op,
@@ -42,6 +32,9 @@ from mlir.extras.dialects.transform import (
     tile_to_scf_for,
     transform_any_op_t,
 )
+from mlir.extras.dialects.vector import outer, shuffle, load
+from mlir.extras.runtime.passes import Pipeline, run_pipeline
+from mlir.extras.runtime.refbackend import LLVMJITBackend
 
 # noinspection PyUnresolvedReferences
 from mlir.extras.testing import (
@@ -51,6 +44,13 @@ from mlir.extras.testing import (
     mlir_ctx as ctx,
 )
 from mlir.extras.util import find_ops
+from mlir.ir import (
+    StringAttr,
+    UnitAttr,
+    ShapedType,
+    AffineMap,
+    AffineConstantExpr,
+)
 
 
 # based on /home/mlevental/dev_projects/llvm-project/mlir/test/Dialect/LLVM/transform-e2e.mlir
@@ -482,6 +482,142 @@ def test_vector_load(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
+def test_vector_getitem_full_slice_tuple(ctx: MLIRContext):
+    # Exercises line 29-31 in vector.py: tuple of all slice(None) returns self
+    b = vector.broadcast(T.vector(4, 8, T.i32()), 5)
+    result = b[:, :]
+    assert result == b
+
+
+def test_vector_getitem_ellipsis_or_single_slice(ctx: MLIRContext):
+    # Exercises line 28-29 in vector.py: Ellipsis or single slice(None) returns self
+    b = vector.broadcast(T.vector(4, 8, T.i32()), 5)
+    result_ellipsis = b[...]
+    assert result_ellipsis == b
+    result_slice = b[:]
+    assert result_slice == b
+
+
+def test_vector_getitem_none_idx_raises(ctx: MLIRContext):
+    # Exercises line 31-33 in vector.py: None idx raises RuntimeError
+    b = vector.broadcast(T.vector(4, 8, T.i32()), 5)
+    with pytest.raises(RuntimeError, match="None idx not supported"):
+        _ = b[None]
+
+
+def test_vector_transfer_read_default_padding(ctx: MLIRContext):
+    # Exercises line 135 in vector.py: padding defaults to 0
+    M, K, N = 2, 4, 6
+    mem = memref.alloc((M, K, N), T.i32())
+    vec = vector.transfer_read(
+        T.vector(M, K, T.i32()), mem, [0, 0, 0], in_bounds=[True, True]
+    )
+    assert vec is not None
+
+    # CHECK: %[[MEM:.*]] = memref.alloc() : memref<2x4x6xi32>
+    # CHECK: %[[C0:.*]] = arith.constant 0 : index
+    # CHECK: %[[C0_0:.*]] = arith.constant 0 : index
+    # CHECK: %[[C0_1:.*]] = arith.constant 0 : index
+    # CHECK: %[[PAD:.*]] = arith.constant 0 : i32
+    # CHECK: %{{.*}} = vector.transfer_read %[[MEM]][%[[C0]], %[[C0_0]], %[[C0_1]]], %[[PAD]] {in_bounds = [true, true]} : memref<2x4x6xi32>, vector<2x4xi32>
+    filecheck_with_comments(ctx.module)
+
+
+def test_vector_transfer_read_in_bounds_none_raises(ctx: MLIRContext):
+    # Exercises line 139 in vector.py: in_bounds=None raises ValueError
+    M, K, N = 2, 4, 6
+    mem = memref.alloc((M, K, N), T.i32())
+    with pytest.raises(ValueError, match="in_bounds cannot be None"):
+        vector.transfer_read(T.vector(M, K, T.i32()), mem, [0, 0, 0])
+
+
+def test_vector_setitem_strided_slice(ctx: MLIRContext):
+    # Exercises vector __setitem__ with slices (line 64-73 in vector.py)
+    b = vector.broadcast(T.vector(4, 8, T.i32()), 5)
+    small = vector.broadcast(T.vector(2, 4, T.i32()), 3)
+    b[0:2, 0:4] = small
+
+    # CHECK: %{{.*}} = vector.insert_strided_slice
+    filecheck_with_comments(ctx.module)
+
+
+def test_vector_insert_empty_positions_raises(ctx: MLIRContext):
+    # Exercises line 175 in vector.py: insert with empty positions
+    from mlir.extras.dialects.vector import insert
+
+    b = vector.broadcast(T.vector(4, T.i32()), 5)
+    val = arith.constant(1)
+    with pytest.raises(ValueError, match="positions cannot be empty"):
+        insert(b, val, [])
+
+
+def test_vector_setitem_non_constant_indices_raises(ctx: MLIRContext):
+    # Exercises line 75 in vector.py: __setitem__ with non-constant indices
+    b = vector.broadcast(T.vector(4, 8, T.i32()), 5)
+    small = vector.broadcast(T.vector(2, 4, T.i32()), 3)
+    c1 = arith.constant(1, index=True)
+    c2 = arith.constant(2, index=True)
+    dyn = c1 * c2  # Non-constant index
+    with pytest.raises(ValueError, match="non-constant indices not supported"):
+        b[dyn:, 0:4] = small
+
+
 if __name__ == "__main__":
     with mlir_mod_ctx() as ctx:
         test_memref_of_vector_linalg_generic_2(ctx)
+
+
+def test_vector_transfer_with_value_indices_and_permutation_map(ctx: MLIRContext):
+    """Branches 93->95, 96->95, 127->129, 130->129, 134->136: transfer_read/write with Value indices and explicit permutation_map"""
+    from mlir.ir import AffineMap
+    from mlir.extras.dialects.arith import constant
+
+    M, K, N = 2, 4, 6
+    mem = memref.alloc((M, K, N), T.i32())
+    idx0 = constant(0, index=True)
+    idx1 = constant(0, index=True)
+    idx2 = constant(0, index=True)
+    perm = AffineMap.get_minor_identity(3, 2)
+    vec = vector.transfer_read(
+        T.vector(M, K, T.i32()),
+        mem,
+        [idx0, idx1, idx2],
+        permutation_map=perm,
+        padding=0,
+        in_bounds=[True, True],
+    )
+    e_vec = vector.extract(vec, [0])
+    vector.transfer_write(
+        e_vec,
+        mem,
+        [idx0, idx1, idx2],
+        permutation_map=AffineMap.get_minor_identity(3, 1),
+        in_bounds=[True],
+    )
+    ctx.module.operation.verify()
+
+
+def test_vector_transfer_read_with_value_padding(ctx: MLIRContext):
+    """Branch 134->136: transfer_read with Value padding (not int)"""
+    from mlir.extras.dialects.arith import constant
+
+    M, K, N = 2, 4, 6
+    mem = memref.alloc((M, K, N), T.i32())
+    pad_val = constant(0, T.i32())
+    vec = vector.transfer_read(
+        T.vector(M, K, T.i32()), mem, [0, 0, 0], padding=pad_val, in_bounds=[True, True]
+    )
+    ctx.module.operation.verify()
+
+
+def test_vector_outerproduct_explicit_kind(ctx: MLIRContext):
+    """Branch 241->243: outerproduct with explicit kind"""
+    from mlir.extras.dialects.arith import constant
+    import numpy as np
+
+    A = np.random.randint(0, 10, (4,)).astype(np.float32)
+    B = np.random.randint(0, 10, (8,)).astype(np.float32)
+    lhs = constant(A, vector=True)
+    rhs = constant(B, vector=True)
+    result = vector.outerproduct(lhs, rhs, kind=vector.CombiningKind.MUL)
+    ctx.module.operation.verify()

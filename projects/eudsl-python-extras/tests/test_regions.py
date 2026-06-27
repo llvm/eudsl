@@ -1,15 +1,14 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-import mlir.extras.types as T
 import pytest
+
+import mlir.extras.types as T
 from mlir.dialects.builtin import module
 from mlir.dialects.func import return_
 from mlir.dialects.memref import alloca_scope, alloca_scope_return
 from mlir.dialects.scf import yield_ as scf_yield
 from mlir.dialects.tensor import rank, yield_ as tensor_yield
-from mlir.extras.types import tensor
-
 from mlir.extras.dialects import linalg, memref
 from mlir.extras.dialects.arith import constant
 from mlir.extras.dialects.cf import br, cond_br
@@ -25,6 +24,7 @@ from mlir.extras.testing import (
     filecheck_with_comments,
     MLIRContext,
 )
+from mlir.extras.types import tensor
 from mlir.extras.util import bb
 
 # needed since the fix isn't defined here nor conftest.py
@@ -510,3 +510,27 @@ def test_successor_ctx_manager(ctx: MLIRContext):
     # CHECK:  }
 
     filecheck_with_comments(ctx.module)
+
+
+@pytest.mark.xfail(
+    reason="bb() context manager inserts branch terminators that prevent subsequent insertion; "
+    "need raw block API to create target blocks before the cond_br"
+)
+def test_cond_br_explicit_dest(ctx: MLIRContext):
+    """Branches 47->49, 49->51: cond_br with explicit true_dest and false_dest"""
+
+    @func
+    def foo_explicit_dest():
+        one = constant(1)
+        two = constant(2)
+        cond = one < two
+        with bb() as (b_true, _):
+            three = constant(3)
+            return_([])
+        with bb() as (b_false, _):
+            four = constant(4)
+            return_([])
+        cond_br(cond, true_dest=b_true, false_dest=b_false)
+
+    foo_explicit_dest.emit()
+    ctx.module.operation.verify()

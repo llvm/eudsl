@@ -12,17 +12,17 @@ class _CustomBuildMetaBackend(_BuildMetaBackend):
             self.config_settings
             and EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX in self.config_settings
         ):
-            os.environ[
-                EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX
-            ] = self.config_settings.pop(EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX)
+            os.environ[EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX] = (
+                self.config_settings.pop(EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX)
+            )
 
         if (
             self.config_settings
             and f"--{EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX}" in self.config_settings
         ):
-            os.environ[
-                EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX
-            ] = self.config_settings.pop(f"--{EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX}")
+            os.environ[EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX] = (
+                self.config_settings.pop(f"--{EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX}")
+            )
 
     def run_setup(self, setup_script="setup.py"):
         self._convert_config_settings_to_env_var()

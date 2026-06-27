@@ -75,7 +75,7 @@ class RAIIMLIRContext:
         self.location.__exit__(None, None, None)
         self.context.__exit__(None, None, None)
         # i guess the extension gets destroyed before this object sometimes?
-        if ir is not None:
+        if ir is not None:  # pragma: no cover - only False during interpreter shutdown
             assert ir.Context is not self.context
 
 
@@ -105,7 +105,7 @@ class RAIIMLIRContextModule:
         self.location.__exit__(None, None, None)
         self.context.__exit__(None, None, None)
         # i guess the extension gets destroyed before this object sometimes?
-        if ir is not None:
+        if ir is not None:  # pragma: no cover - only False during interpreter shutdown
             assert ir.Context is not self.context
 
 

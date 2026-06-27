@@ -6,8 +6,10 @@ import subprocess
 from pathlib import Path
 from textwrap import dedent
 
-import mlir.extras.types as T
 import pytest
+
+import mlir.extras.types as T
+from mlir import _mlir_libs
 from mlir.dialects import builtin
 from mlir.dialects.memref import cast
 from mlir.dialects.nvgpu import (
@@ -21,9 +23,6 @@ from mlir.dialects.nvgpu import (
 from mlir.dialects.transform import any_op_t
 from mlir.dialects.transform.extras import named_sequence
 from mlir.dialects.transform.structured import MatchInterfaceEnum
-from mlir.ir import StringAttr, UnitAttr
-
-from mlir import _mlir_libs
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.dialects import arith, gpu, linalg, memref, nvgpu, scf, transform
 from mlir.extras.dialects.func import func
@@ -40,6 +39,7 @@ from mlir.extras.testing import (
     mlir_ctx as ctx,
 )
 from mlir.extras.util import find_ops
+from mlir.ir import StringAttr, UnitAttr
 
 # needed since the fix isn't defined here nor conftest.py
 pytest.mark.usefixtures("ctx")
@@ -612,8 +612,7 @@ def test_transform_mma_sync_matmul_f16_f16_accum_run(ctx: MLIRContext, capfd):
     )
 
     backend.load(compiled_module).main_capi_wrapper()
-    correct = dedent(
-        """\
+    correct = dedent("""\
         Unranked Memref base@ = rank = 2 offset = 0 sizes = [16, 16] strides = [16, 1] data = 
         [[0,   0.015625,   0.03125,   0.046875,   0.0625,   0.078125,   0.09375,   0.109375,   0.125,   0.140625,   0.15625,   0.171875,   0.1875,   0.203125,   0.21875,   0.234375], 
          [0.25,   0.265625,   0.28125,   0.296875,   0.3125,   0.328125,   0.34375,   0.359375,   0.375,   0.390625,   0.40625,   0.421875,   0.4375,   0.453125,   0.46875,   0.484375], 
@@ -665,8 +664,7 @@ def test_transform_mma_sync_matmul_f16_f16_accum_run(ctx: MLIRContext, capfd):
          [52.8125,   53.6562,   54.5,   55.375,   56.2188,   57.0938,   57.9375,   58.8125], 
          [56.6875,   57.5938,   58.5,   59.4375,   60.3438,   61.2812,   62.1875,   63.125], 
          [60.5625,   61.5312,   62.5,   63.5,   64.5,   65.4375,   66.4375,   67.4375]]
-    """
-    )
+    """)
     out, err = capfd.readouterr()
     filecheck(correct, re.sub(r"0x\w+", "", out))
 
@@ -837,3 +835,43 @@ def test_tma(ctx: MLIRContext):
     # CHECK:  }
 
     filecheck_with_comments(ctx.module)
+
+
+def test_nvgpu_ops_with_value_args(ctx: MLIRContext):
+    """Branches in nvgpu.py: pass Value args instead of int to cover non-int branches.
+    16->18, 47->49, 49->51, 67->69, 69->71, 97->96, 100->103, 122->124, 124->126, 126->128
+    """
+    from mlir.extras.dialects.arith import constant
+
+    gpu.set_container_module(ctx.module)
+
+    @gpu.func
+    @canonicalize(using=scf.canonicalizer)
+    def kernel():
+        count_val = constant(1, T.index())
+        mbar_id_val = constant(0, T.index())
+        txcount_val = constant(128, T.index())
+        ticks_val = constant(10000000, T.index())
+        phase_val = constant(False, type=T.bool())
+
+        is_thread_0 = gpu.thread_idx.x < constant(1, T.index())
+
+        # Branch 16->18: barrier_group_t with explicit address_space
+        barriers = nvgpu.mbarrier_create(address_space=smem_space())
+        # Branches 47->49, 49->51: mbarrier_init with Value count and mbar_id
+        nvgpu.mbarrier_init(barriers, count_val, mbar_id_val, predicate=is_thread_0)
+        # Branches 67->69, 69->71: mbarrier_arrive_expect_tx with Value txcount and mbar_id
+        nvgpu.mbarrier_arrive_expect_tx(
+            barriers, txcount_val, mbar_id_val, predicate=is_thread_0
+        )
+        # Branches 122->124, 124->126, 126->128: mbarrier_try_wait_parity with Value args
+        nvgpu.mbarrier_try_wait_parity(
+            barriers, mbar_id=mbar_id_val, ticks=ticks_val, phase_parity=phase_val
+        )
+        return
+
+    @gpu.module("test_nvgpu_mod", ["#nvvm.target"])
+    def gpu_mod():
+        kernel.emit()
+
+    ctx.module.operation.verify()

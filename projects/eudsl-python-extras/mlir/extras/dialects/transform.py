@@ -8,13 +8,12 @@ from types import SimpleNamespace
 from typing import List
 
 from ..meta import region_op
-from ..util import get_user_code_loc
-from ...dialects.transform.extras import OpHandle
 from ...dialects import pdl, transform
 from ...dialects._ods_common import _dispatch_mixed_values, get_op_result_or_op_results
 from ...dialects._structured_transform_ops_gen import MatchOp, TileUsingForallOp
 from ...dialects.transform import *
 from ...dialects.transform import AnyOpType, AnyValueType, OperationType
+from ...dialects.transform.extras import OpHandle
 from ...dialects.transform.loop import LoopUnrollOp
 from ...dialects.transform.structured import TileUsingForOp
 from ...ir import Attribute, Operation, StringAttr, Type, Value
@@ -69,11 +68,6 @@ for mod in pkgutil.iter_modules(transform.__path__):
 
 
 pdl_operation_t = lambda: pdl.OperationType.get()
-
-
-def _unwrap_op_handle(op_handle):
-    assert isinstance(op_handle, OpHandle)
-    return Value(op_handle)
 
 
 def transform_any_op_t():

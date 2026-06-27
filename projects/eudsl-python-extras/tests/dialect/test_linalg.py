@@ -2,9 +2,9 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import mlir.extras.types as T
 import pytest
 
+import mlir.extras.types as T
 from mlir.extras.dialects import linalg, memref, tensor
 
 # noinspection PyUnresolvedReferences

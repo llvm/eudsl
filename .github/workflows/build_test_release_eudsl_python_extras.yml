@@ -170,14 +170,19 @@ jobs:
 
 
       - name: "Test eudsl-python-extras"
+        working-directory: projects/eudsl-python-extras
         run: |
-          
+
           IGNORE=""
+          OVERRIDE=""
           if [[ $(python -c "print(__import__('sys').version_info < (3, 13))") == "True" ]]; then
-            IGNORE="--ignore projects/eudsl-python-extras/tests/test_generics.py"
+            IGNORE="--ignore tests/test_generics.py"
+            # Lower coverage threshold on < 3.13 since test_generics.py (PEP 695 syntax)
+            # is excluded, dropping coverage below the 99% threshold
+            OVERRIDE="--cov-fail-under=96"
           fi
-          
-          python -m pytest projects/eudsl-python-extras/tests $IGNORE
+
+          python -m pytest tests $IGNORE $OVERRIDE
 
       - name: "Test examples"
         run: |
@@ -236,11 +241,11 @@ jobs:
         # ImportError: DLL load failed while importing _mlir: The specified module could not be found.
         if: matrix.os != 'windows'
         run: |
-          
+
           pip uninstall -y eudsl-python-extras
           pip install -r projects/eudsl-python-extras/tests/other_host_reqs.txt -f dist --no-cache-dir
-          
-          pytest -v --capture=tee-sys projects/eudsl-python-extras/tests/test_other_hosts.py
+
+          pytest -v --capture=tee-sys --override-ini="addopts=" projects/eudsl-python-extras/tests/test_other_hosts.py
 
   release-eudsl-python-extras:
 

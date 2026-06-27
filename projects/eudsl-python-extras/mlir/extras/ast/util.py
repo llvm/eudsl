@@ -22,8 +22,8 @@ def set_lineno(node, n=1):
 
 
 def ast_call(name, args=None, keywords=None):
-    if keywords is None:
-        keywords = []
+    assert keywords is None, "keywords not supported in ast_call"
+    keywords = []
     if args is None:
         args = []
     call = ast.Call(

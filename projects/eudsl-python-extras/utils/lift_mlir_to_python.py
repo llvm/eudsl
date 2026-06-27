@@ -10,7 +10,15 @@ import textwrap
 from pathlib import Path
 
 import numpy as np
+
 from mlir.dialects import builtin, func
+from mlir.extras.context import mlir_mod_ctx
+from mlir.extras.dialects import arith
+from mlir.extras.dialects import scf
+
+# noinspection PyUnresolvedReferences
+from mlir.extras.testing import mlir_ctx as ctx, filecheck, MLIRContext
+from mlir.extras.util import mlir_type_to_np_dtype
 from mlir.ir import (
     WalkResult,
     WalkOrder,
@@ -36,15 +44,6 @@ from mlir.ir import (
     F16Type,
     F64Type,
 )
-
-from mlir.extras.context import mlir_mod_ctx
-from mlir.extras.dialects import arith
-from mlir.extras.dialects import scf
-
-# noinspection PyUnresolvedReferences
-from mlir.extras.testing import mlir_ctx as ctx, filecheck, MLIRContext
-from mlir.extras.util import mlir_type_to_np_dtype
-
 
 INDENT = 0
 # OUTPUT_BUF = io.StringIO()
@@ -231,9 +230,9 @@ def print_opview(opview, name=None):
             if oa.get_name() not in results:
                 operands_attrs[py_oan] = normalize_ssa(oa)
             else:
-                assert len(results), (
-                    "only single output result type currently supported"
-                )
+                assert len(
+                    results
+                ), "only single output result type currently supported"
                 operands_attrs[py_oan] = map_type(oa.type)
         elif isinstance(oa, OpOperandList):
             operands_attrs[py_oan] = f"[{', '.join(normalize_ssa(o) for o in oa)}]"
@@ -333,12 +332,10 @@ def print_scf_if(if_op: scf.IfOp):
 
     print(
         textwrap.indent(
-            textwrap.dedent(
-                f"""\
+            textwrap.dedent(f"""\
                     @ext.scf.if_({normalize_ssa(if_op.condition)}, results=[{map_type(res.type)}])
                     def {res_name}():\
-                """
-            ),
+                """),
             "    " * INDENT,
         ),
         file=OUTPUT_BUF,

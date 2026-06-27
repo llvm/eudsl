@@ -6,6 +6,7 @@ the module is rewritten into DXIL-shaped IR by ``lower_mlir_to_dxil``, the
 DirectX backend emits a DXContainer, and ``libmetalirconverter`` produces a
 metallib the Metal device can execute.
 """
+
 import os
 import struct
 from pathlib import Path
@@ -46,7 +47,6 @@ from mlir.ir import (
     StridedLayoutAttr,
     VectorType,
 )
-
 
 DEVICE = 1  # device (global) memory address space
 CONSTANT = 2  # constant memory address space
