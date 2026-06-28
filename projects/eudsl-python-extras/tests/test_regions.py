@@ -512,10 +512,6 @@ def test_successor_ctx_manager(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
-@pytest.mark.xfail(
-    reason="bb() context manager inserts branch terminators that prevent subsequent insertion; "
-    "need raw block API to create target blocks before the cond_br"
-)
 def test_cond_br_explicit_dest(ctx: MLIRContext):
     """Branches 47->49, 49->51: cond_br with explicit true_dest and false_dest"""
 
