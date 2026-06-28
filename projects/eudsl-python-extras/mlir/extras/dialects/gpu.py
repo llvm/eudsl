@@ -463,6 +463,10 @@ def func(
         ip=ip,
     )
     func_.__name__ = f.__name__
+    if func_._is_decl():
+        raise ValueError(
+            "gpu.func does not support external declarations (body must not be empty)"
+        )
     if emit:
         func_.emit()
     if emit_grid:
