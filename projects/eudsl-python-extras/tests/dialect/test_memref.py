@@ -1265,12 +1265,8 @@ def test_view_default_dtype(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
-@pytest.mark.xfail(
-    reason="reinterpret_cast with offsets=None produces empty static_offsets which causes "
-    "'expected the number of strides to match the rank' verification failure"
-)
 def test_reinterpret_cast_none_offsets(ctx: MLIRContext):
-    """Line 616-617: reinterpret_cast with offsets=None (defaults to [])"""
+    """Line 616-617: reinterpret_cast with offsets=None (defaults to [0])"""
 
     @func_decorator
     def reinterpret_test(mem: T.memref(16, T.f32())):
@@ -1286,12 +1282,8 @@ def test_reinterpret_cast_none_offsets(ctx: MLIRContext):
     ctx.module.operation.verify()
 
 
-@pytest.mark.xfail(
-    reason="reinterpret_cast with sizes=None produces empty static_sizes which causes "
-    "result type construction to fail"
-)
 def test_reinterpret_cast_none_sizes(ctx: MLIRContext):
-    """Line 618-619: reinterpret_cast with sizes=None (defaults to [])"""
+    """Line 618-619: reinterpret_cast with sizes=None (defaults to source shape)"""
 
     @func_decorator
     def reinterpret_test(mem: T.memref(16, T.f32())):
