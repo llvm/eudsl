@@ -620,9 +620,9 @@ def reinterpret_cast(
     ip=None,
 ) -> Value:
     if offsets is None:
-        offsets = []
+        offsets = [0]
     if sizes is None:
-        sizes = []
+        sizes = list(source.type.shape)
 
     offsets_, _packed_offsets, static_offsets = _dispatch_mixed_values(offsets)
     sizes_, _packed_sizes, static_sizes = _dispatch_mixed_values(sizes)
