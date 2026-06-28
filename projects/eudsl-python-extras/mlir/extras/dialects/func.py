@@ -23,13 +23,14 @@ from ...ir import (
     FlatSymbolRefAttr,
     FunctionType,
     InsertionPoint,
+    IsTerminatorTrait,
+    OpResultList,
     OpView,
     Operation,
-    OpResultList,
+    ShapedType,
     Type,
     TypeAttr,
-    Value,
-    ShapedType,
+    Value
 )
 
 _call = call
@@ -455,8 +456,19 @@ class FuncBase:
             return self._func_op
 
         self._func_op.regions[0].blocks.append(*input_types, arg_locs=self.arg_locs)
+
+        # TODO(max): upstream this into op_region_builder so it checks
+        # IsTerminatorTrait before inserting the terminator.
+        def _safe_terminator(res):
+            block = InsertionPoint.current.block
+            if len(list(block.operations)) > 0:
+                last_op = list(block.operations)[-1]
+                if last_op.operation.has_trait(IsTerminatorTrait):
+                    return
+            self.return_op_ctor(res)
+
         builder_wrapper = op_region_builder(
-            self._func_op, self._func_op.regions[0], terminator=self.return_op_ctor
+            self._func_op, self._func_op.regions[0], terminator=_safe_terminator
         )
 
         return_types = []
