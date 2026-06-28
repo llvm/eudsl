@@ -900,10 +900,6 @@ def test_refbackend_get_ctype_func_memref(ctx: MLIRContext):
     assert legal_ret_types[0] == unranked_memref_type
 
 
-@pytest.mark.xfail(
-    reason="mlir_type_to_ctype has a bug: line 176 lookups use _mlir_type_to_ctype (keys are constructors like T.f32) "
-    "instead of __mlir_type_to_ctype (keys are instances like T.f32()). Scalar ctype path is unreachable."
-)
 def test_refbackend_get_ctype_func_scalar(ctx: MLIRContext):
     """Lines 97-98: get_ctype_func with scalar type returns (ctype path)"""
     from mlir.extras.runtime.refbackend import get_ctype_func
