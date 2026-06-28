@@ -175,7 +175,7 @@ _mlir_type_to_ctype = {
 
 def mlir_type_to_ctype(mlir_type):
     __mlir_type_to_ctype = {k(): v for k, v in _mlir_type_to_ctype.items()}
-    return _mlir_type_to_ctype.get(mlir_type)
+    return __mlir_type_to_ctype.get(mlir_type)
 
 
 def infer_mlir_type(
