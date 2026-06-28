@@ -2839,9 +2839,6 @@ def test_if_results_none(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
-@pytest.mark.xfail(
-    reason="non-walrus while (line 466/486-490) causes 'Invalid CFG, inconsistent stackdepth' in compile()"
-)
 def test_while_canonicalize_no_walrus(ctx: MLIRContext):
     """Lines 466, 486-490: while without walrus operator (not a NamedExpr)"""
     one = constant(1)
