@@ -488,7 +488,10 @@ class CanonicalizeWhile(StrictTransformer):
             updated_node.test.value = next_
         else:
             new_test = ast.NamedExpr(
-                target=ast.Name(f"__init__{updated_node.lineno}"), value=next_
+                target=ast.Name(
+                    f"__init__{updated_node.lineno}", ctx=ast.Store()
+                ),
+                value=next_,
             )
             new_test = ast.copy_location(new_test, updated_node)
             updated_node.test = new_test
