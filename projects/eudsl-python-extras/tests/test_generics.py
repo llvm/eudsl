@@ -4,10 +4,9 @@
 import sys
 from typing import TypeVar
 
-import mlir.extras.types as T
 import pytest
-from mlir.ir import ShapedType
 
+import mlir.extras.types as T
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.ast.py_type import PyTypeVarObject
 from mlir.extras.dialects import linalg, arith, scf, memref, gpu
@@ -26,6 +25,7 @@ from mlir.extras.testing import (
     filecheck_with_comments,
     MLIRContext,
 )
+from mlir.ir import ShapedType
 
 # needed since the fix isn't defined here nor conftest.py
 pytest.mark.usefixtures("ctx")
@@ -755,3 +755,153 @@ def test_wrong_generics_types(ctx: MLIRContext):
 
     # the last 8 sets the reified param for A_t (which is wrong)
     sgemm_shared_mem_1d_block_tiling[128, 128, 128, T.f32(), 64, 64, 8, 8, 8].emit()
+
+
+def test_generics_basic(ctx: MLIRContext):
+    """Basic generics with type params, ReifiedTypeParam, and __getitem__."""
+
+    @func
+    def generic_func[M, N](
+        A: "T.memref(M, N, T.f32())",
+    ):
+        one = arith.constant(1.0)
+
+    generic_func[4, 8].emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.func @generic_func_int_4_int_8(%[[ARG:.*]]: memref<4x8xf32>)
+    filecheck_with_comments(ctx.module)
+
+
+def test_generics_with_defaults(ctx: MLIRContext):
+    """Generics with default values."""
+
+    @func
+    def with_defaults[M, K, N: T.i32() = 10](
+        A: "T.memref(M, K, T.f32())",
+        B: "T.memref(K, N, T.f32())",
+    ):
+        one = arith.constant(1.0)
+
+    with_defaults[4, 8].emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.func @with_defaults_int_4_int_8_i32_10(%[[A:.*]]: memref<4x8xf32>, %[[B:.*]]: memref<8x10xf32>)
+    filecheck_with_comments(ctx.module)
+
+
+def test_partial_specialization_with_default_emit(ctx: MLIRContext):
+    """Partial specialization where remaining generics use defaults."""
+
+    @func
+    def partial_default[M, N: T.i32() = 10](
+        A: "T.memref(M, N, T.f32())",
+    ):
+        one = arith.constant(1.0)
+
+    # Specialize M only, N uses default
+    partial = partial_default[4]
+    partial.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.func @partial_default_int_4_i32_10(%[[ARG:.*]]: memref<4x10xf32>)
+    filecheck_with_comments(ctx.module)
+
+
+def test_generics_callable_concrete_val(ctx: MLIRContext):
+    """v = v.__name__ when concrete_val is callable in __getitem__."""
+    _op = TypeVar("_op")
+
+    @func
+    def callable_generic[_op]():
+        one = arith.constant(1.0, T.f32())
+        two = _op(one, one)
+
+    callable_generic[arith.maximumf].emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.func @callable_generic_function_maximumf()
+    # CHECK:   arith.maximumf
+    filecheck_with_comments(ctx.module)
+
+
+def test_generics_dependent_closure(ctx: MLIRContext):
+    """Dependent generics with closures.
+    Tests add_replace_in_closure and maybe_eval_type_data_closure_vals."""
+
+    @func
+    def dependent[M, K, dtype, A_t = T.memref(M, K, dtype)](
+        A: A_t,
+    ):
+        one = arith.constant(1.0, type=dtype)
+
+    dependent[4, 8, T.f32()].emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.func @"dependent_int_4_int_8_type_f32_MemRefType_memref<4x8xf32>"(%[[ARG:.*]]: memref<4x8xf32>)
+    filecheck_with_comments(ctx.module)
+
+
+def test_reserved_generic_name_T(ctx: MLIRContext):
+    """ValueError for T reserved generic name."""
+    from mlir.extras.dialects.func import FuncBase, ReifiedTypeParam
+    from mlir.dialects.func import FuncOp, ReturnOp, CallOp
+
+    T_var = TypeVar("T")
+
+    def body(x):
+        return x
+
+    body.__annotations__ = {"x": T.i32()}
+    reified_T = ReifiedTypeParam(T_var, concrete_val=42)
+    with pytest.raises(ValueError, match="T is a reserved generic name"):
+        fb = FuncBase(
+            body,
+            FuncOp.__base__,
+            ReturnOp,
+            CallOp.__base__,
+            generics=[reified_T],
+        )
+        fb._build_input_types()
+
+
+def test_reserved_generic_name_S(ctx: MLIRContext):
+    """ValueError for S reserved generic name."""
+    from mlir.extras.dialects.func import FuncBase, ReifiedTypeParam
+    from mlir.dialects.func import FuncOp, ReturnOp, CallOp
+
+    S_var = TypeVar("S")
+
+    def body(x):
+        return x
+
+    body.__annotations__ = {"x": T.i32()}
+    reified_S = ReifiedTypeParam(S_var, concrete_val=42)
+    with pytest.raises(ValueError, match="S is a reserved generic name"):
+        fb = FuncBase(
+            body,
+            FuncOp.__base__,
+            ReturnOp,
+            CallOp.__base__,
+            generics=[reified_S],
+        )
+        fb._build_input_types()
+
+
+def test_reified_type_param_no_bound_type_infer(ctx: MLIRContext):
+    """ReifiedTypeParam infers type_name when no bound and no default."""
+    from mlir.extras.dialects.func import ReifiedTypeParam
+
+    tvar = TypeVar("MyVar")
+    # Pass a Type as concrete_val - should set type_name to "type"
+    r = ReifiedTypeParam(tvar, concrete_val=T.i32())
+    assert r.type_name == "type"
+
+    # Pass an int as concrete_val - should set type_name to "int"
+    r2 = ReifiedTypeParam(tvar, concrete_val=42)
+    assert r2.type_name == "int"

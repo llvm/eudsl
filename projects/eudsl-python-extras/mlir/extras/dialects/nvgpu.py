@@ -1,11 +1,11 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-from .gpu import smem_space
 from . import arith
+from .gpu import smem_space
+from .. import types as T
 from ...dialects.nvgpu import *
 from ...ir import Attribute, Type
-from .. import types as T
 
 
 def nvgpu_type(mnemonic, attr_value):

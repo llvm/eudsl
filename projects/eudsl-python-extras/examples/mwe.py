@@ -2,25 +2,23 @@ import platform
 
 import numpy as np
 
-import mlir.extras.types as T
-from mlir.dialects import builtin
-from mlir.dialects.transform import any_op_t
-from mlir.dialects.transform.extras import named_sequence, apply_patterns
-from mlir.extras.util import find_ops
-from mlir.ir import StringAttr, UnitAttr
-
 # you need this to register the memref value caster
 # noinspection PyUnresolvedReferences
 import mlir.extras.dialects.memref
-from mlir.extras.context import RAIIMLIRContext, ExplicitlyManagedModule
+import mlir.extras.types as T
+from mlir.dialects import builtin
 from mlir.dialects.bufferization import LayoutMapOption
+from mlir.dialects.transform import any_op_t
+from mlir.dialects.transform.extras import named_sequence, apply_patterns
 from mlir.dialects.transform.vector import (
     VectorContractLowering,
     VectorMultiReductionLowering,
     VectorTransferSplit,
     VectorTransposeLowering,
 )
+from mlir.extras.context import RAIIMLIRContext, ExplicitlyManagedModule
 from mlir.extras.dialects import linalg
+from mlir.extras.dialects import transform
 from mlir.extras.dialects.func import func
 from mlir.extras.dialects.transform import (
     match,
@@ -28,9 +26,10 @@ from mlir.extras.dialects.transform import (
     get_parent_op,
     transform_any_op_t,
 )
-from mlir.extras.dialects import transform
 from mlir.extras.runtime.passes import Pipeline, run_pipeline
 from mlir.extras.runtime.refbackend import LLVMJITBackend
+from mlir.extras.util import find_ops
+from mlir.ir import StringAttr, UnitAttr
 
 ctx = RAIIMLIRContext()
 backend = LLVMJITBackend()

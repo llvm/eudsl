@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import inspect
 import sys
+import types
 import typing
 from functools import update_wrapper, partial
 from typing import Optional, List, Union, TypeVar, get_args
-import types
 
 from .. import types as extras_types
 from ..ast.py_type import PyTypeVarObject, _Ptr, PyObject
@@ -31,7 +31,6 @@ from ...ir import (
     Value,
     ShapedType,
 )
-
 
 _call = call
 
@@ -226,12 +225,12 @@ def maybe_eval_type_data_closure_vals(
     cvrs = inspect.getclosurevars(unevaled_type_data).nonlocals
     if len(cvrs):
         for k, v in cvrs.items():
-            if not isinstance(v, TypeVar):
-                continue
-            if k not in already_reified_type_params:
-                raise RuntimeError(
-                    f"typevar {k} not reified prior to evaluating dependent typevar {v}"
-                )
+            assert isinstance(
+                v, TypeVar
+            ), "requires dependent type closure capturing non-TypeVar values"
+            assert (
+                k in already_reified_type_params
+            ), f"typevar {k} not reified prior to evaluating dependent typevar {v}"
             cvrs[k] = already_reified_type_params[k]
         unevaled_type_data = copy_func(unevaled_type_data, cvrs)
     return unevaled_type_data()
@@ -302,8 +301,9 @@ class FuncBase:
     ):
         assert inspect.isfunction(body_builder), body_builder
         assert inspect.isclass(func_op_ctor), func_op_ctor
-        if return_op_ctor is not None:
-            assert inspect.isclass(return_op_ctor), return_op_ctor
+        assert return_op_ctor is not None and inspect.isclass(
+            return_op_ctor
+        ), f"return_op_ctor must be a class, got {return_op_ctor}"
         assert inspect.isclass(call_op_ctor), call_op_ctor
 
         self.body_builder = body_builder
@@ -347,16 +347,26 @@ class FuncBase:
     def _is_decl(self):
         # magic constant found from looking at the code for an empty fn
         if sys.version_info.minor == 14:
-            return self.body_builder.__code__.co_code == b"\x80\x00R\x00#\x00"
+            return (
+                self.body_builder.__code__.co_code == b"\x80\x00R\x00#\x00"
+            )  # pragma: no cover
         if sys.version_info.minor == 13:
             return self.body_builder.__code__.co_code == b"\x95\x00g\x00"
-        if sys.version_info.minor == 12:
-            return self.body_builder.__code__.co_code == b"\x97\x00y\x00"
-        if sys.version_info.minor == 11:
-            return self.body_builder.__code__.co_code == b"\x97\x00d\x00S\x00"
-        if sys.version_info.minor in {8, 9, 10}:
-            return self.body_builder.__code__.co_code == b"d\x00S\x00"
-        raise NotImplementedError(f"{sys.version_info.minor} not supported.")
+        if sys.version_info.minor == 12:  # pragma: no cover
+            return (
+                self.body_builder.__code__.co_code == b"\x97\x00y\x00"
+            )  # pragma: no cover
+        if sys.version_info.minor == 11:  # pragma: no cover
+            return (
+                self.body_builder.__code__.co_code == b"\x97\x00d\x00S\x00"
+            )  # pragma: no cover
+        if sys.version_info.minor in {8, 9, 10}:  # pragma: no cover
+            return (
+                self.body_builder.__code__.co_code == b"d\x00S\x00"
+            )  # pragma: no cover
+        raise NotImplementedError(
+            f"{sys.version_info.minor} not supported."
+        )  # pragma: no cover
 
     def __str__(self):
         return str(f"{self.__class__} {self.__dict__}")

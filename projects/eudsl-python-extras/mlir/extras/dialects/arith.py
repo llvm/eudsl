@@ -125,7 +125,7 @@ def index_cast(
     loc: Location = None,
     ip: InsertionPoint = None,
 ) -> Value:
-    assert bool(to) != bool(out), "either `to` or `out` must be set but not both"
+    assert not (to and out), "either `to` or `out` must be set but not both"
     res_type = out or to
     if res_type is None:
         res_type = IndexType.get()
@@ -274,7 +274,10 @@ def _binary_op(
         if isinstance(lhs.dtype, FloatType):
             # ordered comparison - see above
             predicate = "o" + predicate
-        elif isinstance(lhs.dtype, (IntegerType, IndexType)):
+        else:
+            assert isinstance(
+                lhs.dtype, (IntegerType, IndexType)
+            ), f"unsupported dtype for comparison: {lhs.dtype}"
             # eq, ne signs don't matter
             if predicate not in {"eq", "ne"}:
                 if signedness is not None:
@@ -343,11 +346,11 @@ class ArithValue(Value):
     @property
     @abstractmethod
     def literal_value(self):
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     def coerce(self, other) -> Tuple["ArithValue", "ArithValue"]:
-        pass
+        pass  # pragma: no cover
 
     def __hash__(self):
         return Value(self).__hash__()

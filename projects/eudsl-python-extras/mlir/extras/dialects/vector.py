@@ -22,8 +22,7 @@ class VectorValue(ArithValue):
     def __getitem__(self, idx: tuple) -> "VectorValue":
         loc = get_user_code_loc()
 
-        if not self.has_rank():
-            raise ValueError("only ranked memref slicing/indexing supported")
+        assert self.has_rank(), "only ranked vector slicing/indexing supported"
 
         if idx == Ellipsis or idx == slice(None):
             return self
@@ -51,8 +50,7 @@ class VectorValue(ArithValue):
     def __setitem__(self, idx, val):
         loc = get_user_code_loc()
 
-        if not self.has_rank():
-            raise ValueError("only ranked vector slicing/indexing supported")
+        assert self.has_rank(), "only ranked vector slicing/indexing supported"
 
         idx = list((idx,) if isinstance(idx, (ScalarValue, int, Value, slice)) else idx)
         for i, d in enumerate(idx):

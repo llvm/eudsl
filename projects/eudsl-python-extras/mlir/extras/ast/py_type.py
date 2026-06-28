@@ -23,7 +23,6 @@ from ctypes import (
 )
 from typing import get_origin, _SpecialForm, _GenericAlias
 
-
 _SelfPtr = object()
 
 
@@ -33,9 +32,6 @@ def Self(self, parameters):
 
 
 class _Ptr(_Pointer):
-    def __new__(cls, *args, **kwargs):
-        return pointer(*args, **kwargs)
-
     def __class_getitem__(cls, item):
         # For ptr[Self], return a special object
         if item is Self:
@@ -55,8 +51,7 @@ class _Ptr(_Pointer):
 def address(obj) -> int:
     source = py_object(obj)
     addr = c_void_p.from_buffer(source).value
-    if addr is None:
-        raise ValueError("address: NULL object")  # pragma: no cover
+    assert addr is not None, "address: NULL object"
     return addr
 
 
@@ -103,7 +98,7 @@ sendfunc = PYFUNCTYPE(c_int, py_object, py_object, _Ptr[py_object])
 def _is_gil_enabled():
     try:
         return sys._is_gil_enabled()
-    except:
+    except:  # pragma: no cover - only hit on Python < 3.13
         return True
 
 
@@ -112,7 +107,7 @@ if _is_gil_enabled():
         ("ob_refcnt", c_ssize_t),
         ("ob_type", _Ptr[py_object]),
     ]
-else:
+else:  # pragma: no cover - only hit on free-threaded Python
     # https://github.com/python/cpython/blob/main/Include/object.h#L168
     _py_object_fields = [
         ("ob_tid", c_ssize_t),

@@ -4,11 +4,11 @@
 from typing import Union, Optional
 
 from ...util import infer_mlir_type
+from ....dialects._ods_common import get_op_result_or_op_results
 
 # noinspection PyUnresolvedReferences
 from ....dialects.llvm import *
 from ....ir import Type, Value, IntegerAttr, FloatAttr
-from ....dialects._ods_common import get_op_result_or_op_results
 
 ValueRef = Value
 

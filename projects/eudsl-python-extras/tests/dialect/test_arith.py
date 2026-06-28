@@ -1,14 +1,17 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-from mlir.extras.dialects import arith, func
-from mlir.extras.testing import (
-    filecheck_with_comments,
-    MLIRContext,
-    mlir_mod_ctx,
-)
+import pytest
+
 from mlir.extras import types as T
 from mlir.extras.ast.canonicalize import canonicalize
+from mlir.extras.dialects import arith, func
+from mlir.extras.dialects.arith import (
+    ScalarValue,
+    _binary_op,
+    _arith_CmpIPredicateAttr,
+    _arith_CmpFPredicateAttr,
+)
 
 # noinspection PyUnresolvedReferences
 from mlir.extras.testing import (
@@ -16,6 +19,14 @@ from mlir.extras.testing import (
     filecheck,
     filecheck_with_comments,
     MLIRContext,
+    mlir_mod_ctx,
+)
+from mlir.ir import (
+    ComplexType,
+    Context,
+    F32Type,
+    IntegerType,
+    RankedTensorType,
 )
 
 
@@ -131,7 +142,12 @@ def test_r_arithmetic(ctx: MLIRContext):
 
 
 def test_arith_cmpi(ctx: MLIRContext):
-    for kind1, kind2 in [({}, {}), ({'index': True}, {'index': True}), ({'index': True}, {}), ({}, {'index': True})]:
+    for kind1, kind2 in [
+        ({}, {}),
+        ({"index": True}, {"index": True}),
+        ({"index": True}, {}),
+        ({}, {"index": True}),
+    ]:
         one = arith.constant(1, **kind1)
         two = arith.constant(2, **kind2)
         one < two
@@ -202,6 +218,7 @@ def test_arith_cmpi(ctx: MLIRContext):
     # CHECK:         %[[INDEX_CAST_15:.*]] = arith.index_cast %[[CONSTANT_7]] : index to i32
     # CHECK:         %[[ORI_3:.*]] = arith.ori %[[CONSTANT_6]], %[[INDEX_CAST_15]] : i32
     filecheck_with_comments(ctx.module)
+
 
 def test_arith_cmpf(ctx: MLIRContext):
 
@@ -464,6 +481,186 @@ def test_arith_rcmp_literals(ctx: MLIRContext):
     # CHECK:  %[[VAL_28:.*]] = arith.constant 1.000000e+00 : f32
     # CHECK:  %[[VAL_29:.*]] = arith.cmpf one, %[[VAL_17]], %[[VAL_28]] : f32
 
+    filecheck_with_comments(ctx.module)
+
+
+def test_constant_type_xor_result(ctx: MLIRContext):
+    """Line 77: ValueError when both type and result are provided."""
+    with pytest.raises(ValueError, match="only type XOR result expected"):
+        arith.constant(1, type=T.i32(), result=T.i64())
+
+
+def test_constant_complex(ctx: MLIRContext):
+    """Lines 85-86: Complex constant creation."""
+    ctype = ComplexType.get(F32Type.get())
+    arith.constant(complex(1.0, 2.0), type=ctype)
+
+    ctx.module.operation.verify()
+
+    # CHECK: %[[CST:.*]] = complex.constant [1.000000e+00 : f32, 2.000000e+00 : f32] : complex<f32>
+    filecheck_with_comments(ctx.module)
+
+
+def test_constant_shaped_scalar_fill(ctx: MLIRContext):
+    """Lines 104-105: ShapedType scalar fill."""
+    tensor_type = RankedTensorType.get([2, 3], F32Type.get())
+    arith.constant(1.0, type=tensor_type)
+
+    ctx.module.operation.verify()
+
+    # CHECK: %[[CST:.*]] = arith.constant dense<1.000000e+00> : tensor<2x3xf32>
+    filecheck_with_comments(ctx.module)
+
+
+def test_cmpi_predicate_attr_passthrough(ctx: MLIRContext):
+    """Line 160: _arith_CmpIPredicateAttr returns early when predicate is already an Attribute."""
+    # Build a real CmpIPredicateAttr and pass it in - should be returned as-is
+    attr = _arith_CmpIPredicateAttr("eq", Context.current)
+    result = _arith_CmpIPredicateAttr(attr, Context.current)
+    assert result == attr
+
+
+def test_cmpf_predicate_attr_passthrough(ctx: MLIRContext):
+    """Line 194: _arith_CmpFPredicateAttr returns early when predicate is already an Attribute."""
+    attr = _arith_CmpFPredicateAttr("oeq", Context.current)
+    result = _arith_CmpFPredicateAttr(attr, Context.current)
+    assert result == attr
+
+
+def test_fold_with_cmp(ctx: MLIRContext):
+    """Line 243: fold path with predicate (cmp with fold=True constants)."""
+    one = ScalarValue(1, fold=True)
+    two = ScalarValue(2, fold=True)
+    result = one < two
+    # When folding, operator.lt(1, 2) returns True which becomes an arith.constant true
+    # The literal_value is -1 because True in i1 is represented as -1 (all bits set)
+    assert result.literal_value == -1
+
+
+def test_divsi_not_signless(ctx: MLIRContext):
+    """Line 262: divsi not supported for non-signless integer."""
+    si8 = IntegerType.get_signed(8)
+    one = ScalarValue(arith.constant(1, type=si8))
+    two = ScalarValue(arith.constant(2, type=si8))
+    with pytest.raises(ValueError, match="not supported for"):
+        _binary_op(one, two, op="truediv")
+
+
+def test_unsupported_dtype_binary_op(ctx: MLIRContext):
+    """Line 268: unsupported op type (not float, not int/index)."""
+    ctype = ComplexType.get(F32Type.get())
+    one = arith.constant(complex(1.0, 0.0), type=ctype)
+    two = arith.constant(complex(2.0, 0.0), type=ctype)
+    with pytest.raises(NotImplementedError, match="Unsupported"):
+        _binary_op(one, two, op="add")
+
+
+def test_cmp_with_signedness(ctx: MLIRContext):
+    """Line 281: signedness explicitly passed to cmp."""
+    one = arith.constant(1)
+    two = arith.constant(2)
+    # Use signedness='u' explicitly
+    result = _binary_op(one, two, op="cmp", predicate="lt", signedness="u")
+
+    ctx.module.operation.verify()
+
+    # CHECK: arith.cmpi ult
+    filecheck_with_comments(ctx.module)
+
+
+def test_arith_value_dtype_not_type(ctx: MLIRContext):
+    """Line 322: dtype not a Type in ArithValue init."""
+    with pytest.raises(ValueError, match="is expected to be an ir.Type"):
+        ScalarValue(42, dtype="not_a_type")
+
+
+def test_arith_value_fold_not_bool(ctx: MLIRContext):
+    """Line 336: fold is not a bool."""
+    with pytest.raises(ValueError, match="is expected to be a bool"):
+        ScalarValue(42, fold="yes")
+
+
+def test_arith_value_hash(ctx: MLIRContext):
+    """Line 353: __hash__ method."""
+    one = arith.constant(1)
+    two = arith.constant(2)
+    # Should be hashable and usable in sets/dicts
+    s = {one, two}
+    assert len(s) == 2
+
+
+def test_eq_self_comparison(ctx: MLIRContext):
+    """Line 393: __eq__ returns True when comparing with self."""
+    one = arith.constant(1)
+    assert (one == one) == True
+
+
+def test_ne_self_comparison(ctx: MLIRContext):
+    """Line 404: __ne__ returns False when comparing with self."""
+    one = arith.constant(1)
+    assert (one != one) == False
+
+
+def test_scalar_int_conversion(ctx: MLIRContext):
+    """Line 444: __int__ method."""
+    one = arith.constant(3)
+    assert int(one) == 3
+
+
+def test_ne_unsupported_wrapping(ctx: MLIRContext):
+    """Lines 400-402, 404: __ne__ path with unsupported wrapping."""
+    one = arith.constant(1)
+    # Compare with something that can't be wrapped (e.g. a string)
+    result = one != "not_a_value"
+    assert result == True
+
+
+def test_eq_unsupported_wrapping(ctx: MLIRContext):
+    """Lines 389-391, 393: __eq__ path with unsupported wrapping."""
+    one = arith.constant(1)
+    # Compare with something that can't be wrapped (e.g. a string)
+    result = one == "not_a_value"
+    assert result == False
+
+
+def test_scalar_literal_value_non_constant(ctx: MLIRContext):
+    """Line 440: literal_value on non-constant."""
+
+    @func.FuncOp.from_py_func(T.i32())
+    def foo(a):
+        with pytest.raises(ValueError, match="Can't build literal from non-constant"):
+            _ = a.literal_value
+        return a
+
+
+def test_scalar_float_conversion(ctx: MLIRContext):
+    """Line 447: __float__ method."""
+    one = arith.constant(1.5)
+    assert float(one) == 1.5
+
+
+def test_scalar_coerce_unsupported(ctx: MLIRContext):
+    """Line 457: coerce raises ValueError for unsupported types."""
+    one = arith.constant(1)
+    # Try to coerce something that is not int/float/bool/ScalarValue with IndexType
+    with pytest.raises(ValueError, match="can't coerce"):
+        one.coerce("unsupported")
+
+
+def test_canonicalize_fma(ctx: MLIRContext):
+    """Lines 493-519: CanonicalizeFMA visit_AugAssign path."""
+
+    @func.func(emit=True)
+    @canonicalize(using=arith.canonicalizer)
+    def fma_test():
+        one: T.f32() = 1.0
+        a: T.f32() = 2.0
+        b: T.f32() = 3.0
+        one += a * b
+
+    ctx.module.operation.verify()
+
+    # CHECK: math.fma
     filecheck_with_comments(ctx.module)
 
 

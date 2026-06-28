@@ -3,13 +3,34 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import inspect
 import sys
+from typing import TypeVar
+
+import pytest
 
 import mlir.extras.types as T
-import pytest
+from mlir.extras.context import mlir_mod_ctx, RAIIMLIRContextModule
+from mlir.extras.dialects import arith
+from mlir.extras.dialects.arith import constant
+from mlir.extras.dialects.func import (
+    func,
+    call,
+    evaluate_type_annotation,
+    ReifiedTypeParam,
+)
+
+# noinspection PyUnresolvedReferences
+from mlir.extras.testing import (
+    mlir_ctx as ctx,
+    filecheck,
+    filecheck_with_comments,
+    MLIRContext,
+)
 from mlir.ir import (
+    Attribute,
     ComplexType,
     F32Type,
     F64Type,
+    FlatSymbolRefAttr,
     FunctionType,
     IndexType,
     IntegerAttr,
@@ -21,18 +42,6 @@ from mlir.ir import (
     UnrankedTensorType,
     Value,
     VectorType,
-)
-
-from mlir.extras.context import mlir_mod_ctx, RAIIMLIRContextModule
-from mlir.extras.dialects.arith import constant
-from mlir.extras.dialects.func import func
-
-# noinspection PyUnresolvedReferences
-from mlir.extras.testing import (
-    mlir_ctx as ctx,
-    filecheck,
-    filecheck_with_comments,
-    MLIRContext,
 )
 
 # needed since the fix isn't defined here nor conftest.py
@@ -428,3 +437,283 @@ def test_multiple_arg_with_body_with_value(ctx: MLIRContext):
     # CHECK: func.func @f_mixed_args(%[[A:.*]]: f32, %[[B:.*]]: vector<4xf32>, %[[C:.*]]: memref<2x3xf32>) -> vector<4xf32> {
 
     filecheck_with_comments(ctx.module)
+
+
+def test_call_func_second_arg_not_list(ctx: MLIRContext):
+    """Line 50: ValueError when second arg is not a list when calling a FuncOp."""
+
+    @func
+    def demo() -> T.i32(): ...
+
+    func_op = demo.emit()
+    with pytest.raises(ValueError, match="expected.*second argument to be a list"):
+        call(func_op, "not_a_list")
+
+
+def test_call_func_third_arg_not_none(ctx: MLIRContext):
+    """Line 56: ValueError when third arg is not None when calling a FuncOp."""
+
+    @func
+    def demo() -> T.i32(): ...
+
+    func_op = demo.emit()
+    with pytest.raises(ValueError, match="unexpected third argument"):
+        call(func_op, [], "extra")
+
+
+def test_call_func_args_not_values(ctx: MLIRContext):
+    """Line 62: ValueError when args are not all Value/Operation/OpView."""
+
+    @func
+    def demo(x: T.i32()) -> T.i32(): ...
+
+    func_op = demo.emit()
+    with pytest.raises(ValueError, match="must all be Value, Operation, or OpView"):
+        call(func_op, ["not_a_value"])
+
+
+def test_call_by_name_with_list_as_second_arg(ctx: MLIRContext):
+    """Line 76: ValueError when first arg is list of types and second arg is also a list."""
+    with pytest.raises(ValueError, match="expected the second argument to be a string"):
+        call([T.i32()], [T.i32()])
+
+
+def test_call_by_flat_symbol_ref(ctx: MLIRContext):
+    """Lines 83-88: call using FlatSymbolRefAttr."""
+
+    @func
+    def target(x: T.i32()) -> T.i32(): ...
+
+    one = constant(1)
+    ref = FlatSymbolRefAttr.get("target")
+    result = call([T.i32()], ref, [one])
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.call @target
+    filecheck_with_comments(ctx.module)
+
+
+def test_call_by_string_name(ctx: MLIRContext):
+    """Lines 89-98: call using string name."""
+
+    @func
+    def target2(x: T.i32()) -> T.i32(): ...
+
+    one = constant(1)
+    result = call([T.i32()], "target2", [one])
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.call @target2
+    filecheck_with_comments(ctx.module)
+
+
+def test_call_unexpected_type(ctx: MLIRContext):
+    """Line 100: ValueError for unexpected type in call."""
+    with pytest.raises(ValueError, match="unexpected type"):
+        call([T.i32()], 12345, [])
+
+
+def test_reified_type_param_no_default_no_concrete(ctx: MLIRContext):
+    """Line 178: ValueError when no concrete_val and no default."""
+    tvar = TypeVar("NoDefault")
+    with pytest.raises(ValueError, match="either concrete_val must be provided"):
+        ReifiedTypeParam(tvar, concrete_val=None)
+
+
+def test_evaluate_type_annotation_lambda(ctx: MLIRContext):
+    """Line 264: evaluate_type_annotation with a lambda."""
+    t = evaluate_type_annotation(lambda: T.i32())
+    assert t == T.i32()
+
+
+def test_evaluate_type_annotation_unsupported(ctx: MLIRContext):
+    """Line 278: NotImplementedError for unsupported type annotation."""
+    with pytest.raises(NotImplementedError, match="unsupported type annotation"):
+        evaluate_type_annotation(12345)
+
+
+def test_func_base_generics_none_getitem(ctx: MLIRContext):
+    """Line 480: RuntimeError when using __getitem__ on non-generic func."""
+
+    @func
+    def non_generic():
+        one = constant(1)
+        return one
+
+    # The generics attribute might be [] (empty list) not None after FuncBase init.
+    # Force it to None to test the guard.
+    non_generic.generics = None
+    with pytest.raises(RuntimeError, match="using a generic call requires"):
+        non_generic[T.i32()]
+
+
+def test_func_emit_with_call_args(ctx: MLIRContext):
+    """Line 413: emit with call_args infers input types from call args."""
+
+    @func
+    def inferred(x: T.i32()):
+        one = constant(1)
+        return one
+
+    one = constant(1)
+    # Calling triggers emit(*call_args) but since there are type annotations,
+    # it gets emitted via _build_input_types first. Reset to force re-emit path.
+    inferred._func_op = None
+    inferred.function_type = None
+    inferred.emit(one, force=True)
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.func @inferred(%[[ARG:.*]]: i32) -> i32
+    filecheck_with_comments(ctx.module)
+
+
+def test_func_with_func_attrs(ctx: MLIRContext):
+    """Line 442: func_attrs iteration."""
+
+    @func(func_attrs={"llvm.emit_c_interface": Attribute.parse("unit")})
+    def with_attrs():
+        one = constant(1)
+        return one
+
+    with_attrs.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.func @with_attrs() -> i32 attributes {llvm.emit_c_interface}
+    filecheck_with_comments(ctx.module)
+
+
+def test_func_multiple_return_values(ctx: MLIRContext):
+    """Line 459: return_types.extend for tuple/list returns."""
+
+    @func
+    def multi_return(x: T.i32(), y: T.f32()):
+        return x, y
+
+    multi_return.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.func @multi_return(%[[A:.*]]: i32, %[[B:.*]]: f32) -> (i32, f32)
+    filecheck_with_comments(ctx.module)
+
+
+def test_func_emit_true(ctx: MLIRContext):
+    """Line 563: emit=True causes immediate emission."""
+
+    @func(emit=True)
+    def emitted_immediately():
+        one = constant(1)
+        return one
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.func @emitted_immediately() -> i32
+    filecheck_with_comments(ctx.module)
+
+
+def test_global_typevar_in_getitem(ctx: MLIRContext):
+    """Line 497: RuntimeError for global typevars in __getitem__."""
+    from mlir.extras.dialects.func import FuncBase
+    from mlir.dialects.func import FuncOp, ReturnOp, CallOp
+
+    tvar = TypeVar("my_global_tvar")
+
+    def body():
+        one = constant(1)
+        return one
+
+    # Put the typevar name in the function's globals to trigger the error
+    body.__globals__["my_global_tvar"] = tvar
+
+    fb = FuncBase(
+        body,
+        FuncOp.__base__,
+        ReturnOp,
+        CallOp.__base__,
+        generics=[tvar],
+    )
+
+    with pytest.raises(
+        RuntimeError, match="global typevars for generics are not supported"
+    ):
+        fb[T.i32()]
+
+    # Clean up the global
+    del body.__globals__["my_global_tvar"]
+
+
+def test_evaluate_type_annotation_typevar(ctx: MLIRContext):
+    """Lines 260, 262: evaluate_type_annotation with TypeVar uses eval."""
+    tvar = TypeVar("my_type")
+    # TypeVar gets converted to its __name__ (a string), then eval'd
+    t = evaluate_type_annotation(
+        tvar,
+        globals_={"my_type": T.i32()},
+        locals_=None,
+    )
+    assert str(t) == "i32"
+
+
+def test_func_base_generics_none_default(ctx: MLIRContext):
+    """Line 319: generics=None default assignment in FuncBase.__init__."""
+    from mlir.extras.dialects.func import FuncBase
+    from mlir.dialects.func import FuncOp, ReturnOp, CallOp
+
+    def body():
+        one = constant(1)
+        return one
+
+    # Directly pass generics=None to trigger line 319
+    fb = FuncBase(
+        body,
+        FuncOp.__base__,
+        ReturnOp,
+        CallOp.__base__,
+        generics=None,
+    )
+    assert fb.generics == []
+    fb.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: func.func @body() -> i32
+    filecheck_with_comments(ctx.module)
+
+
+def test_func_base_str(ctx: MLIRContext):
+    """Line 362: __str__ method of FuncBase."""
+
+    @func
+    def demo_str():
+        one = constant(1)
+        return one
+
+    s = str(demo_str)
+    assert "FuncBase" in s or "class" in s
+
+
+def test_build_input_types_invalid_generic(ctx: MLIRContext):
+    """Line 377: ValueError when generics contains non-TypeVar, non-ReifiedTypeParam."""
+    from mlir.extras.dialects.func import FuncBase
+    from mlir.dialects.func import FuncOp, ReturnOp, CallOp
+
+    def body(x):
+        one = constant(1)
+        return one
+
+    body.__annotations__ = {"x": T.i32()}
+
+    fb = FuncBase(
+        body,
+        FuncOp.__base__,
+        ReturnOp,
+        CallOp.__base__,
+        generics=["not_a_typevar"],  # invalid
+    )
+
+    with pytest.raises(ValueError, match="expected .* to be a TypeVar"):
+        fb._build_input_types()

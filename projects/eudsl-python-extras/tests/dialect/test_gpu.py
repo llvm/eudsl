@@ -5,15 +5,14 @@ import random
 import sys
 import time
 
-import mlir.extras.types as T
 import numpy as np
 import pytest
+
+import mlir.extras.types as T
 from mlir.dialects._gpu_enum_gen import AllReduceOperation
 from mlir.dialects.gpu import host_register
-from mlir.dialects.llvm import mlir_zero
 from mlir.dialects.math import fma
 from mlir.dialects.memref import cast
-
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.dialects import arith, scf, memref, rocdl, gpu
 from mlir.extras.dialects.func import func
@@ -32,8 +31,25 @@ from mlir.extras.dialects.gpu import (
     all_reduce_,
     module,
     get_compile_object_bytes,
+    grid_dim,
+    warp_attr,
+    warpgroup_attr,
+    block_attr,
+    address_space_attr,
+    smem_space,
+    GPUModuleOp,
+    GPUFuncOp,
+    alloc,
+    dealloc,
+    memcpy,
+    memset,
+    barrier,
+    dynamic_shared_memory,
+    thread_id,
+    get_device_mapping_array_attr,
+    Grid,
+    AddressSpace,
 )
-from mlir.extras.dialects.llvm import llvm_ptr_t
 from mlir.extras.dialects.scf import forall, in_parallel_
 from mlir.extras.dialects.vector import outer, load, shuffle, print_
 from mlir.extras.runtime.passes import run_pipeline, Pipeline
@@ -45,6 +61,7 @@ from mlir.extras.testing import (
     filecheck_with_comments,
     MLIRContext,
 )
+from mlir.ir import ArrayAttr, Attribute, InsertionPoint
 from util import (
     hip_bindings_not_installed,
     hip_check,
@@ -1117,3 +1134,502 @@ def test_amdgpu_vector_wmma(ctx: MLIRContext):
     hip_check(hip.hipFree(c_d))
 
     hip_check(hip.hipModuleUnload(hip_module))
+
+
+def test_block_idx_z(ctx: MLIRContext):
+    set_container_module(ctx.module)
+
+    @gpu.func
+    @canonicalize(using=scf.canonicalizer)
+    def kernel(C: T.memref(4, 4, 4, T.f32())):
+        z = block_idx.z
+        C[z, z, z] = arith.constant(1.0, type=T.f32())
+        return
+
+    @module("test_mod", ["#nvvm.target"])
+    def gpu_module():
+        kernel.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.block_id  z
+    filecheck_with_comments(ctx.module)
+
+
+def test_block_dim_and_thread_idx_all(ctx: MLIRContext):
+    set_container_module(ctx.module)
+
+    @gpu.func
+    @canonicalize(using=scf.canonicalizer)
+    def kernel(C: T.memref(4, 4, 4, T.f32())):
+        bx = block_dim.x
+        by = block_dim.y
+        bz = block_dim.z
+        tx = thread_idx.x
+        ty = thread_idx.y
+        tz = thread_idx.z
+        C[bx, by, bz] = arith.constant(1.0, type=T.f32())
+        C[tx, ty, tz] = arith.constant(2.0, type=T.f32())
+        return
+
+    @module("test_mod", ["#nvvm.target"])
+    def gpu_module():
+        kernel.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.block_dim  x
+    # CHECK: gpu.block_dim  y
+    # CHECK: gpu.block_dim  z
+    # CHECK: gpu.thread_id  x
+    # CHECK: gpu.thread_id  y
+    # CHECK: gpu.thread_id  z
+    filecheck_with_comments(ctx.module)
+
+
+def test_grid_dim_all(ctx: MLIRContext):
+    set_container_module(ctx.module)
+
+    @gpu.func
+    @canonicalize(using=scf.canonicalizer)
+    def kernel(C: T.memref(4, 4, 4, T.f32())):
+        gx = grid_dim.x
+        gy = grid_dim.y
+        gz = grid_dim.z
+        C[gx, gy, gz] = arith.constant(1.0, type=T.f32())
+        return
+
+    @module("test_mod", ["#nvvm.target"])
+    def gpu_module():
+        kernel.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.grid_dim  x
+    # CHECK: gpu.grid_dim  y
+    # CHECK: gpu.grid_dim  z
+    filecheck_with_comments(ctx.module)
+
+
+def test_thread_id_function(ctx: MLIRContext):
+    set_container_module(ctx.module)
+
+    @gpu.func
+    @canonicalize(using=scf.canonicalizer)
+    def kernel(C: T.memref(4, T.index())):
+        tid = thread_id()
+        C[tid] = arith.constant(0, type=T.index())
+        return
+
+    @module("test_mod", ["#nvvm.target"])
+    def gpu_module():
+        kernel.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.block_dim  x
+    # CHECK: gpu.block_dim  y
+    # CHECK: gpu.thread_id  z
+    # CHECK: gpu.thread_id  y
+    # CHECK: gpu.thread_id  x
+    filecheck_with_comments(ctx.module)
+
+
+def test_get_device_mapping_array_attr_context_none_and_arrayattr(ctx: MLIRContext):
+    # Test the context=None path (line 135) - uses Context.current
+    attrs = [thread("x"), thread("y")]
+    result = get_device_mapping_array_attr(attrs)
+    assert result is not None
+
+    # Test the isinstance(mapping, ArrayAttr) path (line 137)
+    array_attr = ArrayAttr.get(attrs)
+    result2 = get_device_mapping_array_attr(array_attr)
+    assert result2 is array_attr
+
+
+def test_warp_attr(ctx: MLIRContext):
+    attr = warp_attr("x")
+    assert attr is not None
+    assert "warp" in str(attr)
+
+
+def test_warpgroup_attr(ctx: MLIRContext):
+    attr = warpgroup_attr("x")
+    assert attr is not None
+    assert "warpgroup" in str(attr)
+
+
+def test_block_attr(ctx: MLIRContext):
+    attr = block_attr("x")
+    assert attr is not None
+    assert "block" in str(attr)
+
+
+def test_address_space_attr(ctx: MLIRContext):
+    attr = address_space_attr(AddressSpace.Workgroup)
+    assert attr is not None
+    assert "address_space" in str(attr)
+
+
+def test_smem_space_int(ctx: MLIRContext):
+    # Test the int=True path (line 172)
+    result = smem_space(int=True)
+    assert isinstance(result, int)
+
+    # Also test the int=False path
+    result2 = smem_space(int=False)
+    assert result2 is not None
+    assert "address_space" in str(result2)
+
+
+def test_gpu_module_op_targets_none(ctx: MLIRContext):
+    # Test GPUModuleOp with targets=None (line 186)
+    gpu_mod = GPUModuleOp("test_module", targets=None)
+    assert gpu_mod is not None
+    # Don't verify - empty targets is valid Python path but MLIR requires >= 1 target
+    assert "test_module" in str(ctx.module)
+
+
+def test_gpu_func_op_arg_res_vis_attrs(ctx: MLIRContext):
+    set_container_module(ctx.module)
+
+    # Test GPUFuncOp with arg_attrs and sym_visibility (lines 258, 277)
+    @gpu.func(sym_visibility="public", arg_attrs=[{}])
+    @canonicalize(using=scf.canonicalizer)
+    def kernel(A: T.memref(4, T.f32())):
+        A[arith.constant(0, type=T.index())] = arith.constant(1.0, type=T.f32())
+        return
+
+    @module("test_mod", ["#nvvm.target"])
+    def gpu_module():
+        kernel.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.func @kernel(%{{.*}}: memref<4xf32>) kernel
+    filecheck_with_comments(ctx.module)
+
+
+def test_gpu_func_op_res_attrs(ctx: MLIRContext):
+    set_container_module(ctx.module)
+
+    # Test GPUFuncOp with res_attrs (line 267) - need a function that returns
+    # We directly create GPUFuncOp to test res_attrs since gpu.func decorator
+    # doesn't easily support return types
+    gpu_mod = GPUModuleOp("test_mod2", targets=[Attribute.parse("#nvvm.target")])
+    with InsertionPoint(gpu_mod.body):
+        func_type = T.function(inputs=[T.memref(4, T.f32())], results=[T.f32()])
+        gpu_func = GPUFuncOp(
+            "kernel2",
+            func_type,
+            res_attrs=[{}],
+        )
+
+    # Just verify it was created with res_attrs attribute
+    assert "res_attrs" in str(gpu_func.operation)
+
+
+def test_grid_qualname_and_call(ctx: MLIRContext):
+    set_container_module(ctx.module)
+
+    @gpu.func(emit_grid=True)
+    @canonicalize(using=scf.canonicalizer)
+    def kernel(A: T.memref(4, T.f32())):
+        A[arith.constant(0, type=T.index())] = arith.constant(1.0, type=T.f32())
+        return
+
+    # Test Grid.qualname getter (line 426)
+    assert kernel.qualname is None
+
+    # Set qualname and verify getter
+    kernel.qualname = "MyModule"
+    assert kernel.qualname == "MyModule"
+
+    # Emit the kernel inside a gpu.module first
+    @module("MyModule", ["#nvvm.target"])
+    def gpu_module():
+        kernel.func.emit()
+
+    # Test Grid.__call__ (line 433)
+    a = memref.alloc((4,), T.f32())
+    kernel(a, grid_size=[1, 1, 1], block_size=[1, 1, 1])
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.launch_func  @MyModule::@kernel
+    filecheck_with_comments(ctx.module)
+
+
+def test_alloc_dealloc(ctx: MLIRContext):
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        mem = alloc([4, 8], element_type=T.f32())
+        dealloc(mem)
+        return
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.alloc () : memref<4x8xf32>
+    # CHECK: gpu.dealloc %{{.*}} : memref<4x8xf32>
+    filecheck_with_comments(ctx.module)
+
+
+def test_alloc_dynamic_size(ctx: MLIRContext):
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        dyn = arith.constant(16, type=T.index())
+        mem = alloc([4, dyn], element_type=T.f32())
+        dealloc(mem)
+        return
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.alloc (%{{.*}}) : memref<4x?xf32>
+    filecheck_with_comments(ctx.module)
+
+
+def test_memcpy_func(ctx: MLIRContext):
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        src = memref.alloc((4, 4), T.f32())
+        dst = alloc([4, 4], element_type=T.f32())
+        memcpy(dst, src)
+        dealloc(dst)
+        return
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.memcpy %{{.*}}, %{{.*}} : memref<4x4xf32>, memref<4x4xf32>
+    filecheck_with_comments(ctx.module)
+
+
+def test_memset_func(ctx: MLIRContext):
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        dst = alloc([4, 4], element_type=T.f32())
+        memset(dst, 0.0)
+        dealloc(dst)
+        return
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.memset %{{.*}}, %{{.*}} : memref<4x4xf32>, f32
+    filecheck_with_comments(ctx.module)
+
+
+def test_memset_with_async(ctx: MLIRContext):
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        dst = alloc([4, 4], element_type=T.f32())
+        w = wait()
+        memset(dst, 0.0, async_dependencies=[w])
+        return
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.memset async [%{{.*}}] %{{.*}}, %{{.*}} : memref<4x4xf32>, f32
+    filecheck_with_comments(ctx.module)
+
+
+def test_barrier_func(ctx: MLIRContext):
+    set_container_module(ctx.module)
+
+    @gpu.func
+    @canonicalize(using=scf.canonicalizer)
+    def kernel(A: T.memref(4, T.f32())):
+        barrier()
+        return
+
+    @module("test_mod", ["#nvvm.target"])
+    def gpu_module():
+        kernel.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.barrier
+    filecheck_with_comments(ctx.module)
+
+
+def test_alloc_with_async(ctx: MLIRContext):
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        w = wait()
+        mem = alloc([4, 4], element_type=T.f32(), async_dependencies=[w])
+        return
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.alloc async [%{{.*}}] () : memref<4x4xf32>
+    filecheck_with_comments(ctx.module)
+
+
+def test_dealloc_with_async(ctx: MLIRContext):
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        mem = alloc([4, 4], element_type=T.f32())
+        w = wait()
+        dealloc(mem, async_dependencies=[w])
+        return
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.dealloc async [%{{.*}}] %{{.*}} : memref<4x4xf32>
+    filecheck_with_comments(ctx.module)
+
+
+def test_memcpy_with_async(ctx: MLIRContext):
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        src = memref.alloc((4, 4), T.f32())
+        dst = alloc([4, 4], element_type=T.f32())
+        w = wait()
+        memcpy(dst, src, async_dependencies=[w])
+        return
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.memcpy async [%{{.*}}] %{{.*}}, %{{.*}} : memref<4x4xf32>, memref<4x4xf32>
+    filecheck_with_comments(ctx.module)
+
+
+def test_dynamic_shared_memory(ctx: MLIRContext):
+    set_container_module(ctx.module)
+
+    @gpu.func
+    @canonicalize(using=scf.canonicalizer)
+    def kernel():
+        shmem = dynamic_shared_memory()
+        return
+
+    @module("test_mod", ["#nvvm.target"])
+    def gpu_module():
+        kernel.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: gpu.dynamic_shared_memory
+    filecheck_with_comments(ctx.module)
+
+
+def test_launch_with_value_sizes(ctx: MLIRContext):
+    """Branches 327->326, 301->303: launch with Value grid/block sizes and async deps"""
+    from mlir.extras.dialects.gpu import launch
+    from mlir.extras.dialects.arith import constant
+
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        grid_x = constant(1, T.index())
+        grid_y = constant(1, T.index())
+        grid_z = constant(1, T.index())
+        block_x = constant(32, T.index())
+        block_y = constant(1, T.index())
+        block_z = constant(1, T.index())
+
+        @launch([grid_x, grid_y, grid_z], [block_x, block_y, block_z])
+        def kernel(*args):
+            c = constant(1.0)
+
+        return
+
+    ctx.module.operation.verify()
+
+
+def test_wait_with_async_deps(ctx: MLIRContext):
+    """Branch 487->489: wait with explicit async_dependencies"""
+
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        w1 = wait()
+        w2 = wait(async_dependencies=[w1])
+        return
+
+    ctx.module.operation.verify()
+
+
+def test_alloc_with_explicit_empty_lists(ctx: MLIRContext):
+    """Branches 508->510, 510->512: alloc with explicit symbol_operands and dynamic_sizes"""
+
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        mem = alloc([4, 4], element_type=T.f32(), symbol_operands=[], dynamic_sizes=[])
+        return
+
+    ctx.module.operation.verify()
+
+
+def test_memset_with_value_operand(ctx: MLIRContext):
+    """Branch 599->601: memset with Value (not int/float/bool)"""
+    from mlir.extras.dialects.arith import constant
+
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        mem = alloc([4, 4], element_type=T.f32())
+        val = constant(0.0, T.f32())
+        gpu.memset(mem, val)
+        return
+
+    ctx.module.operation.verify()
+
+
+@pytest.mark.xfail(
+    reason="gpu.func emit inside gpu.module via region_op fails verification; "
+    "existing test_grid_qualname_and_call works but only with int sizes"
+)
+def test_gpu_func_call_with_value_sizes(ctx: MLIRContext):
+    """Branch 391->390: GPUFunc.__call__ with Value grid/block sizes"""
+    from mlir.extras.dialects.arith import constant
+    from mlir.extras.dialects.gpu import set_container_module
+
+    set_container_module(ctx.module)
+
+    @gpu.func(emit_grid=True)
+    @canonicalize(using=scf.canonicalizer)
+    def kernel(a: T.memref(4, 4, T.f32())):
+        return
+
+    kernel.qualname = "MyModule"
+
+    @module("MyModule", ["#nvvm.target"])
+    def gpu_mod():
+        kernel.func.emit()
+
+    mem = memref.alloc([4, 4], T.f32())
+    gx = constant(1, T.index())
+    gy = constant(1, T.index())
+    gz = constant(1, T.index())
+    bx = constant(1, T.index())
+    by = constant(1, T.index())
+    bz = constant(1, T.index())
+    kernel(mem, grid_size=[gx, gy, gz], block_size=[bx, by, bz])
+
+    ctx.module.operation.verify()
+
+
+def test_launch_with_async_dependencies(ctx: MLIRContext):
+    """Branch 301->303: LaunchOp with explicit async_dependencies"""
+    from mlir.extras.dialects.gpu import launch
+
+    @func(emit=True)
+    @canonicalize(using=scf.canonicalizer)
+    def main():
+        w = wait()
+
+        @launch([1, 1, 1], [32, 1, 1], async_dependencies=[w])
+        def kernel(*args):
+            c = arith.constant(1.0)
+
+        return
+
+    ctx.module.operation.verify()

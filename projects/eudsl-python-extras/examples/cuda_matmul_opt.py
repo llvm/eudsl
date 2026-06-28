@@ -1,11 +1,10 @@
 import contextlib
 import math
 
-import mlir.extras.types as T
 import numpy as np
-from mlir.dialects import builtin
 
-from util import cuda_bindings_not_installed
+import mlir.extras.types as T
+from mlir.dialects import builtin
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.context import (
     mlir_mod_ctx,
@@ -26,6 +25,7 @@ from mlir.extras.runtime.passes import Pipeline, run_pipeline
 
 # noinspection PyUnresolvedReferences
 from mlir.extras.util import find_ops, enable_debug as enable_debug
+from util import cuda_bindings_not_installed
 
 # just so it doesn't get DCE'd by black/reformat
 _ = memref
@@ -142,7 +142,9 @@ def sgemm_naive[
     A_t = T.memref(M, K, dtype),
     B_t = T.memref(K, N, dtype),
     C_t = T.memref(M, N, dtype),
-](A: A_t, B: B_t, C: C_t):
+](
+    A: A_t, B: B_t, C: C_t
+):
     one = arith.constant(1.0, type=dtype)
     tmp = arith.constant(0, type=dtype)
 
@@ -170,7 +172,9 @@ def sgemm_naive_row_order[
     A_t = T.memref(M, K, dtype),
     B_t = T.memref(K, N, dtype),
     C_t = T.memref(M, N, dtype),
-](A: A_t, B: B_t, C: C_t):
+](
+    A: A_t, B: B_t, C: C_t
+):
     one = arith.constant(1.0, type=dtype)
     tmp = arith.constant(0, type=dtype)
 
@@ -197,7 +201,9 @@ def sgemm_coalesce[
     A_t = T.memref(M, K, dtype),
     B_t = T.memref(K, N, dtype),
     C_t = T.memref(M, N, dtype),
-](A: A_t, B: B_t, C: C_t):
+](
+    A: A_t, B: B_t, C: C_t
+):
 
     tid = gpu.thread_id()
     # this is actually floordiv
@@ -263,7 +269,9 @@ def sgemm_coalesce_transpose_B[
     A_t = T.memref(M, K, dtype),
     B_t = T.memref(K, N, dtype),
     C_t = T.memref(M, N, dtype),
-](A: A_t, B: B_t, C: C_t):
+](
+    A: A_t, B: B_t, C: C_t
+):
 
     tid = gpu.thread_id()
     r = block_idx.x * BLOCK_SIZE + (tid / BLOCK_SIZE)
@@ -292,7 +300,9 @@ def sgemm_shared_mem_block[
     A_t = T.memref(M, K, dtype),
     B_t = T.memref(K, N, dtype),
     C_t = T.memref(M, N, dtype),
-](A: A_t, B: B_t, C: C_t):
+](
+    A: A_t, B: B_t, C: C_t
+):
     # allocate buffer for current block in fast shared mem
     # shared mem is shared between all threads in a block
     base = gpu.dynamic_shared_memory()
@@ -400,7 +410,9 @@ def sgemm_shared_mem_1d_block_tiling[
     A_t = T.memref(M, K, dtype),
     B_t = T.memref(K, N, dtype),
     C_t = T.memref(M, N, dtype),
-](A: A_t, B: B_t, C: C_t):
+](
+    A: A_t, B: B_t, C: C_t
+):
     base = gpu.dynamic_shared_memory()
     A_shared = memref.view(base, (BM, BK), dtype=dtype)
     B_shared = memref.view(base, (BK, BN), dtype=dtype, shift=BM * BK)
@@ -461,7 +473,9 @@ def sgemm_shared_mem_2d_block_tiling[
     A_t = T.memref(M, K, dtype),
     B_t = T.memref(K, N, dtype),
     C_t = T.memref(M, N, dtype),
-](A: A_t, B: B_t, C: C_t):
+](
+    A: A_t, B: B_t, C: C_t
+):
     base = gpu.dynamic_shared_memory()
     A_shared = memref.view(base, (BM, BK), dtype=dtype)
     B_shared = memref.view(base, (BK, BN), dtype=dtype, shift=BM * BK)
@@ -548,7 +562,9 @@ def sgemm_shared_mem_2d_block_tiling_vectorize[
     A_t = T.memref(M, K, dtype),
     B_t = T.memref(K, N, dtype),
     C_t = T.memref(M, N, dtype),
-](A: A_t, B: B_t, C: C_t):
+](
+    A: A_t, B: B_t, C: C_t
+):
     VECTOR_WIDTH = 4
     DTYPE_WIDTH = dtype.width // 8
 
@@ -662,7 +678,9 @@ def sgemm_warp_tiling[
     A_t = T.memref(M, K, dtype),
     B_t = T.memref(K, N, dtype),
     C_t = T.memref(M, N, dtype),
-](A: A_t, B: B_t, C: C_t):
+](
+    A: A_t, B: B_t, C: C_t
+):
     VECTOR_WIDTH = 4
     DTYPE_WIDTH = dtype.width // 8
 
@@ -828,7 +846,9 @@ def sgemm_tensor_core[
     C_t = T.memref(M, N, T.f32()),
     a_tma_t = llvm_ptr_t(),
     b_tma_t = llvm_ptr_t(),
-](A: A_t, B: B_t, C: C_t, a_tma: a_tma_t, b_tma: b_tma_t):
+](
+    A: A_t, B: B_t, C: C_t, a_tma: a_tma_t, b_tma: b_tma_t
+):
     a_tma = builtin.unrealized_conversion_cast(
         [
             nvgpu.TensorMapDescriptorType.get(

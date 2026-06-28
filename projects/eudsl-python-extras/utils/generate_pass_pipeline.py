@@ -161,12 +161,10 @@ def generate_pass_method(pass_: Pass, output_file):
             mlir_args.append(f'"{o.argument}": {n}')
         print(
             indent(
-                dedent(
-                    f"""\
+                dedent(f"""\
                         self.add_pass("{pass_name}", **{{{", ".join(mlir_args)}}})
                         return self
-                    """
-                ),
+                    """),
                 prefix=" " * ident * 2,
             ),
             file=output_file,
@@ -175,10 +173,8 @@ def generate_pass_method(pass_: Pass, output_file):
     else:
         print(
             indent(
-                dedent(
-                    f"""\
-                        def {pass_name.replace("-", "_")}(self):"""
-                ),
+                dedent(f"""\
+                        def {pass_name.replace("-", "_")}(self):"""),
                 prefix=" " * ident,
             ),
             file=output_file,
@@ -186,12 +182,10 @@ def generate_pass_method(pass_: Pass, output_file):
         print_options_doc_string(pass_, ident, output_file)
         print(
             indent(
-                dedent(
-                    f"""\
+                dedent(f"""\
                     self.add_pass("{pass_name}")
                     return self
-                    """
-                ),
+                    """),
                 prefix=" " * ident * 2,
             ),
             file=output_file,

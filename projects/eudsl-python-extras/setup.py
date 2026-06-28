@@ -52,6 +52,7 @@ setup(
     extras_require={
         "test": [
             "pytest",
+            "pytest-cov",
             "mlir-native-tools",
             "astpretty",
             "black",

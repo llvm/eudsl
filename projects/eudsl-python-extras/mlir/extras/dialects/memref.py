@@ -8,7 +8,7 @@ from typing import Sequence, Union, Optional
 
 import numpy as np
 
-from ._shaped_value import ShapedValue, _indices_to_indexer, _maybe_compute_size
+from ._shaped_value import ShapedValue, _indices_to_indexer, _compute_size
 from .arith import ScalarValue, constant, index_cast, ConstantOp
 from .tensor import compute_result_shape_reassoc_list
 from .vector import VectorValue
@@ -26,12 +26,12 @@ from ...dialects._ods_common import (
     MixedValues,
     _dispatch_mixed_values,
 )
+from ...dialects.memref import *
 from ...dialects.memref import (
     _is_static_int_like,
     _generated_subview,
     _is_constant_int_like,
 )
-from ...dialects.memref import *
 from ...ir import (
     DenseElementsAttr,
     MemRefType,
@@ -177,8 +177,7 @@ class MemRefValue(Value):
     def __getitem__(self, idx: tuple) -> "MemRefValue":
         loc = get_user_code_loc()
 
-        if not self.has_rank():
-            raise ValueError("only ranked memref slicing/indexing supported")
+        assert self.has_rank(), "only ranked memref slicing/indexing supported"
 
         if idx == Ellipsis or idx == slice(None):
             return self
@@ -205,8 +204,7 @@ class MemRefValue(Value):
     def __setitem__(self, idx, val):
         loc = get_user_code_loc()
 
-        if not self.has_rank():
-            raise ValueError("only ranked memref slicing/indexing supported")
+        assert self.has_rank(), "only ranked memref slicing/indexing supported"
 
         idx = list((idx,) if isinstance(idx, (ScalarValue, int, Value)) else idx)
         for i, d in enumerate(idx):
@@ -233,26 +231,23 @@ class MemRefValue(Value):
             _copy_to_subview(self, val, tuple(idx), loc=loc)
 
     def dim(self, idx, *, loc=None, ip=None):
-        if self.has_rank():
-            if isinstance(idx, Value) and isinstance(idx.owner.opview, ConstantOp):
-                idx = idx.owner.opview.value.value
-            if not isinstance(idx, int):
-                raise TypeError(f"expected {idx=} to be an int")
-            d = self.shape[idx]
-            if d != S:
-                return d
-        if isinstance(idx, int):
-            idx = constant(idx, IndexType.get())
-        if not isinstance(idx.type, IndexType):
-            idx = index_cast(idx, to=IndexType.get(), loc=loc, ip=ip)
+        assert self.has_rank(), "only ranked memref dim supported"
+        if isinstance(idx, Value) and isinstance(idx.owner.opview, ConstantOp):
+            idx = idx.owner.opview.value.value
+        if not isinstance(idx, int):
+            raise TypeError(f"expected {idx=} to be an int")
+        d = self.shape[idx]
+        if d != S:
+            return d
+        idx = constant(idx, IndexType.get())
+        assert isinstance(
+            idx.type, IndexType
+        ), f"expected index type for dim idx, got {idx.type}"
         return DimOp(self, idx, loc=loc, ip=ip).result
 
     def dims(self, *, rank=None, loc=None, ip=None):
-        if self.has_rank():
-            return tuple(self.dim(i, loc=loc, ip=ip) for i in range(self.rank))
-        if rank is None:
-            raise ValueError("unranked dims requires rank for unranked memref")
-        return tuple(self.dim(i, loc=loc, ip=ip) for i in range(rank))
+        assert self.has_rank(), "unranked dims requires rank for unranked memref"
+        return tuple(self.dim(i, loc=loc, ip=ip) for i in range(self.rank))
 
 
 def expand_shape(
@@ -432,24 +427,20 @@ def _subview(
         strides = [None] * len(indexer.in_shape)
         for i, ind in enumerate(indexer.indices):
             if isinstance(ind, slice):
-                maybe_size = _maybe_compute_size(ind.start, ind.stop, ind.step)
-                if maybe_size is None:
-                    raise RuntimeError(
-                        f"failed to canonicalize start, stop, step: {ind=}"
-                    )
                 offsets[i] = ind.start
-                sizes[i] = maybe_size
+                sizes[i] = _compute_size(ind.start, ind.stop, ind.step)
                 strides[i] = (
                     ind.step.literal_value
                     if isinstance(ind.step, ScalarValue)
                     else ind.step
                 )
-            elif isinstance(ind, Value):
+            else:
+                assert isinstance(
+                    ind, Value
+                ), "_indices_to_indexer always produces slice or Value indices"
                 offsets[i] = ind
                 sizes[i] = 1
                 strides[i] = 1
-            else:
-                raise RuntimeError(f"indexing of {mem=} not supported by {ind=}")
         assert all(
             map(lambda x: x is not None, offsets + sizes + strides)
         ), f"not each slice is statically known: {indexer.indices}"
@@ -476,8 +467,9 @@ def _copy_to_subview(
     loc=None,
     ip=None,
 ):
-    if isinstance(source, ScalarValue):
-        source = expand_shape(source, (0,), loc=loc, ip=ip)
+    assert not isinstance(
+        source, ScalarValue
+    ), "__setitem__ handles ScalarValue before reaching _copy_to_subview"
 
     dest_subview = _subview(dest, idx, loc=loc, ip=ip)
     assert (

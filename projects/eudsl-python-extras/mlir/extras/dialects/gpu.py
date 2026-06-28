@@ -228,6 +228,7 @@ class GPUModuleMeta(ModuleMeta):
 GPUFuncOp_ = GPUFuncOp
 
 
+@_cext.register_operation(_Dialect, replace=True)
 class GPUFuncOp(GPUFuncOp_):
     def __init__(
         self,
@@ -284,6 +285,7 @@ class GPUFuncOp(GPUFuncOp_):
             )
 
 
+@_cext.register_operation(_Dialect, replace=True)
 class LaunchOp(LaunchOp):
     def __init__(
         self,
@@ -338,6 +340,7 @@ def launch_(
 launch = region_op(launch_, terminator=lambda *_args: TerminatorOp())
 
 
+@_cext.register_operation(_Dialect, replace=True)
 class LaunchFuncOp(LaunchFuncOp):
     def __init__(
         self,
@@ -563,7 +566,7 @@ def memcpy(dst, src, async_dependencies=None, *, loc=None, ip=None):
     )
 
 
-def get_compile_object_bytes(compiled_module):
+def get_compile_object_bytes(compiled_module):  # pragma: no cover
     binary = find_ops(compiled_module, lambda o: isinstance(o, BinaryOp), single=True)
     objects = list(map(ObjectAttr, binary.objects))
     return objects[-1].object

@@ -1,11 +1,10 @@
 import numpy as np
 
+import mlir.extras.types as T
+from mlir.dialects import index as index_dialect
 from mlir.extras.ast.canonicalize import canonicalize
 from mlir.extras.context import RAIIMLIRContextModule
 from mlir.extras.dialects import memref, scf, arith, gpu, llvm
-from mlir.dialects import index as index_dialect
-from mlir.ir import InsertionPoint, IntegerAttr, UnitAttr, Attribute
-import mlir.extras.types as T
 
 # noinspection PyUnresolvedReferences
 from mlir.extras.dialects.gpu import (
@@ -26,6 +25,7 @@ from mlir.extras.dialects.gpu import (
 )
 from mlir.extras.runtime.passes import run_pipeline, Pipeline
 from mlir.extras.util import find_ops
+from mlir.ir import InsertionPoint, IntegerAttr, UnitAttr, Attribute
 
 # noinspection PyUnresolvedReferences
 from util import (
@@ -761,7 +761,6 @@ for k in kernel_funcs:
 if hip_bindings_not_installed():
     exit()
 from hip import hip
-
 
 lowered_module = run_pipeline(lowered_module, Pipeline().gpu_module_to_binary())
 hsaco = get_compile_object_bytes(lowered_module)

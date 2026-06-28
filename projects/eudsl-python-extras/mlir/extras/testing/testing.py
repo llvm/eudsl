@@ -17,11 +17,11 @@ import pytest
 
 from .generate_test_checks import main
 from ..context import MLIRContext, mlir_mod_ctx
-from ...ir import Module, Operation, Context
 from ..runtime.refbackend import LLVMJITBackend
+from ...ir import Module, Operation, Context
 
 
-def replace_correct_str_with_comments(fun, correct_with_checks):
+def replace_correct_str_with_comments(fun, correct_with_checks):  # pragma: no cover
     # fun = inspect.currentframe().f_back.f_code
     lines, lnum = inspect.findsource(fun)
     fun_src = inspect.getsource(fun)
@@ -42,13 +42,13 @@ def replace_correct_str_with_comments(fun, correct_with_checks):
 
 def get_filecheck_path():
     filecheck_name = "FileCheck"
-    if platform.system() == "Windows":
+    if platform.system() == "Windows":  # pragma: no cover
         filecheck_name += ".exe"
 
     # try from mlir-native-tools
     filecheck_path = Path(sys.prefix) / "bin" / filecheck_name
     # try to find using which
-    if not filecheck_path.exists():
+    if not filecheck_path.exists():  # pragma: no cover
         filecheck_path = shutil.which(filecheck_name)
     assert (
         filecheck_path is not None and Path(filecheck_path).exists() is not None
@@ -68,7 +68,7 @@ def filecheck(correct: str, module):
     op = dedent(op)
 
     if platform.system().lower() == "emscripten":
-        return
+        return  # pragma: no cover
 
     correct = "\n".join(filter(None, correct.splitlines()))
     correct = dedent(correct)
@@ -110,7 +110,7 @@ def filecheck_with_comments(module):
     op = dedent(op)
 
     if platform.system().lower() == "emscripten":
-        return
+        return  # pragma: no cover
 
     fun = inspect.currentframe().f_back.f_code
     _, lnum = inspect.findsource(fun)

@@ -52,8 +52,7 @@ def test_if_handle_yield_1():
 
     mod = transform_func(iffoo, ReplaceYieldWithSCFYield)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -61,13 +60,11 @@ def test_if_handle_yield_1():
             three = constant(3.0)
             yield_()
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -133,8 +130,7 @@ def test_if_handle_yield_1():
             ),
         ],
     )
-    """
-    )
+    """)
     assert correct.strip() == dump
 
 
@@ -148,8 +144,7 @@ def test_if_handle_yield_2():
 
     mod = transform_func(iffoo, InsertEmptyYield)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -157,13 +152,11 @@ def test_if_handle_yield_2():
             three = constant(3.0)
             yield
         return\
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -224,8 +217,7 @@ def test_if_handle_yield_2():
             ),
         ],
     )
-    """
-    )
+    """)
     assert correct.strip() == dump
 
 
@@ -240,8 +232,7 @@ def test_if_handle_yield_3():
 
     mod = transform_func(iffoo, ReplaceYieldWithSCFYield)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -249,13 +240,11 @@ def test_if_handle_yield_3():
             three = constant(3.0)
             res = yield_(three)
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -322,8 +311,7 @@ def test_if_handle_yield_3():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -340,8 +328,7 @@ def test_if_handle_yield_4():
     mod = transform_func(iffoo, ReplaceYieldWithSCFYield)
 
     if sys.version_info.minor >= 11:
-        correct = dedent(
-            """\
+        correct = dedent("""\
         def iffoo():
             one = constant(1.0)
             two = constant(2.0)
@@ -349,11 +336,9 @@ def test_if_handle_yield_4():
                 three = constant(3.0)
                 res1, res2 = yield_(three, three)
             return
-        """
-        )
+        """)
     elif sys.version_info.minor == 10:
-        correct = dedent(
-            """\
+        correct = dedent("""\
         def iffoo():
             one = constant(1.0)
             two = constant(2.0)
@@ -361,16 +346,14 @@ def test_if_handle_yield_4():
                 three = constant(3.0)
                 (res1, res2) = yield_(three, three)
             return
-        """
-        )
+        """)
     else:
         raise NotImplementedError(f"{sys.version_info.minor} not supported.")
 
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -448,8 +431,7 @@ def test_if_handle_yield_4():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -465,8 +447,7 @@ def test_if_nested_no_else_no_yield():
         return
 
     mod = transform_func(iffoo, InsertEmptyYield)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -477,14 +458,12 @@ def test_if_nested_no_else_no_yield():
                 yield
             yield
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -571,8 +550,7 @@ def test_if_nested_no_else_no_yield():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -588,8 +566,7 @@ def test_if_replace_cond_1():
 
     mod = transform_func(iffoo, ReplaceYieldWithSCFYield, ReplaceIfWithWith)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -597,14 +574,12 @@ def test_if_replace_cond_1():
             three = constant(3.0)
             yield_()
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -682,8 +657,7 @@ def test_if_replace_cond_1():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -699,8 +673,7 @@ def test_if_replace_cond_2():
 
     mod = transform_func(iffoo, ReplaceYieldWithSCFYield, ReplaceIfWithWith)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -708,14 +681,12 @@ def test_if_replace_cond_2():
             three = constant(3.0)
             res = yield_(three)
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -804,8 +775,7 @@ def test_if_replace_cond_2():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -822,8 +792,7 @@ def test_if_replace_cond_3():
     mod = transform_func(iffoo, ReplaceYieldWithSCFYield, ReplaceIfWithWith)
 
     if sys.version_info.minor >= 11:
-        correct = dedent(
-            """\
+        correct = dedent("""\
         def iffoo():
             one = constant(1.0)
             two = constant(2.0)
@@ -831,11 +800,9 @@ def test_if_replace_cond_3():
                 three = constant(3.0)
                 res1, res2 = yield_(three, three)
             return
-        """
-        )
+        """)
     elif sys.version_info.minor == 10:
-        correct = dedent(
-            """\
+        correct = dedent("""\
         def iffoo():
             one = constant(1.0)
             two = constant(2.0)
@@ -843,16 +810,14 @@ def test_if_replace_cond_3():
                 three = constant(3.0)
                 (res1, res2) = yield_(three, three)
             return
-        """
-        )
+        """)
     else:
         raise NotImplementedError(f"{sys.version_info.minor} not supported.")
 
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -958,8 +923,7 @@ def test_if_replace_cond_3():
             ),
         ],
     )
-    """
-    )
+    """)
     assert correct.strip() == dump
 
 
@@ -976,8 +940,7 @@ def test_if_nested_with_else_no_yield():
         return
 
     mod = transform_func(iffoo, CanonicalizeElIfs, InsertEmptyYield)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -991,13 +954,11 @@ def test_if_nested_with_else_no_yield():
                 yield
             yield
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -1099,8 +1060,7 @@ def test_if_nested_with_else_no_yield():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -1122,8 +1082,7 @@ def test_insert_end_ifs_yield():
         ReplaceYieldWithSCFYield,
         ReplaceIfWithWith,
     )
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -1134,13 +1093,11 @@ def test_insert_end_ifs_yield():
             four = constant(4.0)
             yield_()
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -1253,8 +1210,7 @@ def test_insert_end_ifs_yield():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -1279,8 +1235,7 @@ def test_if_else_with_nested_no_yields_yield_results():
         ReplaceYieldWithSCFYield,
         ReplaceIfWithWith,
     )
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -1294,14 +1249,12 @@ def test_if_else_with_nested_no_yields_yield_results():
             five = constant(5.0)
             res = yield_(five)
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -1469,8 +1422,7 @@ def test_if_else_with_nested_no_yields_yield_results():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -1496,8 +1448,7 @@ def test_if_else_with_nested_no_yields_yield_multiple_results():
         ReplaceYieldWithSCFYield,
         ReplaceIfWithWith,
     )
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -1511,13 +1462,11 @@ def test_if_else_with_nested_no_yields_yield_multiple_results():
             five = constant(5.0)
             res = yield_(five, five)
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -1697,8 +1646,7 @@ def test_if_else_with_nested_no_yields_yield_multiple_results():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -1726,8 +1674,7 @@ def test_if_with_else_else_with_yields():
         ReplaceIfWithWith,
     )
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -1743,14 +1690,12 @@ def test_if_with_else_else_with_yields():
                 yield_()
             yield_()
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -1931,8 +1876,7 @@ def test_if_with_else_else_with_yields():
             ),
         ],
     )
-    """
-    )
+    """)
     assert correct.strip() == dump
 
 
@@ -1962,8 +1906,7 @@ def test_if_canonicalize_elif_elif():
         ReplaceYieldWithSCFYield,
         ReplaceIfWithWith,
     )
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -1985,14 +1928,12 @@ def test_if_canonicalize_elif_elif():
                 yield_()
             yield_()
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -2251,8 +2192,7 @@ def test_if_canonicalize_elif_elif():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -2280,8 +2220,7 @@ def test_elif_1():
         ReplaceIfWithWith,
     )
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -2299,14 +2238,12 @@ def test_elif_1():
                 yield_()
             yield_()
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -2507,8 +2444,7 @@ def test_elif_1():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -2539,8 +2475,7 @@ def test_elif_2():
         ReplaceIfWithWith,
     )
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -2564,14 +2499,12 @@ def test_elif_2():
                 yield_()
             yield_()
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -2850,8 +2783,7 @@ def test_elif_2():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -2884,8 +2816,7 @@ def test_elif_3():
         ReplaceIfWithWith,
     )
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     def iffoo():
         one = constant(1.0)
         two = constant(2.0)
@@ -2913,14 +2844,12 @@ def test_elif_3():
                 yield_()
             yield_()
         return
-    """
-    )
+    """)
     assert correct.strip() == ast.unparse(mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -3257,8 +3186,7 @@ def test_elif_3():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -3299,8 +3227,7 @@ def test_elif_nested_else_branch():
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -3695,8 +3622,7 @@ def test_elif_nested_else_branch():
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -3737,8 +3663,7 @@ def test_elif_nested_else_branch_multiple_yield(ctx: MLIRContext):
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -4245,8 +4170,7 @@ def test_elif_nested_else_branch_multiple_yield(ctx: MLIRContext):
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -4272,8 +4196,7 @@ def test_while_canonicalize(ctx: MLIRContext):
 
     dump = astpretty.pformat(mod, show_offsets=True)
 
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -4333,8 +4256,7 @@ def test_while_canonicalize(ctx: MLIRContext):
             ),
         ],
     )
-    """
-    )
+    """)
 
     assert correct.strip() == dump
 
@@ -4354,8 +4276,7 @@ def test_decorators_and_closed_vars(ctx: MLIRContext):
     mod = insert_closed_vars(mat_product_kernel, mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -4422,8 +4343,7 @@ def test_decorators_and_closed_vars(ctx: MLIRContext):
             ),
         ],
     )
-    """
-    )
+    """)
     assert correct.strip() == dump
 
     def dummy1(f):
@@ -4443,8 +4363,7 @@ def test_decorators_and_closed_vars(ctx: MLIRContext):
     mod = transform_func(mat_product_kernel, *canonicalizer.cst_transformers)
     mod = insert_closed_vars(mat_product_kernel, mod)
     dump = astpretty.pformat(mod, show_offsets=True)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -4511,8 +4430,7 @@ def test_decorators_and_closed_vars(ctx: MLIRContext):
             ),
         ],
     )
-    """
-    )
+    """)
     assert correct.strip() == dump
 
     @dummy2
@@ -4528,8 +4446,7 @@ def test_decorators_and_closed_vars(ctx: MLIRContext):
     mod = insert_closed_vars(mat_product_kernel, mod)
 
     dump = astpretty.pformat(mod, show_offsets=True)
-    correct = dedent(
-        """\
+    correct = dedent("""\
     Module(
         body=[
             FunctionDef(
@@ -4596,6 +4513,5 @@ def test_decorators_and_closed_vars(ctx: MLIRContext):
             ),
         ],
     )
-    """
-    )
+    """)
     assert correct.strip() == dump

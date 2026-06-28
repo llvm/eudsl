@@ -2,11 +2,13 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import mlir.extras.types as T
-from mlir.extras.types import tensor, memref, vector
 from mlir.extras.dialects.func import evaluate_generic_alias_type
-
 from mlir.extras.dialects.memref import alloc
 from mlir.extras.dialects.tensor import S, empty
+
+# noinspection PyUnresolvedReferences
+from mlir.extras.testing import mlir_ctx as ctx, filecheck, MLIRContext
+from mlir.extras.types import tensor, memref, vector
 from mlir.ir import (
     IntegerType,
     IndexType,
@@ -52,9 +54,6 @@ from mlir.ir import (
     DenseF32ArrayAttr,
     DenseF64ArrayAttr,
 )
-
-# noinspection PyUnresolvedReferences
-from mlir.extras.testing import mlir_ctx as ctx, filecheck, MLIRContext
 
 
 def test_shaped_types(ctx: MLIRContext):

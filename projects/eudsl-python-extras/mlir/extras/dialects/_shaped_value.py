@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 from dataclasses import dataclass
 from functools import cached_property, reduce
-import numpy as np
 from typing import Tuple, Union, List, Any
+
+import numpy as np
 
 from .arith import ScalarValue
 from ...ir import (
@@ -23,8 +24,7 @@ S = ShapedType.get_dynamic_size()
 def ShapedValue(cls):
     @cached_property
     def literal_value(self) -> np.ndarray:
-        if not self.is_constant:
-            raise ValueError("Can't build literal from non-constant value")
+        assert self.is_constant, "Can't build literal from non-constant value"
         return np.array(DenseElementsAttr(self.owner.opview.value), copy=False)
 
     @cached_property
@@ -113,14 +113,13 @@ class _Indexer:
                 sizes.append(1)
             elif isinstance(i, slice):
                 start, stop, step = map(int, (i.start, i.stop, i.step))
-                if all(isinstance(j, int) for j in (start, stop, step)):
-                    s = ((stop - start) // step) + 1
-                    if (stop - start) % step == 0:
-                        s -= 1
-                    sizes.append(s)
-                else:
-                    raise ValueError(f"idx {i} not supported with static sizes")
-
+                assert all(
+                    isinstance(j, int) for j in (start, stop, step)
+                ), f"idx {i} not supported with static sizes"
+                s = ((stop - start) // step) + 1
+                if (stop - start) % step == 0:
+                    s -= 1
+                sizes.append(s)
             else:
                 raise ValueError(f"idx {i} not supported with static sizes")
         return tuple(sizes)
@@ -227,7 +226,10 @@ def _indices_to_indexer(
         if _is_constant_index(idx) and _is_constant_scalar(in_shape[i]):
             if isinstance(idx, slice):
                 indices[i] = slice(*idx.indices(int(in_shape[i])))
-            elif isinstance(idx, ScalarValue):
+            else:
+                assert isinstance(
+                    idx, ScalarValue
+                ), f"unexpected index type: {type(idx)}"
                 indices[i] = int(idx)
 
     return _Indexer(
@@ -337,7 +339,7 @@ def _is_constant_scalar(e: Any) -> bool:
     )
 
 
-def _maybe_compute_size(start, stop, step):
+def _compute_size(start, stop, step):
     from ...dialects import arith
 
     # TODO(max): figure out how to use actual canonicalizers
