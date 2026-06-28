@@ -203,8 +203,22 @@ class ReifiedTypeParam:
             self.concrete_val = concrete_val
 
         self.type_name = type_var_bound
-        # TODO(max): implement _some_ kind of type checking to make sure
-        # self.concrete_val matches either the type bound or the type of the default
+        # Reject concrete values that don't match the type bound.
+        # e.g., for `def foo[A_t = T.memref(M, K, dtype)](A: A_t)`,
+        # A_t's bound is "MemRefType" — passing an int like `foo[..., 8]`
+        # should fail. MLIR Type instances are exempt from the name check
+        # because subclass names (e.g., "F32Type") won't string-match
+        # bounds like "type" or "MemRefType".
+        if (
+            self.concrete_val is not None
+            and isinstance(type_var_bound, str)
+            and type(self.concrete_val).__name__ != type_var_bound
+            and not isinstance(self.concrete_val, Type)
+        ):
+            raise TypeError(
+                f"Generic parameter '{self.name}' expects '{type_var_bound}', "
+                f"got '{type(self.concrete_val).__name__}' (value: {self.concrete_val})"
+            )
 
     def add_replace_in_closure(self, fn):
         # only in the closure if used in the body

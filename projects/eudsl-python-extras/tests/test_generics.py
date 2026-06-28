@@ -729,9 +729,6 @@ def test_pooling_ncdhw_max_parallel(ctx: MLIRContext):
     filecheck_with_comments(module)
 
 
-@pytest.mark.xfail(
-    reason="type checking between self.concrete_val and type_bound/type_var_default not implemented"
-)
 def test_wrong_generics_types(ctx: MLIRContext):
     # fmt: off
     @gpu.func
@@ -754,7 +751,8 @@ def test_wrong_generics_types(ctx: MLIRContext):
         c_col = block_idx.x * BN
 
     # the last 8 sets the reified param for A_t (which is wrong)
-    sgemm_shared_mem_1d_block_tiling[128, 128, 128, T.f32(), 64, 64, 8, 8, 8].emit()
+    with pytest.raises(TypeError, match="Generic parameter 'A_t'"):
+        sgemm_shared_mem_1d_block_tiling[128, 128, 128, T.f32(), 64, 64, 8, 8, 8].emit()
 
 
 def test_generics_basic(ctx: MLIRContext):
