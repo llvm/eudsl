@@ -1373,10 +1373,6 @@ def test_subview_rank_reduce(ctx: MLIRContext):
     ctx.module.operation.verify()
 
 
-@pytest.mark.xfail(
-    reason="subview rank_reduce without strided layout hits AffineMapAttr which doesn't have .strides — "
-    "the code should check isinstance(layout, StridedLayoutAttr)"
-)
 def test_subview_rank_reduce_no_layout(ctx: MLIRContext):
     """Branch 369->371: subview with rank_reduce=True and no layout (layout is None)"""
 
