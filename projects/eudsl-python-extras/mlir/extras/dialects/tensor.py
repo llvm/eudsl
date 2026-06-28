@@ -335,23 +335,25 @@ def parallel_insert_slice(
     static_sizes=None,
     static_strides=None,
 ):
-    if static_offsets is None:
-        assert offsets is not None
-        static_offsets = [S, S]
-    if static_sizes is None:
-        assert sizes is not None
-        static_sizes = [S, S]
-    if static_strides is None:
-        assert strides is not None
-        static_strides = [S, S]
+    from ...dialects.memref import _is_constant_int_like
+
+    for s in [offsets, sizes, strides]:
+        if s is not None:
+            for idx, i in enumerate(s):
+                if _is_constant_int_like(i):
+                    s[idx] = i.owner.opview.literal_value
+
+    if offsets is not None and static_offsets is None:
+        offsets, _, static_offsets = _dispatch_mixed_values(offsets)
+    if sizes is not None and static_sizes is None:
+        sizes, _, static_sizes = _dispatch_mixed_values(sizes)
+    if strides is not None and static_strides is None:
+        strides, _, static_strides = _dispatch_mixed_values(strides)
     if offsets is None:
-        assert static_offsets
         offsets = []
     if sizes is None:
-        assert static_sizes
         sizes = []
     if strides is None:
-        assert static_strides
         strides = []
 
     return tensor.parallel_insert_slice(

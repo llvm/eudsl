@@ -817,10 +817,6 @@ def test_parallel_insert_slice_with_static_args(ctx: MLIRContext):
     ctx.module.operation.verify()
 
 
-@pytest.mark.xfail(
-    reason="parallel_insert_slice with dynamic sizes/strides creates arith.constant ops inside "
-    "scf.forall.in_parallel which only allows ParallelCombiningOpInterface ops"
-)
 def test_parallel_insert_slice_with_dynamic_args(ctx: MLIRContext):
     """Lines 342-346, 348-352: parallel_insert_slice with dynamic offsets/sizes/strides"""
     from mlir.extras.dialects.scf import forall_
