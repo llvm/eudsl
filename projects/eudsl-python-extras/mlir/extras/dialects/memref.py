@@ -343,11 +343,11 @@ def subview(
     ip=None,
 ):
     if offsets is None:
-        offsets = []
+        offsets = [0] * len(source.type.shape)
     if sizes is None:
-        sizes = []
+        sizes = list(source.type.shape)
     if strides is None:
-        strides = []
+        strides = [1] * len(source.type.shape)
 
     for s in [offsets, sizes, strides]:
         for idx, i in enumerate(s):

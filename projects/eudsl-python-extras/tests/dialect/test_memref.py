@@ -1224,11 +1224,6 @@ def test_dynamic_dim(ctx: MLIRContext):
     filecheck_with_comments(ctx.module)
 
 
-@pytest.mark.xfail(
-    reason="subview with all None offsets/sizes/strides produces empty lists which results in "
-    "'expected 2 offset values, got 0' verification failure — the None defaults only make sense "
-    "when _dispatch_mixed_values receives actual int values to split into static/dynamic"
-)
 def test_subview_with_none_args(ctx: MLIRContext):
     """Lines 346, 348, 350: subview called with None offsets/sizes/strides"""
     from mlir.extras.dialects.memref import subview as extras_subview
