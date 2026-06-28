@@ -368,7 +368,7 @@ def subview(
     if rank_reduce:
         result_shape = list(result_type.shape)
         layout_strides = None
-        if result_type.layout:
+        if result_type.layout and isinstance(result_type.layout, StridedLayoutAttr):
             layout_strides = result_type.layout.strides
         for i, (s, ss) in reversed(
             list(enumerate(list(zip_longest(sizes, static_sizes))))
