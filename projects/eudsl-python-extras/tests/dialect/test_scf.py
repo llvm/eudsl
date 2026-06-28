@@ -2884,10 +2884,6 @@ def test_parallel_op_body_and_induction_variables(ctx: MLIRContext):
     assert len(ivs) == 1
 
 
-@pytest.mark.xfail(
-    reason="line 320 requires yield_ to receive an OpResultList as a positional arg, "
-    "but the canonicalizer always unpacks yield args into individual Values"
-)
 def test_yield_with_op_result_list_direct(ctx: MLIRContext):
     """Lines 320-322: yield_ when args contain an OpResultList directly"""
 
@@ -2896,7 +2892,7 @@ def test_yield_with_op_result_list_direct(ctx: MLIRContext):
 
     @canonicalize(using=canonicalizer)
     def foo():
-        for i, a, b in range_(0, 10, iter_args=[one, two]):
+        for i, (a, b), _ in range_(0, 10, iter_args=[one, two]):
             res = yield a, b
 
     foo()
