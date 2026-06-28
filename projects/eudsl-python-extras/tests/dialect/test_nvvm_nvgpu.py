@@ -430,7 +430,7 @@ except Exception:
 
 
 # based on https://github.com/llvm/llvm-project/blob/9cc2122bf5a81f7063c2a32b2cb78c8d615578a1/mlir/test/Integration/GPU/CUDA/TensorCore/sm80/transform-mma-sync-matmul-f16-f16-accum.mlir#L6
-@pytest.mark.xfail
+@pytest.mark.skipif(not NVIDIA_GPU, reason="requires NVIDIA GPU with SM80+")
 def test_transform_mma_sync_matmul_f16_f16_accum_run(ctx: MLIRContext, capfd):
     range_ = scf.range_
 
