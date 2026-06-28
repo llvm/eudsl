@@ -1583,10 +1583,6 @@ def test_memset_with_value_operand(ctx: MLIRContext):
     ctx.module.operation.verify()
 
 
-@pytest.mark.xfail(
-    reason="gpu.func emit inside gpu.module via region_op fails verification; "
-    "existing test_grid_qualname_and_call works but only with int sizes"
-)
 def test_gpu_func_call_with_value_sizes(ctx: MLIRContext):
     """Branch 391->390: GPUFunc.__call__ with Value grid/block sizes"""
     from mlir.extras.dialects.arith import constant
@@ -1594,16 +1590,13 @@ def test_gpu_func_call_with_value_sizes(ctx: MLIRContext):
 
     set_container_module(ctx.module)
 
-    @gpu.func(emit_grid=True)
-    @canonicalize(using=scf.canonicalizer)
+    @gpu.func
     def kernel(a: T.memref(4, 4, T.f32())):
-        return
-
-    kernel.qualname = "MyModule"
+        x = a[0, 0]
 
     @module("MyModule", ["#nvvm.target"])
     def gpu_mod():
-        kernel.func.emit()
+        kernel.emit()
 
     mem = memref.alloc([4, 4], T.f32())
     gx = constant(1, T.index())
@@ -1615,6 +1608,41 @@ def test_gpu_func_call_with_value_sizes(ctx: MLIRContext):
     kernel(mem, grid_size=[gx, gy, gz], block_size=[bx, by, bz])
 
     ctx.module.operation.verify()
+
+
+def test_gpu_func_external_decl_raises(ctx: MLIRContext):
+    """gpu.func does not support external declarations"""
+    with pytest.raises(
+        ValueError, match="gpu.func does not support external declarations"
+    ):
+
+        @gpu.func
+        def kernel(a: T.memref(4, 4, T.f32())): ...
+
+
+def test_gpu_func_external_decl_in_gpu_module_raises():
+    """gpu.func external decl inside gpu.module also raises"""
+    from mlir.ir import Context, Location, Module, InsertionPoint
+
+    with Context():
+        with Location.unknown():
+            module = Module.create()
+            with InsertionPoint(module.body):
+                with pytest.raises(
+                    ValueError,
+                    match="gpu.func does not support external declarations",
+                ):
+
+                    class MyModule(
+                        metaclass=GPUModuleMeta, targets=["#nvvm.target"]
+                    ):
+
+                        @gpu.func
+                        def kernel(a: T.memref(4, 4, T.f32())): ...
+
+                # GPUModuleMeta.__prepare__ enters an InsertionPoint that
+                # never exits when the class body raises; pop it manually.
+                InsertionPoint.current.__exit__(None, None, None)
 
 
 def test_launch_with_async_dependencies(ctx: MLIRContext):
