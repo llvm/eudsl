@@ -305,6 +305,14 @@ def yield_(*args, results_=None):
         args = results_
     if len(args) == 1 and isinstance(args[0], (list, OpResultList)):
         args = list(args[0])
+    else:
+        flat_args = []
+        for a in args:
+            if isinstance(a, (list, tuple, OpResultList)):
+                flat_args.extend(a)
+            else:
+                flat_args.append(a)
+        args = flat_args
     y = yield__(args)
     parent_op = y.operation.parent.opview
     if len(parent_op.results):
