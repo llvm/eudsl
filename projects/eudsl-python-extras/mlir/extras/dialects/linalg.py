@@ -5,13 +5,9 @@ from . import arith
 from ... import ir
 from ...dialects import linalg
 from ...dialects._ods_common import (
-    _dispatch_mixed_values,
     _cext,
     get_op_results_or_values,
-    get_default_loc_context,
     get_op_result_or_op_results,
-    get_default_loc_context,
-    segmented_accessor,
 )
 
 # noinspection PyUnresolvedReferences

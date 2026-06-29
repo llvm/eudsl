@@ -149,9 +149,6 @@ _np_dtype_to_mlir_type_ctor = {
     np.float64: T.f64,
 }
 
-_mlir_type_ctor_to_np_dtype = lambda: {
-    v: k for k, v in _np_dtype_to_mlir_type_ctor.items()
-}
 
 
 def np_dtype_to_mlir_type(np_dtype):
