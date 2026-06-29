@@ -110,7 +110,7 @@ def shlib_prefix():
     return shlib_pref
 
 
-def find_ops(op, pred: Callable[[OpView, Operation, Module], bool], single=False):
+def find_ops(op, pred: Callable[[Operation], bool], single=False):
     if isinstance(op, (OpView, Module)):
         op = op.operation
 
@@ -405,7 +405,7 @@ def _get_sym_name(previous_frame, check_func_call=None):
             else:
                 maybe_unique_sym_name = f"{maybe_unique_sym_name}_0"
         return maybe_unique_sym_name
-    except:
+    except Exception:
         return None
 
 
