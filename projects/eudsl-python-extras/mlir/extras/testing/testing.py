@@ -57,15 +57,38 @@ def get_filecheck_path():
     return filecheck_path
 
 
-def filecheck(correct: str, module):
+def _get_module_str(module):
     if isinstance(module, Module):
         module = module.operation
     if isinstance(module, Operation):
         assert module.verify()
-
     op = str(module).strip()
     op = "\n".join(filter(None, op.splitlines()))
-    op = dedent(op)
+    return dedent(op)
+
+
+def _run_filecheck(check_content, input_str, *, env=None, source_file=None):
+    filecheck_path = get_filecheck_path()
+    with tempfile.NamedTemporaryFile() as tmp:
+        tmp.write(check_content.encode())
+        tmp.flush()
+        p = Popen(
+            [filecheck_path, tmp.name],
+            stdout=PIPE,
+            stdin=PIPE,
+            stderr=PIPE,
+            env=env,
+        )
+        out, err = map(lambda o: o.decode(), p.communicate(input=input_str.encode()))
+        if p.returncode:
+            if source_file:
+                err = err.replace(tmp.name, source_file)
+            return err
+    return None
+
+
+def filecheck(correct: str, module):
+    op = _get_module_str(module)
 
     if platform.system().lower() == "emscripten":
         return  # pragma: no cover
@@ -80,34 +103,22 @@ def filecheck(correct: str, module):
         ]
     )
 
-    filecheck_path = get_filecheck_path()
-    with tempfile.NamedTemporaryFile() as tmp:
-        tmp.write(correct_with_checks.encode())
-        tmp.flush()
-        p = Popen([filecheck_path, tmp.name], stdout=PIPE, stdin=PIPE, stderr=PIPE)
-        out, err = map(lambda o: o.decode(), p.communicate(input=op.encode()))
-        if p.returncode:
-            diff = list(
-                difflib.unified_diff(
-                    op.splitlines(),  # to this
-                    correct.splitlines(),  # delta from this
-                    lineterm="",
-                )
+    err = _run_filecheck(correct_with_checks, op)
+    if err:
+        diff = list(
+            difflib.unified_diff(
+                op.splitlines(),
+                correct.splitlines(),
+                lineterm="",
             )
-            diff.insert(1, "delta from module to correct")
-            print("lit report:", err, file=sys.stderr)
-            raise ValueError("\n" + "\n".join(diff))
+        )
+        diff.insert(1, "delta from module to correct")
+        print("lit report:", err, file=sys.stderr)
+        raise ValueError("\n" + "\n".join(diff))
 
 
 def filecheck_with_comments(module):
-    if isinstance(module, Module):
-        module = module.operation
-    if isinstance(module, Operation):
-        assert module.verify()
-
-    op = str(module).strip()
-    op = "\n".join(filter(None, op.splitlines()))
-    op = dedent(op)
+    op = _get_module_str(module)
 
     if platform.system().lower() == "emscripten":
         return  # pragma: no cover
@@ -116,21 +127,14 @@ def filecheck_with_comments(module):
     _, lnum = inspect.findsource(fun)
     fun_with_checks = inspect.getsource(fun)
 
-    filecheck_path = get_filecheck_path()
-    with tempfile.NamedTemporaryFile() as tmp:
-        tmp.write(("\n" * lnum + fun_with_checks).encode())
-        tmp.flush()
-        p = Popen(
-            [filecheck_path, tmp.name],
-            stdout=PIPE,
-            stdin=PIPE,
-            stderr=PIPE,
-            env={"FILECHECK_OPTS": "-dump-input-filter=annotation -vv -color"},
-        )
-        out, err = map(lambda o: o.decode(), p.communicate(input=op.encode()))
-        if p.returncode:
-            err = err.replace(tmp.name, inspect.getfile(fun))
-            raise ValueError(f"\n{err}")
+    err = _run_filecheck(
+        "\n" * lnum + fun_with_checks,
+        op,
+        env={"FILECHECK_OPTS": "-dump-input-filter=annotation -vv -color"},
+        source_file=inspect.getfile(fun),
+    )
+    if err:
+        raise ValueError(f"\n{err}")
 
 
 @pytest.fixture(scope="function")
