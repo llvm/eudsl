@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import contextlib
+import functools
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from typing import Optional
@@ -127,26 +128,18 @@ class ExplicitlyManagedModule:
 
 
 @contextlib.contextmanager
-def enable_multithreading(context=None):
+def multithreading(context=None, enabled=True):
     from ..ir import Context
 
     if context is None:
         context = Context.current
-    context.enable_multithreading(True)
+    context.enable_multithreading(enabled)
     yield
-    context.enable_multithreading(False)
+    context.enable_multithreading(not enabled)
 
 
-@contextlib.contextmanager
-def disable_multithreading(context=None):
-    from ..ir import Context
-
-    if context is None:
-        context = Context.current
-
-    context.enable_multithreading(False)
-    yield
-    context.enable_multithreading(True)
+enable_multithreading = functools.partial(multithreading, enabled=True)
+disable_multithreading = functools.partial(multithreading, enabled=False)
 
 
 @contextlib.contextmanager
