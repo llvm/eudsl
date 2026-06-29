@@ -59,9 +59,14 @@ def mlir_mod_ctx(
 class RAIIMLIRContext:
     context: ir.Context
     location: ir.Location
+    insertion_point: Optional[ir.InsertionPoint]
+    module: Optional[ir.Module]
 
     def __init__(
-        self, location: Optional[ir.Location] = None, allow_unregistered_dialects=False
+        self,
+        location: Optional[ir.Location] = None,
+        allow_unregistered_dialects=False,
+        create_module=False,
     ):
         self.context = ir.Context()
         if allow_unregistered_dialects:
@@ -71,43 +76,32 @@ class RAIIMLIRContext:
             location = ir.Location.unknown()
         self.location = location
         self.location.__enter__()
+        if create_module:
+            self.module = ir.Module.create()
+            self.insertion_point = ir.InsertionPoint(self.module.body)
+            self.insertion_point.__enter__()
+        else:
+            self.module = None
+            self.insertion_point = None
 
     def __del__(self):
+        if self.insertion_point is not None:
+            self.insertion_point.__exit__(None, None, None)
         self.location.__exit__(None, None, None)
         self.context.__exit__(None, None, None)
-        # i guess the extension gets destroyed before this object sometimes?
         if ir is not None:  # pragma: no cover - only False during interpreter shutdown
             assert ir.Context is not self.context
 
 
-class RAIIMLIRContextModule:
-    context: ir.Context
-    location: ir.Location
-    insertion_point: ir.InsertionPoint
-    module: ir.Module
-
+class RAIIMLIRContextModule(RAIIMLIRContext):
     def __init__(
         self, location: Optional[ir.Location] = None, allow_unregistered_dialects=False
     ):
-        self.context = ir.Context()
-        if allow_unregistered_dialects:
-            self.context.allow_unregistered_dialects = True
-        self.context.__enter__()
-        if location is None:
-            location = ir.Location.unknown()
-        self.location = location
-        self.location.__enter__()
-        self.module = ir.Module.create()
-        self.insertion_point = ir.InsertionPoint(self.module.body)
-        self.insertion_point.__enter__()
-
-    def __del__(self):
-        self.insertion_point.__exit__(None, None, None)
-        self.location.__exit__(None, None, None)
-        self.context.__exit__(None, None, None)
-        # i guess the extension gets destroyed before this object sometimes?
-        if ir is not None:  # pragma: no cover - only False during interpreter shutdown
-            assert ir.Context is not self.context
+        super().__init__(
+            location=location,
+            allow_unregistered_dialects=allow_unregistered_dialects,
+            create_module=True,
+        )
 
 
 class ExplicitlyManagedModule:
