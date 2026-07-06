@@ -1958,10 +1958,10 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def(nb::init<mlir::tblgen::FmtStrVecObject &&>(), "that"_a);
 
   m.def(
-      "tgfmt",
+      "tgfmtv",
       [](llvm::StringRef fmt, const mlir::tblgen::FmtContext *ctx,
          llvm::ArrayRef<std::string> params) -> mlir::tblgen::FmtStrVecObject {
-        return mlir::tblgen::tgfmt(fmt, ctx, params);
+        return mlir::tblgen::tgfmtv(fmt, ctx, params);
       },
       "fmt"_a, "ctx"_a, "params"_a);
 
