@@ -41,12 +41,14 @@ on:
     paths:
       - ".github/workflows/build_mlir_python_bindings_wheel.yml"
       - "projects/mlir-python-bindings/**"
+      - "projects/mlir-python-mcp/**"
   push:
     branches:
       - main
     paths:
       - ".github/workflows/build_mlir_python_bindings_wheel.yml"
       - "projects/mlir-python-bindings/**"
+      - "projects/mlir-python-mcp/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.sha }}-build_mlir_python_bindings_wheel
@@ -234,7 +236,7 @@ jobs:
       - name: "Build standalone-python-bindings"
         if: matrix.target-arch != 'wasm32'
         run: |
-          
+
           export MLIR_INCLUDE_TESTS=OFF
           export CIBW_ENABLE="cpython-prerelease"
           export CIBW_BUILD_VERBOSITY=3
@@ -248,6 +250,13 @@ jobs:
           export CIBW_REPAIR_WHEEL_COMMAND_MACOS="DYLD_LIBRARY_PATH=$CMAKE_PREFIX_PATH/lib delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
           export CIBW_REPAIR_WHEEL_COMMAND_WINDOWS=""
           $python3_command -m cibuildwheel "$PWD/third_party/llvm-project/mlir/examples/standalone" --output-dir wheelhouse
+
+      - name: "Build mlir-python-mcp"
+        if: matrix.name == 'ubuntu_x86_64'
+        run: |
+
+          $python3_command -m pip install build
+          $python3_command -m build "$PWD/projects/mlir-python-mcp" --outdir wheelhouse
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -368,6 +377,13 @@ jobs:
           pip install standalone-python-bindings -f wheelhouse
           python projects/mlir-python-bindings/tests/smoketest.py
 
+      - name: "Test mlir-python-mcp"
+        if: matrix.name == 'ubuntu_x86_64' && matrix.python-version == '3.12'
+        run: |
+
+          pip install "projects/mlir-python-mcp[test]" -f wheelhouse
+          python -m pytest projects/mlir-python-mcp/tests --cov=mlir_python_mcp --cov-report=term-missing --cov-branch --cov-fail-under=100
+
   test-mlir-python-bindings-wasm:
 
     if: github.event_name == 'pull_request'
@@ -457,6 +473,40 @@ jobs:
           token: "${{ secrets.GITHUB_TOKEN }}"
           tag: mlir-python-bindings
           name: mlir-python-bindings
+          removeArtifacts: false
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
+          omitBody: true
+
+  release-mlir-python-mcp:
+
+    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+
+    needs: [build-mlir-python-bindings]
+
+    runs-on: "ubuntu-22.04"
+
+    permissions:
+      id-token: write
+      contents: write
+
+    name: "Release mlir-python-mcp"
+
+    steps:
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mlir_python_bindings_ubuntu_x86_64_artifact
+          path: wheelhouse
+
+      - name: Release current commit
+        uses: ncipollo/release-action@v1.12.0
+        with:
+          artifacts: "wheelhouse/mlir_python_mcp*.whl"
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          tag: mlir-python-mcp
+          name: mlir-python-mcp
           removeArtifacts: false
           allowUpdates: true
           replacesArtifacts: true
