@@ -30,7 +30,7 @@ from ...ir import (
     ShapedType,
     Type,
     TypeAttr,
-    Value
+    Value,
 )
 
 _call = call
@@ -386,6 +386,14 @@ class FuncBase:
     def __str__(self):
         return str(f"{self.__class__} {self.__dict__}")
 
+    def _make_function_type(self, input_types, result_types) -> TypeAttr:
+        """Build the (builtin) function type attr for the func op.
+
+        Overridden by subclasses (e.g. for llvm.func) that need a
+        dialect-specific function type.
+        """
+        return TypeAttr.get(FunctionType.get(inputs=input_types, results=result_types))
+
     def _build_input_types(self) -> Union[list[Type], OpView]:
         """Either build all input types (if no generics or all generics reified) or return a further specialized funcop thing (the return of __getitem__)."""
         locals = {}
@@ -447,11 +455,8 @@ class FuncBase:
         if self.function_type is not None:
             function_type = TypeAttr.get(self.function_type)
         else:
-            function_type = TypeAttr.get(
-                FunctionType.get(
-                    inputs=input_types,
-                    results=list(map(evaluate_type_annotation, self.return_types)),
-                )
+            function_type = self._make_function_type(
+                input_types, list(map(evaluate_type_annotation, self.return_types))
             )
 
         self._func_op = self.func_op_ctor(
@@ -499,8 +504,9 @@ class FuncBase:
 
         if self.function_type is None:
             builder_wrapper(grab_results)
-            function_type = FunctionType.get(inputs=input_types, results=return_types)
-            self._func_op.attributes["function_type"] = TypeAttr.get(function_type)
+            self._func_op.attributes["function_type"] = self._make_function_type(
+                input_types, return_types
+            )
         else:
             builder_wrapper(self.body_builder)
 
@@ -545,7 +551,7 @@ class FuncBase:
                 v = v.__name__
             name_mangled_generics.append(f"{tvar}_{v}")
 
-        return FuncBase(
+        return type(self)(
             body_builder,
             self.func_op_ctor,
             self.return_op_ctor,

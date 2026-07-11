@@ -12,6 +12,7 @@ from mlir.extras.ast.py_type import PyTypeVarObject
 from mlir.extras.dialects import linalg, arith, scf, memref, gpu
 from mlir.extras.dialects.func import func
 from mlir.extras.dialects.gpu import block_idx
+from mlir.extras.dialects.llvm import func as llvm_func, mlir_constant
 from mlir.extras.dialects.gpu import (
     set_container_module,
     module,
@@ -903,3 +904,85 @@ def test_reified_type_param_no_bound_type_infer(ctx: MLIRContext):
     # Pass an int as concrete_val - should set type_name to "int"
     r2 = ReifiedTypeParam(tvar, concrete_val=42)
     assert r2.type_name == "int"
+
+
+def test_llvm_generics_type_param(ctx: MLIRContext):
+    """llvm.func generic where a type param is used as an argument type."""
+
+    @llvm_func
+    def gen_ty[dtype](a: "dtype"):
+        one = mlir_constant(1, T.i32())
+
+    gen_ty[T.i32()].emit()
+    gen_ty[T.i64()].emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: llvm.func @gen_ty_type_i32(%[[A:.*]]: i32) {
+    # CHECK:   llvm.mlir.constant(1 : i32) : i32
+    # CHECK:   llvm.return
+    # CHECK: }
+    # CHECK: llvm.func @gen_ty_type_i64(%[[B:.*]]: i64) {
+    # CHECK:   llvm.mlir.constant(1 : i32) : i32
+    # CHECK:   llvm.return
+    # CHECK: }
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_llvm_generics_dimension(ctx: MLIRContext):
+    """llvm.func generic where a dimension param is reified into the body."""
+
+    @llvm_func
+    def gen_dim[N](a: "T.i32()"):
+        c = mlir_constant(N, T.i32())
+
+    gen_dim[8].emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: llvm.func @gen_dim_int_8(%[[A:.*]]: i32) {
+    # CHECK:   llvm.mlir.constant(8 : i32) : i32
+    # CHECK:   llvm.return
+    # CHECK: }
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_llvm_generics_partial_specialization(ctx: MLIRContext):
+    """llvm.func generic specialized one type param at a time via chained __getitem__."""
+
+    @llvm_func
+    def gen_two[A_t, B_t](a: "A_t", b: "B_t"):
+        one = mlir_constant(1, T.i32())
+
+    # Specialize A_t, then B_t
+    partial = gen_two[T.i32()]
+    partial[T.i64()].emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: llvm.func @gen_two_type_i32_type_i64(%[[A:.*]]: i32, %[[B:.*]]: i64) {
+    # CHECK:   llvm.mlir.constant(1 : i32) : i32
+    # CHECK:   llvm.return
+    # CHECK: }
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_llvm_generics_preserves_subclass(ctx: MLIRContext):
+    """Specializing an LLVMFunc via __getitem__ must return an LLVMFunc (not FuncBase)."""
+    from mlir.extras.dialects.llvm import LLVMFunc
+
+    @llvm_func
+    def gen[N](a: "T.i32()"):
+        c = mlir_constant(N, T.i32())
+
+    specialized = gen[4]
+    assert isinstance(specialized, LLVMFunc)
+    specialized.emit()
+
+    ctx.module.operation.verify()
+
+    # CHECK: llvm.func @gen_int_4(%[[A:.*]]: i32) {
+    filecheck_with_comments(ctx.module)
