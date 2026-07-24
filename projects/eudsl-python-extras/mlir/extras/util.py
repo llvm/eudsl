@@ -252,8 +252,12 @@ def _update_caller_vars(previous_frame, args: Sequence, replacements: Sequence):
     This function uses CPython API  to update the values
     of the caller's args (not the caller of this function but the caller of caller of this function).
     It does this by searching for a match in the caller's f_locals based on identity (A is A) and then
-    updating all corresponding values in the f_locals dict. Finally, it uses PyFrame_LocalsToFast to signal
-    to the CPython runtime that an update has been made to f_locals.
+    updating all corresponding values in the f_locals dict.
+
+    On Python < 3.13 it then uses PyFrame_LocalsToFast to signal to the CPython runtime that an update
+    has been made to f_locals. On Python >= 3.13 (PEP 667) f_locals is a write-through proxy and
+    PyFrame_LocalsToFast was removed from the C-API, so writing to f_locals is sufficient (and the
+    C-API call must be skipped).
 
     Args:
       previous_frame: The frame in which vars will be updated.
@@ -263,16 +267,20 @@ def _update_caller_vars(previous_frame, args: Sequence, replacements: Sequence):
 
     if len(args) != len(replacements):
         raise ValueError(f"updates must be 1-1: {args=} {replacements=}")
+    # PEP 667: PyFrame_LocalsToFast was removed from the C-API in 3.13; on 3.13+ f_locals
+    # is a write-through proxy so assigning to it takes effect without the extra flush.
+    locals_to_fast = getattr(ctypes.pythonapi, "PyFrame_LocalsToFast", None)
     # find the name of the iter args in the previous frame
     var_names = [_get_previous_frame_idents(arg, previous_frame) for arg in args]
     for i, var_names in enumerate(var_names):
         for var_name in var_names:
             previous_frame.f_locals[var_name] = replacements[i]
-            # signal to update
-            # for some reason you can only update one at a time?
-            ctypes.pythonapi.PyFrame_LocalsToFast(
-                ctypes.py_object(previous_frame), ctypes.c_int(1)
-            )
+            if locals_to_fast is not None:
+                # signal to update
+                # for some reason you can only update one at a time?
+                locals_to_fast(
+                    ctypes.py_object(previous_frame), ctypes.c_int(1)
+                )
 
 
 def make_maybe_no_args_decorator(decorator):
