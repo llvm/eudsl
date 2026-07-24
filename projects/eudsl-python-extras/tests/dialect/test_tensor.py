@@ -9,7 +9,7 @@ import pytest
 
 import mlir.extras.types as T
 from mlir.extras.ast.canonicalize import canonicalize
-from mlir.extras.dialects import arith
+from mlir.extras.dialects import arith, tensor
 from mlir.extras.dialects._shaped_value import _Indexer
 from mlir.extras.dialects.arith import ScalarValue, constant
 from mlir.extras.dialects.scf import (
@@ -272,6 +272,54 @@ def test_nontrivial_slices_insertion(ctx: MLIRContext):
     # CHECK:  %[[VAL_6:.*]] = tensor.insert_slice %[[VAL_5]] into %[[VAL_4]][0, 0, 0, 0] [7, 11, 11, 11] [1, 2, 30, 400] : tensor<7x11x11x11xi32> into tensor<7x22x333x4444xi32>
     # CHECK:  %[[VAL_7:.*]] = tensor.extract_slice %[[VAL_6]][0, 0, 100, 1000] [7, 22, 20, 20] [1, 1, 5, 50] : tensor<7x22x333x4444xi32> to tensor<7x22x20x20xi32>
     # CHECK:  %[[VAL_8:.*]] = tensor.insert_slice %[[VAL_7]] into %[[VAL_6]][0, 0, 100, 1000] [7, 22, 20, 20] [1, 1, 5, 50] : tensor<7x22x20x20xi32> into tensor<7x22x333x4444xi32>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_nontrivial_slices_insertion_canonicalized(ctx: MLIRContext):
+    # Same as test_nontrivial_slices_insertion, but the tensor rebinding
+    # (`ten[...] = w`  ->  `ten = insert_slice(...)`) is done by the
+    # TensorCanonicalizer AST rewrite instead of the caller-frame hack. The
+    # insert_slice result must be threaded into the next extract_slice, exactly
+    # as in the frame-hack version.
+    @canonicalize(using=tensor.canonicalizer)
+    def build():
+        ten = empty(7, 22, 333, 4444, T.i32())
+        w = ten[:, 0:22:2]
+        ten[:, 0:22:2] = w
+        w = ten[:, 0:22:2, 0:330:30]
+        ten[:, 0:22:2, 0:330:30] = w
+
+    build()
+
+    # CHECK:  %[[VAL_0:.*]] = tensor.empty() : tensor<7x22x333x4444xi32>
+    # CHECK:  %[[VAL_1:.*]] = tensor.extract_slice %[[VAL_0]][0, 0, 0, 0] [7, 11, 333, 4444] [1, 2, 1, 1] : tensor<7x22x333x4444xi32> to tensor<7x11x333x4444xi32>
+    # CHECK:  %[[VAL_2:.*]] = tensor.insert_slice %[[VAL_1]] into %[[VAL_0]][0, 0, 0, 0] [7, 11, 333, 4444] [1, 2, 1, 1] : tensor<7x11x333x4444xi32> into tensor<7x22x333x4444xi32>
+    # CHECK:  %[[VAL_3:.*]] = tensor.extract_slice %[[VAL_2]][0, 0, 0, 0] [7, 11, 11, 4444] [1, 2, 30, 1] : tensor<7x22x333x4444xi32> to tensor<7x11x11x4444xi32>
+    # CHECK:  %[[VAL_4:.*]] = tensor.insert_slice %[[VAL_3]] into %[[VAL_2]][0, 0, 0, 0] [7, 11, 11, 4444] [1, 2, 30, 1] : tensor<7x11x11x4444xi32> into tensor<7x22x333x4444xi32>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_setitem_through_attribute_alias_canonicalized(ctx: MLIRContext):
+    # The caller-frame hack can only rebind a bare local; an attribute alias like
+    # `holder.ten` is out of reach. The AST rewrite turns this into
+    # `holder.ten = insert_slice(...)`, so the update is actually observed.
+    @canonicalize(using=tensor.canonicalizer)
+    def build():
+        holder = type("H", (), {})()
+        holder.ten = empty(8, 8, T.i32())
+        w = holder.ten[0:4, 0:4]
+        holder.ten[4:8, 4:8] = w
+        # read back through the alias: must see the insert_slice result
+        return holder.ten[4:8, 4:8]
+
+    build()
+
+    # CHECK:  %[[VAL_0:.*]] = tensor.empty() : tensor<8x8xi32>
+    # CHECK:  %[[VAL_1:.*]] = tensor.extract_slice %[[VAL_0]][0, 0] [4, 4] [1, 1] : tensor<8x8xi32> to tensor<4x4xi32>
+    # CHECK:  %[[VAL_2:.*]] = tensor.insert_slice %[[VAL_1]] into %[[VAL_0]][4, 4] [4, 4] [1, 1] : tensor<4x4xi32> into tensor<8x8xi32>
+    # CHECK:  %[[VAL_3:.*]] = tensor.extract_slice %[[VAL_2]][4, 4] [4, 4] [1, 1] : tensor<8x8xi32> to tensor<4x4xi32>
 
     filecheck_with_comments(ctx.module)
 
