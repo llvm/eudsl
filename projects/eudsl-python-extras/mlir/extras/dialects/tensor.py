@@ -131,7 +131,10 @@ def _setitem(dest: "TensorValue", idx, source) -> "TensorValue":
     loc = get_user_code_loc()
 
     assert dest.has_rank(), "only ranked tensor slicing/indexing supported"
-    assert source.has_rank(), "only ranked tensor slicing/indexing supported"
+    # A scalar `source` is only valid for a coordinate insert (handled below); every
+    # other write requires a ranked source, so defer that check to the slice path.
+    if not isinstance(source, ScalarValue):
+        assert source.has_rank(), "only ranked tensor slicing/indexing supported"
 
     if (
         idx == Ellipsis
@@ -151,9 +154,7 @@ def _setitem(dest: "TensorValue", idx, source) -> "TensorValue":
         if isinstance(d, int):
             idx[i] = constant(d, index=True, loc=loc)
 
-    if all(isinstance(d, ScalarValue) and d.fold() for d in idx) and len(idx) == len(
-        dest.shape
-    ):
+    if all(isinstance(d, ScalarValue) for d in idx) and len(idx) == len(dest.shape):
         assert isinstance(
             source, ScalarValue
         ), "coordinate insert requires scalar element"
