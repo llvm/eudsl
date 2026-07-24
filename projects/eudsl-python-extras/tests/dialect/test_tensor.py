@@ -1,7 +1,9 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+import ast
 import platform
+import types
 from textwrap import dedent
 
 import numpy as np
@@ -322,6 +324,160 @@ def test_setitem_through_attribute_alias_canonicalized(ctx: MLIRContext):
     # CHECK:  %[[VAL_3:.*]] = tensor.extract_slice %[[VAL_2]][4, 4] [4, 4] [1, 1] : tensor<8x8xi32> to tensor<4x4xi32>
 
     filecheck_with_comments(ctx.module)
+
+
+def test_setitem_nested_subscript_alias_canonicalized(ctx: MLIRContext):
+    # `lst[k][i] = w` -> `lst[k] = insert_slice(...)`. The container element must be
+    # rebound so the read-back extracts from the insert_slice result -- another alias
+    # the caller-frame hack can't reach.
+    @canonicalize(using=tensor.canonicalizer)
+    def build():
+        lst = [empty(8, 8, T.i32())]
+        w = lst[0][0:4, 0:4]
+        lst[0][4:8, 4:8] = w
+        return lst[0][4:8, 4:8]
+
+    build()
+
+    # CHECK:  %[[VAL_0:.*]] = tensor.empty() : tensor<8x8xi32>
+    # CHECK:  %[[VAL_1:.*]] = tensor.extract_slice %[[VAL_0]][0, 0] [4, 4] [1, 1] : tensor<8x8xi32> to tensor<4x4xi32>
+    # CHECK:  %[[VAL_2:.*]] = tensor.insert_slice %[[VAL_1]] into %[[VAL_0]][4, 4] [4, 4] [1, 1] : tensor<4x4xi32> into tensor<8x8xi32>
+    # CHECK:  %[[VAL_3:.*]] = tensor.extract_slice %[[VAL_2]][4, 4] [4, 4] [1, 1] : tensor<8x8xi32> to tensor<4x4xi32>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_setitem_reconstruct_index_shapes_canonicalized(ctx: MLIRContext):
+    # Exercise _reconstruct_index for open-ended slices (`:2`, `6:`) and a mixed
+    # slice/full-slice tuple (`0:4, :`); the reconstructed slice(...) calls must
+    # produce the same offsets/sizes as native subscripting, and each write must
+    # thread into the next read.
+    @canonicalize(using=tensor.canonicalizer)
+    def build():
+        ten = empty(8, 8, T.i32())
+        w = ten[:2]
+        ten[:2] = w
+        w2 = ten[6:]
+        ten[6:] = w2
+        w3 = ten[0:4, :]
+        ten[0:4, :] = w3
+
+    build()
+
+    # CHECK:  %[[VAL_0:.*]] = tensor.empty() : tensor<8x8xi32>
+    # CHECK:  %[[VAL_1:.*]] = tensor.extract_slice %[[VAL_0]][0, 0] [2, 8] [1, 1] : tensor<8x8xi32> to tensor<2x8xi32>
+    # CHECK:  %[[VAL_2:.*]] = tensor.insert_slice %[[VAL_1]] into %[[VAL_0]][0, 0] [2, 8] [1, 1] : tensor<2x8xi32> into tensor<8x8xi32>
+    # CHECK:  %[[VAL_3:.*]] = tensor.extract_slice %[[VAL_2]][6, 0] [2, 8] [1, 1] : tensor<8x8xi32> to tensor<2x8xi32>
+    # CHECK:  %[[VAL_4:.*]] = tensor.insert_slice %[[VAL_3]] into %[[VAL_2]][6, 0] [2, 8] [1, 1] : tensor<2x8xi32> into tensor<8x8xi32>
+    # CHECK:  %[[VAL_5:.*]] = tensor.extract_slice %[[VAL_4]][0, 0] [4, 8] [1, 1] : tensor<8x8xi32> to tensor<4x8xi32>
+    # CHECK:  %[[VAL_6:.*]] = tensor.insert_slice %[[VAL_5]] into %[[VAL_4]][0, 0] [4, 8] [1, 1] : tensor<4x8xi32> into tensor<8x8xi32>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_setitem_full_slice_canonicalized(ctx: MLIRContext):
+    # Under the canonicalizer a full-slice write routes through _setitem (which
+    # returns `dest`), NOT __setitem__ (which returns None). So `ten` must stay
+    # bound to a live tensor and no insert_slice is emitted.
+    @canonicalize(using=tensor.canonicalizer)
+    def build():
+        ten = empty(8, 8, T.i32())
+        source = empty(8, 8, T.i32())
+        ten[:] = source
+        # `ten` must still be a usable TensorValue (not None) here:
+        assert isinstance(ten, TensorValue)
+        return ten[0:4, 0:4]
+
+    build()
+
+    mod = str(ctx.module)
+    assert "tensor.insert_slice" not in mod, mod
+    assert mod.count("tensor.empty") == 2, mod
+    assert "tensor.extract_slice" in mod, mod
+
+
+def test_setitem_augassign_bare_local_canonicalized(ctx: MLIRContext):
+    # Augmented subscript assignment isn't rewritten (only visit_Assign is), so it
+    # falls back to __getitem__ + __setitem__ + the frame hack. For a bare local
+    # that still works: the read-back must see the insert_slice result.
+    @canonicalize(using=tensor.canonicalizer)
+    def build():
+        ten = empty(8, 8, T.i32())
+        w = ten[0:4, 0:4]
+        ten[0:4, 0:4] += w
+        return ten[0:4, 0:4]
+
+    build()
+
+    # CHECK:  %[[VAL_0:.*]] = tensor.empty() : tensor<8x8xi32>
+    # CHECK:  %[[VAL_1:.*]] = tensor.extract_slice %[[VAL_0]][0, 0] [4, 4] [1, 1] : tensor<8x8xi32> to tensor<4x4xi32>
+    # CHECK:  %[[VAL_2:.*]] = tensor.extract_slice %[[VAL_0]][0, 0] [4, 4] [1, 1] : tensor<8x8xi32> to tensor<4x4xi32>
+    # CHECK:  %[[VAL_3:.*]] = arith.addi %[[VAL_2]], %[[VAL_1]] : tensor<4x4xi32>
+    # CHECK:  %[[VAL_4:.*]] = tensor.insert_slice %[[VAL_3]] into %[[VAL_0]][0, 0] [4, 4] [1, 1] : tensor<4x4xi32> into tensor<8x8xi32>
+    # CHECK:  %[[VAL_5:.*]] = tensor.extract_slice %[[VAL_4]][0, 0] [4, 4] [1, 1] : tensor<8x8xi32> to tensor<4x4xi32>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_setitem_dispatch_fallback_preserves_container_semantics():
+    # __mlir_extras_setitem__ fires on EVERY subscript assignment in a canonicalized
+    # function, so for non-tensors it must keep normal in-place semantics and rebind
+    # the object to itself.
+    d = {}
+    assert tensor.__mlir_extras_setitem__(d, "k", 5) is d
+    assert d["k"] == 5
+    lst = [0, 1, 2]
+    assert tensor.__mlir_extras_setitem__(lst, 1, 9) is lst
+    assert lst[1] == 9
+
+    @canonicalize(using=tensor.canonicalizer)
+    def containers():
+        dd = {}
+        dd["a"] = 1
+        xs = [0, 0, 0]
+        xs[0:2] = [7, 8]
+        return dd, xs
+
+    assert containers() == ({"a": 1}, [7, 8, 0])
+
+
+def test_setitem_hoists_side_effecting_base_once():
+    # The base is emitted for both a read and a write; a side-effecting sub-expression
+    # (here a call) must be hoisted so it's evaluated exactly once, matching CPython.
+    @canonicalize(using=tensor.canonicalizer)
+    def build():
+        calls = []
+        holder = {"data": [0, 0, 0]}
+
+        def get():
+            calls.append(1)
+            return holder
+
+        get()["data"][1] = 99
+        return len(calls), holder["data"]
+
+    n_calls, data = build()
+    assert n_calls == 1, f"receiver evaluated {n_calls} times, expected 1"
+    assert data == [0, 99, 0]
+
+
+def test_canonicalize_setitem_skips_non_rewritable():
+    # The rewrite must only fire on single-target subscript assignments with an
+    # assignable base; everything else is left for the normal (frame-hack) path.
+    tr = tensor.CanonicalizeSetItem(context=types.SimpleNamespace(), first_lineno=0)
+
+    def rewritten(src):
+        out = tr.visit(ast.fix_missing_locations(ast.parse(src).body[0]))
+        nodes = out if isinstance(out, list) else [out]
+        return "; ".join(ast.unparse(ast.fix_missing_locations(n)) for n in nodes)
+
+    # rewritten:
+    assert "__mlir_extras_setitem__" in rewritten("t[0:2] = source")
+    # NOT rewritten:
+    assert rewritten("foo()[i] = x") == "foo()[i] = x"  # non-assignable base
+    assert "__mlir_extras_setitem__" not in rewritten("a[i] = b[j] = v")  # chained
+    assert "__mlir_extras_setitem__" not in rewritten("x, y = 1, 2")  # tuple target
+    assert "__mlir_extras_setitem__" not in rewritten("z = w")  # not a subscript
 
 
 def test_move_slice(ctx: MLIRContext):

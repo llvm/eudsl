@@ -120,6 +120,67 @@ def _is_index_tensor(x):
     )
 
 
+def _setitem(dest: "TensorValue", idx, source) -> "TensorValue":
+    """Functional core of ``TensorValue.__setitem__``.
+
+    Emits the ``tensor.insert``/``tensor.insert_slice`` op and returns the *new*
+    SSA value (tensors are immutable). Returns ``dest`` unchanged for full-slice/
+    ellipsis writes (nothing to do). Unlike ``__setitem__`` this does no caller-frame
+    rebinding -- the caller is responsible for binding the result.
+    """
+    loc = get_user_code_loc()
+
+    assert dest.has_rank(), "only ranked tensor slicing/indexing supported"
+    assert source.has_rank(), "only ranked tensor slicing/indexing supported"
+
+    if (
+        idx == Ellipsis
+        or idx == slice(None)
+        or (isinstance(idx, tuple) and all(i == slice(None) for i in idx))
+    ):
+        assert (
+            dest.shape == source.shape
+        ), f"Expected matching shape for dest slice {dest.shape=} and source {source.shape=}"
+        return dest
+
+    if isinstance(idx, Value) and not isinstance(idx, ScalarValue):
+        raise ValueError("indexing by tensor is not currently supported")
+
+    idx = list((idx,) if isinstance(idx, (int, ScalarValue, slice)) else idx)
+    for i, d in enumerate(idx):
+        if isinstance(d, int):
+            idx[i] = constant(d, index=True, loc=loc)
+
+    if all(isinstance(d, ScalarValue) and d.fold() for d in idx) and len(idx) == len(
+        dest.shape
+    ):
+        assert isinstance(
+            source, ScalarValue
+        ), "coordinate insert requires scalar element"
+        res = tensor.insert(source, dest, idx, loc=loc)
+    else:
+        if any(_is_index_tensor(i) or _is_int_arraylike(i) for i in idx):
+            raise ValueError("indexing by tensor is not currently supported")
+        indexer = _indices_to_indexer(tuple(idx), dest.shape)
+        if indexer.is_constant():
+            assert (
+                indexer.static_sizes() == source.shape
+            ), f"Expected matching shape for dest slice {indexer.static_sizes()=} and source {source.shape=}"
+            res = insert_slice(
+                source,
+                dest,
+                static_offsets=indexer.static_offsets(),
+                static_sizes=indexer.static_sizes(),
+                static_strides=indexer.static_strides(),
+                loc=loc,
+                ip=None,
+            )
+        else:
+            raise ValueError(f"non-constant indices not supported {indexer}")
+
+    return res
+
+
 # TODO(max): unify vector/memref/tensor
 @register_value_caster(RankedTensorType.static_typeid)
 @ShapedValue
@@ -374,67 +435,6 @@ generate = region_op(
 )
 
 
-def _setitem(dest: "TensorValue", idx, source) -> "TensorValue":
-    """Functional core of ``TensorValue.__setitem__``.
-
-    Emits the ``tensor.insert``/``tensor.insert_slice`` op and returns the *new*
-    SSA value (tensors are immutable). Returns ``dest`` unchanged for full-slice/
-    ellipsis writes (nothing to do). Unlike ``__setitem__`` this does no caller-frame
-    rebinding -- the caller is responsible for binding the result.
-    """
-    loc = get_user_code_loc()
-
-    assert dest.has_rank(), "only ranked tensor slicing/indexing supported"
-    assert source.has_rank(), "only ranked tensor slicing/indexing supported"
-
-    if (
-        idx == Ellipsis
-        or idx == slice(None)
-        or (isinstance(idx, tuple) and all(i == slice(None) for i in idx))
-    ):
-        assert (
-            dest.shape == source.shape
-        ), f"Expected matching shape for dest slice {dest.shape=} and source {source.shape=}"
-        return dest
-
-    if isinstance(idx, Value) and not isinstance(idx, ScalarValue):
-        raise ValueError("indexing by tensor is not currently supported")
-
-    idx = list((idx,) if isinstance(idx, (int, ScalarValue, slice)) else idx)
-    for i, d in enumerate(idx):
-        if isinstance(d, int):
-            idx[i] = constant(d, index=True, loc=loc)
-
-    if all(isinstance(d, ScalarValue) and d.fold() for d in idx) and len(idx) == len(
-        dest.shape
-    ):
-        assert isinstance(
-            source, ScalarValue
-        ), "coordinate insert requires scalar element"
-        res = tensor.insert(source, dest, idx, loc=loc)
-    else:
-        if any(_is_index_tensor(i) or _is_int_arraylike(i) for i in idx):
-            raise ValueError("indexing by tensor is not currently supported")
-        indexer = _indices_to_indexer(tuple(idx), dest.shape)
-        if indexer.is_constant():
-            assert (
-                indexer.static_sizes() == source.shape
-            ), f"Expected matching shape for dest slice {indexer.static_sizes()=} and source {source.shape=}"
-            res = insert_slice(
-                source,
-                dest,
-                static_offsets=indexer.static_offsets(),
-                static_sizes=indexer.static_sizes(),
-                static_strides=indexer.static_strides(),
-                loc=loc,
-                ip=None,
-            )
-        else:
-            raise ValueError(f"non-constant indices not supported {indexer}")
-
-    return res
-
-
 def __mlir_extras_setitem__(dest, idx, source):
     """Runtime dispatch target that ``CanonicalizeSetItem`` rewrites ``dest[idx] = source`` into.
 
@@ -475,6 +475,51 @@ def _reconstruct_index(slice_node: ast.expr) -> ast.expr:
     return slice_node
 
 
+def _hoist_expr(expr: ast.expr, mk_tmp):
+    """Bind ``expr`` to a temporary so it is evaluated exactly once.
+
+    Returns ``(load_ref, prelude)`` where ``load_ref`` is an expression that reads
+    the (now-cached) value and ``prelude`` is the list of statements that compute it.
+    Side-effect-free atoms (names, constants) are returned as-is with no prelude.
+    """
+    if isinstance(expr, (ast.Name, ast.Constant)):
+        ref = copy.deepcopy(expr)
+        ref.ctx = ast.Load()
+        return ref, []
+    tmp = mk_tmp()
+    prelude = [ast.Assign(targets=[ast.Name(id=tmp, ctx=ast.Store())], value=expr)]
+    return ast.Name(id=tmp, ctx=ast.Load()), prelude
+
+
+def _split_assignable_base(base: ast.expr, mk_tmp):
+    """Split a subscript base into ``(prelude, load_expr, store_expr)``.
+
+    The base is emitted twice by the rewrite -- once read (to pass the current value
+    to ``__mlir_extras_setitem__``) and once written (to rebind it) -- so any
+    side-effecting sub-expression (a call, a mutating index, ...) is hoisted into a
+    temporary and evaluated once, matching CPython's ``a.b[i] = x`` / ``a[i][j] = x``
+    semantics. A bare ``Name`` needs no hoisting since reading it twice is free.
+    """
+    if isinstance(base, ast.Name):
+        return [], ast.Name(base.id, ast.Load()), ast.Name(base.id, ast.Store())
+    if isinstance(base, ast.Attribute):
+        obj_ref, prelude = _hoist_expr(base.value, mk_tmp)
+        load = ast.Attribute(value=obj_ref, attr=base.attr, ctx=ast.Load())
+        store = ast.Attribute(
+            value=copy.deepcopy(obj_ref), attr=base.attr, ctx=ast.Store()
+        )
+        return prelude, load, store
+    if isinstance(base, ast.Subscript):
+        obj_ref, prelude_obj = _hoist_expr(base.value, mk_tmp)
+        idx_ref, prelude_idx = _hoist_expr(_reconstruct_index(base.slice), mk_tmp)
+        load = ast.Subscript(value=obj_ref, slice=idx_ref, ctx=ast.Load())
+        store = ast.Subscript(
+            value=copy.deepcopy(obj_ref), slice=copy.deepcopy(idx_ref), ctx=ast.Store()
+        )
+        return prelude_obj + prelude_idx, load, store
+    raise AssertionError(f"unexpected assignable base {ast.dump(base)}")
+
+
 class CanonicalizeSetItem(StrictTransformer):
     """Rewrite ``t[idx] = source`` into ``t = __mlir_extras_setitem__(t, idx, source)``.
 
@@ -484,7 +529,7 @@ class CanonicalizeSetItem(StrictTransformer):
     frame rewriting can't reach.
     """
 
-    def visit_Assign(self, updated_node: ast.Assign) -> ast.Assign:
+    def visit_Assign(self, updated_node: ast.Assign) -> Union[ast.Assign, List[ast.AST]]:
         updated_node = self.generic_visit(updated_node)
         # Only plain single-target subscript assignments; skip chained/tuple targets.
         if len(updated_node.targets) != 1:
@@ -498,19 +543,24 @@ class CanonicalizeSetItem(StrictTransformer):
         if not isinstance(base, (ast.Name, ast.Attribute, ast.Subscript)):
             return updated_node
 
-        base_load = copy.deepcopy(base)
-        base_load.ctx = ast.Load()
-        base_store = copy.deepcopy(base)
-        base_store.ctx = ast.Store()
+        def mk_tmp():
+            n = getattr(self.context, "_setitem_tmp_count", 0)
+            self.context._setitem_tmp_count = n + 1
+            return f"__mlir_extras_setitem_tmp_{n}"
+
+        # Hoist side-effecting sub-expressions of the base so it's evaluated once.
+        prelude, base_load, base_store = _split_assignable_base(base, mk_tmp)
 
         call = ast_call(
             __mlir_extras_setitem__.__name__,
             args=[base_load, _reconstruct_index(target.slice), updated_node.value],
         )
-        new_node = ast.Assign(targets=[base_store], value=call)
-        new_node = ast.copy_location(new_node, updated_node)
-        new_node = ast.fix_missing_locations(new_node)
-        return new_node
+        assign = ast.Assign(targets=[base_store], value=call)
+        stmts = [
+            ast.fix_missing_locations(ast.copy_location(s, updated_node))
+            for s in (*prelude, assign)
+        ]
+        return stmts if len(stmts) > 1 else stmts[0]
 
 
 class TensorPatchFunction(FunctionPatcher):
