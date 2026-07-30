@@ -1,6 +1,8 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+import ast
+import copy
 import inspect
 from typing import List, Optional, Tuple, Union, Sequence
 
@@ -15,6 +17,8 @@ from ._shaped_value import (
 )
 from .arith import ArithValue, ScalarValue, constant
 from .. import types as T
+from ..ast.canonicalize import Canonicalizer, FunctionPatcher, StrictTransformer
+from ..ast.util import ast_call
 from ..util import (
     _unpack_sizes_element_type,
     _update_caller_vars,
@@ -116,6 +120,67 @@ def _is_index_tensor(x):
     )
 
 
+def _setitem(dest: "TensorValue", idx, source) -> "TensorValue":
+    """Functional core of ``TensorValue.__setitem__``.
+
+    Emits the ``tensor.insert``/``tensor.insert_slice`` op and returns the *new*
+    SSA value (tensors are immutable). Returns ``dest`` unchanged for full-slice/
+    ellipsis writes (nothing to do). Unlike ``__setitem__`` this does no caller-frame
+    rebinding -- the caller is responsible for binding the result.
+    """
+    loc = get_user_code_loc()
+
+    assert dest.has_rank(), "only ranked tensor slicing/indexing supported"
+    assert source.has_rank(), "only ranked tensor slicing/indexing supported"
+
+    if (
+        idx == Ellipsis
+        or idx == slice(None)
+        or (isinstance(idx, tuple) and all(i == slice(None) for i in idx))
+    ):
+        assert (
+            dest.shape == source.shape
+        ), f"Expected matching shape for dest slice {dest.shape=} and source {source.shape=}"
+        return dest
+
+    if isinstance(idx, Value) and not isinstance(idx, ScalarValue):
+        raise ValueError("indexing by tensor is not currently supported")
+
+    idx = list((idx,) if isinstance(idx, (int, ScalarValue, slice)) else idx)
+    for i, d in enumerate(idx):
+        if isinstance(d, int):
+            idx[i] = constant(d, index=True, loc=loc)
+
+    if all(isinstance(d, ScalarValue) and d.fold() for d in idx) and len(idx) == len(
+        dest.shape
+    ):
+        assert isinstance(
+            source, ScalarValue
+        ), "coordinate insert requires scalar element"
+        res = tensor.insert(source, dest, idx, loc=loc)
+    else:
+        if any(_is_index_tensor(i) or _is_int_arraylike(i) for i in idx):
+            raise ValueError("indexing by tensor is not currently supported")
+        indexer = _indices_to_indexer(tuple(idx), dest.shape)
+        if indexer.is_constant():
+            assert (
+                indexer.static_sizes() == source.shape
+            ), f"Expected matching shape for dest slice {indexer.static_sizes()=} and source {source.shape=}"
+            res = insert_slice(
+                source,
+                dest,
+                static_offsets=indexer.static_offsets(),
+                static_sizes=indexer.static_sizes(),
+                static_strides=indexer.static_strides(),
+                loc=loc,
+                ip=None,
+            )
+        else:
+            raise ValueError(f"non-constant indices not supported {indexer}")
+
+    return res
+
+
 # TODO(max): unify vector/memref/tensor
 @register_value_caster(RankedTensorType.static_typeid)
 @ShapedValue
@@ -170,56 +235,16 @@ class TensorValue(ArithValue):
             return expand_dims(out, indexer.newaxis_dims, loc=loc, ip=None)
 
     def __setitem__(self, idx, source):
-        loc = get_user_code_loc()
-
-        assert self.has_rank(), "only ranked tensor slicing/indexing supported"
-        assert source.has_rank(), "only ranked tensor slicing/indexing supported"
-
-        if (
-            idx == Ellipsis
-            or idx == slice(None)
-            or (isinstance(idx, tuple) and all(i == slice(None) for i in idx))
-        ):
-            assert (
-                self.shape == source.shape
-            ), f"Expected matching shape for dest slice {self.shape=} and source {source.shape=}"
-            return self
-
-        if isinstance(idx, Value) and not isinstance(idx, ScalarValue):
-            raise ValueError("indexing by tensor is not currently supported")
-
-        idx = list((idx,) if isinstance(idx, (int, ScalarValue, slice)) else idx)
-        for i, d in enumerate(idx):
-            if isinstance(d, int):
-                idx[i] = constant(d, index=True, loc=loc)
-
-        if all(isinstance(d, ScalarValue) and d.fold() for d in idx) and len(
-            idx
-        ) == len(self.shape):
-            assert isinstance(
-                source, ScalarValue
-            ), "coordinate insert requires scalar element"
-            res = tensor.insert(source, self, idx, loc=loc)
-        else:
-            if any(_is_index_tensor(i) or _is_int_arraylike(i) for i in idx):
-                raise ValueError("indexing by tensor is not currently supported")
-            indexer = _indices_to_indexer(tuple(idx), self.shape)
-            if indexer.is_constant():
-                assert (
-                    indexer.static_sizes() == source.shape
-                ), f"Expected matching shape for dest slice {indexer.static_sizes()=} and source {source.shape=}"
-                res = insert_slice(
-                    source,
-                    self,
-                    static_offsets=indexer.static_offsets(),
-                    static_sizes=indexer.static_sizes(),
-                    static_strides=indexer.static_strides(),
-                    loc=loc,
-                    ip=None,
-                )
-            else:
-                raise ValueError(f"non-constant indices not supported {indexer}")
-
+        res = _setitem(self, idx, source)
+        # early-return cases (full-slice/ellipsis) leave the tensor untouched, so
+        # there's nothing to rebind in the caller.
+        if res is self:
+            return
+        # Fallback for code that isn't rewritten by TensorCanonicalizer (e.g. an
+        # undecorated function or the REPL): reach into the caller and rebind the
+        # variable(s) that pointed at `self` to the new SSA value. Inside a
+        # @canonicalize(using=tensor.canonicalizer) function this path isn't taken
+        # because `t[idx] = source` is rewritten to `t = __mlir_extras_setitem__(...)`.
         previous_frame = inspect.currentframe().f_back
         _update_caller_vars(previous_frame, [self], [res])
 
@@ -408,3 +433,145 @@ pad = region_op(pad_, terminator=lambda args: tensor.YieldOp(args[0]))
 generate = region_op(
     lambda result, dynamic_extents: tensor.GenerateOp(result, dynamic_extents)
 )
+
+
+def __mlir_extras_setitem__(dest, idx, source):
+    """Runtime dispatch target that ``CanonicalizeSetItem`` rewrites ``dest[idx] = source`` into.
+
+    Because the rewrite is purely syntactic it fires on *every* subscript assignment
+    inside a canonicalized function, so this dispatches at runtime: tensors get the
+    functional insert (and the new SSA value is returned to be rebound), while plain
+    Python containers / mutable MLIR values (e.g. ``memref``) keep normal in-place
+    ``__setitem__`` semantics and rebind to themselves (a harmless no-op).
+    """
+    if isinstance(dest, TensorValue):
+        return _setitem(dest, idx, source)
+    dest[idx] = source
+    return dest
+
+
+def _reconstruct_index(slice_node: ast.expr) -> ast.expr:
+    """Turn a ``Subscript.slice`` AST node back into an ordinary index expression.
+
+    An ``ast.Slice`` is only valid inside a subscript, so to pass it as a call
+    argument it must be rebuilt as a ``slice(...)`` call -- mirroring what CPython
+    hands to ``__setitem__`` at runtime. Tuples (extended indexing) are rebuilt
+    element-wise; everything else (names, constants, ...) passes through unchanged.
+    """
+    if isinstance(slice_node, ast.Slice):
+        return ast.Call(
+            func=ast.Name(id="slice", ctx=ast.Load()),
+            args=[
+                slice_node.lower or ast.Constant(value=None),
+                slice_node.upper or ast.Constant(value=None),
+                slice_node.step or ast.Constant(value=None),
+            ],
+            keywords=[],
+        )
+    if isinstance(slice_node, ast.Tuple):
+        return ast.Tuple(
+            elts=[_reconstruct_index(e) for e in slice_node.elts], ctx=ast.Load()
+        )
+    return slice_node
+
+
+def _hoist_expr(expr: ast.expr, mk_tmp):
+    """Bind ``expr`` to a temporary so it is evaluated exactly once.
+
+    Returns ``(load_ref, prelude)`` where ``load_ref`` is an expression that reads
+    the (now-cached) value and ``prelude`` is the list of statements that compute it.
+    Side-effect-free atoms (names, constants) are returned as-is with no prelude.
+    """
+    if isinstance(expr, (ast.Name, ast.Constant)):
+        ref = copy.deepcopy(expr)
+        ref.ctx = ast.Load()
+        return ref, []
+    tmp = mk_tmp()
+    prelude = [ast.Assign(targets=[ast.Name(id=tmp, ctx=ast.Store())], value=expr)]
+    return ast.Name(id=tmp, ctx=ast.Load()), prelude
+
+
+def _split_assignable_base(base: ast.expr, mk_tmp):
+    """Split a subscript base into ``(prelude, load_expr, store_expr)``.
+
+    The base is emitted twice by the rewrite -- once read (to pass the current value
+    to ``__mlir_extras_setitem__``) and once written (to rebind it) -- so any
+    side-effecting sub-expression (a call, a mutating index, ...) is hoisted into a
+    temporary and evaluated once, matching CPython's ``a.b[i] = x`` / ``a[i][j] = x``
+    semantics. A bare ``Name`` needs no hoisting since reading it twice is free.
+    """
+    if isinstance(base, ast.Name):
+        return [], ast.Name(base.id, ast.Load()), ast.Name(base.id, ast.Store())
+    if isinstance(base, ast.Attribute):
+        obj_ref, prelude = _hoist_expr(base.value, mk_tmp)
+        load = ast.Attribute(value=obj_ref, attr=base.attr, ctx=ast.Load())
+        store = ast.Attribute(
+            value=copy.deepcopy(obj_ref), attr=base.attr, ctx=ast.Store()
+        )
+        return prelude, load, store
+    if isinstance(base, ast.Subscript):
+        obj_ref, prelude_obj = _hoist_expr(base.value, mk_tmp)
+        idx_ref, prelude_idx = _hoist_expr(_reconstruct_index(base.slice), mk_tmp)
+        load = ast.Subscript(value=obj_ref, slice=idx_ref, ctx=ast.Load())
+        store = ast.Subscript(
+            value=copy.deepcopy(obj_ref), slice=copy.deepcopy(idx_ref), ctx=ast.Store()
+        )
+        return prelude_obj + prelude_idx, load, store
+    raise AssertionError(f"unexpected assignable base {ast.dump(base)}")
+
+
+class CanonicalizeSetItem(StrictTransformer):
+    """Rewrite ``t[idx] = source`` into ``t = __mlir_extras_setitem__(t, idx, source)``.
+
+    This replaces the caller-frame rebinding hack (``_update_caller_vars``) with a
+    lexical rebinding performed by the compiler, so it also works through attribute
+    and container aliases (``obj.t[i] = x``, ``lst[k][i] = x``) that identity-based
+    frame rewriting can't reach.
+    """
+
+    def visit_Assign(self, updated_node: ast.Assign) -> Union[ast.Assign, List[ast.AST]]:
+        updated_node = self.generic_visit(updated_node)
+        # Only plain single-target subscript assignments; skip chained/tuple targets.
+        if len(updated_node.targets) != 1:
+            return updated_node
+        target = updated_node.targets[0]
+        if not isinstance(target, ast.Subscript):
+            return updated_node
+        base = target.value
+        # The base has to be a valid assignment target so we can rebind it; e.g.
+        # `foo()[i] = x` can't become `foo() = ...`.
+        if not isinstance(base, (ast.Name, ast.Attribute, ast.Subscript)):
+            return updated_node
+
+        def mk_tmp():
+            n = getattr(self.context, "_setitem_tmp_count", 0)
+            self.context._setitem_tmp_count = n + 1
+            return f"__mlir_extras_setitem_tmp_{n}"
+
+        # Hoist side-effecting sub-expressions of the base so it's evaluated once.
+        prelude, base_load, base_store = _split_assignable_base(base, mk_tmp)
+
+        call = ast_call(
+            __mlir_extras_setitem__.__name__,
+            args=[base_load, _reconstruct_index(target.slice), updated_node.value],
+        )
+        assign = ast.Assign(targets=[base_store], value=call)
+        stmts = [
+            ast.fix_missing_locations(ast.copy_location(s, updated_node))
+            for s in (*prelude, assign)
+        ]
+        return stmts if len(stmts) > 1 else stmts[0]
+
+
+class TensorPatchFunction(FunctionPatcher):
+    def patch_function(self, f):
+        f.__globals__[__mlir_extras_setitem__.__name__] = __mlir_extras_setitem__
+        return f
+
+
+class TensorCanonicalizer(Canonicalizer):
+    cst_transformers = [CanonicalizeSetItem]
+    function_patchers = [TensorPatchFunction]
+
+
+canonicalizer = TensorCanonicalizer()
