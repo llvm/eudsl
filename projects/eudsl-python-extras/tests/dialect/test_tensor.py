@@ -480,6 +480,49 @@ def test_canonicalize_setitem_skips_non_rewritable():
     assert "__mlir_extras_setitem__" not in rewritten("z = w")  # not a subscript
 
 
+def test_coordinate_scalar_insert(ctx: MLIRContext):
+    # A scalar source with a point index per dimension is a coordinate insert
+    # (tensor.insert), not a slice insert. The read-back must observe the result.
+    ten = empty(8, 8, T.i32())
+    s = constant(5, type=T.i32())
+    ten[2, 4] = s
+    w = ten[2, 4]
+
+    # CHECK:  %[[VAL_0:.*]] = tensor.empty() : tensor<8x8xi32>
+    # CHECK:  %[[VAL_1:.*]] = arith.constant 5 : i32
+    # CHECK:  %[[VAL_2:.*]] = arith.constant 2 : index
+    # CHECK:  %[[VAL_3:.*]] = arith.constant 4 : index
+    # CHECK:  %[[VAL_4:.*]] = tensor.insert %[[VAL_1]] into %[[VAL_0]]{{\[}}%[[VAL_2]], %[[VAL_3]]] : tensor<8x8xi32>
+    # CHECK:  %[[VAL_5:.*]] = arith.constant 2 : index
+    # CHECK:  %[[VAL_6:.*]] = arith.constant 4 : index
+    # CHECK:  %[[VAL_7:.*]] = tensor.extract %[[VAL_4]]{{\[}}%[[VAL_5]], %[[VAL_6]]] : tensor<8x8xi32>
+
+    filecheck_with_comments(ctx.module)
+
+
+def test_coordinate_scalar_insert_canonicalized(ctx: MLIRContext):
+    # Same coordinate insert, but rebinding via the TensorCanonicalizer AST rewrite.
+    @canonicalize(using=tensor.canonicalizer)
+    def build():
+        ten = empty(8, 8, T.i32())
+        s = constant(5, type=T.i32())
+        ten[2, 4] = s
+        w = ten[2, 4]
+
+    build()
+
+    # CHECK:  %[[VAL_0:.*]] = tensor.empty() : tensor<8x8xi32>
+    # CHECK:  %[[VAL_1:.*]] = arith.constant 5 : i32
+    # CHECK:  %[[VAL_2:.*]] = arith.constant 2 : index
+    # CHECK:  %[[VAL_3:.*]] = arith.constant 4 : index
+    # CHECK:  %[[VAL_4:.*]] = tensor.insert %[[VAL_1]] into %[[VAL_0]]{{\[}}%[[VAL_2]], %[[VAL_3]]] : tensor<8x8xi32>
+    # CHECK:  %[[VAL_5:.*]] = arith.constant 2 : index
+    # CHECK:  %[[VAL_6:.*]] = arith.constant 4 : index
+    # CHECK:  %[[VAL_7:.*]] = tensor.extract %[[VAL_4]]{{\[}}%[[VAL_5]], %[[VAL_6]]] : tensor<8x8xi32>
+
+    filecheck_with_comments(ctx.module)
+
+
 def test_move_slice(ctx: MLIRContext):
     ten = empty(8, 8, T.i32())
     w = ten[0:4, 0:4]
