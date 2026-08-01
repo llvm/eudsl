@@ -103,6 +103,55 @@ declare_mlir_python_extension(MLIRPythonExtension.WasmExecutionEngine.extension
     WasmCompilerLinkerLoaderCAPI
 )
 
+# ##############################################################################
+# SPIR-V -> WGSL, so kernels compiled to SPIR-V in the browser can be handed to
+# WebGPU. Requires Tint, so it is opt-in: without MLIR_PYTHON_BINDINGS_WGSL the
+# wheel is built exactly as before.
+#
+# Only Tint's SPIR-V reader and WGSL writer are needed; Dawn's runtime is not.
+# The browser already implements WebGPU, so nothing here talks to a device.
+# ##############################################################################
+
+option(MLIR_PYTHON_BINDINGS_WGSL "Build the SPIR-V -> WGSL extension (needs Tint)" OFF)
+
+if(MLIR_PYTHON_BINDINGS_WGSL)
+  if(NOT TARGET tint_lang_spirv_reader OR NOT TARGET tint_lang_wgsl_writer)
+    message(FATAL_ERROR
+      "MLIR_PYTHON_BINDINGS_WGSL requires the tint_lang_spirv_reader and "
+      "tint_lang_wgsl_writer targets. Add dawn (and SPIRV-Tools before it, see "
+      "the note in this file's git history) to the build first.")
+  endif()
+
+  add_mlir_public_c_api_library(SPIRVToWGSLCAPI
+    SPIRVToWGSL.cpp
+
+    PARTIAL_SOURCES_INTENDED
+
+    LINK_LIBS PUBLIC
+    tint_lang_spirv_reader
+    tint_lang_wgsl_writer
+    tint_lang_core_ir
+  )
+
+  declare_mlir_python_sources(MLIRPythonExtension.SPIRVToWGSL
+    ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mlir"
+    ADD_TO_PARENT MLIRPythonSources
+    SOURCES
+      wgsl.py
+  )
+
+  declare_mlir_python_extension(MLIRPythonExtension.SPIRVToWGSL.extension
+    MODULE_NAME _mlirSPIRVToWGSL
+    ADD_TO_PARENT MLIRPythonExtension.SPIRVToWGSL
+    ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+    PYTHON_BINDINGS_LIBRARY nanobind
+    SOURCES
+      SPIRVToWGSLModule.cpp
+    EMBED_CAPI_LINK_LIBS
+      SPIRVToWGSLCAPI
+  )
+endif()
+
 add_mlir_python_common_capi_library(MLIRPythonWasmCAPI
   INSTALL_COMPONENT MLIRPythonWasmModules
   INSTALL_DESTINATION mlir/_mlir_libs

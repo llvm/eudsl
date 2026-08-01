@@ -3,13 +3,13 @@
 Work in progress toward authoring GPU kernels in MLIR from Python **in the browser**,
 compiling them client-side, and dispatching them via WebGPU.
 
-Two of the three links are proven; the middle one is not built yet.
+Two of the three links are proven; the middle one is built but not yet wired into the wheel.
 
 ```
   gpu.func MLIR ──► SPIR-V              ✅ mlir_to_spirv.py  (shipped wasm wheel, no new C++)
                        │
                        ▼
-                    Tint                ❌ not built yet
+                    Tint                ✅ tint/  (builds for wasm; not in the wheel yet)
                        │
                        ▼
                     WGSL ──► navigator.gpu   ✅ webgpu_matmul.py  (verified in Chrome)
@@ -44,11 +44,11 @@ binds, so the two ends already agree.
 
 ## What's missing
 
-SPIR-V → WGSL, which needs Tint (`third_party/dawn`). Compare
-`compiler/plugins/target/WebGPUSPIRV/SPIRVToWGSL.cpp` in IREE, which is the same path and
-is tested: `tint::spirv::reader::ReadIR` → `tint::wgsl::writer::ProgramFromIR` →
-`Generate`. IREE builds Tint with everything off except `TINT_BUILD_SPV_READER` and
-`TINT_BUILD_WGSL_WRITER`.
+Tint is built (see `tint/`) but not yet compiled into the wasm wheel as a nanobind
+extension. `matmul.wgsl` is what it produces from `matmul.mlir`, generated natively.
+
+Tint builds under **emscripten 3.1.58**, the version `scripts/llvm_wasm/Dockerfile`
+already pins, so no toolchain bump is needed. See `tint/README.md`.
 
 ## Known rough edge
 
