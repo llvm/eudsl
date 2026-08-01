@@ -391,11 +391,14 @@ jobs:
       workflow_call: true
       workflow_caller_run_id: ${{ github.run_id }}
 
+  # build_mlir_python_bindings_wheel.yml and build_test_release_eudsl.yml each end in
+  # their own deploy, so deploying off [build] alone would race them for the single
+  # "pages" concurrency slot. Wait for those chains so this deploy lands last.
   call-deploy-pip-page:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
 
-    needs: [build]
+    needs: [build, call-build-python-bindings, call-build-eudsl]
 
     permissions:
       contents: read
