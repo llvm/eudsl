@@ -129,12 +129,21 @@ add_mlir_python_modules(MLIRPythonWasmModules
     MLIRPythonWasmCAPI
 )
 
+# Without STANDALONE, add_mlir_library appends `LINK_COMPONENTS Support`, which pulls
+# LLVMSupport (and with it CommandLine.cpp) into this side module. Its file-scope
+# static cl::opt objects then re-register options that libMLIRPythonWasmCAPI.so already
+# owns, and cl::Option::addArgument aborts the moment Pyodide dlopens this library:
+#   CommandLine Error: Option 'print-inst-addrs' registered more than once!
+# 32bRunnerUtils.cpp only needs the C++ stdlib, so drop the dependency entirely. This
+# mirrors upstream's own mlir_runner_utils, which is also declared STANDALONE.
 add_mlir_library(32b_mlir_runner_utils
   SHARED
   32bRunnerUtils.cpp
 
   PARTIAL_SOURCES_INTENDED
   EXCLUDE_FROM_LIBMLIR
+
+  STANDALONE
 )
 
 set(_runtimes
