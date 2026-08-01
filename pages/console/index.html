@@ -122,6 +122,8 @@
         BANNER =
           `Welcome to the Pyodide ${pyodide.version} terminal emulator 🐍\n` +
           `Try \`from mlir.ir import *\` to start your MLIR python journey.\n` +
+          `For GPU: \`from mlir.webgpu import demo; await demo()\` compiles an MLIR\n` +
+          `kernel to WGSL and runs it on your GPU via WebGPU.\n` +
           BANNER;
         const pyconsole = PyodideConsole(pyodide.globals);
 
