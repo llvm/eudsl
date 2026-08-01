@@ -41,12 +41,14 @@ on:
     paths:
       - ".github/workflows/build_mlir_python_bindings_wheel.yml"
       - "projects/mlir-python-bindings/**"
+      - "projects/mlir-python-bindings-wasm/**"
   push:
     branches:
       - main
     paths:
       - ".github/workflows/build_mlir_python_bindings_wheel.yml"
       - "projects/mlir-python-bindings/**"
+      - "projects/mlir-python-bindings-wasm/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.sha }}-build_mlir_python_bindings_wheel
