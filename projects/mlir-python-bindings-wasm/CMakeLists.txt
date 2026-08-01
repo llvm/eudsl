@@ -115,65 +115,14 @@ declare_mlir_python_extension(MLIRPythonExtension.WasmExecutionEngine.extension
 option(MLIR_PYTHON_BINDINGS_WGSL "Build the SPIR-V -> WGSL extension (needs Tint)" OFF)
 
 if(MLIR_PYTHON_BINDINGS_WGSL)
-  set(_repo_root "${CMAKE_CURRENT_SOURCE_DIR}/../..")
-
-  # SPIRV-Headers and SPIRV-Tools must be added BEFORE dawn. Dawn's own
-  # third_party/CMakeLists.txt early-returns under Emscripten (`if (EMSCRIPTEN)
-  # return()`) before it gets to them, because Dawn's wasm builds don't use the
-  # SPIR-V reader -- but tint_lang_spirv_reader hard-depends on the SPIRV-Tools
-  # and SPIRV-Tools-opt targets. Without this the wasm build fails on a missing
-  # generated core_tables_header.inc. Dawn guards its own add_subdirectory with
-  # `NOT TARGET SPIRV-Tools`, so defining them here just makes it skip.
-  if(NOT TARGET SPIRV-Headers)
-    set(SPIRV_HEADERS_SKIP_EXAMPLES ON CACHE BOOL "" FORCE)
-    set(SPIRV_HEADERS_SKIP_INSTALL ON CACHE BOOL "" FORCE)
-    add_subdirectory("${_repo_root}/third_party/SPIRV-Headers"
-                     "${CMAKE_CURRENT_BINARY_DIR}/spirv-headers" EXCLUDE_FROM_ALL)
-  endif()
-
-  if(NOT TARGET SPIRV-Tools)
-    set(SPIRV_SKIP_TESTS ON CACHE BOOL "" FORCE)
-    set(SPIRV_SKIP_EXECUTABLES ON CACHE BOOL "" FORCE)
-    set(SKIP_SPIRV_TOOLS_INSTALL ON CACHE BOOL "" FORCE)
-    set(SPIRV_WERROR OFF CACHE BOOL "" FORCE)
-    set(ENABLE_RTTI ON CACHE BOOL "" FORCE)
-    set(SPIRV-Headers_SOURCE_DIR "${_repo_root}/third_party/SPIRV-Headers"
-        CACHE PATH "" FORCE)
-    add_subdirectory("${_repo_root}/third_party/SPIRV-Tools"
-                     "${CMAKE_CURRENT_BINARY_DIR}/spirv-tools" EXCLUDE_FROM_ALL)
-  endif()
-
-  # Tint only. Every Dawn backend stays off: the browser already implements
-  # WebGPU, so we never link Dawn's runtime. Keeping it out is also what keeps
-  # this off the emscripten 4.0.9 path that stalled #268 -- Tint alone builds
-  # fine on the 3.1.58 the rest of the wasm build already uses.
-  if(NOT TARGET tint_lang_spirv_reader)
-    foreach(_off
-        DAWN_BUILD_BENCHMARKS DAWN_BUILD_SAMPLES DAWN_BUILD_TESTS
-        DAWN_BUILD_FUZZERS DAWN_BUILD_NODE_BINDINGS DAWN_BUILD_PROTOBUF
-        DAWN_BUILD_MONOLITHIC_LIBRARY DAWN_ENABLE_D3D11 DAWN_ENABLE_D3D12
-        DAWN_ENABLE_METAL DAWN_ENABLE_NULL DAWN_ENABLE_DESKTOP_GL
-        DAWN_ENABLE_OPENGLES DAWN_ENABLE_VULKAN DAWN_ENABLE_SWIFTSHADER
-        DAWN_ENABLE_SPIRV_VALIDATION DAWN_ENABLE_WEBGPU_ON_WEBGPU
-        DAWN_FETCH_DEPENDENCIES DAWN_USE_GLFW DAWN_USE_X11 DAWN_USE_WAYLAND
-        DAWN_WERROR
-        TINT_BUILD_SPV_WRITER TINT_BUILD_WGSL_READER TINT_BUILD_GLSL_WRITER
-        TINT_BUILD_HLSL_WRITER TINT_BUILD_MSL_WRITER TINT_BUILD_NULL_WRITER
-        TINT_BUILD_GLSL_VALIDATOR TINT_BUILD_CMD_TOOLS TINT_BUILD_TESTS
-        TINT_BUILD_BENCHMARKS TINT_BUILD_FUZZERS TINT_BUILD_IR_BINARY
-        TINT_BUILD_TINTD)
-      set(${_off} OFF CACHE BOOL "" FORCE)
-    endforeach()
-    set(TINT_BUILD_SPV_READER ON CACHE BOOL "" FORCE)
-    set(TINT_BUILD_WGSL_WRITER ON CACHE BOOL "" FORCE)
-
-    set(DAWN_ABSEIL_DIR "${_repo_root}/third_party/abseil-cpp" CACHE PATH "" FORCE)
-    set(DAWN_SPIRV_TOOLS_DIR "${_repo_root}/third_party/SPIRV-Tools" CACHE PATH "" FORCE)
-    set(DAWN_SPIRV_HEADERS_DIR "${_repo_root}/third_party/SPIRV-Headers" CACHE PATH "" FORCE)
-
-    add_subdirectory("${_repo_root}/third_party/dawn"
-                     "${CMAKE_CURRENT_BINARY_DIR}/dawn" EXCLUDE_FROM_ALL)
-  endif()
+  # Tint lives inside the dawn repo but does not depend on dawn: Tint.cmake adds
+  # only src/utils and src/tint, skipping dawn's top-level CMakeLists entirely.
+  # That matters under Emscripten, where dawn's top level unconditionally
+  # descends into generator/ and src/{emdawnwebgpu,dawn} -- pulling in a jinja2
+  # code generator we have no use for and a dawncpp_module target that forces
+  # C++20 module scanning, which emscan-deps then chokes on.
+  set(TINT_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Tint.cmake")
 
   if(NOT TARGET tint_lang_spirv_reader OR NOT TARGET tint_lang_wgsl_writer)
     message(FATAL_ERROR
@@ -191,6 +140,16 @@ if(MLIR_PYTHON_BINDINGS_WGSL)
     tint_lang_spirv_reader
     tint_lang_wgsl_writer
     tint_lang_core_ir
+  )
+
+  # Tint's public headers use concepts and std::span. Set this per-target rather
+  # than on the directory: MLIR builds the rest of the wheel as C++17, and a
+  # directory-wide bump switches on C++20 module dependency scanning, which
+  # emscan-deps rejects (it does not understand emscripten's -sSUPPORT_LONGJMP).
+  set_target_properties(obj.SPIRVToWGSLCAPI PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_SCAN_FOR_MODULES OFF
   )
 
   declare_mlir_python_sources(MLIRPythonExtension.SPIRVToWGSL

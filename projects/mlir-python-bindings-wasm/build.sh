@@ -33,4 +33,11 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
   # the above doesn't work so you need to run in docker
 fi
 
+# Without this, linking every extension fails with
+#   em++: error: undefined exported symbol: "_LLVMAddSymbol" [-Wundefined] [-Werror]
+# (emscripten-core/emscripten#25911). pyodide-build computes an export list and
+# passes it via -sSIDE_MODULE=2 -sEXPORTED_FUNCTIONS=@file; "whole_archive" makes
+# get_export_flags() skip both and pass -Wl,--whole-archive instead.
+export PYODIDE_BUILD_EXPORTS="${PYODIDE_BUILD_EXPORTS:-whole_archive}"
+
 pyodide build . -o wheelhouse --compression-level 10

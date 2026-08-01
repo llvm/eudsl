@@ -1,0 +1,6 @@
+# scikit-build-core build tree (build-dir = "build" in pyproject.toml)
+build/
+wheelhouse/
+mlir_native_tools/
+llvm-install/
+*.whl
