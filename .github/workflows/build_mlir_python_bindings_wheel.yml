@@ -478,11 +478,13 @@ jobs:
       workflow_call: true
       workflow_caller_run_id: ${{ github.run_id }}
 
+  # build_test_release_eudsl_python_extras.yml ends in its own deploy; wait for it so the
+  # two don't race for the single "pages" concurrency slot.
   call-deploy-pip-page:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
 
-    needs: [release-mlir-python-bindings]
+    needs: [release-mlir-python-bindings, call-build-eudsl-python-extras]
 
     permissions:
       contents: read

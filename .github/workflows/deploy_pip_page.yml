@@ -5,12 +5,6 @@ on:
     branches: ["main"]
   workflow_dispatch:
   workflow_call:
-    inputs:
-      workflow_call:
-        description: 'To distinguish workflow_call from regular push'
-        type: boolean
-        required: false
-        default: true
   pull_request:
     paths:
       - ".github/workflows/deploy_pip_page.yml"
@@ -30,7 +24,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -43,6 +37,7 @@ jobs:
       - name: Download pip links
         shell: bash
         run: |
+          set -euxo pipefail
 
           wget https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings
           wget https://github.com/llvm/eudsl/releases/expanded_assets/eudsl
@@ -57,43 +52,47 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Pip download latest WASM wheel
-        if: ${{ !inputs.workflow_call }}
-        run: |
-          
-          pip download mlir-python-bindings --plat pyemscripten_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl
-
+      # Resolve both wheels out of the pip index we just built from the releases,
+      # so this job never depends on an artifact belonging to some other run.
       - name: Download latest WASM wheel
-        if: ${{ inputs.workflow_call }}
-        uses: dawidd6/action-download-artifact@v11
-        with:
-          name: mlir_python_bindings_ubuntu_wasm32_artifact
-          path: "./"
-          run_id: ${{ inputs.workflow_caller_run_id }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          pip download mlir-python-bindings --plat pyemscripten_2024_0_wasm32 --no-deps --python-version 3.12 -f page/index.html
 
       - name: Get eudsl-python-extras
+        shell: bash
         run: |
-          
-          pip wheel eudsl-python-extras -f https://llvm.github.io/eudsl --no-deps -w .
+          set -euxo pipefail
+
+          pip wheel eudsl-python-extras -f page/index.html --no-deps -w .
 
       - name: Create WASM console page
+        shell: bash
         run: |
-          
+          set -euxo pipefail
+
           mkdir -p page/console
 
-          export MLIR_PYTHON_WHEEL_NAME="$(ls mlir_python_bindings*)"
-          export EUDSL_PYTHON_EXTRAS_WHEEL_NAME="$(ls eudsl_python_extras*)"
-          
+          MLIR_PYTHON_WHEEL_NAME="$(ls mlir_python_bindings*.whl)"
+          EUDSL_PYTHON_EXTRAS_WHEEL_NAME="$(ls eudsl_python_extras*.whl)"
+          # `ls` returns one line per match, so this also catches an ambiguous glob.
+          test -f "$MLIR_PYTHON_WHEEL_NAME"
+          test -f "$EUDSL_PYTHON_EXTRAS_WHEEL_NAME"
+
           cp pages/console/index.html page/console/index.html
-          cp $MLIR_PYTHON_WHEEL_NAME page/console/mlir_python_bindings-0.0.1-cp312-cp312-pyemscripten_2024_0_wasm32.whl
-          cp $EUDSL_PYTHON_EXTRAS_WHEEL_NAME page/console/eudsl_python_extras-0.0.1-py3-none-any.whl
-          
+          cp "$MLIR_PYTHON_WHEEL_NAME" page/console/mlir_python_bindings-0.0.1-cp312-cp312-pyemscripten_2024_0_wasm32.whl
+          cp "$EUDSL_PYTHON_EXTRAS_WHEEL_NAME" page/console/eudsl_python_extras-0.0.1-py3-none-any.whl
+
           echo "MLIR_PYTHON_WHEEL_NAME=$MLIR_PYTHON_WHEEL_NAME" >> $GITHUB_ENV
           echo "EUDSL_PYTHON_EXTRAS_WHEEL_NAME=$EUDSL_PYTHON_EXTRAS_WHEEL_NAME" >> $GITHUB_ENV
 
       - name: Create WASM jupyterlite page
+        shell: bash
         run: |
-          
+          set -euxo pipefail
+
           mkdir -p page/jupyter
 
           python -m pip install -r pages/jupyter/requirements.txt
@@ -103,18 +102,42 @@ jobs:
             --piplite-wheels $MLIR_PYTHON_WHEEL_NAME \
             --piplite-wheels $EUDSL_PYTHON_EXTRAS_WHEEL_NAME
 
+      # A half-built `page/` must never reach the upload step: Pages serves whatever
+      # the last deployment contained, so publishing a partial tree silently deletes
+      # /console and /jupyter from the live site.
+      - name: Verify page contents
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          test -f page/index.html
+          test -f page/console/index.html
+          test -f page/jupyter/index.html
+          test -f page/jupyter/pypi/all.json
+
+          python - <<'PY'
+          import json
+
+          with open("page/jupyter/pypi/all.json") as f:
+              index = json.load(f)
+          missing = [p for p in ("mlir-python-bindings", "eudsl-python-extras") if p not in index]
+          if missing:
+              raise SystemExit(f"piplite index is missing {missing}; got {sorted(index)}")
+          PY
+
       - uses: geekyeggo/delete-artifact@v5
+        if: success() && github.event_name != 'pull_request'
         with:
           name: github-pages
           failOnError: false
 
       - name: Upload artifact
-        if: (!cancelled())
+        if: success() && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: page
 
       - name: Deploy to GitHub Pages
-        if: (!cancelled())
+        if: success() && github.event_name != 'pull_request'
         id: deployment
         uses: actions/deploy-pages@v4
