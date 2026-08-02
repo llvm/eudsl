@@ -9,9 +9,12 @@ extension in the wheel actually loads (emscripten-core/emscripten#25911 made
 them build fine and then fail to dlopen), and that the SPIR-V comes out with the
 @group(0) @binding(i) layout the WebGPU host code binds against.
 
-Skips cleanly if the wheel was built without MLIR_PYTHON_BINDINGS_WGSL.
+Fails if mlir.wgsl is missing. Set MLIR_PYTHON_BINDINGS_WGSL=OFF to skip on a
+wheel deliberately built without the extension.
 """
 
+import os
+import re
 import sys
 
 MATMUL = """
@@ -57,6 +60,16 @@ SERIALIZE = "builtin.module(gpu-module-to-binary)"
 
 SPIRV_MAGIC = 0x07230203
 
+# spirv-lower-abi-attrs names the interface variables after the kernel and the
+# argument index, and the host binds buffers in that same order. Checking the
+# mapping per-variable (rather than just the set of numbers) is what catches an
+# argument/binding swap, which would run fine and compute the wrong answer.
+EXPECTED_BINDINGS = {
+    "matmul_arg_0": (0, 0),
+    "matmul_arg_1": (0, 1),
+    "matmul_arg_2": (0, 2),
+}
+
 
 def nest_spirv_module(asm):
     lines = asm.split("\n")
@@ -65,7 +78,8 @@ def nest_spirv_module(asm):
     end = None
     for i in range(start, len(lines)):
         depth += lines[i].count("{") - lines[i].count("}")
-        if depth == 0 and i > start:
+        # A single-line spirv.module balances at i == start, so close there too.
+        if depth == 0:
             end = i
             break
     assert end is not None, "unterminated spirv.module"
@@ -79,50 +93,92 @@ def extract_binary(asm):
     """Pull the object blob out of gpu.binary. MLIR escapes bytes as \\XX."""
     i = asm.find("gpu.binary")
     assert i >= 0, "no gpu.binary op -- did gpu-module-to-binary run?"
+    assert asm.find("gpu.binary", i + 1) < 0, "multiple gpu.binary ops; expected one"
     j = asm.index('"', i) + 1
     out = bytearray()
-    while asm[j] != '"':
-        if asm[j] == "\\":
-            out.append(int(asm[j + 1 : j + 3], 16))
-            j += 3
+    while True:
+        assert j < len(asm), "unterminated gpu.binary blob"
+        c = asm[j]
+        if c == '"':
+            break
+        if c == "\\":
+            # MLIR emits \XX hex pairs, but also \" and \\ for those two chars.
+            nxt = asm[j + 1]
+            if nxt in ('"', "\\"):
+                out.append(ord(nxt))
+                j += 2
+            else:
+                out.append(int(asm[j + 1 : j + 3], 16))
+                j += 3
         else:
-            out.append(ord(asm[j]))
+            out.append(ord(c))
             j += 1
     return bytes(out)
 
 
 def decode_bindings(spv):
-    """(descriptor_set, binding) for each decorated variable, plus the entry point."""
+    """Decode the entry point, workgroup size, and per-variable bindings.
+
+    Returns bindings as {variable_name: (descriptor_set, binding)}. Keying by
+    name matters: the host binds buffers in kernel-argument order, so a set of
+    binding numbers that is correct but attached to the wrong variables is a
+    silent wrong-answer bug, not a crash.
+    """
     import struct
 
     w = struct.unpack("<%dI" % (len(spv) // 4), spv)
     assert w[0] == SPIRV_MAGIC, f"bad magic {w[0]:#x}"
 
-    entry, workgroup, decos = None, None, {}
+    def string_at(a, b):
+        return b"".join(struct.pack("<I", x) for x in w[a:b]).split(b"\0")[0].decode()
+
+    entry, workgroup, decos, names = None, None, {}, {}
     i = 5
     while i < len(w):
         wc, op = w[i] >> 16, w[i] & 0xFFFF
-        if wc == 0:
-            break
-        if op == 15:  # OpEntryPoint
-            entry = (
-                b"".join(struct.pack("<I", x) for x in w[i + 3 : i + wc])
-                .split(b"\0")[0]
-                .decode()
-            )
+        assert wc != 0, f"zero word count at word {i}; truncated SPIR-V?"
+        if op == 5:  # OpName
+            names[w[i + 1]] = string_at(i + 2, i + wc)
+        elif op == 15:  # OpEntryPoint
+            entry = string_at(i + 3, i + wc)
         elif op == 16:  # OpExecutionMode
             workgroup = list(w[i + 3 : i + wc])
         elif op == 71 and w[i + 2] in (33, 34):  # OpDecorate Binding/DescriptorSet
             decos.setdefault(w[i + 1], {})[w[i + 2]] = w[i + 3]
         i += wc
-    return entry, workgroup, sorted((d.get(34), d.get(33)) for d in decos.values())
+
+    bindings = {}
+    for target, d in decos.items():
+        name = names.get(target, f"<id {target}>")
+        assert name not in bindings, f"two variables named {name}"
+        bindings[name] = (d.get(34), d.get(33))
+    return entry, workgroup, bindings
 
 
 def main():
+    # Only skip when the wheel was deliberately built without the extension.
+    # Importing mlir.wgsl exercises the whole side-module graph, so treating an
+    # ImportError as a pass would hide exactly the failure this test exists to
+    # catch (emscripten#25911 built fine and then would not dlopen).
+    expect_wgsl = os.environ.get("MLIR_PYTHON_BINDINGS_WGSL", "ON").upper() not in (
+        "OFF",
+        "0",
+        "FALSE",
+        "NO",
+    )
     try:
         from mlir.wgsl import spirv_to_wgsl
     except ImportError as e:
-        print(f"SKIP: no mlir.wgsl ({e}); built without MLIR_PYTHON_BINDINGS_WGSL?")
+        if expect_wgsl:
+            print(
+                f"FAIL: cannot import mlir.wgsl ({e}).\n"
+                "The wheel is expected to carry the SPIR-V -> WGSL extension. "
+                "Set MLIR_PYTHON_BINDINGS_WGSL=OFF to skip this test on a wheel "
+                "built without it.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"SKIP: MLIR_PYTHON_BINDINGS_WGSL is off and mlir.wgsl is absent ({e})")
         return 0
 
     from mlir.ir import Context, Module
@@ -143,15 +199,24 @@ def main():
     print(f"bindings: {bindings}")
     assert entry == "matmul", entry
     assert workgroup == [8, 8, 1], workgroup
-    assert bindings == [(0, 0), (0, 1), (0, 2)], bindings
+    # Per-variable, not just the set of numbers: the host binds buffers in
+    # kernel-argument order, so arg i must land on binding i.
+    assert bindings == EXPECTED_BINDINGS, bindings
 
     wgsl = spirv_to_wgsl(spv)
     print(f"WGSL: {len(wgsl)} bytes")
     assert "@compute" in wgsl, wgsl[:400]
     assert "@workgroup_size(8" in wgsl, wgsl[:400]
-    for i in range(3):
-        # tint prints these as @group(0u) @binding(Nu)
-        assert f"@binding({i}u)" in wgsl or f"@binding({i})" in wgsl, wgsl[:400]
+    # Check @group/@binding on the declaration of each specific variable, not
+    # just that the numbers appear somewhere in the file.
+    for name, (group, binding) in EXPECTED_BINDINGS.items():
+        pattern = (
+            rf"@group\({group}u?\)\s*@binding\({binding}u?\)"
+            rf"\s*var<[^>]*>\s*{re.escape(name)}\s*:"
+        )
+        assert re.search(pattern, wgsl), (
+            f"expected {name} at @group({group}) @binding({binding})\n{wgsl[:600]}"
+        )
 
     print("OK: MLIR -> SPIR-V -> WGSL")
     return 0

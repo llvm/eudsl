@@ -382,7 +382,12 @@ jobs:
 
   test-mlir-python-bindings-wasm:
 
-    if: github.event_name == 'pull_request'
+    # Unlike the other test jobs this also runs on the release path, and
+    # release-mlir-python-bindings waits for it. The wasm wheel is the one that
+    # gets deployed to the console and the jupyterlite notebook, and this job is
+    # what proves its side modules actually dlopen -- a wheel can link cleanly
+    # and still fail to load (emscripten-core/emscripten#25911).
+    if: (github.event_name == 'pull_request') || (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
 
     needs: [build-mlir-python-bindings]
 
@@ -439,7 +444,7 @@ jobs:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
 
-    needs: [build-mlir-python-bindings]
+    needs: [build-mlir-python-bindings, test-mlir-python-bindings-wasm]
 
     runs-on: "ubuntu-22.04"
 
