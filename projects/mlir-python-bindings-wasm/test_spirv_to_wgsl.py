@@ -46,18 +46,6 @@ module attributes {
 }
 """
 
-# convert-gpu-to-spirv hoists the spirv.module to the top level as a sibling of
-# the emptied gpu.module, but gpu-module-to-binary only serializes a spirv.module
-# nested *inside* a gpu.module, so the two run separately with a re-nest between.
-LOWER = (
-    "builtin.module("
-    "spirv-attach-target{ver=v1.0 caps=Shader "
-    "exts=SPV_KHR_storage_buffer_storage_class client_api=Vulkan},"
-    "convert-gpu-to-spirv,"
-    "spirv.module(spirv-lower-abi-attrs,spirv-update-vce,spirv-webgpu-prepare))"
-)
-SERIALIZE = "builtin.module(gpu-module-to-binary)"
-
 SPIRV_MAGIC = 0x07230203
 
 # spirv-lower-abi-attrs names the interface variables after the kernel and the
@@ -69,51 +57,6 @@ EXPECTED_BINDINGS = {
     "matmul_arg_1": (0, 1),
     "matmul_arg_2": (0, 2),
 }
-
-
-def nest_spirv_module(asm):
-    lines = asm.split("\n")
-    start = next(i for i, l in enumerate(lines) if l.startswith("  spirv.module"))
-    depth = 0
-    end = None
-    for i in range(start, len(lines)):
-        depth += lines[i].count("{") - lines[i].count("}")
-        # A single-line spirv.module balances at i == start, so close there too.
-        if depth == 0:
-            end = i
-            break
-    assert end is not None, "unterminated spirv.module"
-    spv = lines[start : end + 1]
-    rest = lines[:start] + lines[end + 1 :]
-    g = next(i for i, l in enumerate(rest) if l.startswith("  gpu.module"))
-    return "\n".join(rest[: g + 1] + ["  " + l for l in spv] + rest[g + 1 :])
-
-
-def extract_binary(asm):
-    """Pull the object blob out of gpu.binary. MLIR escapes bytes as \\XX."""
-    i = asm.find("gpu.binary")
-    assert i >= 0, "no gpu.binary op -- did gpu-module-to-binary run?"
-    assert asm.find("gpu.binary", i + 1) < 0, "multiple gpu.binary ops; expected one"
-    j = asm.index('"', i) + 1
-    out = bytearray()
-    while True:
-        assert j < len(asm), "unterminated gpu.binary blob"
-        c = asm[j]
-        if c == '"':
-            break
-        if c == "\\":
-            # MLIR emits \XX hex pairs, but also \" and \\ for those two chars.
-            nxt = asm[j + 1]
-            if nxt in ('"', "\\"):
-                out.append(ord(nxt))
-                j += 2
-            else:
-                out.append(int(asm[j + 1 : j + 3], 16))
-                j += 3
-        else:
-            out.append(ord(c))
-            j += 1
-    return bytes(out)
 
 
 def decode_bindings(spv):
@@ -167,32 +110,22 @@ def main():
         "NO",
     )
     try:
+        from mlir.webgpu import compile_to_spirv
         from mlir.wgsl import spirv_to_wgsl
     except ImportError as e:
         if expect_wgsl:
             print(
-                f"FAIL: cannot import mlir.wgsl ({e}).\n"
+                f"FAIL: cannot import mlir.webgpu/mlir.wgsl ({e}).\n"
                 "The wheel is expected to carry the SPIR-V -> WGSL extension. "
                 "Set MLIR_PYTHON_BINDINGS_WGSL=OFF to skip this test on a wheel "
                 "built without it.",
                 file=sys.stderr,
             )
             return 1
-        print(f"SKIP: MLIR_PYTHON_BINDINGS_WGSL is off and mlir.wgsl is absent ({e})")
+        print(f"SKIP: MLIR_PYTHON_BINDINGS_WGSL is off and mlir.webgpu is absent ({e})")
         return 0
 
-    from mlir.ir import Context, Module
-    from mlir.passmanager import PassManager
-
-    with Context():
-        module = Module.parse(MATMUL)
-        PassManager.parse(LOWER).run(module.operation)
-        lowered = str(module)
-
-    with Context():
-        module = Module.parse(nest_spirv_module(lowered))
-        PassManager.parse(SERIALIZE).run(module.operation)
-        spv = extract_binary(str(module))
+    spv = compile_to_spirv(MATMUL)
 
     entry, workgroup, bindings = decode_bindings(spv)
     print(f"SPIR-V: {len(spv)} bytes, entry {entry!r}, workgroup_size {workgroup}")
