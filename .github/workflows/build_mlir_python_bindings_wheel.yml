@@ -132,7 +132,7 @@ jobs:
         run: |
           
           if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
-            pip download mlir-wheel --plat pyemscripten_2024_0_wasm32 --no-deps --python-version 3.12 -f https://llvm.github.io/eudsl
+            pip download mlir-wheel --plat "$PYODIDE_PLATFORM_TAG" --no-deps --python-version "${PYODIDE_PY_TAG#cp}" -f https://llvm.github.io/eudsl
           else
             pip download mlir-wheel -f https://llvm.github.io/eudsl
           fi
@@ -413,13 +413,18 @@ jobs:
       - name: "Install Python"
         uses: actions/setup-python@v4
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
       - name: Install pyodide and test
         shell: bash
         run: |
-          
+
           pip install pyodide-build>=0.28.0
+          # Pin the cross-build environment, or `pyodide venv` builds one from the
+          # latest release and the wheel's ABI tag stops matching the interpreter
+          # testing it. Keep in sync with PYODIDE_VERSION in
+          # .github/actions/setup_base/action.yml.
+          pyodide xbuildenv install 0.29.4
           pyodide venv venv
           . venv/bin/activate
           pip install mlir-python-bindings -f wheelhouse

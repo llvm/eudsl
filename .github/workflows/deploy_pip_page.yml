@@ -18,16 +18,21 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
-# Platform tag the Pyodide runtime pinned by pages/jupyter/requirements.txt accepts.
-# Keep in sync with pages/console/index.html.
+# The Pyodide that runs the deployed pages. Must match the cross-build environment
+# the wheel was built against, or the wheel's ABI tag will not load. Keep in sync
+# with PYODIDE_VERSION in .github/actions/setup_base/action.yml and the CDN url in
+# pages/console/index.html; the "Verify page contents" step checks the latter.
+#
+# PYODIDE_PY_TAG / PYODIDE_PLATFORM_TAG are what that Pyodide's cross-build env
+# reports as python_version and pyemscripten_platform_version. This job does not
+# install the xbuildenv (it is a ~400MB download for two strings), so they are
+# spelled out here. "Verify page contents" below rejects any wheel in the piplite
+# index whose tag disagrees, so a stale value here fails the deploy rather than
+# shipping a wheel the runtime cannot install.
 env:
-  PYODIDE_PLATFORM_TAG: pyodide_2024_0_wasm32
-  # The Pyodide that runs the deployed pages. Must match the cross-build
-  # environment the wheel was built against, or the wheel's ABI tag will not
-  # load. Keep in sync with PYODIDE_VERSION in
-  # .github/actions/setup_base/action.yml and the CDN url in
-  # pages/console/index.html; the "Verify page contents" step checks the latter.
-  PYODIDE_VERSION: 0.27.7
+  PYODIDE_VERSION: 0.29.4
+  PYODIDE_PY_TAG: cp313
+  PYODIDE_PLATFORM_TAG: pyemscripten_2025_0_wasm32
 
 jobs:
   deploy:
@@ -61,28 +66,16 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
       # Resolve both wheels out of the pip index we just built from the releases,
       # so this job never depends on an artifact belonging to some other run.
-      #
-      # pyodide-build >=0.28 tags wasm wheels `pyemscripten_*_wasm32` (PEP 783), but the
-      # runtime that consumes them here does not understand that tag yet: jupyterlite-
-      # pyodide-kernel 0.6.1 pins Pyodide 0.27.6, which ships micropip 0.9.0, and micropip
-      # only learned `pyemscripten_*` in 0.11.1. Under 0.9.0 the piplite index resolves the
-      # package fine and then rejects every wheel in it, so `piplite.install` fails with
-      # "Can't find a pure Python 3 wheel". Download by the tag the release actually
-      # carries, then retag to the one this Pyodide accepts. Drop the retag once the
-      # kernel pin moves past micropip 0.11.1.
       - name: Download latest WASM wheel
         shell: bash
         run: |
           set -euxo pipefail
 
-          pip download mlir-python-bindings --plat pyemscripten_2024_0_wasm32 --no-deps --python-version 3.12 -f page/index.html
-
-          python -m pip install wheel
-          python -m wheel tags --platform-tag "$PYODIDE_PLATFORM_TAG" --remove mlir_python_bindings-*-pyemscripten_*_wasm32.whl
+          pip download mlir-python-bindings --plat "$PYODIDE_PLATFORM_TAG" --no-deps --python-version "${PYODIDE_PY_TAG#cp}" -f page/index.html
 
       - name: Get eudsl-python-extras
         shell: bash
@@ -105,7 +98,7 @@ jobs:
           test -f "$EUDSL_PYTHON_EXTRAS_WHEEL_NAME"
 
           cp pages/console/index.html page/console/index.html
-          cp "$MLIR_PYTHON_WHEEL_NAME" "page/console/mlir_python_bindings-0.0.1-cp312-cp312-$PYODIDE_PLATFORM_TAG.whl"
+          cp "$MLIR_PYTHON_WHEEL_NAME" "page/console/mlir_python_bindings-0.0.1-$PYODIDE_PY_TAG-$PYODIDE_PY_TAG-$PYODIDE_PLATFORM_TAG.whl"
           cp "$EUDSL_PYTHON_EXTRAS_WHEEL_NAME" page/console/eudsl_python_extras-0.0.1-py3-none-any.whl
 
           echo "MLIR_PYTHON_WHEEL_NAME=$MLIR_PYTHON_WHEEL_NAME" >> $GITHUB_ENV
@@ -120,7 +113,7 @@ jobs:
 
           python -m pip install -r pages/jupyter/requirements.txt
 
-          # jupyterlite-pyodide-kernel pins its own Pyodide (0.27.6 in 0.6.1),
+          # jupyterlite-pyodide-kernel pins its own Pyodide (0.29.3 in 0.7.2),
           # which is not necessarily the one the wheel was built against.
           # JUPYTERLITE_PYODIDE_URL makes the build vendor a specific
           # distribution instead, so the notebook and the console run the same

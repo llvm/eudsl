@@ -259,23 +259,27 @@ runs:
 
         # Pin the cross-build environment. Left unpinned, pyodide-build installs
         # the latest compatible one (xbuildenv.py, _find_latest_version), whose
-        # python version determines the wheel's ABI tag. That has already drifted
-        # ahead of what runs the wheel: the console loads Pyodide
-        # PYODIDE_VERSION and jupyterlite-pyodide-kernel pins a matching one, so
-        # a cp313 wheel from a newer environment simply will not load there.
+        # python version determines the wheel's ABI tag, and that drifts ahead of
+        # the Pyodide that actually runs the wheel. A wheel whose ABI tag does not
+        # match the console's and the jupyterlite kernel's Pyodide will not load.
         #
         # Keep PYODIDE_VERSION in sync with:
         #   pages/console/index.html          (the pyodide CDN url)
         #   pages/jupyter/requirements.txt    (jupyterlite-pyodide-kernel)
-        PYODIDE_VERSION=0.27.7
+        #   scripts/llvm_wasm/Dockerfile
+        #   projects/mlir-python-bindings-wasm/build.sh
+        PYODIDE_VERSION=0.29.4
         pyodide xbuildenv install "$PYODIDE_VERSION"
 
         PY="$(pyodide config get python_version)"
         echo "pyodide $PYODIDE_VERSION -> python $PY"
         case "$PY" in
-          3.12*) ;;
-          *) echo "::error::expected python 3.12 from the $PYODIDE_VERSION cross-build env, got $PY"; exit 1 ;;
+          3.13*) ;;
+          *) echo "::error::expected python 3.13 from the $PYODIDE_VERSION cross-build env, got $PY"; exit 1 ;;
         esac
+
+        echo "PYODIDE_PY_TAG=cp${PY%%.*}$(echo "$PY" | cut -d. -f2)" >> $GITHUB_ENV
+        echo "PYODIDE_PLATFORM_TAG=pyemscripten_$(pyodide config get pyemscripten_platform_version)_wasm32" >> $GITHUB_ENV
 
         echo "EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version)" >> $GITHUB_ENV
 

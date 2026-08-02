@@ -82,7 +82,7 @@
       }
 
       async function main() {
-        let indexURL = "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/";
+        let indexURL = "https://cdn.jsdelivr.net/pyodide/v0.29.4/full/";
         const urlParams = new URLSearchParams(window.location.search);
         const buildParam = urlParams.get("build");
         if (buildParam) {
@@ -114,7 +114,7 @@
 
         // load additional wheel package
         await pyodide.loadPackage("numpy");
-        await pyodide.loadPackage("mlir_python_bindings-0.0.1-cp312-cp312-pyodide_2024_0_wasm32.whl");
+        await pyodide.loadPackage("mlir_python_bindings-0.0.1-cp313-cp313-pyemscripten_2025_0_wasm32.whl");
         await pyodide.loadPackage("eudsl_python_extras-0.0.1-py3-none-any.whl");
 
         let { repr_shorten, BANNER, PyodideConsole } =
