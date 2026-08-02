@@ -22,6 +22,12 @@ concurrency:
 # Keep in sync with pages/console/index.html.
 env:
   PYODIDE_PLATFORM_TAG: pyodide_2024_0_wasm32
+  # The Pyodide that runs the deployed pages. Must match the cross-build
+  # environment the wheel was built against, or the wheel's ABI tag will not
+  # load. Keep in sync with PYODIDE_VERSION in
+  # .github/actions/setup_base/action.yml and the CDN url in
+  # pages/console/index.html; the "Verify page contents" step checks the latter.
+  PYODIDE_VERSION: 0.27.7
 
 jobs:
   deploy:
@@ -113,6 +119,15 @@ jobs:
           mkdir -p page/jupyter
 
           python -m pip install -r pages/jupyter/requirements.txt
+
+          # jupyterlite-pyodide-kernel pins its own Pyodide (0.27.6 in 0.6.1),
+          # which is not necessarily the one the wheel was built against.
+          # JUPYTERLITE_PYODIDE_URL makes the build vendor a specific
+          # distribution instead, so the notebook and the console run the same
+          # Pyodide as the wheel's ABI. Keep in sync with PYODIDE_VERSION in
+          # .github/actions/setup_base/action.yml.
+          export JUPYTERLITE_PYODIDE_URL="https://github.com/pyodide/pyodide/releases/download/${PYODIDE_VERSION}/pyodide-${PYODIDE_VERSION}.tar.bz2"
+
           jupyter lite build \
             --contents pages/jupyter/contents \
             --output-dir page/jupyter \
@@ -130,16 +145,26 @@ jobs:
           # The console's Pyodide and the wheel's ABI tag must agree, or the
           # wheel silently fails to load. The build pins its cross-build env to
           # the same version (.github/actions/setup_base/action.yml); this checks
-          # the console was not bumped independently.
+          # neither the console nor this workflow was bumped independently.
           console_pyodide=$(grep -oE 'cdn\.jsdelivr\.net/pyodide/v[0-9.]+' pages/console/index.html \
                             | head -1 | grep -oE '[0-9.]+$')
           setup_pyodide=$(grep -oE '^ *PYODIDE_VERSION=[0-9.]+' .github/actions/setup_base/action.yml \
                           | head -1 | grep -oE '[0-9.]+$')
-          if [ "$console_pyodide" != "$setup_pyodide" ]; then
-            echo "::error::pages/console/index.html uses Pyodide $console_pyodide but the wheel is" \
-                 "built against $setup_pyodide (setup_base/action.yml). The wheel will not load."
-            exit 1
-          fi
+          for got in "$console_pyodide" "$PYODIDE_VERSION"; do
+            if [ "$got" != "$setup_pyodide" ]; then
+              echo "::error::Pyodide version mismatch: console=$console_pyodide," \
+                   "deploy workflow=$PYODIDE_VERSION, wheel built against $setup_pyodide." \
+                   "The wheel will not load."
+              exit 1
+            fi
+          done
+
+          # With JUPYTERLITE_PYODIDE_URL set, jupyterlite vendors that Pyodide
+          # into static/pyodide (PyodideAddon.output_pyodide) instead of falling
+          # back to the CDN default that jupyterlite-pyodide-kernel pins. If this
+          # is missing the notebook is running a different Pyodide than the
+          # wheel was built for.
+          test -f page/jupyter/static/pyodide/pyodide.js
 
           test -f page/index.html
           test -f page/console/index.html
