@@ -132,6 +132,13 @@ jobs:
           test -f page/jupyter/index.html
           test -f page/jupyter/pypi/all.json
 
+          # `jupyter lite build --contents` takes the whole directory, so a
+          # notebook that fails to copy would otherwise go unnoticed until
+          # someone opened the empty file browser.
+          for nb in pages/jupyter/contents/*.ipynb; do
+            test -f "page/jupyter/files/$(basename "$nb")"
+          done
+
           python - <<'PY'
           import json
           import os

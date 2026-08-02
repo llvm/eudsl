@@ -157,7 +157,6 @@ if(MLIR_PYTHON_BINDINGS_WGSL)
     ADD_TO_PARENT MLIRPythonSources
     SOURCES
       wgsl.py
-      webgpu.py
   )
 
   declare_mlir_python_extension(MLIRPythonExtension.SPIRVToWGSL.extension
