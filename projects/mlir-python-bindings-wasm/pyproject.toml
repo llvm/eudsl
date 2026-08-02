@@ -72,9 +72,15 @@ CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 # auditwheel-emscripten stamps the same $ORIGIN, but only onto libraries it
 # relocates into <pkg>.libs -- these are installed side by side by MLIR's own
 # CMake, so nothing stamps them and they have to be born with it.
-CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\\\$ORIGIN"
-CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\\\$ORIGIN"
-CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\\\$ORIGIN"
+#
+# The escaping is load bearing and easy to get wrong: the value reaches a shell,
+# so a bare $ORIGIN expands to empty and $$ORIGIN expands to a pid. What ends up
+# in the dylink.0 RUNTIME_PATH is only visible after a build -- check it with
+# auditwheel_emscripten.module.parse_dylink_section, which should report
+# runtime_paths=['$ORIGIN'] rather than [''] or ['\'].
+CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\$ORIGIN"
+CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\$ORIGIN"
+CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\$ORIGIN"
 CMAKE_VERBOSE_MAKEFILE = "ON"
 # De-duplicate static libraries on link lines.
 #

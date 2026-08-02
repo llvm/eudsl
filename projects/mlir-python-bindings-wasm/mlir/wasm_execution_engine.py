@@ -1,11 +1,42 @@
 import ctypes
 import random
+import shutil
 import string
+import tempfile
+from pathlib import Path
 
 
 from ._mlir_libs import _mlirWasmExecutionEngine
 from .ir import Module, StringAttr
 from .runtime import np_to_memref as _np_to_memref
+
+
+def _load_global(path):
+    """dlopen `path` with RTLD_GLOBAL, working around Pyodide's load cache.
+
+    Pyodide dlopens every .so inside an installed package with RTLD_LOCAL and no
+    way to ask for anything else -- loadDynlib calls
+    `_emscripten_dlopen_promise(path, 2)`, i.e. RTLD_NOW, hardcoded
+    (pyodide/pyodide#5610 replaced the 0.27 loader, which took a `global` flag).
+    Anything shipped in mlir/_mlir_libs is therefore already loaded and already
+    local by the time this runs, and asking for it again by the same path just
+    returns the cached local handle: RTLD_GLOBAL is silently ignored and its
+    symbols never reach the global table. A module JIT-compiled later then dies
+    at instantiation with
+
+      Dynamic linking error: cannot resolve symbol _mlir_ciface_myPrintMemrefShapeF32
+
+    A path the loader has not seen gets a real dlopen that honours RTLD_GLOBAL,
+    so copy the library somewhere fresh first. The copy is kept alive for the
+    process, since unlinking it out from under the loader is not safe.
+    """
+    tmp_dir = tempfile.mkdtemp(prefix="mlir_shared_libs_")
+    fresh = Path(tmp_dir) / Path(path).name
+    shutil.copy(path, fresh)
+    lib = ctypes.CDLL(str(fresh), mode=ctypes.RTLD_GLOBAL)
+    # Anchor the temp path so it outlives this call.
+    lib._mlir_fresh_copy = str(fresh)
+    return lib
 
 
 class WasmExecutionEngine:
@@ -29,13 +60,16 @@ class WasmExecutionEngine:
             # 8 is the max length?
             module_name = "".join(random.choices(string.ascii_uppercase, k=8)).lower()
 
+        # Before link_load_module: the JIT-compiled module resolves its imports
+        # when it is instantiated, so anything it calls into has to be global by
+        # then.
+        for i, sh in enumerate(self.shared_libs):
+            self.shared_libs[i] = _load_global(sh)
+
         object_fn = _mlirWasmExecutionEngine.compile_module(
             module_op, module_name, opt_level
         )
         self.link_load_module(object_fn, module_name)
-
-        for i, sh in enumerate(self.shared_libs):
-            self.shared_libs[i] = ctypes.CDLL(sh, mode=ctypes.RTLD_GLOBAL)
 
     @staticmethod
     def link_load_module(object_fn, module_name):
