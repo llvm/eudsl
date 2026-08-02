@@ -75,14 +75,23 @@ jobs:
         run: |
           set -euxo pipefail
 
-          pip download mlir-python-bindings --plat "$PYODIDE_PLATFORM_TAG" --no-deps --python-version "${PYODIDE_PY_TAG#cp}" -f page/index.html
+          # --no-index, or a tag that matches nothing here falls back to PyPI, where
+          # `mlir-python-bindings` is a 6kB name-reservation stub tagged py3-none-any.
+          # That is compatible with every platform, so pip picks it, the tag check
+          # below waves it through as a pure-Python wheel, and the deploy ships a
+          # placeholder in place of the 23MB wasm wheel.
+          pip download mlir-python-bindings --plat "$PYODIDE_PLATFORM_TAG" --no-deps \
+            --python-version "${PYODIDE_PY_TAG#cp}" --no-index -f page/index.html
+
+          # Belt and braces: the wheel that lands must be the wasm one.
+          ls mlir_python_bindings-*-"$PYODIDE_PLATFORM_TAG".whl
 
       - name: Get eudsl-python-extras
         shell: bash
         run: |
           set -euxo pipefail
 
-          pip wheel eudsl-python-extras -f page/index.html --no-deps -w .
+          pip wheel eudsl-python-extras --no-index -f page/index.html --no-deps -w .
 
       - name: Create WASM console page
         shell: bash
@@ -201,18 +210,17 @@ jobs:
           # Naming the package is not enough. The pinned Pyodide only installs wheels whose
           # platform tag it recognises, so an index full of wheels tagged for a newer ABI
           # resolves and then fails at install time with "Can't find a pure Python 3 wheel".
-          for filename in (
-              f["filename"]
-              for pkg in index.values()
-              for files in pkg["releases"].values()
-              for f in files
-          ):
-              tag = re.sub(r"\.whl$", "", filename).rsplit("-", 1)[-1]
-              if tag not in (platform_tag, "any"):
-                  raise SystemExit(
-                      f"{filename} is tagged {tag}, which the pinned Pyodide cannot install; "
-                      f"expected {platform_tag} or a pure-Python wheel"
-                  )
+          for name, pkg in index.items():
+              for filename in (f["filename"] for files in pkg["releases"].values() for f in files):
+                  tag = re.sub(r"\.whl$", "", filename).rsplit("-", 1)[-1]
+                  # mlir-python-bindings is an extension package, so `any` here means a
+                  # placeholder got resolved instead of the wasm wheel.
+                  allowed = (platform_tag,) if name == "mlir-python-bindings" else (platform_tag, "any")
+                  if tag not in allowed:
+                      raise SystemExit(
+                          f"{filename} is tagged {tag}, which the pinned Pyodide cannot install; "
+                          f"expected one of {allowed}"
+                      )
 
           # The console page hardcodes the wheel filenames it loads, so a rename on either
           # side silently turns into a 404 at runtime.

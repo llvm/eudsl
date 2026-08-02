@@ -250,6 +250,15 @@ runs:
           echo CMAKE_OSX_DEPLOYMENT_TARGET=11.0 >> $GITHUB_ENV
         fi
 
+    # pyodide-build compares the HOST python's major.minor against the cross-build
+    # environment's and refuses a mismatch, so PYODIDE_VERSION below dictates the
+    # host interpreter too -- not inputs.python-version, which defaults to 3.12.
+    - name: Install host Python for the cross-build environment
+      if: inputs.target-arch == 'wasm32'
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+
     - name: Install pyodide
       if: inputs.target-arch == 'wasm32'
       shell: bash
