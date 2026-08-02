@@ -127,6 +127,20 @@ jobs:
         run: |
           set -euxo pipefail
 
+          # The console's Pyodide and the wheel's ABI tag must agree, or the
+          # wheel silently fails to load. The build pins its cross-build env to
+          # the same version (.github/actions/setup_base/action.yml); this checks
+          # the console was not bumped independently.
+          console_pyodide=$(grep -oE 'cdn\.jsdelivr\.net/pyodide/v[0-9.]+' pages/console/index.html \
+                            | head -1 | grep -oE '[0-9.]+$')
+          setup_pyodide=$(grep -oE '^ *PYODIDE_VERSION=[0-9.]+' .github/actions/setup_base/action.yml \
+                          | head -1 | grep -oE '[0-9.]+$')
+          if [ "$console_pyodide" != "$setup_pyodide" ]; then
+            echo "::error::pages/console/index.html uses Pyodide $console_pyodide but the wheel is" \
+                 "built against $setup_pyodide (setup_base/action.yml). The wheel will not load."
+            exit 1
+          fi
+
           test -f page/index.html
           test -f page/console/index.html
           test -f page/jupyter/index.html

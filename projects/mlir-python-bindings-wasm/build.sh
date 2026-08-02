@@ -3,8 +3,21 @@
 
 if ! command -v pyodide >/dev/null 2>&1
 then
-  pip install pyodide-build
+  pip install "pyodide-build>=0.28.0"
 fi
+
+# Pin the cross-build environment; its python version becomes the wheel's ABI
+# tag. Unpinned, pyodide-build takes the latest compatible one, which currently
+# yields cp313 -- and the console and jupyterlite kernel both run a Pyodide with
+# cp312, so such a wheel will not load. Keep in sync with the same constant in
+# .github/actions/setup_base/action.yml.
+#
+# NOTE this needs a python 3.12 interpreter: the compatibility check compares the
+# HOST python's major.minor against the cross-build env's and refuses a mismatch,
+# so from 3.13 this fails with "not compatible with the current environment".
+PYODIDE_VERSION=${PYODIDE_VERSION:-0.27.7}
+pyodide xbuildenv install "$PYODIDE_VERSION"
+echo "pyodide $PYODIDE_VERSION -> python $(pyodide config get python_version)"
 
 # pyodide venv .venv-pyodide
 # pip-compile --all-build-deps --only-build-deps -o ./build-reqs.txt ./pyproject.toml
