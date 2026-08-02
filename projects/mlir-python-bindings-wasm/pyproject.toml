@@ -67,6 +67,24 @@ CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
 CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
 CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
 CMAKE_VERBOSE_MAKEFILE = "ON"
+# De-duplicate static libraries on link lines.
+#
+# MLIR's dependency graph puts libMLIRBytecodeWriter.a, libMLIRIR.a and friends
+# on the libMLIRPythonWasmCAPI.so link line 20+ times each (libLLVMSupport.a 224
+# times). wasm-ld records symbols as it goes rather than maintaining an
+# unresolved set, so it rejects the same archive member appearing twice:
+#   wasm-ld: error: duplicate symbol: mlir::BytecodeWriterConfig::~BytecodeWriterConfig()
+#   >>> defined in .../libMLIRBytecodeWriter.a(BytecodeWriter.cpp.o)
+#   >>> defined in .../libMLIRBytecodeWriter.a(BytecodeWriter.cpp.o)
+#
+# CMP0156 alone does not fix this: it only de-duplicates for platforms CMake
+# knows have a capable linker (Apple, Windows, and the Platform/Linker/*-LLD
+# modules), and emscripten is not one of them -- Platform/Emscripten.cmake never
+# sets CMAKE_<LANG>_LINK_LIBRARIES_PROCESSING. Set it explicitly, matching what
+# Linux-LLD.cmake does, since wasm-ld has the same capability.
+CMAKE_POLICY_DEFAULT_CMP0156 = "NEW"
+CMAKE_C_LINK_LIBRARIES_PROCESSING = "ORDER=REVERSE;DEDUPLICATION=ALL"
+CMAKE_CXX_LINK_LIBRARIES_PROCESSING = "ORDER=REVERSE;DEDUPLICATION=ALL"
 
 # so that NATIVE doesn't try to get built
 LLVM_NATIVE_TOOL_DIR = { env = "LLVM_NATIVE_TOOL_DIR", default = "" }
