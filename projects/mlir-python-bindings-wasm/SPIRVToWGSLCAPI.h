@@ -18,14 +18,27 @@
 extern "C" {
 #endif
 
+typedef enum {
+  /// `*wgsl` holds the translated WGSL.
+  MlirSPIRVToWGSLSuccess = 0,
+  /// Tint rejected the module; `*wgsl` holds its diagnostics.
+  MlirSPIRVToWGSLTranslationFailed = 1,
+  /// Ran out of memory. `*wgsl` is NULL and any diagnostic is lost -- reporting
+  /// this separately keeps it from masquerading as a translation failure with
+  /// an empty message, which matters on wasm where the heap is small.
+  MlirSPIRVToWGSLOutOfMemory = 2,
+  /// `wgsl` was NULL, or `words` was NULL with a nonzero `wordCount`.
+  MlirSPIRVToWGSLInvalidArgument = 3,
+} MlirSPIRVToWGSLStatus;
+
 /// Translates a SPIR-V binary to WGSL source.
 ///
-/// `words`/`wordCount` are the SPIR-V module. On success returns true and
-/// stores newly allocated, NUL-terminated WGSL in `*wgsl`; on failure returns
-/// false and stores a diagnostic there instead. Either way the caller owns the
-/// buffer and must release it with `mlirSPIRVToWGSLFree`.
-MLIR_CAPI_EXPORTED bool mlirSPIRVToWGSL(const uint32_t *words, size_t wordCount,
-                                        char **wgsl);
+/// `words`/`wordCount` are the SPIR-V module. On success `*wgsl` holds newly
+/// allocated, NUL-terminated WGSL; on MlirSPIRVToWGSLTranslationFailed it holds
+/// diagnostics instead. In both cases the caller owns the buffer and must
+/// release it with `mlirSPIRVToWGSLFree`. Otherwise `*wgsl` is set to NULL.
+MLIR_CAPI_EXPORTED MlirSPIRVToWGSLStatus
+mlirSPIRVToWGSL(const uint32_t *words, size_t wordCount, char **wgsl);
 
 MLIR_CAPI_EXPORTED void mlirSPIRVToWGSLFree(char *wgsl);
 

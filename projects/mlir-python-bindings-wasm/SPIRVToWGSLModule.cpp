@@ -16,6 +16,8 @@
 
 #include <cstdint>
 #include <cstring>
+#include <memory>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -34,18 +36,31 @@ NB_MODULE(_mlirSPIRVToWGSL, m) {
               "SPIR-V binary length must be a multiple of 4 bytes");
 
         std::vector<uint32_t> words(spv.size() / 4);
-        std::memcpy(words.data(), spv.c_str(), spv.size());
+        if (!words.empty())
+          std::memcpy(words.data(), spv.c_str(), spv.size());
 
-        char *out = nullptr;
-        bool ok = mlirSPIRVToWGSL(words.data(), words.size(), &out);
-        std::string result(out ? out : "");
-        mlirSPIRVToWGSLFree(out);
-        if (!ok)
-          throw std::runtime_error(result);
-        return result;
+        // unique_ptr so the buffer is released even if copying it into a
+        // std::string throws.
+        char *raw = nullptr;
+        MlirSPIRVToWGSLStatus status =
+            mlirSPIRVToWGSL(words.data(), words.size(), &raw);
+        std::unique_ptr<char, decltype(&mlirSPIRVToWGSLFree)> owned(
+            raw, &mlirSPIRVToWGSLFree);
+
+        switch (status) {
+        case MlirSPIRVToWGSLSuccess:
+          return std::string(owned.get());
+        case MlirSPIRVToWGSLTranslationFailed:
+          throw std::runtime_error(std::string(owned.get()));
+        case MlirSPIRVToWGSLOutOfMemory:
+          throw std::bad_alloc();
+        case MlirSPIRVToWGSLInvalidArgument:
+          throw std::invalid_argument("invalid SPIR-V buffer");
+        }
+        throw std::runtime_error("unknown mlirSPIRVToWGSL status");
       },
       "spirv"_a,
       "Translate a SPIR-V binary to WGSL. Raises RuntimeError with Tint's "
       "diagnostics (including the SPIR-V header summary and, where available, "
-      "the Tint IR) if translation fails.");
+      "the Tint IR) if translation fails, or MemoryError if allocation fails.");
 }

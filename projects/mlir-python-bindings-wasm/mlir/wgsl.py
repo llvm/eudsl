@@ -18,12 +18,21 @@ SPIRV_MAGIC = 0x07230203
 def spirv_to_wgsl(spirv: bytes) -> str:
     """Translate a SPIR-V binary to WGSL source.
 
-    Raises RuntimeError carrying Tint's diagnostics if translation fails.
+    Raises ValueError if the input is not a SPIR-V binary, RuntimeError carrying
+    Tint's diagnostics if translation fails, and MemoryError if the translator
+    runs out of memory.
     """
-    if len(spirv) >= 4:
-        magic = int.from_bytes(spirv[:4], "little")
-        if magic != SPIRV_MAGIC:
-            raise ValueError(
-                f"not a SPIR-V binary: magic is {magic:#010x}, expected {SPIRV_MAGIC:#010x}"
-            )
+    # A SPIR-V module is at least a 5-word header. Check the length before the
+    # magic so a short buffer gets this message rather than being handed to the
+    # C++ side, which would report a confusing Tint-flavoured error instead.
+    if len(spirv) < 20:
+        raise ValueError(
+            f"not a SPIR-V binary: {len(spirv)} bytes is shorter than the "
+            "20-byte header"
+        )
+    magic = int.from_bytes(spirv[:4], "little")
+    if magic != SPIRV_MAGIC:
+        raise ValueError(
+            f"not a SPIR-V binary: magic is {magic:#010x}, expected {SPIRV_MAGIC:#010x}"
+        )
     return _mlirSPIRVToWGSL.spirv_to_wgsl(spirv)

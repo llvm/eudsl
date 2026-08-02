@@ -58,9 +58,22 @@ char *dupString(const std::string &s) {
 
 extern "C" {
 
-bool mlirSPIRVToWGSL(const uint32_t *words, size_t wordCount, char **wgsl) {
+MlirSPIRVToWGSLStatus mlirSPIRVToWGSL(const uint32_t *words, size_t wordCount,
+                                      char **wgsl) {
   if (!wgsl)
-    return false;
+    return MlirSPIRVToWGSLInvalidArgument;
+  *wgsl = nullptr;
+  if (!words && wordCount)
+    return MlirSPIRVToWGSLInvalidArgument;
+
+  // Report an allocation failure as itself rather than letting it look like a
+  // translation failure with an empty diagnostic.
+  auto emit = [&](const std::string &s) {
+    *wgsl = dupString(s);
+    return *wgsl ? MlirSPIRVToWGSLTranslationFailed
+                 : MlirSPIRVToWGSLOutOfMemory;
+  };
+
   std::vector<uint32_t> spv(words, words + wordCount);
 
   auto irResult = tint::spirv::reader::ReadIR(spv);
@@ -69,8 +82,7 @@ bool mlirSPIRVToWGSL(const uint32_t *words, size_t wordCount, char **wgsl) {
     os << "failed to parse SPIR-V into Tint IR: " << irResult.Failure().reason
        << "\n";
     printSPIRVModuleSummary(spv, os);
-    *wgsl = dupString(os.str());
-    return false;
+    return emit(os.str());
   }
   tint::core::ir::Module irModule = irResult.Move();
 
@@ -84,8 +96,7 @@ bool mlirSPIRVToWGSL(const uint32_t *words, size_t wordCount, char **wgsl) {
     printSPIRVModuleSummary(spv, os);
     os << "Tint IR at failure:\n"
        << tint::core::ir::Disassembler(irModule).Plain() << "\n";
-    *wgsl = dupString(os.str());
-    return false;
+    return emit(os.str());
   }
 
   auto wgslResult =
@@ -96,12 +107,11 @@ bool mlirSPIRVToWGSL(const uint32_t *words, size_t wordCount, char **wgsl) {
     printSPIRVModuleSummary(spv, os);
     os << "Tint IR at failure:\n"
        << tint::core::ir::Disassembler(irModule).Plain() << "\n";
-    *wgsl = dupString(os.str());
-    return false;
+    return emit(os.str());
   }
 
   *wgsl = dupString(wgslResult->wgsl);
-  return *wgsl != nullptr;
+  return *wgsl ? MlirSPIRVToWGSLSuccess : MlirSPIRVToWGSLOutOfMemory;
 }
 
 void mlirSPIRVToWGSLFree(char *wgsl) { std::free(wgsl); }
