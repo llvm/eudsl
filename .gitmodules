@@ -4,3 +4,26 @@
 	ignore = dirty
 	shallow = true
 	branch = main
+# Tint (SPIR-V -> WGSL) for the WebGPU path, plus its dependencies. Only needed
+# when building with MLIR_PYTHON_BINDINGS_WGSL=ON; Dawn's runtime is not used,
+# since the browser already implements WebGPU.
+[submodule "third_party/dawn"]
+	path = third_party/dawn
+	url = https://github.com/google/dawn.git
+	ignore = dirty
+	shallow = true
+[submodule "third_party/SPIRV-Tools"]
+	path = third_party/SPIRV-Tools
+	url = https://github.com/KhronosGroup/SPIRV-Tools.git
+	ignore = dirty
+	shallow = true
+[submodule "third_party/SPIRV-Headers"]
+	path = third_party/SPIRV-Headers
+	url = https://github.com/KhronosGroup/SPIRV-Headers.git
+	ignore = dirty
+	shallow = true
+[submodule "third_party/abseil-cpp"]
+	path = third_party/abseil-cpp
+	url = https://github.com/abseil/abseil-cpp.git
+	ignore = dirty
+	shallow = true

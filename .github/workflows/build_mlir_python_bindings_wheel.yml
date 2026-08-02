@@ -226,8 +226,18 @@ jobs:
 
       - name: "Build mlir-python-bindings"
         run: |
-          
+
           if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
+            # Build the SPIR-V -> WGSL extension (Tint) so kernels compiled in the
+            # browser can be handed to WebGPU. Needs the dawn/SPIRV-*/abseil-cpp
+            # submodules, which "Get submodules" above already initializes.
+            export CMAKE_ARGS="-DMLIR_PYTHON_BINDINGS_WGSL=ON"
+            # Without this every extension fails to link with
+            #   undefined exported symbol: "_LLVMAddSymbol" [-Wundefined] [-Werror]
+            # (emscripten-core/emscripten#25911). pyodide-build computes an export
+            # list and passes -sSIDE_MODULE=2 -sEXPORTED_FUNCTIONS=@file;
+            # "whole_archive" makes get_export_flags() skip both.
+            export PYODIDE_BUILD_EXPORTS=whole_archive
             pyodide build "$PWD/projects/mlir-python-bindings-wasm" -o wheelhouse --compression-level 10
           else
             $python3_command -m cibuildwheel "$PWD/projects/mlir-python-bindings" --output-dir wheelhouse
@@ -372,7 +382,12 @@ jobs:
 
   test-mlir-python-bindings-wasm:
 
-    if: github.event_name == 'pull_request'
+    # Unlike the other test jobs this also runs on the release path, and
+    # release-mlir-python-bindings waits for it. The wasm wheel is the one that
+    # gets deployed to the console and the jupyterlite notebook, and this job is
+    # what proves its side modules actually dlopen -- a wheel can link cleanly
+    # and still fail to load (emscripten-core/emscripten#25911).
+    if: (github.event_name == 'pull_request') || (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
 
     needs: [build-mlir-python-bindings]
 
@@ -420,11 +435,16 @@ jobs:
           
           python projects/mlir-python-bindings-wasm/test_wasm_execution_engine.py
 
+          # Checks that every extension in the wheel actually loads and that
+          # MLIR -> SPIR-V -> WGSL works. Skips if the wheel was built without
+          # MLIR_PYTHON_BINDINGS_WGSL.
+          python projects/mlir-python-bindings-wasm/test_spirv_to_wgsl.py
+
   release-mlir-python-bindings:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
 
-    needs: [build-mlir-python-bindings]
+    needs: [build-mlir-python-bindings, test-mlir-python-bindings-wasm]
 
     runs-on: "ubuntu-22.04"
 

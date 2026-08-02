@@ -103,6 +103,75 @@ declare_mlir_python_extension(MLIRPythonExtension.WasmExecutionEngine.extension
     WasmCompilerLinkerLoaderCAPI
 )
 
+# ##############################################################################
+# SPIR-V -> WGSL, so kernels compiled to SPIR-V in the browser can be handed to
+# WebGPU. Requires Tint, so it is opt-in: without MLIR_PYTHON_BINDINGS_WGSL the
+# wheel is built exactly as before.
+#
+# Only Tint's SPIR-V reader and WGSL writer are needed; Dawn's runtime is not.
+# The browser already implements WebGPU, so nothing here talks to a device.
+# ##############################################################################
+
+option(MLIR_PYTHON_BINDINGS_WGSL "Build the SPIR-V -> WGSL extension (needs Tint)" OFF)
+
+if(MLIR_PYTHON_BINDINGS_WGSL)
+  # Tint lives inside the dawn repo but does not depend on dawn: Tint.cmake adds
+  # only src/utils and src/tint, skipping dawn's top-level CMakeLists entirely.
+  # That matters under Emscripten, where dawn's top level unconditionally
+  # descends into generator/ and src/{emdawnwebgpu,dawn} -- pulling in a jinja2
+  # code generator we have no use for and a dawncpp_module target that forces
+  # C++20 module scanning, which emscan-deps then chokes on.
+  set(TINT_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Tint.cmake")
+
+  if(NOT TARGET tint_lang_spirv_reader OR NOT TARGET tint_lang_wgsl_writer)
+    message(FATAL_ERROR
+      "MLIR_PYTHON_BINDINGS_WGSL is ON but the tint targets were not created. "
+      "Are the third_party/{dawn,SPIRV-Tools,SPIRV-Headers,abseil-cpp} "
+      "submodules initialized?")
+  endif()
+
+  add_mlir_public_c_api_library(SPIRVToWGSLCAPI
+    SPIRVToWGSL.cpp
+
+    PARTIAL_SOURCES_INTENDED
+
+    LINK_LIBS PUBLIC
+    tint_lang_spirv_reader
+    tint_lang_wgsl_writer
+    tint_lang_core_ir
+  )
+
+  # Tint's public headers use concepts and std::span. Set this per-target rather
+  # than on the directory: MLIR builds the rest of the wheel as C++17, and a
+  # directory-wide bump switches on C++20 module dependency scanning, which
+  # emscan-deps rejects (it does not understand emscripten's -sSUPPORT_LONGJMP).
+  set_target_properties(obj.SPIRVToWGSLCAPI PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_SCAN_FOR_MODULES OFF
+  )
+
+  declare_mlir_python_sources(MLIRPythonExtension.SPIRVToWGSL
+    ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mlir"
+    ADD_TO_PARENT MLIRPythonSources
+    SOURCES
+      wgsl.py
+      webgpu.py
+  )
+
+  declare_mlir_python_extension(MLIRPythonExtension.SPIRVToWGSL.extension
+    MODULE_NAME _mlirSPIRVToWGSL
+    ADD_TO_PARENT MLIRPythonExtension.SPIRVToWGSL
+    ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+    PYTHON_BINDINGS_LIBRARY nanobind
+    SOURCES
+      SPIRVToWGSLModule.cpp
+    EMBED_CAPI_LINK_LIBS
+      SPIRVToWGSLCAPI
+  )
+endif()
+
 add_mlir_python_common_capi_library(MLIRPythonWasmCAPI
   INSTALL_COMPONENT MLIRPythonWasmModules
   INSTALL_DESTINATION mlir/_mlir_libs
