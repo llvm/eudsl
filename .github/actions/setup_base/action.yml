@@ -57,6 +57,29 @@ runs:
         timezoneMacos: "Asia/Singapore"
         timezoneWindows: "Singapore Standard Time"
 
+    # Zip stores naive local time with no timezone, and the step above puts the
+    # runners in Asia/Singapore. So a wheel built at 13:09 UTC records 21:09, and
+    # unzipping it anywhere west of Singapore yields files dated hours in the
+    # future -- which makes ninja re-run cmake until it gives up:
+    #   ninja: error: manifest 'build.ninja' still dirty after 100 tries,
+    #   perhaps system time is not set
+    # That bites anyone unpacking a CI artifact to build against locally.
+    # SOURCE_DATE_EPOCH is honoured by scikit-build-core and by pyodide build's
+    # repack, so setting it here covers both scripts/llvm_wasm and
+    # projects/mlir-python-bindings-wasm.
+    #
+    # Midnight UTC *yesterday*, not today: with SOURCE_DATE_EPOCH set the stamp
+    # is rendered in UTC, which removes the Singapore skew, but a naive stamp is
+    # still read back as local time. Midnight-today would still look like the
+    # future to a consumer in UTC-12 unpacking a build made before noon UTC.
+    # Backing off a day beats any real timezone offset while keeping the
+    # timestamp recent and plausible for everything else that reads this.
+    - name: "Set SOURCE_DATE_EPOCH"
+      shell: bash
+      run: |
+
+        echo "SOURCE_DATE_EPOCH=$(( ($(date -u +%s) / 86400 - 1) * 86400 ))" >> $GITHUB_ENV
+
     - name: "Clean ubuntu"
       if: (inputs.container && startsWith(inputs.runs-on, 'ubuntu'))
       shell: bash
