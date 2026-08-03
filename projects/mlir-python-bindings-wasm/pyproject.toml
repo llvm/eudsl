@@ -63,9 +63,24 @@ CMAKE_PLATFORM_NO_VERSIONED_SONAME = "ON"
 CMAKE_VISIBILITY_INLINES_HIDDEN = "ON"
 CMAKE_C_VISIBILITY_PRESET = "hidden"
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
-CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
-CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
-CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
+# -rpath $ORIGIN so each extension can find the dylibs sitting beside it in
+# mlir/_mlir_libs. Pyodide >= 0.28 loads side modules with emscripten_dlopen
+# (pyodide/pyodide#5610), which resolves a dylink.0 NEEDED entry against
+# RUNTIME_PATH; the hand-rolled filesystem shim that used to find siblings by
+# name is gone. Without this every extension fails with
+#   ImportError: dynamic module does not define module export function (PyInit__mlir)
+# auditwheel-emscripten stamps the same $ORIGIN, but only onto libraries it
+# relocates into <pkg>.libs -- these are installed side by side by MLIR's own
+# CMake, so nothing stamps them and they have to be born with it.
+#
+# The escaping is load bearing and easy to get wrong: the value reaches a shell,
+# so a bare $ORIGIN expands to empty and $$ORIGIN expands to a pid. What ends up
+# in the dylink.0 RUNTIME_PATH is only visible after a build -- check it with
+# auditwheel_emscripten.module.parse_dylink_section, which should report
+# runtime_paths=['$ORIGIN'] rather than [''] or ['\'].
+CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\$ORIGIN"
+CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\$ORIGIN"
+CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\$ORIGIN"
 CMAKE_VERBOSE_MAKEFILE = "ON"
 # De-duplicate static libraries on link lines.
 #
