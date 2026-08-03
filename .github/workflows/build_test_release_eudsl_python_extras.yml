@@ -155,10 +155,10 @@ jobs:
           run_id: ${{ inputs.workflow_caller_run_id }}
 
       - name: "Install mlir-python-bindings"
-        run: python -m pip install mlir-python-bindings -f ${{ inputs.workflow_call && 'wheelhouse' || 'https://llvm.github.io/eudsl' }}
+        run: python -m pip install mlir-python-bindings -f ${{ inputs.workflow_call && 'wheelhouse' || 'https://github.com/llvm/eudsl/releases/expanded_assets/mlir-python-bindings' }}
 
       - name: "Install development dependencies"
-        run: python -m pip install pytest mlir-native-tools -f https://llvm.github.io/eudsl
+        run: python -m pip install pytest mlir-native-tools -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
 
       - uses: actions/download-artifact@v4
         with:
