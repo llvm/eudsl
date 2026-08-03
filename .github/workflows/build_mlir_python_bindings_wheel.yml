@@ -132,9 +132,9 @@ jobs:
         run: |
           
           if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
-            pip download mlir-wheel --plat "$PYODIDE_PLATFORM_TAG" --no-deps --python-version "${PYODIDE_PY_TAG#cp}" -f https://llvm.github.io/eudsl
+            pip download mlir-wheel --plat "$PYODIDE_PLATFORM_TAG" --no-deps --python-version "${PYODIDE_PY_TAG#cp}" -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
           else
-            pip download mlir-wheel -f https://llvm.github.io/eudsl
+            pip download mlir-wheel -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
           fi
           WHEEL_NAME=$(ls mlir_wheel*)
           $python3_command -m pip install pkginfo
@@ -145,7 +145,7 @@ jobs:
         if: ${{ !inputs.workflow_call }}
         run: |
           
-          pip download mlir_native_tools -f https://llvm.github.io/eudsl
+          pip download mlir_native_tools -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
 
       - name: Download LLVM distro artifacts
         if: ${{ inputs.workflow_call }}

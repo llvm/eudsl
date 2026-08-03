@@ -115,7 +115,7 @@ jobs:
         if: ${{ !inputs.workflow_call }}
         run: |
           
-          pip download mlir-wheel -f https://llvm.github.io/eudsl
+          pip download mlir-wheel -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
 
       - name: Download LLVM distro artifacts
         if: ${{ inputs.workflow_call }}
