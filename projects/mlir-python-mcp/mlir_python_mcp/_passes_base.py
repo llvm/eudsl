@@ -104,6 +104,14 @@ def run_pipeline(
     return module
 
 
+def _format_option_value(value):
+    # ListOption values are comma separated; each element stringifies itself,
+    # which is how StringIntPair and friends reach their `<string>:<int>` form.
+    if isinstance(value, (list, tuple)):
+        return ",".join(map(str, value))
+    return value
+
+
 class Pipeline:
     """Fluent builder for MLIR pass pipelines.
 
@@ -177,7 +185,9 @@ class Pipeline:
             if v is not None
         }
         if kwargs:
-            args_str = " ".join(f"{k}={v}" for k, v in kwargs.items())
+            args_str = " ".join(
+                f"{k}={_format_option_value(v)}" for k, v in kwargs.items()
+            )
             pass_str = f"{pass_name}{{ {args_str} }}"
         else:
             pass_str = f"{pass_name}"
@@ -292,3 +302,26 @@ class SparseParallelizationStrategy(StrEnum):
     ANY_STORAGE_OUTER_LOOP = "any-storage-outer-loop"
     DENSE_ANY_LOOP = "dense-any-loop"
     ANY_STORAGE_ANY_LOOP = "any-storage-any-loop"
+
+
+class StringIntPair:
+    """A pass option of C++ type std::pair<std::string, int32_t>.
+
+    llvm::cl parses each element as `<string>:<int>`, splitting on the last
+    colon, so the string half may itself contain colons.
+    """
+
+    def __init__(self, string: str, integer: int):
+        self.string = string
+        self.integer = integer
+
+    def __str__(self):
+        return f"{self.string}:{self.integer}"
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.string!r}, {self.integer!r})"
+
+    def __eq__(self, other):
+        if not isinstance(other, StringIntPair):
+            return NotImplemented
+        return (self.string, self.integer) == (other.string, other.integer)

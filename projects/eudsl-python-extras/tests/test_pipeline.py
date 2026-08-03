@@ -4,6 +4,7 @@ from mlir.extras.runtime._passes_base import (
     run_pipeline,
     get_module_name_for_debug_dump,
     MlirCompilerError,
+    StringIntPair,
 )
 from mlir.extras.runtime.passes import Pipeline as pipe
 from mlir.extras.testing import MLIRContext, mlir_ctx as ctx
@@ -135,6 +136,35 @@ def test_bufferize():
     p = pipe().bufferize()
     s = str(p)
     assert "one-shot-bufferize" in s
+
+
+def test_list_option_is_comma_joined():
+    p = pipe().canonicalize(disable_patterns=["a", "b"], enable_patterns=("c", "d"))
+    s = str(p)
+    assert "disable-patterns=a,b" in s
+    assert "enable-patterns=c,d" in s
+
+
+def test_string_int_pair():
+    assert str(StringIntPair("foo", 1)) == "foo:1"
+    # llvm::cl splits on the last colon, so the string half may contain colons
+    assert str(StringIntPair("my.domain:v2", 7)) == "my.domain:v2:7"
+    assert repr(StringIntPair("foo", 1)) == "StringIntPair('foo', 1)"
+    assert StringIntPair("foo", 1) == StringIntPair("foo", 1)
+    assert StringIntPair("foo", 1) != StringIntPair("foo", 2)
+    assert StringIntPair("foo", 1) != "foo:1"
+
+
+def test_string_int_pair_list_option(ctx: MLIRContext):
+    from mlir.passmanager import PassManager
+
+    p = pipe().tosa_to_spirv_tosa(
+        custom_op_domain_to_opcode=[StringIntPair("foo", 1), StringIntPair("bar", 2)]
+    )
+    assert "custom-op-domain-to-opcode=foo:1,bar:2" in str(p)
+    # MLIR has to accept what we serialized
+    pm = PassManager.parse(str(p))
+    assert "custom-op-domain-to-opcode={foo:1,bar:2}" in str(pm)
 
 
 def test_get_module_name_for_debug_dump(ctx: MLIRContext):

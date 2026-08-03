@@ -254,7 +254,7 @@ full size. Current measurements:
 
 | Tool | chars | lines |
 |---|---|---|
-| `list_passes` (no filter) | 23,439 | 316 |
+| `list_passes` (no filter) | 24,352 | 327 |
 | `list_ops` (`arith`) | 5,025 | 54 |
 | `list_ir_apis` | 3,602 | 156 |
 | `list_rewrite_apis` | 1,391 | 17 |
