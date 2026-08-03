@@ -80,18 +80,43 @@ jobs:
           # That is compatible with every platform, so pip picks it, the tag check
           # below waves it through as a pure-Python wheel, and the deploy ships a
           # placeholder in place of the 23MB wasm wheel.
+          #
+          # The flip side of --no-index is that "the wheel for this Pyodide has not
+          # been published yet" comes out of pip as a resolution error naming neither
+          # the tag nor the index. That is what every Pyodide bump looks like until
+          # build_mlir_python_bindings_wheel.yml lands its wasm wheel, so say so.
+          wheel_tag="$PYODIDE_PY_TAG-$PYODIDE_PY_TAG-$PYODIDE_PLATFORM_TAG"
+          if ! grep -q -- "-$wheel_tag.whl" page/index.html; then
+            echo "::error::no mlir-python-bindings wheel tagged $wheel_tag in the" \
+                 "releases pip index. The wasm wheel for Pyodide $PYODIDE_VERSION is" \
+                 "not published yet -- wait for build_mlir_python_bindings_wheel.yml" \
+                 "to finish on main and re-run this job."
+            exit 1
+          fi
+
           pip download mlir-python-bindings --plat "$PYODIDE_PLATFORM_TAG" --no-deps \
             --python-version "${PYODIDE_PY_TAG#cp}" --no-index -f page/index.html
 
           # Belt and braces: the wheel that lands must be the wasm one.
           ls mlir_python_bindings-*-"$PYODIDE_PLATFORM_TAG".whl
 
+      # The eudsl-python-extras release only ever carries an sdist, so this step has
+      # to build one -- and pip hands its index options to the isolated build env too,
+      # where --no-index means setuptools resolves to nothing and the build dies before
+      # it starts. Installing the build deps up front and dropping isolation leaves
+      # --no-index constraining only which eudsl-python-extras gets picked, which is
+      # the part that matters: PyPI carries a name-reservation sdist under this name.
+      # Keep in sync with build-system.requires in
+      # projects/eudsl-python-extras/pyproject.toml.
       - name: Get eudsl-python-extras
         shell: bash
         run: |
           set -euxo pipefail
 
-          pip wheel eudsl-python-extras --no-index -f page/index.html --no-deps -w .
+          pip install "setuptools>=64.0.0" wheel
+
+          pip wheel eudsl-python-extras --no-index -f page/index.html --no-deps \
+            --no-build-isolation -w .
 
       - name: Create WASM console page
         shell: bash
