@@ -1,7 +1,0 @@
-{
-  "mcpServers": {
-    "mlir-python-mcp": {
-      "command": "/Users/mlevental/miniconda3/envs/eudsl/bin/mlir-python-mcp"
-    }
-  }
-}
