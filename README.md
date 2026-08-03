@@ -11,7 +11,7 @@ embedded DSLs, in arbitrary languages, for targeting [MLIR](https://mlir.llvm.or
 
 FYI: this project is currently "alpha" quality.
 
-Currently, there are five components:
+Currently, there are six components:
 
 1. [eudsl-tblgen](./projects/eudsl-tblgen): Python bindings to [LLVM's TableGen library](https://github.com/llvm/llvm-project/tree/659192b1843c4af180700783caca4cdc7afa3eab/llvm/lib/TableGen);
 2. [eudsl-nbgen](./projects/eudsl-nbgen): A source-to-source translator that translates MLIR headers[^1] into direct `nanobind` bindings;
@@ -32,6 +32,9 @@ Currently, there are five components:
      where `EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX` is (as it says) the package prefix for your chosen host bindings.
      **When in doubt about this prefix**, it is everything up until `ir` when you import your bindings, e.g., in `import torch_mlir.ir`, 
      `torch_mlir` is the `EUDSL_PYTHON_EXTRAS_HOST_PACKAGE_PREFIX` for the torch-mlir bindings.
+6. [mlir-python-mcp](./projects/mlir-python-mcp): An [MCP](https://modelcontextprotocol.io) server exposing a persistent MLIR Python REPL, so that a coding agent can build and transform IR through the bindings rather than by editing MLIR text;
+   * Available via `pip install mlir-python-mcp -f https://llvm.github.io/eudsl`.
+   * See [projects/mlir-python-mcp/README.md](./projects/mlir-python-mcp/README.md) for the `.mcp.json` snippet and the list of tools.
 
 ## Wasm Playground
 

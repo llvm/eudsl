@@ -71,6 +71,7 @@ TYPE_MAP = {
     "mlir::SparseParallelizationStrategy": "SparseParallelizationStrategy",
     "mlir::arm_sme::ArmStreaming": '"arm_sme::ArmStreaming"',
     "std::string": "str",
+    "std::pair<std::string, int32_t>": "StringIntPair",
     "uint64_t": "int",
     "unsigned": "int",
     "mlir::GreedySimplifyRegionLevel": "GreedySimplifyRegionLevel",
@@ -145,18 +146,6 @@ def generate_pass_method(pass_: Pass, output_file):
 
         mlir_args = []
         for i, (n, t) in enumerate(py_args):
-            if "list" in t:
-                print(
-                    indent(
-                        f"if {n} is not None and isinstance({n}, (list, tuple)):",
-                        prefix=" " * ident * 2,
-                    ),
-                    file=output_file,
-                )
-                print(
-                    indent(f"{n} = ','.join(map(str, {n}))", prefix=" " * ident * 3),
-                    file=output_file,
-                )
             o = pass_.options[i]
             mlir_args.append(f'"{o.argument}": {n}')
         print(

@@ -1,6 +1,7 @@
 # Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+import contextlib
 import logging
 import os
 import sys
@@ -9,13 +10,12 @@ from contextlib import ExitStack
 from io import StringIO
 from typing import List, Optional, Union
 
-from ..context import disable_multithreading
-from ...ir import Module, StringAttr
-from ...passmanager import PassManager
+from mlir.ir import Module, StringAttr, Context
+from mlir.passmanager import PassManager
 
 try:
     from enum import StrEnum
-except ImportError:  # pragma: no cover
+except ImportError:
     from enum import Enum
 
     class StrEnum(str, Enum):
@@ -23,6 +23,16 @@ except ImportError:  # pragma: no cover
 
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def disable_multithreading(context=None):
+    if context is None:
+        context = Context.current
+
+    context.enable_multithreading(False)
+    yield
+    context.enable_multithreading(True)
 
 
 class MlirCompilerError(Exception):
@@ -103,6 +113,33 @@ def _format_option_value(value):
 
 
 class Pipeline:
+    """Fluent builder for MLIR pass pipelines.
+
+    Build pipelines by chaining pass methods, then pass to run_pipeline():
+
+        module = run_pipeline(module, Pipeline().canonicalize().cse())
+
+    Nest passes inside specific op contexts:
+
+        p = Pipeline().Func(Pipeline().canonicalize().cse())
+        module = run_pipeline(module, p)
+
+    Common patterns:
+
+        # Lower to LLVM
+        module = run_pipeline(module, Pipeline().lower_to_llvm())
+
+        # Bufferize
+        module = run_pipeline(module, Pipeline().bufferize())
+
+        # Custom pipeline with options
+        p = Pipeline().convert_func_to_llvm(use_bare_ptr_memref_call_conv=True)
+
+    The pipeline auto-wraps with builtin.module(...) when materialized via str().
+    Every pass registered in MLIR has a corresponding method (auto-generated).
+    Use tab-completion or dir(Pipeline) to discover available passes.
+    """
+
     _pipeline: List[str] = []
 
     def __init__(self, pipeline=None, wrapper=None):
@@ -237,6 +274,20 @@ class Pipeline:
             enable_x86vector=enable_x86vector,
         )
         return self
+
+    def lower_to_vulkan(self, index_bitwidth=None):
+        return (
+            self.gpu_kernel_outlining()
+            .fold_memref_alias_ops()
+            .convert_gpu_to_spirv()
+            .Spirv(self.__class__().spirv_lower_abi_attrs().spirv_update_vce())
+            .convert_gpu_launch_to_vulkan_launch()
+            .finalize_memref_to_llvm()
+            .Func(self.__class__().llvm_request_c_wrappers())
+            .convert_func_to_llvm(index_bitwidth=index_bitwidth)
+            .reconcile_unrealized_casts()
+            .launch_func_to_vulkan()
+        )
 
 
 class GreedySimplifyRegionLevel(StrEnum):
