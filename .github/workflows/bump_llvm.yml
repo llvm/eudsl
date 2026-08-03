@@ -38,6 +38,18 @@ jobs:
           echo "LLVM_SHA_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           popd
 
+      - name: "Regenerate Pipeline pass methods"
+        run: |
+          
+          set -euo pipefail
+          python3 -m pip install --quiet black mlir-native-tools \
+            -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
+          extras=projects/eudsl-python-extras/mlir/extras/runtime/passes.py
+          python3 projects/eudsl-python-extras/utils/generate_pass_pipeline.py \
+            third_party/llvm-project/mlir/include -o "$extras"
+          python3 -m black -q "$extras"
+          cp "$extras" projects/mlir-python-mcp/mlir_python_mcp/passes.py
+
       - name: Generate token
         uses: actions/create-github-app-token@v1
         id: generate-token
