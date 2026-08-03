@@ -49,13 +49,15 @@ Expected: Output IR has dead constants removed (only `return` remains in body).
 
 Call `execute_python` with:
 ```python
+from mlir.dialects import arith, func
+
 m = new_module()
-with InsertionPoint(m.body):
-    i32 = IntegerType.get_signless(32)
-    f_type = FunctionType.get([i32, i32], [i32])
+with ir.InsertionPoint(m.body):
+    i32 = ir.IntegerType.get_signless(32)
+    f_type = ir.FunctionType.get([i32, i32], [i32])
     f = func.FuncOp("my_add", f_type)
     entry = f.add_entry_block()
-    with InsertionPoint(entry):
+    with ir.InsertionPoint(entry):
         result = arith.AddIOp(entry.arguments[0], entry.arguments[1])
         func.ReturnOp([result])
 print(get_module_asm(m))
@@ -77,6 +79,8 @@ Expected: `builtin.module(canonicalize,cse)`
 
 Call `execute_python` with:
 ```python
+from mlir.dialects import arith
+
 import inspect
 print(inspect.signature(arith.AddIOp.__init__))
 ```
