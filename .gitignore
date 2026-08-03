@@ -35,3 +35,5 @@
 .idea
 **/.vscode
 .mcp.json
+.coverage
+*.zip
