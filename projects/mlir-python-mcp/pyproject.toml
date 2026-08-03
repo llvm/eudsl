@@ -11,7 +11,10 @@ name = "mlir-python-mcp"
 version = "0.1.0"
 description = "MCP server providing a persistent MLIR Python REPL via mlir-python-bindings"
 requires-python = ">=3.10"
-dependencies = ["mcp>=1.1.2", "mlir-python-bindings"]
+# mcp 2.0 removed the low-level decorator API this server is built on
+# (Server.list_tools / Server.call_tool became add_request_handler), so cap the
+# major until server.py is ported.
+dependencies = ["mcp>=1.1.2,<2", "mlir-python-bindings"]
 license = "Apache-2.0 WITH LLVM-exception"
 keywords = ["mcp", "mlir", "llvm", "compiler", "ir"]
 
@@ -33,7 +36,9 @@ asyncio_mode = "auto"
 [tool.coverage.run]
 source = ["mlir_python_mcp"]
 branch = true
-omit = ["mlir_python_mcp/__main__.py", "mlir_python_mcp/passes.py", "mlir_python_mcp/_passes_base.py"]
+# Leading */ so these still match when pytest is invoked from the repo root,
+# where paths are recorded as projects/mlir-python-mcp/mlir_python_mcp/...
+omit = ["*/mlir_python_mcp/__main__.py", "*/mlir_python_mcp/passes.py", "*/mlir_python_mcp/_passes_base.py"]
 
 [tool.coverage.report]
 fail_under = 100

@@ -391,10 +391,11 @@ jobs:
 
       - name: "Test mlir-python-mcp"
         if: matrix.name == 'ubuntu_x86_64' && matrix.python-version == '3.12'
+        working-directory: projects/mlir-python-mcp
         run: |
 
-          pip install "projects/mlir-python-mcp[test]" -f wheelhouse
-          python -m pytest projects/mlir-python-mcp/tests --cov=mlir_python_mcp --cov-report=term-missing --cov-branch --cov-fail-under=100
+          pip install ".[test]" -f ../../wheelhouse
+          python -m pytest tests --cov
 
   test-mlir-python-bindings-wasm:
 
