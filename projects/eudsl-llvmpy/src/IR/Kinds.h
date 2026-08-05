@@ -20,6 +20,7 @@
 
 #include <nanobind/nanobind.h>
 
+#include <type_traits>
 #include <typeinfo>
 
 namespace eudsl {
@@ -27,16 +28,27 @@ const std::type_info *typeTypeInfo(llvm::Type::TypeID id);
 const std::type_info *valueTypeInfo(unsigned valueID);
 } // namespace eudsl
 
-template <> struct nanobind::detail::type_hook<llvm::Type> {
-  static const std::type_info *get(llvm::Type *t) {
-    // The hook IS consulted for null pointers (a null-returning accessor that
-    // nanobind renders as None), so map null to the base type.
-    return t ? eudsl::typeTypeInfo(t->getTypeID()) : &typeid(llvm::Type);
+// type_hook is keyed on the *static* pointer type being converted, so a hook on
+// llvm::Value alone would not fire when a binding returns e.g. an
+// llvm::Instruction* or llvm::User*. These SFINAE partial specializations cover
+// every class in the Value and Type hierarchies, downcasting from any base. The
+// hook IS consulted for null pointers (an accessor such as Function.entry_block
+// returns a null BasicBlock* that nanobind renders as None), so map null to the
+// static type T and let nanobind produce None.
+template <typename T>
+struct nanobind::detail::type_hook<
+    T, std::enable_if_t<std::is_base_of_v<llvm::Value, T>, int>> {
+  static const std::type_info *get(T *v) {
+    return v ? eudsl::valueTypeInfo(static_cast<llvm::Value *>(v)->getValueID())
+             : &typeid(T);
   }
 };
 
-template <> struct nanobind::detail::type_hook<llvm::Value> {
-  static const std::type_info *get(llvm::Value *v) {
-    return v ? eudsl::valueTypeInfo(v->getValueID()) : &typeid(llvm::Value);
+template <typename T>
+struct nanobind::detail::type_hook<
+    T, std::enable_if_t<std::is_base_of_v<llvm::Type, T>, int>> {
+  static const std::type_info *get(T *t) {
+    return t ? eudsl::typeTypeInfo(static_cast<llvm::Type *>(t)->getTypeID())
+             : &typeid(T);
   }
 };

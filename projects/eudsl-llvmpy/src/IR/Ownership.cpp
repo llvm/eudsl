@@ -10,7 +10,7 @@ namespace eudsl {
 
 static int64_t gLiveContexts = 0;
 
-Context::Context() : ctx(std::make_unique<llvm::LLVMContext>()) {
+Context::Context() : ctx(std::make_shared<llvm::LLVMContext>()) {
   ++gLiveContexts;
 }
 
@@ -32,10 +32,11 @@ llvm::LLVMContext &Context::get() const {
 }
 
 Module::Module(const std::string &name, Context &ctx)
-    : mod(std::make_unique<llvm::Module>(name, ctx.get())), owner(&ctx) {}
+    : ctxKeepAlive(ctx.shared()),
+      mod(std::make_unique<llvm::Module>(name, ctx.get())), owner(&ctx) {}
 
 Module::Module(std::unique_ptr<llvm::Module> m, Context &ctx)
-    : mod(std::move(m)), owner(&ctx) {}
+    : ctxKeepAlive(ctx.shared()), mod(std::move(m)), owner(&ctx) {}
 
 llvm::Module &Module::get() const {
   if (!mod) {

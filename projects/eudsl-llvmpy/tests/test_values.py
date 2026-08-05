@@ -58,9 +58,8 @@ def test_basic_block_and_instruction_traversal():
         # add, ret
         assert len(insts) == 2
         assert entry.terminator == insts[-1]
-        # Instruction is registered (the spine); concrete opcode downcasting
-        # (BinaryOperator) activates once the instruction classes are bound.
-        assert type(insts[0]).__name__ == "Instruction"
+        # The Value type_hook downcasts the add to its concrete class.
+        assert type(insts[0]).__name__ == "BinaryOperator"
         del f, entry, blocks, insts, mod
     assert_no_leaks()
 
@@ -73,6 +72,7 @@ def test_value_users_and_operands():
         # %x is used by the add.
         assert x.num_uses == 1
         add = x.users[0]
+        assert type(add).__name__ == "BinaryOperator"
         assert add.num_operands == 2
         assert add.operand(0) == x
         del f, x, add, mod
