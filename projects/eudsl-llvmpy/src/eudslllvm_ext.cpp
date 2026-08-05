@@ -7,8 +7,10 @@
 namespace nb = nanobind;
 
 void populate_context(nb::module_ &m);
+void populate_types(nb::module_ &m);
 
 NB_MODULE(eudslllvm_ext, m) {
   m.doc() = "Hand-written nanobind bindings over the LLVM C++ IR API.";
   populate_context(m);
+  populate_types(m);
 }

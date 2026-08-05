@@ -9,6 +9,7 @@
 
 #include <nanobind/nanobind.h>
 
+#include <cstdint>
 #include <string>
 #include <utility>
 
