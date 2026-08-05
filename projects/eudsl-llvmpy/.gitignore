@@ -1,0 +1,15 @@
+# Build artifacts (scikit-build-core in-place editable build)
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+/CMakeInit.txt
+/cmake_install.cmake
+/build.ninja
+/rules.ninja
+/.ninja_deps
+/.ninja_log
+/.skbuild-info.json
+/compile_commands.json
+/.cache/
+
+# Compiled extension and generated stubs land in src/llvm (see src/llvm/.gitignore)

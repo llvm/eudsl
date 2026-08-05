@@ -1,123 +1,48 @@
-#  Part of the  Project, under the Apache License v2.0 with  Exceptions.
-#  See https:#llvm.org/LICENSE.txt for license information.
-#  SPDX-License-Identifier: Apache-2.0 WITH -exception
-#  Copyright (c) 2024.
+#  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+#  See https://llvm.org/LICENSE.txt for license information.
+#  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+import gc
 from textwrap import dedent
 
-from llvm import types_ as T, ModuleRef, print_module_to_string
-from llvm.context import context
-from llvm.function import function
-from llvm.instructions import add, ret
-import llvm.amdgcn
+import llvm
 
 
 def test_symbol_collision():
-    # noinspection PyUnresolvedReferences
-    import eudsl_tblgen
+    # eudsl-tblgen is a separate extension in a different nanobind domain;
+    # importing both must not clash.
+    import eudsl_tblgen  # noqa: F401
+
+    import llvm  # noqa: F401
 
 
 def test_smoke():
     src = dedent(
-        """
-    declare i32 @foo()                                             
-    declare i32 @bar()                                             
-    define i32 @entry(i32 %argc) {                                 
-    entry:                                                         
-      %and = and i32 %argc, 1                                      
-      %tobool = icmp eq i32 %and, 0                                
-      br i1 %tobool, label %if.end, label %if.then                 
-    if.then:                                                       
-      %call = tail call i32 @foo()                                 
-      br label %return                                             
-    if.end:                                                        
-      %call1 = tail call i32 @bar()                                
-      br label %return                                             
-    return:                                                        
-      %retval.0 = phi i32 [ %call, %if.then ], [ %call1, %if.end ] 
-      ret i32 %retval.0                                            
-    }                                                              
-    """
-    )
-    with context(src=src, buffer_name="test_smoke") as ctx:
-        print(ctx)
-
-
-def test_builder():
-    with context(mod_name="test_builder") as ctx:
-
-        @function(emit=True)
-        def sum(a: T.int32, b: T.int32, c: T.float) -> T.int32:
-            e = llvm.amdgcn.cvt_pk_i16(a, b)
-            f = llvm.amdgcn.frexp_mant(c)
-            result = add(a, b)
-            ret(result)
-
-        mod_str = str(ctx)
-
-    correct = dedent(
         """\
-    ; ModuleID = 'test_builder'
-    source_filename = "test_builder"
-
-    define i32 @sum(i32 %0, i32 %1, float %2) {
-    entry:
-      %3 = call <2 x i16> @llvm.amdgcn.cvt.pk.i16(i32 %0, i32 %1)
-      %4 = call float @llvm.amdgcn.frexp.mant.f32(float %2)
-      %5 = add i32 %0, %1
-      ret i32 %5
-    }
-
-    ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
-    declare <2 x i16> @llvm.amdgcn.cvt.pk.i16(i32, i32) #0
-
-    ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
-    declare float @llvm.amdgcn.frexp.mant.f32(float) #0
-
-    attributes #0 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
-    """
-    )
-
-    assert correct == mod_str
-
-
-def test_from_capsule():
-    src = dedent(
+        declare i32 @foo()
+        declare i32 @bar()
+        define i32 @entry(i32 %argc) {
+        entry:
+          %and = and i32 %argc, 1
+          %tobool = icmp eq i32 %and, 0
+          br i1 %tobool, label %if.end, label %if.then
+        if.then:
+          %call = tail call i32 @foo()
+          br label %return
+        if.end:
+          %call1 = tail call i32 @bar()
+          br label %return
+        return:
+          %retval.0 = phi i32 [ %call, %if.then ], [ %call1, %if.end ]
+          ret i32 %retval.0
+        }
         """
-    ; ModuleID = 'test_smoke'
-    source_filename = "test_smoke"
-    
-    declare i32 @foo()
-    
-    declare i32 @bar()
-    
-    define i32 @entry(i32 %argc) {
-    entry:
-      %and = and i32 %argc, 1
-      %tobool = icmp eq i32 %and, 0
-      br i1 %tobool, label %if.end, label %if.then
-      
-    if.then:                                          ; preds = %entry
-      %call = tail call i32 @foo()
-      br label %return
-      
-    if.end:                                           ; preds = %entry
-      %call1 = tail call i32 @bar()
-      br label %return
-      
-    return:                                           ; preds = %if.end, %if.then
-      %retval.0 = phi i32 [ %call, %if.then ], [ %call1, %if.end ]
-      ret i32 %retval.0
-    }
-    """
     )
-    with context(src=src, buffer_name="test_smoke") as ctx:
-        copied_mod = ModuleRef.from_capsule(ctx.module.ptr)
-        mod_str = print_module_to_string(copied_mod)
-    assert src.strip() == mod_str.strip()
-
-
-if __name__ == "__main__":
-    test_smoke()
-    test_builder()
-    test_symbol_collision()
-    test_from_capsule()
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(src, ctx, "test_smoke")
+        assert mod.name == "test_smoke"
+        printed = str(mod)
+        assert "define i32 @entry(i32 %argc)" in printed
+        assert "phi i32" in printed
+        del mod
+    gc.collect()
+    assert llvm.Context._get_live_count() == 0

@@ -13,9 +13,7 @@ Homepage = "https://github.com/llvm/eudsl"
 
 [build-system]
 requires = [
-    "eudsl-tblgen",
-    "litgen @ git+https://github.com/pthom/litgen@f5d154c6f7679e755baa1047563d7c340309bc00",
-    "nanobind==2.4.0",
+    "nanobind==2.12.0",
     "ninja",
     "scikit-build-core==0.10.7",
     "typing_extensions>=4.12.2",
