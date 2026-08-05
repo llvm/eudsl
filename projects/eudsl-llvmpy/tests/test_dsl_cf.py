@@ -104,3 +104,27 @@ def test_while_countdown_jits():
     assert fn(0) == 0
     del jit, mod, ctx, sum_to, i32, fn
     assert_no_leaks()
+
+
+def test_for_range_sum_jits():
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    i32 = llvm.i32(ctx)
+
+    @llvm.function(module=mod)
+    def total(n: i32) -> i32:
+        acc = llvm.const_int(i32, 0)
+        for i in range_(0, n):
+            acc = acc + i
+            yield acc
+        return acc
+
+    printed = str(mod)
+    assert "while.header" in printed
+    jit = llvm.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("total"))
+    assert fn(5) == 0 + 1 + 2 + 3 + 4
+    assert fn(1) == 0
+    del jit, mod, ctx, total, i32, fn
+    assert_no_leaks()

@@ -325,3 +325,102 @@ class WhileToWhileLoop(StrictTransformer):
             ast.copy_location(n, node)
             ast.fix_missing_locations(n)
         return out
+
+
+class ForToForLoop(StrictTransformer):
+    """Rewrite `for i in range_(...): BODY; yield carried` into a for_loop call.
+
+        for i in range_(start, stop, step):
+            BODY
+            yield acc
+        # ->
+        def __fbody_L__(i, acc):
+            BODY
+            return (acc,)
+        (acc,) = for_loop(start, stop, step, __fbody_L__, (acc,))
+
+    Like WhileToWhileLoop, the loop-carried variables come from the trailing
+    yield and become the body function's parameters/results (after the induction
+    variable `i`), so no closure rebinding is needed. Only `range_(...)` iterables
+    are handled; other `for` iterables are left untouched.
+    """
+
+    def visit_For(self, node: ast.For) -> object:
+        node = self.generic_visit(node)
+        it = node.iter
+        if not (
+            isinstance(it, ast.Call)
+            and isinstance(it.func, ast.Name)
+            and it.func.id == "range_"
+        ):
+            return node
+        if not isinstance(node.target, ast.Name):
+            raise NotImplementedError("for target must be a single name")
+        iv = node.target.id
+        line = node.lineno
+
+        args = list(it.args)
+        if len(args) == 1:
+            start = ast.Constant(0)
+            stop = args[0]
+            step = ast.Constant(1)
+        elif len(args) == 2:
+            start, stop = args
+            step = ast.Constant(1)
+        elif len(args) == 3:
+            start, stop, step = args
+        else:
+            raise NotImplementedError("range_ takes 1-3 arguments")
+
+        last = node.body[-1]
+        if not (isinstance(last, ast.Expr) and isinstance(last.value, ast.Yield)):
+            raise NotImplementedError(
+                "a DSL `for` body must end with `yield <loop-carried vars>`"
+            )
+        carried = _carried_from_yield(last.value.value)
+        body_stmts = node.body[:-1]
+
+        body_name = f"__fbody_{line}__"
+        params = ast.arguments(
+            posonlyargs=[],
+            args=[ast.arg(arg=iv)] + [ast.arg(arg=n) for n in carried],
+            vararg=None,
+            kwonlyargs=[],
+            kw_defaults=[],
+            kwarg=None,
+            defaults=[],
+        )
+        carried_load = ast.Tuple(
+            [ast.Name(n, ast.Load()) for n in carried], ast.Load()
+        )
+        carried_store = ast.Tuple(
+            [ast.Name(n, ast.Store()) for n in carried], ast.Store()
+        )
+        body_fn = ast.FunctionDef(
+            name=body_name,
+            args=params,
+            body=list(body_stmts) + [ast.Return(carried_load)],
+            decorator_list=[],
+            type_params=[],
+        )
+        call = ast.Assign(
+            targets=[carried_store],
+            value=ast.Call(
+                func=ast.Name("for_loop", ast.Load()),
+                args=[
+                    start,
+                    stop,
+                    step,
+                    ast.Name(body_name, ast.Load()),
+                    ast.Tuple(
+                        [ast.Name(n, ast.Load()) for n in carried], ast.Load()
+                    ),
+                ],
+                keywords=[],
+            ),
+        )
+        out = [body_fn, call]
+        for n in out:
+            ast.copy_location(n, node)
+            ast.fix_missing_locations(n)
+        return out

@@ -11,4 +11,4 @@ from .dsl.values import install_value_casters as _install_value_casters
 _install_value_casters()
 
 from .dsl.func import function
-from .dsl.cf import yield_
+from .dsl.cf import yield_, range_

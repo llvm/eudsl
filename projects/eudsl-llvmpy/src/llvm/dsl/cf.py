@@ -157,16 +157,19 @@ class _InjectCFGlobals(FunctionPatcher):
         g["else_ctx_manager"] = else_ctx_manager
         g["placeholder_opaque_t"] = placeholder_opaque_t
         g["while_loop"] = while_loop
+        g["for_loop"] = for_loop
+        g["range_"] = range_
         return f
 
 
 class LLVMCanonicalizer(Canonicalizer):
     cst_transformers = [
-        # While first: it lifts the loop body into nested cond/body functions
+        # Loops first: they lift the loop body into nested cond/body functions
         # before the if/else transformers rewrite yields, so a loop's trailing
         # `yield` is consumed as its carried-value list rather than becoming an
         # scf-style yield_().
         _T.WhileToWhileLoop,
+        _T.ForToForLoop,
         _T.CanonicalizeElIfs,
         _T.InsertEmptyYield,
         _T.ReplaceYieldWithLLVMYield,
@@ -220,4 +223,60 @@ def while_loop(cond_fn, body_fn, inits):
         phi.add_incoming(nxt, body_end)
 
     b.set_insert_point(exit_bb)
-    return carried[0] if len(carried) == 1 else tuple(carried)
+    # Always return a tuple; the AST transform binds `(names,) = while_loop(...)`
+    # and direct callers unpack. (Single-element tuple for one carried value.)
+    return tuple(carried)
+
+
+def _as_value(x, like):
+    """Coerce a Python int to a constant of `like`'s type; pass Values through."""
+    from .. import Value, const_int
+
+    if isinstance(x, Value):
+        return x
+    return const_int(like.type, int(x), signed=True)
+
+
+def for_loop(start, stop, step, body_fn, inits):
+    """Counted loop built on while_loop, with an induction variable.
+
+        for i in range_(start, stop, step):
+            BODY
+            yield carried
+        # lowered to a while_loop over (i, *carried):
+        #   cond: i < stop ; body: (i + step, *body_fn(i, *carried))
+
+    body_fn(i, *carried) -> next-carried-tuple. Returns the final carried
+    values (the induction variable is internal).
+    """
+    stop_v = stop
+    start_v = _as_value(start, stop_v if not isinstance(stop, int) else start)
+    inits = [_as_value(v, start_v) for v in inits]
+
+    def cond(iv, *carried):
+        return iv < stop_v
+
+    def body(iv, *carried):
+        nxt = body_fn(iv, *carried)
+        if nxt is None:
+            nxt = ()
+        elif not isinstance(nxt, tuple):
+            nxt = (nxt,)
+        return (iv + step, *nxt)
+
+    res = while_loop(cond, body, (start_v, *inits))
+    # while_loop returns a tuple; drop the induction variable and return the
+    # remaining carried values as a tuple (the AST transform tuple-unpacks it).
+    carried = res[1:]
+    return tuple(carried)
+
+
+def range_(start, stop=None, step=1):
+    """Marker for `for i in range_(...)`; the AST transform reads its args.
+
+    Also callable at runtime (returns the (start, stop, step) triple) so the
+    name resolves even outside a transformed function.
+    """
+    if stop is None:
+        start, stop = 0, start
+    return (start, stop, step)
