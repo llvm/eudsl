@@ -164,7 +164,10 @@ class _InjectCFGlobals(FunctionPatcher):
 
 class LLVMCanonicalizer(Canonicalizer):
     cst_transformers = [
-        # Loops first: they lift the loop body into nested cond/body functions
+        # Reject unsupported jumps first, on the original AST, before the loop
+        # transforms synthesize their own returns.
+        _T.RejectUnsupportedJumps,
+        # Loops next: they lift the loop body into nested cond/body functions
         # before the if/else transformers rewrite yields, so a loop's trailing
         # `yield` is consumed as its carried-value list rather than becoming an
         # scf-style yield_().
