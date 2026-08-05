@@ -146,3 +146,14 @@ class TypedPointer:
 def with_element_type(ptr, element_type):
     """Attach an element type to a pointer value for subscript/GEP sugar."""
     return TypedPointer(ptr, element_type)
+
+
+def extract(aggregate, index):
+    """extractvalue sugar: pull field `index` out of a struct/array value.
+
+    Returned as its registered caster subclass when applicable (e.g. an
+    integer/float field becomes an ArithValue).
+    """
+    return maybe_downcast(
+        current_builder().extract_value(aggregate, index), aggregate
+    )

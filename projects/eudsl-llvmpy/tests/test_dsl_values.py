@@ -153,3 +153,22 @@ def test_pointer_subscript_returns_arithvalue():
         assert "load i32" in printed
         del b, fn, mod
     assert_no_leaks()
+
+
+def test_extract_value_from_struct_arg():
+    from llvm.dsl.values import extract
+
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.i32(ctx)
+        st = llvm.struct_t(ctx, [i32, i32])
+        fn = llvm.Function.create(llvm.function_t(i32, [st]), "f", mod)
+        bb = fn.append_basic_block("entry")
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            first = extract(fn.arg(0), 0)
+            assert isinstance(first, ArithValue)
+            b.ret(first + 1)
+        assert "extractvalue { i32, i32 }" in str(mod)
+        del b, fn, mod
+    assert_no_leaks()

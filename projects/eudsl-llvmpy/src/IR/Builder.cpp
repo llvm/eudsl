@@ -145,5 +145,21 @@ void populate_builder(nb::module_ &m) {
       .def(
           "i32_const",
           [](B &self, int32_t v) -> llvm::Value * { return self.getInt32(v); },
-          "value"_a, nb::rv_policy::reference_internal);
+          "value"_a, nb::rv_policy::reference_internal)
+      .def(
+          "extract_value",
+          [](B &self, llvm::Value *agg, unsigned idx,
+             const std::string &name) -> llvm::Value * {
+            return self.CreateExtractValue(agg, {idx}, name);
+          },
+          "aggregate"_a, "index"_a, "name"_a = "",
+          nb::rv_policy::reference_internal)
+      .def(
+          "insert_value",
+          [](B &self, llvm::Value *agg, llvm::Value *val, unsigned idx,
+             const std::string &name) -> llvm::Value * {
+            return self.CreateInsertValue(agg, val, {idx}, name);
+          },
+          "aggregate"_a, "value"_a, "index"_a, "name"_a = "",
+          nb::rv_policy::reference_internal);
 }
