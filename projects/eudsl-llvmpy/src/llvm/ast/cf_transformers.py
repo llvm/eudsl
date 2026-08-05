@@ -424,3 +424,36 @@ class ForToForLoop(StrictTransformer):
             ast.copy_location(n, node)
             ast.fix_missing_locations(n)
         return out
+
+
+class RejectUnsupportedJumps(StrictTransformer):
+    """Reject control flow the phi-based lowering does not model.
+
+    break/continue and early `return` inside an if/while/for would need edge
+    duplication, predecessor bookkeeping, or returning across the nested
+    cond/body functions the loop transforms introduce. Rather than emit wrong
+    IR, detect and refuse. Must run before the loop/if transformers so it only
+    sees user-written jumps (not the `return`s those transforms synthesize).
+    """
+
+    def visit_Break(self, node):
+        raise NotImplementedError(
+            "`break` inside DSL control flow is not supported"
+        )
+
+    def visit_Continue(self, node):
+        raise NotImplementedError(
+            "`continue` inside DSL control flow is not supported"
+        )
+
+    def _reject_nested_return(self, node):
+        for child in ast.walk(node):
+            if isinstance(child, ast.Return):
+                raise NotImplementedError(
+                    "early `return` inside DSL control flow is not supported"
+                )
+        return self.generic_visit(node)
+
+    visit_If = _reject_nested_return
+    visit_While = _reject_nested_return
+    visit_For = _reject_nested_return
