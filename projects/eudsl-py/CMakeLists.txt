@@ -373,8 +373,11 @@ eudsl_nbgen(EUDSLGen_arith
 #  NAMESPACES mlir::xegpu mlir::xegpu::detail
 #)
 
+# FREE_THREADED marks the module Py_MOD_GIL_NOT_USED so importing under a
+# free-threaded interpreter (cp3XXt) doesn't re-enable the GIL. Note: actual
+# thread-safety of these bindings has not been verified; this only asserts it.
 nanobind_add_module(eudslpy_ext
-  NB_STATIC
+  NB_STATIC FREE_THREADED
   # some kind of segfaults for 3.12
   # STABLE_ABI
   NB_DOMAIN eudsl
@@ -448,25 +451,37 @@ if(TARGET MLIR)
 endif()
 
 target_compile_options(eudslpy_ext PRIVATE ${nanobind_options})
+# The nanobind helper library name varies with STABLE_ABI (-abi3) and
+# FREE_THREADED (-ft), so probe every variant instead of hardcoding two.
 set(_nanobind_tgt)
-if(TARGET nanobind-static)
-  set(_nanobind_tgt nanobind-static)
-elseif(TARGET nanobind-static-abi3)
-  set(_nanobind_tgt nanobind-static-abi3)
+foreach(_cand nanobind-static nanobind-static-abi3 nanobind-static-ft nanobind-static-abi3-ft)
+  if(TARGET ${_cand})
+    set(_nanobind_tgt ${_cand})
+    break()
+  endif()
+endforeach()
+if(_nanobind_tgt)
+  target_compile_options(${_nanobind_tgt} PRIVATE ${nanobind_options})
+else()
+  message(FATAL_ERROR "Could not find a nanobind static helper target")
 endif()
-target_compile_options(${_nanobind_tgt} PRIVATE ${nanobind_options})
 
 # note WORKING_DIRECTORY
-set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen"
-  --module eudslpy_ext --recursive --include-private --output-dir .)
-set(NB_STUBGEN_OUTPUTS "eudslpy_ext.pyi")
-add_custom_command(
-  OUTPUT ${NB_STUBGEN_OUTPUTS}
-  COMMAND ${NB_STUBGEN_CMD}
-  WORKING_DIRECTORY "${EUDSLPY_SRC_DIR}/eudsl"
-  DEPENDS eudslpy_ext
-)
-add_custom_target(eudslpy_ext_stub ALL DEPENDS ${NB_STUBGEN_OUTPUTS})
+# nanobind.stubgen imports the built module, which currently crashes under
+# free-threaded (nogil) interpreters (decref_check without the GIL held), so
+# skip stub generation there until nanobind fixes it upstream.
+if(NOT NB_FREE_THREADED)
+  set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen"
+    --module eudslpy_ext --recursive --include-private --output-dir .)
+  set(NB_STUBGEN_OUTPUTS "eudslpy_ext.pyi")
+  add_custom_command(
+    OUTPUT ${NB_STUBGEN_OUTPUTS}
+    COMMAND ${NB_STUBGEN_CMD}
+    WORKING_DIRECTORY "${EUDSLPY_SRC_DIR}/eudsl"
+    DEPENDS eudslpy_ext
+  )
+  add_custom_target(eudslpy_ext_stub ALL DEPENDS ${NB_STUBGEN_OUTPUTS})
+endif()
 
 install(TARGETS eudslpy_ext LIBRARY DESTINATION eudsl)
 install(
