@@ -109,3 +109,47 @@ def test_eq_ne_named_methods():
         assert len({args[0], args[0]}) == 1
         del b, fn, mod
     assert_no_leaks()
+
+
+def test_gep_load_store_via_alloca():
+    from llvm.dsl.values import with_element_type
+
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.i32(ctx)
+        fn = llvm.Function.create(llvm.function_t(i32, []), "f", mod)
+        bb = fn.append_basic_block("entry")
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            slot = b.alloca(i32, "slot")
+            p = with_element_type(slot, i32)
+            p[0] = llvm.const_int(i32, 5)
+            v = p[0]
+            b.ret(v)
+        printed = str(mod)
+        assert "getelementptr i32" in printed
+        assert "store i32 5" in printed
+        assert "load i32" in printed
+        del b, fn, mod
+    assert_no_leaks()
+
+
+def test_pointer_subscript_returns_arithvalue():
+    from llvm.dsl.values import with_element_type
+
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.i32(ctx)
+        fn = llvm.Function.create(llvm.function_t(i32, [llvm.ptr_t(ctx)]), "g", mod)
+        bb = fn.append_basic_block("entry")
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            p = with_element_type(fn.arg(0), i32)
+            v = p[2]
+            assert isinstance(v, ArithValue)
+            b.ret(v + 1)  # typed chaining works off the loaded value
+        printed = str(mod)
+        assert "getelementptr i32" in printed
+        assert "load i32" in printed
+        del b, fn, mod
+    assert_no_leaks()

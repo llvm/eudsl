@@ -112,3 +112,37 @@ def install_value_casters():
         TypeID.Double,
     ):
         register_value_caster(tid, ArithValue)
+
+
+class TypedPointer:
+    """A pointer Value plus the element type needed for opaque-pointer GEP.
+
+    LLVM pointers are opaque, so `ptr[i]` cannot infer what it points to. The
+    DSL keys subscripting off an explicitly attached element type:
+    `p = with_element_type(ptr, i32); p[2]` loads the i32 at offset 2.
+    """
+
+    def __init__(self, ptr, element_type):
+        self._ptr = ptr
+        self._element_type = element_type
+
+    def _idx(self, i):
+        if isinstance(i, int):
+            return current_builder().i64_const(i)
+        return i
+
+    def gep(self, i):
+        b = current_builder()
+        return b.gep(self._element_type, self._ptr, [self._idx(i)])
+
+    def __getitem__(self, i):
+        b = current_builder()
+        return maybe_downcast(b.load(self._element_type, self.gep(i)), self._ptr)
+
+    def __setitem__(self, i, value):
+        current_builder().store(value, self.gep(i))
+
+
+def with_element_type(ptr, element_type):
+    """Attach an element type to a pointer value for subscript/GEP sugar."""
+    return TypedPointer(ptr, element_type)
