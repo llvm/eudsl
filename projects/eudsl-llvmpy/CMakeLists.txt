@@ -37,6 +37,37 @@ include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
+# Which LLVM targets to link and initialize. Defaults to the host target the
+# linked LLVM was built for (LLVM_NATIVE_ARCH), so it works against a host-only
+# distro on any arch. Extra targets stay reachable by flag rather than by patch,
+# e.g. -DEUDSL_LLVMPY_TARGETS="X86;AArch64;AMDGPU" (each must exist in the LLVM
+# being built against).
+set(EUDSL_LLVMPY_TARGETS "${LLVM_NATIVE_ARCH}" CACHE STRING
+    "LLVM targets to link into eudslllvm_ext (semicolon-separated)")
+message(STATUS "EUDSL_LLVMPY_TARGETS: ${EUDSL_LLVMPY_TARGETS}")
+
+set(EUDSLLLVM_TARGET_LIBS)
+set(EUDSLLLVM_TARGET_INITS)
+foreach(_tgt IN LISTS EUDSL_LLVMPY_TARGETS)
+  if(NOT TARGET LLVM${_tgt}Info)
+    message(FATAL_ERROR
+        "EUDSL_LLVMPY_TARGETS names ${_tgt} but LLVM${_tgt}Info does not exist; "
+        "the LLVM being built against was configured without that target")
+  endif()
+  list(APPEND EUDSLLLVM_TARGET_LIBS
+      LLVM${_tgt}Info LLVM${_tgt}Desc LLVM${_tgt}CodeGen
+      LLVM${_tgt}AsmParser LLVM${_tgt}Disassembler)
+  string(APPEND EUDSLLLVM_TARGET_INITS
+      "  LLVMInitialize${_tgt}Target();\n"
+      "  LLVMInitialize${_tgt}TargetInfo();\n"
+      "  LLVMInitialize${_tgt}TargetMC();\n"
+      "  LLVMInitialize${_tgt}AsmParser();\n"
+      "  LLVMInitialize${_tgt}AsmPrinter();\n")
+endforeach()
+configure_file("${CMAKE_CURRENT_LIST_DIR}/src/IR/TargetInit.h.in"
+               "${EUDSLLLVM_BINARY_DIR}/IR/TargetInit.h" @ONLY)
+include_directories("${EUDSLLLVM_BINARY_DIR}")
+
 execute_process(
   COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
   OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_DIR)
@@ -73,6 +104,12 @@ set(eudslllvm_ext_libs
   LLVMCore
   LLVMAsmParser
   LLVMSupport
+  LLVMTarget
+  LLVMMC
+  LLVMMCParser
+  LLVMCodeGen
+  LLVMTargetParser
+  ${EUDSLLLVM_TARGET_LIBS}
 )
 target_link_libraries(eudslllvm_ext PRIVATE ${eudslllvm_ext_libs})
 

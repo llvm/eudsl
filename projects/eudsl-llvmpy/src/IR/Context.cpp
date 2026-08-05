@@ -4,11 +4,14 @@
 
 #include "IR/Common.h"
 #include "IR/Ownership.h"
+#include "IR/TargetInit.h"
 
 #include <llvm/AsmParser/Parser.h>
+#include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/SourceMgr.h>
 
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 
 void populate_context(nb::module_ &m) {
   nb::class_<eudsl::Context>(m, "Context")
@@ -62,4 +65,16 @@ void populate_context(nb::module_ &m) {
       },
       "ir"_a, "context"_a, "name"_a = "<string>", nb::keep_alive<0, 2>(),
       "Parse LLVM textual IR into a new Module.");
+
+  eudsl::initializeTargets();
+
+  m.def(
+      "registered_targets",
+      []() {
+        std::vector<std::string> names;
+        for (const llvm::Target &t : llvm::TargetRegistry::targets())
+          names.emplace_back(t.getName());
+        return names;
+      },
+      "Names of the LLVM targets linked into this extension.");
 }

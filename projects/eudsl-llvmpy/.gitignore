@@ -11,5 +11,9 @@
 /.skbuild-info.json
 /compile_commands.json
 /.cache/
+# Generated headers land in the package-root binary dir (configure_file output),
+# e.g. IR/TargetInit.h from src/IR/TargetInit.h.in. Root-anchored so it does not
+# match the src/IR/ source directory.
+/IR/
 
 # Compiled extension and generated stubs land in src/llvm (see src/llvm/.gitignore)
