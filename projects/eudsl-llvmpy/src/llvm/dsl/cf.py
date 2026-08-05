@@ -156,14 +156,68 @@ class _InjectCFGlobals(FunctionPatcher):
         g["if_ctx_manager"] = if_ctx_manager
         g["else_ctx_manager"] = else_ctx_manager
         g["placeholder_opaque_t"] = placeholder_opaque_t
+        g["while_loop"] = while_loop
         return f
 
 
 class LLVMCanonicalizer(Canonicalizer):
     cst_transformers = [
+        # While first: it lifts the loop body into nested cond/body functions
+        # before the if/else transformers rewrite yields, so a loop's trailing
+        # `yield` is consumed as its carried-value list rather than becoming an
+        # scf-style yield_().
+        _T.WhileToWhileLoop,
         _T.CanonicalizeElIfs,
         _T.InsertEmptyYield,
         _T.ReplaceYieldWithLLVMYield,
         _T.ReplaceIfWithWith,
     ]
     function_patchers = [_InjectCFGlobals]
+
+
+def while_loop(cond_fn, body_fn, inits):
+    """Phi-based while loop.
+
+    cond_fn(*carried) -> i1 and body_fn(*carried) -> next-carried-tuple are both
+    parameterized by the loop-carried values, so the runtime can pass header
+    phis as those arguments -- no closure rebinding needed. Structure:
+
+        preheader: br header
+        header:    <phis> = phi [init, preheader], [next, body]
+                   br cond_fn(phis), body, exit
+        body:      next = body_fn(phis); br header
+        exit:      (phis are the loop results)
+    """
+    b = current_builder()
+    fn = current_function()
+    inits = list(inits)
+
+    preheader = b.insert_block
+    header = fn.append_basic_block("while.header")
+    body_bb = fn.append_basic_block("while.body")
+    exit_bb = fn.append_basic_block("while.end")
+
+    b.br(header)
+
+    b.set_insert_point(header)
+    raw_phis = []
+    carried = []
+    for idx, init in enumerate(inits):
+        phi = b.phi(init.type, f"while.{idx}")
+        phi.add_incoming(init, preheader)
+        raw_phis.append(phi)  # keep the PHINode for add_incoming wiring
+        carried.append(maybe_downcast(phi, fn))  # typed view for the body
+    cond = cond_fn(*carried)
+    b.cond_br(cond, body_bb, exit_bb)
+
+    b.set_insert_point(body_bb)
+    nexts = body_fn(*carried)
+    if not isinstance(nexts, tuple):
+        nexts = (nexts,)
+    body_end = b.insert_block  # nested control flow may have moved us
+    b.br(header)
+    for phi, nxt in zip(raw_phis, nexts):
+        phi.add_incoming(nxt, body_end)
+
+    b.set_insert_point(exit_bb)
+    return carried[0] if len(carried) == 1 else tuple(carried)
