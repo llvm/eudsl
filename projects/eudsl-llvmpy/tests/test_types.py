@@ -72,3 +72,55 @@ def test_named_struct_prints_opaque():
         # once the Type type_hook makes named_struct_t return a StructType.
         assert str(named) == "%Pair = type opaque"
     assert_no_leaks()
+
+
+def test_types_downcast_to_concrete_classes():
+    with llvm.Context() as ctx:
+        assert type(llvm.i32(ctx)).__name__ == "IntegerType"
+        assert type(llvm.ptr_t(ctx)).__name__ == "PointerType"
+        assert type(llvm.array_t(llvm.i32(ctx), 2)).__name__ == "ArrayType"
+        assert type(llvm.vector_t(llvm.i32(ctx), 2)).__name__ == "VectorType"
+        assert type(llvm.struct_t(ctx, [llvm.i32(ctx)])).__name__ == "StructType"
+        assert (
+            type(llvm.function_t(llvm.void_t(ctx), [])).__name__ == "FunctionType"
+        )
+        # Types with no concrete subclass stay Type.
+        assert type(llvm.void_t(ctx)).__name__ == "Type"
+        assert type(llvm.f64(ctx)).__name__ == "Type"
+    assert_no_leaks()
+
+
+def test_concrete_type_accessors():
+    with llvm.Context() as ctx:
+        assert llvm.int_t(ctx, 7).bit_width == 7
+        assert llvm.ptr_t(ctx, 3).address_space == 3
+        a = llvm.array_t(llvm.i32(ctx), 4)
+        assert a.num_elements == 4
+        assert a.element_type == llvm.i32(ctx)
+        v = llvm.vector_t(llvm.f32(ctx), 8)
+        assert v.min_num_elements == 8
+        assert not v.is_scalable
+        assert llvm.vector_t(llvm.f32(ctx), 8, scalable=True).is_scalable
+        s = llvm.struct_t(ctx, [llvm.i32(ctx), llvm.f64(ctx)])
+        assert s.num_elements == 2
+        assert s.element_type(1) == llvm.f64(ctx)
+        assert not s.is_packed
+        assert llvm.struct_t(ctx, [llvm.i8(ctx)], packed=True).is_packed
+        ft = llvm.function_t(llvm.i32(ctx), [llvm.i32(ctx), llvm.f32(ctx)])
+        assert ft.return_type == llvm.i32(ctx)
+        assert ft.num_params == 2
+        assert ft.param_type(1) == llvm.f32(ctx)
+        assert ft.params == [llvm.i32(ctx), llvm.f32(ctx)]
+        assert not ft.is_var_arg
+    assert_no_leaks()
+
+
+def test_named_struct_set_body_and_name():
+    with llvm.Context() as ctx:
+        named = llvm.named_struct_t(ctx, "Pair")
+        assert named.name == "Pair"
+        assert named.is_opaque
+        named.set_body([llvm.i32(ctx), llvm.i32(ctx)])
+        assert not named.is_opaque
+        assert named.num_elements == 2
+    assert_no_leaks()

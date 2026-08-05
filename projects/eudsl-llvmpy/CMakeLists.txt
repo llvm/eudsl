@@ -99,6 +99,7 @@ nanobind_add_module(eudslllvm_ext
   src/IR/Ownership.cpp
   src/IR/Context.cpp
   src/IR/Types.cpp
+  src/IR/Kinds.cpp
 )
 
 set(eudslllvm_ext_libs

@@ -44,3 +44,8 @@ inline void unwrap(llvm::Error &&e) {
 }
 
 } // namespace eudsl
+
+// Pulled in here so every translation unit that returns an llvm::Type* or
+// llvm::Value* sees the downcasting type_hook specializations. Without this a
+// TU would silently fall back to base-class conversion.
+#include "IR/Kinds.h"
