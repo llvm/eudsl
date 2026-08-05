@@ -4,9 +4,53 @@
 
 #include "IR/Kinds.h"
 
+#include <llvm/IR/Argument.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/GlobalAlias.h>
+#include <llvm/IR/GlobalIFunc.h>
+#include <llvm/IR/GlobalVariable.h>
+#include <llvm/IR/InlineAsm.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/Metadata.h>
 
 namespace eudsl {
+
+const std::type_info *pick(const std::type_info *concrete,
+                           const std::type_info *base) {
+  return nanobind::detail::nb_type_lookup(concrete) ? concrete : base;
+}
+
+const std::type_info *valueTypeInfo(unsigned id) {
+  const std::type_info *base = &typeid(llvm::Value);
+
+  if (id >= llvm::Value::InstructionVal) {
+    switch (id - llvm::Value::InstructionVal) {
+#define HANDLE_INST(num, opcode, Class)                                        \
+  case num:                                                                    \
+    return pick(&typeid(llvm::Class), base);
+#include "llvm/IR/Instruction.def"
+    default:
+      return &typeid(llvm::Instruction);
+    }
+  }
+
+  switch (id) {
+// MemoryUse/MemoryDef/MemoryPhi are MemorySSA classes, not IR Value subclasses
+// reachable from a Module; map their enum slots to base Value.
+#define HANDLE_MEMORY_VALUE(Name)                                              \
+  case llvm::Value::Name##Val:                                                 \
+    return base;
+#define HANDLE_VALUE(Name)                                                     \
+  case llvm::Value::Name##Val:                                                 \
+    return pick(&typeid(llvm::Name), base);
+#include "llvm/IR/Value.def"
+  default:
+    return base;
+  }
+}
 
 const std::type_info *typeTypeInfo(llvm::Type::TypeID id) {
   switch (id) {
