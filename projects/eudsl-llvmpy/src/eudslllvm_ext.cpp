@@ -12,6 +12,7 @@ void populate_types(nb::module_ &m);
 void populate_values(nb::module_ &m);
 void populate_instructions(nb::module_ &m);
 void populate_constants(nb::module_ &m);
+void populate_metadata(nb::module_ &m);
 void populate_builder(nb::module_ &m);
 
 NB_MODULE(eudslllvm_ext, m) {
@@ -23,5 +24,6 @@ NB_MODULE(eudslllvm_ext, m) {
   populate_values(m);
   populate_instructions(m);
   populate_constants(m);
+  populate_metadata(m);
   populate_builder(m);
 }

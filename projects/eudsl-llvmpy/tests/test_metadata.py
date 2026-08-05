@@ -1,0 +1,20 @@
+#  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+#  See https://llvm.org/LICENSE.txt for license information.
+#  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+import llvm
+from llvm.testing import assert_no_leaks
+
+
+def test_named_metadata_round_trips():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        s = llvm.md_string(ctx, "hello")
+        node = llvm.md_node(ctx, [s])
+        mod.add_named_metadata("my.meta", node)
+        printed = str(mod)
+        assert "!my.meta = !{!0}" in printed
+        assert '!0 = !{!"hello"}' in printed
+        got = mod.named_metadata("my.meta")
+        assert len(got) == 1
+        del mod
+    assert_no_leaks()
