@@ -218,3 +218,110 @@ class ReplaceIfWithWith(StrictTransformer):
             return [then_with, else_with]
         else:
             return then_with
+
+
+def _carried_from_yield(yield_value):
+    """Names carried by a trailing `yield a, b` (or `yield a`)."""
+    if yield_value is None:
+        return []
+    if isinstance(yield_value, ast.Tuple):
+        elts = yield_value.elts
+    else:
+        elts = [yield_value]
+    names = []
+    for e in elts:
+        if not isinstance(e, ast.Name):
+            raise NotImplementedError(
+                "loop yield must list plain loop-carried variable names, "
+                f"got {ast.dump(e)}"
+            )
+        names.append(e.id)
+    return names
+
+
+class WhileToWhileLoop(StrictTransformer):
+    """Rewrite `while COND: BODY; yield carried` into a while_loop call.
+
+        while COND:
+            BODY
+            yield acc, i
+        # ->
+        def __wcond_L__(acc, i): return COND
+        def __wbody_L__(acc, i):
+            BODY
+            return (acc, i)
+        (acc, i) = while_loop(__wcond_L__, __wbody_L__, (acc, i))
+
+    The loop-carried variables (from the trailing yield) become the parameters
+    and results of the nested cond/body functions, so the while_loop runtime can
+    feed header phis in and thread body results back as phi incomings without
+    rebinding Python closure variables. Straight-line loop bodies only: control
+    flow nested inside a loop body is not lowered (the nested functions are not
+    revisited by the if/else transformers).
+    """
+
+    def visit_While(self, node: ast.While) -> list:
+        node = self.generic_visit(node)
+        line = node.lineno
+        last = node.body[-1]
+        if not (isinstance(last, ast.Expr) and isinstance(last.value, ast.Yield)):
+            raise NotImplementedError(
+                "a DSL `while` body must end with `yield <loop-carried vars>`"
+            )
+        carried = _carried_from_yield(last.value.value)
+        body_stmts = node.body[:-1]
+
+        def params():
+            return ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg=n) for n in carried],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            )
+
+        carried_load = ast.Tuple(
+            [ast.Name(n, ast.Load()) for n in carried], ast.Load()
+        )
+        carried_store = ast.Tuple(
+            [ast.Name(n, ast.Store()) for n in carried], ast.Store()
+        )
+
+        cond_name = f"__wcond_{line}__"
+        body_name = f"__wbody_{line}__"
+
+        cond_fn = ast.FunctionDef(
+            name=cond_name,
+            args=params(),
+            body=[ast.Return(node.test)],
+            decorator_list=[],
+            type_params=[],
+        )
+        body_fn = ast.FunctionDef(
+            name=body_name,
+            args=params(),
+            body=list(body_stmts) + [ast.Return(carried_load)],
+            decorator_list=[],
+            type_params=[],
+        )
+        call = ast.Assign(
+            targets=[carried_store],
+            value=ast.Call(
+                func=ast.Name("while_loop", ast.Load()),
+                args=[
+                    ast.Name(cond_name, ast.Load()),
+                    ast.Name(body_name, ast.Load()),
+                    ast.Tuple(
+                        [ast.Name(n, ast.Load()) for n in carried], ast.Load()
+                    ),
+                ],
+                keywords=[],
+            ),
+        )
+        out = [cond_fn, body_fn, call]
+        for n in out:
+            ast.copy_location(n, node)
+            ast.fix_missing_locations(n)
+        return out

@@ -77,3 +77,30 @@ def test_elif_chain_jits():
     assert fn(7) == 1
     del jit, mod, ctx, classify, i32, fn
     assert_no_leaks()
+
+
+def test_while_countdown_jits():
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    i32 = llvm.i32(ctx)
+
+    @llvm.function(module=mod)
+    def sum_to(n: i32) -> i32:
+        acc = llvm.const_int(i32, 0)
+        i = llvm.const_int(i32, 0)
+        while i.ne(n):
+            acc = acc + i
+            i = i + 1
+            yield acc, i
+        return acc
+
+    printed = str(mod)
+    assert "while.header" in printed
+    assert printed.count("phi i32") == 2  # acc, i loop-carried
+    jit = llvm.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("sum_to"))
+    assert fn(5) == 0 + 1 + 2 + 3 + 4
+    assert fn(0) == 0
+    del jit, mod, ctx, sum_to, i32, fn
+    assert_no_leaks()
