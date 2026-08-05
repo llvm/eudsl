@@ -107,6 +107,7 @@ nanobind_add_module(eudslllvm_ext
   src/IR/Attributes.cpp
   src/IR/Metadata.cpp
   src/IR/Errors.cpp
+  src/IR/Passes.cpp
 )
 
 set(eudslllvm_ext_libs
@@ -114,6 +115,11 @@ set(eudslllvm_ext_libs
   LLVMAsmParser
   LLVMBitReader
   LLVMBitWriter
+  LLVMPasses
+  LLVMAnalysis
+  LLVMTransformUtils
+  LLVMScalarOpts
+  LLVMInstCombine
   LLVMSupport
   LLVMTarget
   LLVMMC
