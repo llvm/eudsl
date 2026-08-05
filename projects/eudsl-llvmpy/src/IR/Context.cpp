@@ -32,10 +32,21 @@ void populate_context(nb::module_ &m) {
   nb::class_<eudsl::Module>(m, "Module")
       .def(nb::init<const std::string &, eudsl::Context &>(), "name"_a,
            "context"_a, nb::keep_alive<1, 3>())
-      .def_prop_ro("name",
-                   [](eudsl::Module &self) {
-                     return self.get().getModuleIdentifier();
-                   })
+      .def_prop_rw(
+          "name",
+          [](eudsl::Module &self) { return self.get().getModuleIdentifier(); },
+          [](eudsl::Module &self, const std::string &name) {
+            self.get().setModuleIdentifier(name);
+            self.get().setSourceFileName(name);
+          })
+      .def_prop_ro("_is_consumed", &eudsl::Module::isConsumed)
+      .def("_take",
+           [](eudsl::Module &self) {
+             // Test-only ownership sink: drops the module on the floor so
+             // tests can observe the consumed state without a JIT.
+             std::unique_ptr<llvm::Module> owned = self.take();
+             owned.reset();
+           })
       .def_prop_ro(
           "context",
           [](eudsl::Module &self) -> eudsl::Context & { return self.context(); },

@@ -45,6 +45,7 @@ public:
   llvm::Module &get() const;
   /// Relinquish ownership. Every later get() throws.
   std::unique_ptr<llvm::Module> take();
+  bool isConsumed() const { return mod == nullptr; }
 
   Context &context() const { return *owner; }
 

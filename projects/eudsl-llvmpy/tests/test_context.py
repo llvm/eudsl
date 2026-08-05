@@ -1,0 +1,65 @@
+#  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+#  See https://llvm.org/LICENSE.txt for license information.
+#  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+import gc
+
+import pytest
+
+import llvm
+from llvm.testing import assert_no_leaks
+
+
+def test_context_is_counted():
+    assert llvm.Context._get_live_count() == 0
+    ctx = llvm.Context()
+    assert llvm.Context._get_live_count() == 1
+    del ctx
+    gc.collect()
+    assert llvm.Context._get_live_count() == 0
+
+
+def test_nested_contexts_are_counted():
+    with llvm.Context() as a, llvm.Context() as b:
+        assert a is not b
+        assert llvm.Context._get_live_count() == 2
+    gc.collect()
+    assert_no_leaks()
+
+
+def test_module_keeps_context_alive():
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    del ctx
+    gc.collect()
+    # The module's keep_alive kept the context object alive, so this is safe.
+    assert llvm.Context._get_live_count() == 1
+    assert mod.name == "m"
+    del mod
+    gc.collect()
+    assert_no_leaks()
+
+
+def test_module_rename():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("before", ctx)
+        mod.name = "after"
+        assert mod.name == "after"
+        assert "ModuleID = 'after'" in str(mod)
+        del mod
+    gc.collect()
+    assert_no_leaks()
+
+
+def test_consumed_module_raises_instead_of_crashing():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        assert mod._is_consumed is False
+        mod._take()
+        assert mod._is_consumed is True
+        with pytest.raises(RuntimeError, match="has been consumed"):
+            _ = mod.name
+        with pytest.raises(RuntimeError, match="has been consumed"):
+            str(mod)
+        del mod
+    gc.collect()
+    assert_no_leaks()
