@@ -106,6 +106,7 @@ nanobind_add_module(eudslllvm_ext
   src/IR/Builder.cpp
   src/IR/Attributes.cpp
   src/IR/Metadata.cpp
+  src/IR/Errors.cpp
 )
 
 set(eudslllvm_ext_libs
