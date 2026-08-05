@@ -112,6 +112,8 @@ nanobind_add_module(eudslllvm_ext
 set(eudslllvm_ext_libs
   LLVMCore
   LLVMAsmParser
+  LLVMBitReader
+  LLVMBitWriter
   LLVMSupport
   LLVMTarget
   LLVMMC
