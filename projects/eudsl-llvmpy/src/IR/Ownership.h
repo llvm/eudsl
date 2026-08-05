@@ -33,7 +33,6 @@ public:
   /// Drop this object's reference and the live count. Idempotent; called by
   /// both __exit__ and the destructor.
   void release();
-  bool isReleased() const { return ctx == nullptr; }
 
   static int64_t liveCount();
 

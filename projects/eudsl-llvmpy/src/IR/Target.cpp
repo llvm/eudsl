@@ -27,7 +27,8 @@ std::string emit(TM &self, eudsl::Module &mod, llvm::CodeGenFileType type) {
   llvm::buffer_ostream bos(os);
   llvm::legacy::PassManager pm;
   if (self.tm->addPassesToEmitFile(pm, bos, nullptr, type))
-    throw std::runtime_error("target cannot emit this file type");
+    throw std::runtime_error(  // LCOV_EXCL_LINE
+        "target cannot emit this file type");  // LCOV_EXCL_LINE
   pm.run(mod.get());
   return buf;
 }
@@ -53,8 +54,8 @@ void populate_target(nb::module_ &m) {
             llvm::TargetMachine *tm = target->createTargetMachine(
                 tt, cpu, features, opts, std::nullopt);
             if (!tm)
-              throw std::runtime_error("could not create TargetMachine for " +
-                                       tripleStr);
+              throw std::runtime_error(  // LCOV_EXCL_LINE
+                  "could not create TargetMachine for " + tripleStr);  // LCOV_EXCL_LINE
             new (self) TM{std::unique_ptr<llvm::TargetMachine>(tm)};
           },
           "triple"_a = "", "cpu"_a = "", "features"_a = "")

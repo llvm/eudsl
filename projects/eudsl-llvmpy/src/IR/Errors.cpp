@@ -15,11 +15,14 @@ namespace nb = nanobind;
 namespace {
 // Fatal errors abort the process; convert the message to something visible
 // before LLVM calls abort(). The handler cannot return, so this is a
-// best-effort last word rather than a recoverable path.
+// best-effort last word rather than a recoverable path. Only runs on an LLVM
+// fatal error, which the test suite does not (and must not) trigger.
+// LCOV_EXCL_START
 void fatalHandler(void *, const char *reason, bool) {
   PyErr_WarnEx(PyExc_RuntimeWarning,
                (std::string("LLVM fatal error: ") + reason).c_str(), 1);
 }
+// LCOV_EXCL_STOP
 } // namespace
 
 namespace eudsl {
