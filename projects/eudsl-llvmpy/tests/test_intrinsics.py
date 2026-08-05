@@ -1,6 +1,8 @@
 #  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+import pytest
+
 import llvm
 import llvm.intrinsics
 from llvm.testing import assert_no_leaks
@@ -32,3 +34,10 @@ def test_intrinsics_getattr_shim():
         assert decl.name == "llvm.sqrt.f64"
         del decl, mod
     assert_no_leaks()
+
+
+def test_intrinsics_shim_unknown_raises():
+    import llvm.intrinsics
+
+    with pytest.raises(AttributeError, match="unknown intrinsic"):
+        llvm.intrinsics.definitely_not_an_intrinsic

@@ -48,6 +48,24 @@ CMAKE_VERBOSE_MAKEFILE = "ON"
 LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
 LLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN = "ON"
 
+[tool.pytest.ini_options]
+addopts = "--cov=llvm --cov-report=term-missing --cov-fail-under=99"
+
+[tool.coverage.run]
+branch = true
+relative_files = true
+# The compiled extension (eudslllvm_ext) and the generated stub are not Python
+# source; coverage only measures the hand-written Python surface of `llvm`.
+omit = [
+    "*/eudslllvm_ext.pyi",
+]
+
+[tool.coverage.report]
+omit = [
+    "*/eudslllvm_ext.pyi",
+]
+
+
 [tool.cibuildwheel]
 build-verbosity = 1
 skip = ["*-manylinux_i686", "*-musllinux*", "pp*", "*-win32"]
@@ -88,7 +106,7 @@ before-all = [
 container-engine = { name = "docker", create-args = ["-v", "/etc/timezone:/etc/timezone:ro", "-v", "/etc/localtime:/etc/localtime:ro"] }
 
 [tool.cibuildwheel.macos]
-# something about litgen failing to build
+# skip the free-threaded 3.14 build on macOS
 skip = "cp314t-*"
 before-build = [
     "ccache -z",
