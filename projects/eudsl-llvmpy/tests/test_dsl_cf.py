@@ -50,3 +50,30 @@ def test_if_else_jits_correctly():
     assert fn(False, 10, 20) == 20
     del jit, mod, ctx, pick, i32, fn
     assert_no_leaks()
+
+
+def test_elif_chain_jits():
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    i32 = llvm.i32(ctx)
+
+    @llvm.function(module=mod)
+    def classify(x: i32) -> i32:
+        if x < 0:
+            r = yield llvm.const_int(i32, -1)
+        elif x.eq(llvm.const_int(i32, 0)):
+            r = yield llvm.const_int(i32, 0)
+        else:
+            r = yield llvm.const_int(i32, 1)
+        return r
+
+    printed = str(mod)
+    assert printed.count("phi i32") == 2  # nested elif phis
+    jit = llvm.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("classify"))
+    assert fn(-5) == -1
+    assert fn(0) == 0
+    assert fn(7) == 1
+    del jit, mod, ctx, classify, i32, fn
+    assert_no_leaks()

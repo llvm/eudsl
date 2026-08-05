@@ -59,12 +59,21 @@ class _IfOp:
         self.cond_br = b.cond_br(cond, self.then_block, self.merge_block)
         self.then_vals = None
         self.else_vals = None
+        # The block that actually reaches merge on each edge. For a plain branch
+        # this is then_block/else_block, but with a nested if in a branch the
+        # real predecessor is whatever block is current when the branch's
+        # trailing yield_ runs (e.g. an inner merge block) -- so capture it
+        # there rather than assuming the branch's entry block.
+        self.then_pred = None
+        self.else_pred = None
         self.active = "then"
 
     def _terminate_current(self):
         b = self.builder
+        pred = b.insert_block
         if b.insert_block.terminator is None:
             b.br(self.merge_block)
+        return pred
 
     def record_and_maybe_phi(self, values):
         """Called by yield_. Record this branch's values; on the else branch
@@ -72,7 +81,7 @@ class _IfOp:
         b = self.builder
         if self.active == "then":
             self.then_vals = list(values)
-            self._terminate_current()
+            self.then_pred = self._terminate_current()
             # No phis yet; the value bound here is overwritten by the else
             # branch's assignment (or unused for a side-effecting if). Match the
             # else-branch return shape (scalar for a single value).
@@ -82,13 +91,13 @@ class _IfOp:
             return tuple(vals)
         # else branch
         self.else_vals = list(values)
-        self._terminate_current()
+        self.else_pred = self._terminate_current()
         b.set_insert_point(self.merge_block)
         phis = []
         for i, tv in enumerate(self.then_vals):
             phi = b.phi(tv.type, f"if.phi.{i}")
-            phi.add_incoming(tv, self.then_block)
-            phi.add_incoming(self.else_vals[i], self.else_block)
+            phi.add_incoming(tv, self.then_pred)
+            phi.add_incoming(self.else_vals[i], self.else_pred)
             phis.append(maybe_downcast(phi, current_function()))
         self.phis = phis
         if len(phis) == 1:
