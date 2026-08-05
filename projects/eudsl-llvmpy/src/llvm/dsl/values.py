@@ -28,15 +28,17 @@ class ArithValue(Value):
     """A Value that supports arithmetic and comparison operators."""
 
     def _coerce(self, other):
-        """Turn a Python int/float into a constant matching this value's type."""
+        """Turn a Python int/float into a constant matching this value's type.
+
+        ArithValue is only registered for integer and floating-point type kinds,
+        so one of the two branches below always applies.
+        """
         if isinstance(other, Value):
             return other
         ty = self.type
         if ty.is_floating_point:
             return const_fp(ty, float(other))
-        if ty.is_integer:
-            return const_int(ty, int(other), signed=True)
-        raise TypeError(f"cannot coerce {other!r} to {ty}")
+        return const_int(ty, int(other), signed=True)
 
     def _wrap(self, v):
         # Re-wrap builder results as ArithValue so `(a + b) + c` stays typed.
