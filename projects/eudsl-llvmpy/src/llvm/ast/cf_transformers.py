@@ -169,6 +169,19 @@ class ReplaceIfWithWith(StrictTransformer):
             return then_with
 
 
+def _reject_nested_control_flow(body_stmts, where):
+    """The loop transforms lift the body into a nested function the if/else
+    transformers do not revisit, so control flow nested inside a loop body is
+    not lowered. Detect and refuse rather than miscompile."""
+    for stmt in body_stmts:
+        for child in ast.walk(stmt):
+            if isinstance(child, (ast.If, ast.For, ast.While)):
+                raise NotImplementedError(
+                    f"control flow nested inside a `{where}` loop body is not "
+                    "supported"
+                )
+
+
 def _carried_from_yield(yield_value):
     """Names carried by a trailing `yield a, b` (or `yield a`)."""
     if yield_value is None:
@@ -219,6 +232,7 @@ class WhileToWhileLoop(StrictTransformer):
             )
         carried = _carried_from_yield(last.value.value)
         body_stmts = node.body[:-1]
+        _reject_nested_control_flow(body_stmts, "while")
 
         def params():
             return ast.arguments(
@@ -328,6 +342,7 @@ class ForToForLoop(StrictTransformer):
             )
         carried = _carried_from_yield(last.value.value)
         body_stmts = node.body[:-1]
+        _reject_nested_control_flow(body_stmts, "for")
 
         body_name = f"__fbody_{line}__"
         params = ast.arguments(
@@ -383,6 +398,40 @@ class RejectUnsupportedJumps(StrictTransformer):
     cond/body functions the loop transforms introduce. Rather than emit wrong
     IR, detect and refuse. Must run before the loop/if transformers so it only
     sees user-written jumps (not the `return`s those transforms synthesize).
+    """
+
+    def visit_Break(self, node):
+        raise NotImplementedError(
+            "`break` inside DSL control flow is not supported"
+        )
+
+    def visit_Continue(self, node):
+        raise NotImplementedError(
+            "`continue` inside DSL control flow is not supported"
+        )
+
+    def _reject_nested_return(self, node):
+        for child in ast.walk(node):
+            if isinstance(child, ast.Return):
+                raise NotImplementedError(
+                    "early `return` inside DSL control flow is not supported"
+                )
+        return self.generic_visit(node)
+
+    visit_If = _reject_nested_return
+    visit_While = _reject_nested_return
+    visit_For = _reject_nested_return
+
+
+class RejectUnsupportedJumps(StrictTransformer):
+    """Reject control flow the phi-based lowering does not model.
+
+    break/continue and early `return` inside if/while/for would need edge
+    duplication and predecessor bookkeeping the yield-protocol lowering does not
+    do (and the loop transforms lift bodies into nested functions, where a bare
+    return/break/continue would silently mean the wrong thing). Detect and
+    refuse rather than emit wrong IR. Runs before the loop/if transformers, so
+    the constructs are still in their original ast form.
     """
 
     def visit_Break(self, node):
