@@ -4,6 +4,12 @@
 
 #include "IR/Common.h"
 
+#include <llvm/IR/Constant.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/GlobalObject.h>
+#include <llvm/IR/GlobalValue.h>
+#include <llvm/IR/InstrTypes.h>
+#include <llvm/IR/Instruction.h>
 #include <llvm/IR/User.h>
 #include <llvm/IR/Value.h>
 
@@ -46,4 +52,12 @@ void populate_values(nb::module_ &m) {
           out.push_back(self.getOperand(i));
         return out;
       });
+
+  // Structural spine of the Value hierarchy. Leaf method bindings are added by
+  // Tasks 9-11, which reopen these classes via reopen<T>(). Registering them
+  // here lets the Value type_hook name them without raising.
+  nb::class_<llvm::Constant, llvm::User>(m, "Constant");
+  nb::class_<llvm::GlobalValue, llvm::Constant>(m, "GlobalValue");
+  nb::class_<llvm::GlobalObject, llvm::GlobalValue>(m, "GlobalObject");
+  nb::class_<llvm::Instruction, llvm::User>(m, "Instruction");
 }
