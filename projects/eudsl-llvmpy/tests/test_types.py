@@ -35,3 +35,40 @@ def test_types_are_uniqued_and_hashable():
         assert llvm.i32(a) != llvm.i32(b)
         assert len({llvm.i32(a), llvm.i32(a), llvm.i64(a)}) == 2
     assert_no_leaks()
+
+
+# Derived-type str() round-trips. Concrete-subclass accessors (.bit_width etc.)
+# and downcasting are validated in test_types_downcast (added with the Type
+# type_hook), since until the hook lands the factories return base Type objects.
+def test_derived_types_print():
+    with llvm.Context() as ctx:
+        assert str(llvm.int_t(ctx, 7)) == "i7"
+        assert str(llvm.ptr_t(ctx)) == "ptr"
+        assert str(llvm.ptr_t(ctx, 3)) == "ptr addrspace(3)"
+        assert str(llvm.array_t(llvm.i32(ctx), 4)) == "[4 x i32]"
+        assert str(llvm.vector_t(llvm.f32(ctx), 8)) == "<8 x float>"
+        assert str(llvm.vector_t(llvm.f32(ctx), 8, scalable=True)) == "<vscale x 8 x float>"
+        assert str(llvm.struct_t(ctx, [llvm.i32(ctx), llvm.f64(ctx)])) == "{ i32, double }"
+        assert (
+            str(llvm.struct_t(ctx, [llvm.i8(ctx), llvm.i32(ctx)], packed=True))
+            == "<{ i8, i32 }>"
+        )
+        assert (
+            str(llvm.function_t(llvm.i32(ctx), [llvm.i32(ctx), llvm.f32(ctx)]))
+            == "i32 (i32, float)"
+        )
+        assert (
+            str(llvm.function_t(llvm.void_t(ctx), [llvm.ptr_t(ctx)], var_arg=True))
+            == "void (ptr, ...)"
+        )
+    assert_no_leaks()
+
+
+def test_named_struct_prints_opaque():
+    with llvm.Context() as ctx:
+        named = llvm.named_struct_t(ctx, "Pair")
+        # An opaque named struct prints its full definition. set_body and the
+        # concrete-subclass accessors are validated in test_types_downcast,
+        # once the Type type_hook makes named_struct_t return a StructType.
+        assert str(named) == "%Pair = type opaque"
+    assert_no_leaks()

@@ -8,6 +8,9 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 
 #include <cstdint>
 #include <string>
