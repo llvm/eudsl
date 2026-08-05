@@ -394,12 +394,12 @@ jobs:
       - name: "Install eudsl-llvmpy"
         run: |
 
-          python -m pip install pytest
+          python -m pip install pytest pytest-cov
           python -m pip install eudsl-llvmpy eudsl-tblgen -f wheelhouse
 
       - name: "Test eudsl-llvmpy"
         run: |
-          
+
           export TESTS_DIR="$PWD/projects/eudsl-llvmpy/tests"
           python -m pytest -rA --capture=tee-sys $TESTS_DIR
 
