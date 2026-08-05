@@ -403,6 +403,67 @@ jobs:
           export TESTS_DIR="$PWD/projects/eudsl-llvmpy/tests"
           python -m pytest -rA --capture=tee-sys $TESTS_DIR
 
+  coverage-eudsl-llvmpy:
+
+    if: github.event_name == 'pull_request'
+
+    needs: [build-eudsl]
+
+    runs-on: "ubuntu-22.04"
+
+    name: "Coverage llvmpy ubuntu_x86_64"
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      cache-key: eudsl_ubuntu_x86_64_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: false
+
+      - name: "Setup base"
+        uses: ./.github/actions/setup_base
+        with:
+          cache-key: ${{ env.cache-key }}
+          restore-key: "eudsl_ubuntu_x86_64_clang"
+          os: "ubuntu"
+          host-arch: "x86_64"
+          target-arch: "x86_64"
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: eudsl_ubuntu_x86_64_artifact
+          path: wheelhouse
+
+      - name: "Fetch LLVM distro (ships llvm-cov/llvm-profdata)"
+        run: |
+
+          pip download mlir-wheel -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
+          unzip -q mlir_wheel*.whl
+          mv mlir_wheel llvm-install
+
+      - name: "C++ coverage (llvm-cov, threshold 100%)"
+        run: |
+
+          # Build deps for the --no-build-isolation instrumented build, plus the
+          # eudsl-tblgen build dependency and the test runner.
+          $python3_command -m pip install \
+            "nanobind==2.12.0" ninja "scikit-build-core==0.10.7" \
+            typing_extensions numpy pytest pytest-cov
+          $python3_command -m pip install eudsl-tblgen -f wheelhouse
+
+          export CMAKE_PREFIX_PATH="$PWD/llvm-install"
+          export LLVM_BINDIR="$PWD/llvm-install/bin"
+          export PYTHON="$python3_command"
+          export COVERAGE_THRESHOLD=100
+          bash projects/eudsl-llvmpy/scripts/cpp_coverage.sh
+
   release-eudsl:
 
     if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
