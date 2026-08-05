@@ -16,6 +16,26 @@
 #include <vector>
 
 void populate_types(nb::module_ &m) {
+  nb::enum_<llvm::Type::TypeID>(m, "TypeID")
+      .value("Half", llvm::Type::HalfTyID)
+      .value("BFloat", llvm::Type::BFloatTyID)
+      .value("Float", llvm::Type::FloatTyID)
+      .value("Double", llvm::Type::DoubleTyID)
+      .value("X86_FP80", llvm::Type::X86_FP80TyID)
+      .value("FP128", llvm::Type::FP128TyID)
+      .value("PPC_FP128", llvm::Type::PPC_FP128TyID)
+      .value("Void", llvm::Type::VoidTyID)
+      .value("Label", llvm::Type::LabelTyID)
+      .value("Metadata", llvm::Type::MetadataTyID)
+      .value("Token", llvm::Type::TokenTyID)
+      .value("Integer", llvm::Type::IntegerTyID)
+      .value("Function", llvm::Type::FunctionTyID)
+      .value("Pointer", llvm::Type::PointerTyID)
+      .value("Struct", llvm::Type::StructTyID)
+      .value("Array", llvm::Type::ArrayTyID)
+      .value("FixedVector", llvm::Type::FixedVectorTyID)
+      .value("ScalableVector", llvm::Type::ScalableVectorTyID);
+
   nb::class_<llvm::Type>(m, "Type")
       .def_prop_ro("is_void", &llvm::Type::isVoidTy)
       .def_prop_ro("is_label", &llvm::Type::isLabelTy)
@@ -24,6 +44,7 @@ void populate_types(nb::module_ &m) {
       .def_prop_ro("is_floating_point", &llvm::Type::isFloatingPointTy)
       .def_prop_ro("is_pointer", &llvm::Type::isPointerTy)
       .def_prop_ro("is_sized", [](llvm::Type &self) { return self.isSized(); })
+      .def_prop_ro("type_id", [](llvm::Type &self) { return self.getTypeID(); })
       .def("__str__", [](llvm::Type &self) { return eudsl::toString(self); })
       .def("__eq__",
            [](llvm::Type &self, nb::handle other) {

@@ -2,24 +2,39 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import llvm
+from llvm.dsl.casters import maybe_downcast
 from llvm.dsl.context import building
+from llvm.dsl.values import ArithValue
 from llvm.testing import assert_no_leaks
 
 
 def _entry(ctx, mod, ret_ty, arg_tys, name="f"):
     fn = llvm.Function.create(llvm.function_t(ret_ty, arg_tys), name, mod)
     bb = fn.append_basic_block("entry")
-    return fn, bb
+    # Wrap args the way @function will, so integer/float args are ArithValue.
+    args = [maybe_downcast(fn.arg(i), fn) for i in range(len(arg_tys))]
+    return fn, bb, args
+
+
+def test_args_are_arithvalue():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.i32(ctx)
+        fn, bb, args = _entry(ctx, mod, i32, [i32])
+        assert isinstance(args[0], ArithValue)
+        del fn, mod
+    assert_no_leaks()
 
 
 def test_integer_add_and_mul():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.i32(ctx)
-        fn, bb = _entry(ctx, mod, i32, [i32, i32])
+        fn, bb, args = _entry(ctx, mod, i32, [i32, i32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
-            r = fn.arg(0) * fn.arg(1) + 1
+            r = args[0] * args[1] + 1
+            assert isinstance(r, ArithValue)  # result stays typed
             b.ret(r)
         printed = str(mod)
         assert "mul i32" in printed
@@ -32,10 +47,10 @@ def test_float_add_uses_fadd():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         f32 = llvm.f32(ctx)
-        fn, bb = _entry(ctx, mod, f32, [f32, f32])
+        fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
-            b.ret(fn.arg(0) + fn.arg(1))
+            b.ret(args[0] + args[1])
         assert "fadd float" in str(mod)
         del b, fn, mod
     assert_no_leaks()
@@ -45,10 +60,10 @@ def test_scalar_coercion():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.i32(ctx)
-        fn, bb = _entry(ctx, mod, i32, [i32])
+        fn, bb, args = _entry(ctx, mod, i32, [i32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
-            b.ret(fn.arg(0) + 7)
+            b.ret(args[0] + 7)
         assert "add i32 %0, 7" in str(mod)
         del b, fn, mod
     assert_no_leaks()
@@ -58,10 +73,10 @@ def test_integer_comparison_signed():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.i32(ctx)
-        fn, bb = _entry(ctx, mod, llvm.i1(ctx), [i32, i32])
+        fn, bb, args = _entry(ctx, mod, llvm.i1(ctx), [i32, i32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
-            b.ret(fn.arg(0) < fn.arg(1))
+            b.ret(args[0] < args[1])
         assert "icmp slt i32" in str(mod)
         del b, fn, mod
     assert_no_leaks()
@@ -71,10 +86,10 @@ def test_float_comparison_ordered():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         f32 = llvm.f32(ctx)
-        fn, bb = _entry(ctx, mod, llvm.i1(ctx), [f32, f32])
+        fn, bb, args = _entry(ctx, mod, llvm.i1(ctx), [f32, f32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
-            b.ret(fn.arg(0) > fn.arg(1))
+            b.ret(args[0] > args[1])
         assert "fcmp ogt float" in str(mod)
         del b, fn, mod
     assert_no_leaks()
@@ -84,13 +99,13 @@ def test_eq_ne_named_methods():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.i32(ctx)
-        fn, bb = _entry(ctx, mod, llvm.i1(ctx), [i32, i32])
+        fn, bb, args = _entry(ctx, mod, llvm.i1(ctx), [i32, i32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
-            b.ret(fn.arg(0).eq(fn.arg(1)))
+            b.ret(args[0].eq(args[1]))
         assert "icmp eq i32" in str(mod)
-        # __eq__ stays identity so Value is still hashable.
-        assert fn.arg(0) == fn.arg(0)
-        assert len({fn.arg(0), fn.arg(0), fn.arg(1)}) == 2
+        # __eq__ stays identity so the value is still hashable.
+        assert args[0] == args[0]
+        assert len({args[0], args[0]}) == 1
         del b, fn, mod
     assert_no_leaks()

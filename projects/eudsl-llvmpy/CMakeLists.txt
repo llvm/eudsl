@@ -108,6 +108,7 @@ nanobind_add_module(eudslllvm_ext
   src/eudslllvm_ext.cpp
   src/IR/Ownership.cpp
   src/IR/Context.cpp
+  src/IR/Casters.cpp
   src/IR/Types.cpp
   src/IR/Kinds.cpp
   src/IR/Values.cpp

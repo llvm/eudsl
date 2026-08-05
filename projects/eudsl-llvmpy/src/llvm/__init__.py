@@ -6,6 +6,6 @@
 from .eudslllvm_ext import *
 from .eudslllvm_ext import __doc__
 
-from .dsl.values import install_value_dunders as _install_value_dunders
+from .dsl.values import install_value_casters as _install_value_casters
 
-_install_value_dunders()
+_install_value_casters()
