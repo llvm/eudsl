@@ -54,6 +54,50 @@ Every C++ task ends with a rebuild before the test run. The build is incremental
 
 ---
 
+## Delivery: two stacked draft PRs via `gh stack`
+
+The work ships as **two stacked pull requests**, one per phase, managed with the
+`gh stack` extension (github/gh-stack). Each PR keeps its own per-task commits.
+Phase B stacks on Phase A because it depends on the bindings Phase A lands.
+
+- **PR 1 — Phase A, the object / binding layer (Tasks 1–21).** Bottom of the
+  stack, based on `main`.
+- **PR 2 — Phase B, the DSL frontend (Tasks 22–34).** Stacked on top of the
+  Phase A branch.
+
+**Commits stay per-task.** Every task ends with its own `git commit` (failing
+test → implement → suite green → commit). `gh stack` handles branch topology and
+PR creation; the two phase boundaries are the only extra steps.
+
+**Stack setup and submission:**
+
+```bash
+# Before Task 1 — start the stack; creates the branch off main.
+cd $EUDSL && git checkout main && git pull \
+  && gh stack init users/makslevental/eudsl-llvmpy-object-layer
+
+# ... Tasks 1–21, one commit each ...
+
+# End of Task 21 — push Phase A and open PR 1 as a draft.
+#   --auto skips the editor and creates new PRs as drafts (run plain
+#   `gh stack submit` instead to set the title/description interactively).
+gh stack submit --auto
+
+# Before Task 22 — add the Phase B branch on top of the stack.
+cd $EUDSL && gh stack add users/makslevental/eudsl-llvmpy-dsl
+
+# ... Tasks 22–34, one commit each ...
+
+# End of Task 34 — push Phase B, open PR 2 as a draft, link the stack.
+gh stack submit --auto
+```
+
+`gh stack submit --auto` opens PRs as drafts. When Phase A merges, run
+`gh stack sync` (and `gh stack rebase`) to retarget PR 2 onto `main`. Keep the
+PRs draft until each phase's full suite is green.
+
+---
+
 ## File Structure
 
 ### C++ binding layer — `projects/eudsl-llvmpy/src/ir/`
@@ -481,12 +525,7 @@ Expected: both tests PASS.
 
 ```bash
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
-  && git commit -m "[eudsl-llvmpy] Replace litgen C API bindings with hand-written C++ nanobind bindings
-
-Deletes eudsl-llvmpy-generate.py, the generated eudslllvm_ext sources, the
-thin Python wrappers, and amdgcn.py, along with the litgen and eudsl-tblgen
-build dependencies. Lands a minimal hand-written replacement binding
-LLVMContext and Module with parse and print."
+  && git commit -m "[eudsl-llvmpy] Replace litgen C API bindings with hand-written C++ nanobind bindings for Context and Module"
 ```
 
 ---
@@ -627,11 +666,7 @@ Expected: all PASS. Confirm the build log no longer mentions `LLVMAMDGPUCodeGen`
 
 ```bash
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
-  && git commit -m "[eudsl-llvmpy] Add EUDSL_LLVMPY_TARGETS with a host-only default
-
-AMDGPU and NVPTX are no longer linked unconditionally. Emitting AMDGCN
-assembly never required an AMD device, so the path stays reachable by
--DEUDSL_LLVMPY_TARGETS=AArch64;X86;AMDGPU rather than by patch."
+  && git commit -m "[eudsl-llvmpy] Add EUDSL_LLVMPY_TARGETS with a host-only default"
 ```
 
 ---
@@ -798,11 +833,7 @@ Expected: all PASS.
 
 ```bash
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
-  && git commit -m "[eudsl-llvmpy] Make Context and Module lifetimes correct and observable
-
-Adds Context._get_live_count, keep_alive from module to context, a settable
-module name, and moved-from tracking so a consumed module raises instead of
-segfaulting. Lands llvm.testing.assert_no_leaks."
+  && git commit -m "[eudsl-llvmpy] Make Context and Module lifetimes correct and observable"
 ```
 
 ---
@@ -1181,10 +1212,7 @@ Expected: all selected tests PASS. The four new tests fail with `AttributeError:
 
 ```bash
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
-  && git commit -m "[eudsl-llvmpy] Bind the derived llvm::Type classes and their factories
-
-Concrete-subclass accessors do not activate until the Type type_hook lands
-in the next commit; the tests for them are marked in the same commit."
+  && git commit -m "[eudsl-llvmpy] Bind the derived llvm::Type classes and their factories"
 ```
 
 ---
@@ -1327,16 +1355,11 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pip install -e . --no-build-isolation 
 
 Expected: all of `tests/test_types.py` PASSES, including the four tests deferred from Task 5.
 
-- [ ] **Step 7: Run the whole suite and commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests -v
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
-  && git commit -m "[eudsl-llvmpy] Add a type_hook downcasting llvm::Type on TypeID
-
-llvm::Type has no vtable, so nanobind's RTTI downcast cannot work. The hook
-dispatches on getTypeID(), and Kinds.h is pulled in by Common.h so every
-translation unit that returns a Type* gets the concrete Python class."
+  && git commit -m "[eudsl-llvmpy] Add a type_hook downcasting llvm::Type on TypeID"
 ```
 
 ---
@@ -1595,12 +1618,7 @@ Expected: all PASS (behaviour unchanged so far; the hook is dormant until a `Val
 
 ```bash
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
-  && git commit -m "[eudsl-llvmpy] Add the Value type_hook from Value.def and Instruction.def
-
-Dispatches on getValueID(), handling the InstructionVal + opcode case, with a
-pick() guard falling back to base Value for classes not yet registered. The
-.def X-macro tables mean an LLVM value-kind addition surfaces here rather than
-silently vanishing."
+  && git commit -m "[eudsl-llvmpy] Add the Value type_hook from Value.def and Instruction.def"
 ```
 
 ---
@@ -3825,16 +3843,30 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pip install -e . --no-build-isolation 
 
 Expected: all PASS. This is the commit where the new layer overtakes the old one in capability.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Commit, then submit the stack to open PR 1 (draft)**
+
+This is the last task of Phase A. Commit it like the others, then submit the
+stack to push the Phase A branch and open PR 1 as a draft (Tasks 1–21). The
+Phase A branch was created with `gh stack init` before Task 1 (see **Delivery**).
 
 ```bash
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
   && git commit -m "[eudsl-llvmpy] Bind Intrinsic lookup/declaration and the llvm.intrinsics shim"
+# Push the Phase A branch and open PR 1 as a draft. Run plain `gh stack submit`
+# to set the title/description interactively instead of auto-generating them.
+gh stack submit --auto
 ```
 
 ---
 
 ## Phase B1 — typed values
+
+**Before Task 22, add the Phase B branch to the stack** (see **Delivery**), so
+every Phase B commit lands on the stacked branch:
+
+```bash
+cd $EUDSL && gh stack add users/makslevental/eudsl-llvmpy-dsl
+```
 
 The DSL emits into a *current builder*. Task 22 introduces that mechanism; the
 arithmetic/comparison/GEP dunders are Python functions attached to the bound
@@ -4783,10 +4815,9 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_dsl_cf.py -v
 
 Expected: `test_if_else_produces_phi` and `test_if_else_jits_correctly` PASS. Iterate on the phi-to-assignment wiring (the known gap) using systematic-debugging until the execution test is green.
 
-- [ ] **Step 7: Run the full suite and commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests -v
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
   && git commit -m "[eudsl-llvmpy] Add @function and if/else lowering to blocks and phi nodes"
 ```
@@ -4849,10 +4880,9 @@ Expected: FAIL if `CanonicalizeElIfs` forwarding is not yet correct for the LLVM
 
 `elif` is `else: if ...`. `CanonicalizeElIfs.forward_yield_from_nested_if` forwards the inner if's yielded name outward. If the execution test shows a missing phi incoming from the elif branch, the fix is in the vendored `forward_yield_from_nested_if` in `cf_transformers.py` — ensure the forwarded `yield_` targets the outer merge. Debug with systematic-debugging; the IR (`str(mod)`) shows which block lacks a phi incoming.
 
-- [ ] **Step 4: Run the tests and commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests -v
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
   && git commit -m "[eudsl-llvmpy] Support elif chains in DSL control flow"
 ```
@@ -4941,10 +4971,9 @@ Port `CanonicalizeWhile`'s runtime contract from `scf.py`'s `while__`/`while___`
 
 **Accepted risk flagged for the user:** loop-carried phi wiring in `while_` is the single most complex piece of this plan. If it does not converge within the task, land the no-carried-value form (green, useful) and split the carried-value form into a follow-up task rather than blocking the phase.
 
-- [ ] **Step 4: Run the tests and commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests -v
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
   && git commit -m "[eudsl-llvmpy] Add while-loop lowering with loop-carried phi nodes"
 ```
@@ -5001,10 +5030,9 @@ Expected: `NameError: name 'range_' is not defined`.
 
 `range_(start, stop, step)` builds the same header/body/exit structure as `while_`, with an induction phi `i` starting at `start`, a header comparison `i < stop` (via `b.icmp(ICmpPredicate.SLT, ...)`), and a body-end increment `i + step` feeding back into the header phi. Loop-carried values from `yield_` get additional header phis, exactly as in Task 29. Reuse `_WhileOp`'s phi-wiring helper. Add `range_` and `for_` to `_InjectCFGlobals`. `InsertEmptyYield.visit_For` (already vendored) inserts the empty yield when the body lacks one; confirm the `"range_"`/`"for_"` name check in the vendored transformer matches the injected names.
 
-- [ ] **Step 4: Run the tests and commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests -v
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
   && git commit -m "[eudsl-llvmpy] Add for/range_ lowering with an induction-variable phi"
 ```
@@ -5105,10 +5133,9 @@ class RejectUnsupportedJumps(StrictTransformer):
 
 Add `RejectUnsupportedJumps` as the **first** entry in `LLVMCanonicalizer.cst_transformers` in `cf.py`, so it runs before `ReplaceIfWithWith` rewrites the `if` away. Note: `visit_If`/`visit_While`/`visit_For` scanning for a nested `ast.Return` would also flag the *trailing* return of the function body if that return is syntactically inside the top-level construct; guard by only rejecting a `Return` that is a descendant of an `if`/loop that is itself nested (i.e. the function's final `return` is a sibling of the constructs, not inside them, so `ast.walk` over the `if` node will not reach it). Verify with `test_if_else_jits_correctly` from Task 27 still passing (its `return x` is after the `if`, not inside it).
 
-- [ ] **Step 4: Run the full CF suite and commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_dsl_cf.py -v
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
   && git commit -m "[eudsl-llvmpy] Reject break/continue/early return in DSL control flow"
 ```
@@ -5217,10 +5244,9 @@ Add `_body_is_empty(f)` using `inspect.getsource` + `ast` to detect a body that 
 
 Update `src/llvm/__init__.py` if `function` now lives behind `DSLFunction` — the export stays `from .dsl.func import function`.
 
-- [ ] **Step 4: Run the tests and commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests -v
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
   && git commit -m "[eudsl-llvmpy] Rework @function: declarations, calls via __call__, returns"
 ```
@@ -5283,10 +5309,9 @@ Extend `function(*, module, name=None, linkage=None, calling_conv=None, attrs=No
             fn.add_fn_attr(k, v)
 ```
 
-- [ ] **Step 4: Run the tests and commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests -v
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
   && git commit -m "[eudsl-llvmpy] Add linkage, calling convention, attrs, varargs to @function"
 ```
@@ -5394,11 +5419,17 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pip install -e . --no-build-isolation 
 
 Expected: all PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit, then submit the stack to open PR 2 (draft)**
+
+This is the last task of Phase B. Commit it, then submit the stack to push the
+Phase B branch, open PR 2 as a draft, and link it above PR 1 (Tasks 22–34). The
+Phase B branch was added with `gh stack add` before Task 22 (see **Delivery**).
 
 ```bash
 cd $EUDSL && git add -A projects/eudsl-llvmpy \
   && git commit -m "[eudsl-llvmpy] Bind module globals with initializers and address spaces"
+# Push the Phase B branch, open PR 2 as a draft, and link the stack.
+gh stack submit --auto
 ```
 
 ---
