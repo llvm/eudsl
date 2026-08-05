@@ -41,7 +41,7 @@ template <typename T> T unwrap(llvm::Expected<T> &&e) {
 /// Unwrap an llvm::Error, raising RuntimeError on failure.
 inline void unwrap(llvm::Error &&e) {
   if (e)
-    throw std::runtime_error(llvm::toString(std::move(e)));
+    throw std::runtime_error(llvm::toString(std::move(e))); // LCOV_EXCL_LINE
 }
 
 } // namespace eudsl

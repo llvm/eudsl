@@ -17,3 +17,6 @@
 /IR/
 
 # Compiled extension and generated stubs land in src/llvm (see src/llvm/.gitignore)
+# llvm-cov coverage artifacts
+*.profraw
+*.profdata

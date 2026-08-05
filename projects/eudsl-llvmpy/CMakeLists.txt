@@ -37,6 +37,16 @@ include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
+# C++ source coverage (llvm-cov). When ON, the extension is built with
+# instrumentation; scripts/cpp_coverage.sh runs the test suite (which imports
+# the .so) under LLVM_PROFILE_FILE, merges the profraw, and enforces a
+# src/IR line-coverage threshold via scripts/check_coverage.py.
+option(EUDSL_LLVMPY_ENABLE_COVERAGE "Instrument eudslllvm_ext for llvm-cov" OFF)
+if(EUDSL_LLVMPY_ENABLE_COVERAGE)
+  message(STATUS "EUDSL_LLVMPY: C++ coverage instrumentation enabled")
+  set(EUDSLLLVM_COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping)
+endif()
+
 # Which LLVM targets to link and initialize. Defaults to the host target the
 # linked LLVM was built for (LLVM_NATIVE_ARCH), so it works against a host-only
 # distro on any arch. Extra targets stay reachable by flag rather than by patch,
@@ -148,6 +158,10 @@ set_target_properties(eudslllvm_ext
 )
 
 target_compile_options(eudslllvm_ext PRIVATE ${nanobind_options})
+if(EUDSL_LLVMPY_ENABLE_COVERAGE)
+  target_compile_options(eudslllvm_ext PRIVATE ${EUDSLLLVM_COVERAGE_FLAGS})
+  target_link_options(eudslllvm_ext PRIVATE ${EUDSLLLVM_COVERAGE_FLAGS})
+endif()
 # The nanobind helper library name varies with STABLE_ABI (-abi3) and
 # FREE_THREADED (-ft), so probe every variant instead of hardcoding two.
 set(_nanobind_tgt)

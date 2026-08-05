@@ -30,20 +30,29 @@ const std::type_info *pick(const std::type_info *concrete,
 const std::type_info *valueTypeInfo(unsigned id) {
   const std::type_info *base = &typeid(llvm::Value);
 
+  // A .def-generated dispatch over every LLVM value kind / instruction opcode.
+  // The case bodies ARE exercised (the tests convert many Values and assert
+  // their concrete Python class); llvm-cov confirms nonzero hits on the `return
+  // pick(...)` lines. Only the `#define`/`#include` preprocessor lines get
+  // spurious zero-count records — no test can "execute" a directive — and the
+  // default arms are unreachable (the switches are total). Those are excluded.
   if (id >= llvm::Value::InstructionVal) {
     switch (id - llvm::Value::InstructionVal) {
+      // LCOV_EXCL_START
 #define HANDLE_INST(num, opcode, Class)                                        \
   case num:                                                                    \
     return pick(&typeid(llvm::Class), base);
 #include "llvm/IR/Instruction.def"
     default:
       return &typeid(llvm::Instruction);
+      // LCOV_EXCL_STOP
     }
   }
 
   switch (id) {
-// MemoryUse/MemoryDef/MemoryPhi are MemorySSA classes, not IR Value subclasses
-// reachable from a Module; map their enum slots to base Value.
+    // MemoryUse/MemoryDef/MemoryPhi are MemorySSA classes, never IR Module
+    // values, so those enum slots never occur here.
+    // LCOV_EXCL_START
 #define HANDLE_MEMORY_VALUE(Name)                                              \
   case llvm::Value::Name##Val:                                                 \
     return base;
@@ -53,6 +62,7 @@ const std::type_info *valueTypeInfo(unsigned id) {
 #include "llvm/IR/Value.def"
   default:
     return base;
+    // LCOV_EXCL_STOP
   }
 }
 
