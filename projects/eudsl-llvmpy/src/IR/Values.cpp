@@ -87,6 +87,8 @@ void populate_values(nb::module_ &m) {
                    })
       .def("successor", &llvm::Instruction::getSuccessor, "index"_a,
            nb::rv_policy::reference_internal)
+      .def("set_successor", &llvm::Instruction::setSuccessor, "index"_a,
+           "block"_a)
       .def_prop_ro("is_terminator",
                    [](llvm::Instruction &self) { return self.isTerminator(); })
       .def_prop_ro(
