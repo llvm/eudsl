@@ -9,3 +9,6 @@ from .eudslllvm_ext import __doc__
 from .dsl.values import install_value_casters as _install_value_casters
 
 _install_value_casters()
+
+from .dsl.func import function
+from .dsl.cf import yield_
