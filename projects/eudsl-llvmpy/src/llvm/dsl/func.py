@@ -58,7 +58,9 @@ class DSLFunction:
         return maybe_downcast(call, self.fn)
 
 
-def function(*, module, name=None):
+def function(
+    *, module, name=None, linkage=None, calling_conv=None, attrs=None, var_arg=False
+):
     def decorator(f):
         ctx = module.context
         sig = inspect.signature(f)
@@ -66,7 +68,15 @@ def function(*, module, name=None):
         ret_type = _resolve(sig.return_annotation, ctx)
         fn_name = name or f.__name__
 
-        fn = Function.create(function_t(ret_type, param_types), fn_name, module)
+        fn = Function.create(
+            function_t(ret_type, param_types, var_arg=var_arg), fn_name, module
+        )
+        if linkage is not None:
+            fn.linkage = linkage
+        if calling_conv is not None:
+            fn.calling_conv = calling_conv
+        for k, v in (attrs or {}).items():
+            fn.add_fn_attr(k, v)
 
         # Empty body -> declaration: no entry block, stays a `declare`.
         if _body_is_empty(f):

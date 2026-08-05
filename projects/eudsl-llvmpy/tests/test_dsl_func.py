@@ -41,3 +41,36 @@ def test_call_between_functions_jits():
     assert fn(40) == 42
     del jit, mod, ctx, inc, inc2, i32, fn
     assert_no_leaks()
+
+
+def test_function_options():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.i32(ctx)
+
+        @llvm.function(
+            module=mod,
+            linkage=llvm.Linkage.INTERNAL,
+            attrs={"target-cpu": "znver3"},
+        )
+        def f(x: i32) -> i32:
+            return x
+
+        printed = str(mod)
+        assert "define internal i32 @f" in printed
+        assert 'target-cpu"="znver3' in printed
+        del mod
+    assert_no_leaks()
+
+
+def test_varargs_declaration():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.i32(ctx)
+
+        @llvm.function(module=mod, var_arg=True)
+        def printf_like(fmt: llvm.ptr_t(ctx)) -> i32: ...
+
+        assert "declare i32 @printf_like(ptr, ...)" in str(mod)
+        del mod
+    assert_no_leaks()
