@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include "IR/Common.h"
+#include "IR/Errors.h"
 #include "IR/Ownership.h"
 #include "IR/TargetInit.h"
 
@@ -120,7 +121,7 @@ void populate_context(nb::module_ &m) {
           std::string msg;
           llvm::raw_string_ostream os(msg);
           err.print(module_identifier.c_str(), os);
-          throw std::runtime_error(msg);
+          throw eudsl::ParseError(msg);
         }
         mod->setModuleIdentifier(module_identifier);
         mod->setSourceFileName(source_filename);

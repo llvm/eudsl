@@ -4,6 +4,8 @@
 
 #include <nanobind/nanobind.h>
 
+#include "IR/Errors.h"
+
 namespace nb = nanobind;
 
 void populate_context(nb::module_ &m);
@@ -17,6 +19,7 @@ void populate_builder(nb::module_ &m);
 
 NB_MODULE(eudslllvm_ext, m) {
   m.doc() = "Hand-written nanobind bindings over the LLVM C++ IR API.";
+  eudsl::registerExceptions(m);
   populate_context(m);
   populate_attributes(m);
   nb::module_ types = m.def_submodule("types");
