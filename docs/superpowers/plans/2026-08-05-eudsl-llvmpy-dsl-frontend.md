@@ -4,7 +4,7 @@
 
 **Goal:** Replace `eudsl-llvmpy`'s litgen-generated LLVM **C** API bindings with hand-written nanobind bindings over the LLVM **C++** API, then layer a Python DSL frontend (operator overloading, Python control flow lowered to basic blocks and phi nodes, `@function` decorator) on top.
 
-**Architecture:** Two layers in one `llvm` package. The binding layer is hand-written nanobind C++ in `src/ir/*.cpp`, mirroring LLVM's C++ class hierarchy, with downcasting done through `nanobind::detail::type_hook` because `llvm::Value` and `llvm::Type` have no vtables. The DSL layer is pure Python in `llvm/dsl/` and `llvm/ast/`, reusing the AST canonicalizer machinery from `eudsl-python-extras` (vendored) and mirroring its `scf` yield protocol, except regions become real basic blocks and yielded values become phi nodes.
+**Architecture:** Two layers in one `llvm` package. The binding layer is hand-written nanobind C++ in `src/IR/*.cpp`, mirroring LLVM's C++ class hierarchy, with downcasting done through `nanobind::detail::type_hook` because `llvm::Value` and `llvm::Type` have no vtables. The DSL layer is pure Python in `llvm/dsl/` and `llvm/ast/`, reusing the AST canonicalizer machinery from `eudsl-python-extras` (vendored) and mirroring its `scf` yield protocol, except regions become real basic blocks and yielded values become phi nodes.
 
 **Tech Stack:** LLVM 24.0.0git C++ API (`llvm/IR`, `llvm/AsmParser`, `llvm/Passes`, `llvm/Target`, `llvm/Linker`, `llvm/ExecutionEngine/Orc`), nanobind 2.12.0, scikit-build-core 0.10.7, CMake ≥ 3.29, pytest, FileCheck.
 
@@ -100,7 +100,7 @@ PRs draft until each phase's full suite is green.
 
 ## File Structure
 
-### C++ binding layer — `projects/eudsl-llvmpy/src/ir/`
+### C++ binding layer — `projects/eudsl-llvmpy/src/IR/`
 
 | File | Responsibility |
 |---|---|
@@ -149,7 +149,7 @@ This is the cutover. The package ends this task with *less* capability than it s
 
 **Files:**
 - Delete: `src/eudslllvm_ext.cpp` (rewritten), `src/types.h`, `eudsl-llvmpy-generate.py`, `src/llvm/instructions.py`, `src/llvm/types_.py`, `src/llvm/function.py`, `src/llvm/context.py`, `src/llvm/util.py`, `src/llvm/amdgcn.py`, `src/llvm/eudslllvm_ext.pyi`
-- Create: `src/ir/Common.h`, `src/ir/Ownership.h`, `src/ir/Ownership.cpp`, `src/ir/Context.cpp`, `src/eudslllvm_ext.cpp`
+- Create: `src/IR/Common.h`, `src/IR/Ownership.h`, `src/IR/Ownership.cpp`, `src/IR/Context.cpp`, `src/eudslllvm_ext.cpp`
 - Modify: `CMakeLists.txt`, `pyproject.toml`, `src/llvm/__init__.py`, `tests/test_bindings.py`
 
 **Interfaces:**
@@ -230,7 +230,7 @@ rm -rf src/llvm/__pycache__ src/llvm/eudslllvm_ext.abi3.so build
 mkdir -p src/ir
 ```
 
-- [ ] **Step 4: Write `src/ir/Common.h`**
+- [ ] **Step 4: Write `src/IR/Common.h`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -277,7 +277,7 @@ inline void unwrap(llvm::Error &&e) {
 } // namespace eudsl
 ```
 
-- [ ] **Step 5: Write `src/ir/Ownership.h`**
+- [ ] **Step 5: Write `src/IR/Ownership.h`**
 
 `llvm::LLVMContext` and `llvm::Module` are wrapped in owning holders rather than bound directly, for three reasons: the live-instance count needs constructor/destructor hooks; the module must be able to report "I was consumed by the JIT" instead of segfaulting; and Python-visible lifetimes then have one obvious owner each.
 
@@ -335,14 +335,14 @@ private:
 } // namespace eudsl
 ```
 
-- [ ] **Step 6: Write `src/ir/Ownership.cpp`**
+- [ ] **Step 6: Write `src/IR/Ownership.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Ownership.h"
+#include "IR/Ownership.h"
 
 #include <stdexcept>
 
@@ -380,15 +380,15 @@ std::unique_ptr<llvm::Module> Module::take() {
 } // namespace eudsl
 ```
 
-- [ ] **Step 7: Write `src/ir/Context.cpp`**
+- [ ] **Step 7: Write `src/IR/Context.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
-#include "ir/Ownership.h"
+#include "IR/Common.h"
+#include "IR/Ownership.h"
 
 #include <llvm/AsmParser/Parser.h>
 #include <llvm/Support/SourceMgr.h>
@@ -471,8 +471,8 @@ nanobind_add_module(eudslllvm_ext
   NB_STATIC STABLE_ABI
   NB_DOMAIN eudslllvm
   src/eudslllvm_ext.cpp
-  src/ir/Ownership.cpp
-  src/ir/Context.cpp
+  src/IR/Ownership.cpp
+  src/IR/Context.cpp
 )
 
 set(eudslllvm_ext_libs
@@ -595,14 +595,14 @@ foreach(_tgt IN LISTS EUDSL_LLVMPY_TARGETS)
       "  LLVMInitialize${_tgt}AsmParser();\n"
       "  LLVMInitialize${_tgt}AsmPrinter();\n")
 endforeach()
-configure_file("${CMAKE_CURRENT_LIST_DIR}/src/ir/TargetInit.h.in"
+configure_file("${CMAKE_CURRENT_LIST_DIR}/src/IR/TargetInit.h.in"
                "${EUDSLLLVM_BINARY_DIR}/ir/TargetInit.h" @ONLY)
 include_directories("${EUDSLLLVM_BINARY_DIR}")
 ```
 
 Note: `LLVMInitializeXTarget` and friends are C++ functions declared by `llvm/Support/TargetSelect.h` in namespace scope (they are *not* the C API — `TargetSelect.h` is a C++ header in `llvm/Support`). Add `${EUDSLLLVM_TARGET_LIBS}` to `eudslllvm_ext_libs`, plus `LLVMTarget LLVMMC LLVMMCParser LLVMCodeGen LLVMTargetParser`.
 
-- [ ] **Step 4: Create the generated-header template `src/ir/TargetInit.h.in`**
+- [ ] **Step 4: Create the generated-header template `src/IR/TargetInit.h.in`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -625,12 +625,12 @@ inline void initializeTargets() {
 } // namespace eudsl
 ```
 
-- [ ] **Step 5: Expose `registered_targets()` from `src/ir/Context.cpp`**
+- [ ] **Step 5: Expose `registered_targets()` from `src/IR/Context.cpp`**
 
 Add these includes at the top of `Context.cpp`:
 
 ```cpp
-#include "ir/TargetInit.h"
+#include "IR/TargetInit.h"
 
 #include <llvm/MC/TargetRegistry.h>
 ```
@@ -678,7 +678,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 Task 1 bound these classes minimally. This task makes their lifetime correct and observable, and lands the shared test helper every later task uses.
 
 **Files:**
-- Modify: `src/ir/Ownership.h`, `src/ir/Ownership.cpp`, `src/ir/Context.cpp`
+- Modify: `src/IR/Ownership.h`, `src/IR/Ownership.cpp`, `src/IR/Context.cpp`
 - Create: `src/llvm/testing.py`
 - Test: `tests/test_context.py`
 
@@ -790,7 +790,7 @@ def assert_no_leaks():
     assert live == 0, f"{live} Context object(s) still alive"
 ```
 
-- [ ] **Step 4: Add `_is_consumed` and a settable `name` to `src/ir/Ownership.h`**
+- [ ] **Step 4: Add `_is_consumed` and a settable `name` to `src/IR/Ownership.h`**
 
 Add to `class Module`, in the public section:
 
@@ -798,7 +798,7 @@ Add to `class Module`, in the public section:
   bool isConsumed() const { return mod == nullptr; }
 ```
 
-- [ ] **Step 5: Extend the `Module` bindings in `src/ir/Context.cpp`**
+- [ ] **Step 5: Extend the `Module` bindings in `src/IR/Context.cpp`**
 
 Replace the `def_prop_ro("name", ...)` line with a read/write property and add the consumed-state members:
 
@@ -841,8 +841,8 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 4: `Type` base and primitive types
 
 **Files:**
-- Create: `src/ir/Types.cpp`
-- Modify: `CMakeLists.txt` (add `src/ir/Types.cpp`), `src/eudslllvm_ext.cpp`
+- Create: `src/IR/Types.cpp`
+- Modify: `CMakeLists.txt` (add `src/IR/Types.cpp`), `src/eudslllvm_ext.cpp`
 - Test: `tests/test_types.py`
 
 **Interfaces:**
@@ -901,15 +901,15 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_types.py -v
 
 Expected: `AttributeError: module 'llvm' has no attribute 'void_t'`.
 
-- [ ] **Step 3: Write `src/ir/Types.cpp`**
+- [ ] **Step 3: Write `src/IR/Types.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
-#include "ir/Ownership.h"
+#include "IR/Common.h"
+#include "IR/Ownership.h"
 
 #include <llvm/IR/Type.h>
 
@@ -974,7 +974,7 @@ NB_MODULE(eudslllvm_ext, m) {
 }
 ```
 
-Add `src/ir/Types.cpp` to `nanobind_add_module` in `CMakeLists.txt`.
+Add `src/IR/Types.cpp` to `nanobind_add_module` in `CMakeLists.txt`.
 
 - [ ] **Step 5: Rebuild and run the tests**
 
@@ -997,7 +997,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 5: Derived types — Integer, Pointer, Struct, Array, Vector, Function
 
 **Files:**
-- Modify: `src/ir/Types.cpp`
+- Modify: `src/IR/Types.cpp`
 - Test: `tests/test_types.py` (append)
 
 **Interfaces:**
@@ -1086,7 +1086,7 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_types.py -v -k "inte
 
 Expected: `AttributeError: module 'llvm' has no attribute 'int_t'`.
 
-- [ ] **Step 3: Add the derived types to `src/ir/Types.cpp`**
+- [ ] **Step 3: Add the derived types to `src/IR/Types.cpp`**
 
 Add `#include <llvm/IR/DerivedTypes.h>` at the top, and this at the end of `populate_types`:
 
@@ -1222,8 +1222,8 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 `llvm::Type` has no vtable, so nanobind's RTTI-based downcasting cannot work. `nanobind::detail::type_hook<T>::get(ptr)` exists for exactly this case: it picks the Python type from a non-polymorphic C++ pointer.
 
 **Files:**
-- Create: `src/ir/Kinds.h`, `src/ir/Kinds.cpp`
-- Modify: `src/ir/Types.cpp` (include `Kinds.h`), `CMakeLists.txt`
+- Create: `src/IR/Kinds.h`, `src/IR/Kinds.cpp`
+- Modify: `src/IR/Types.cpp` (include `Kinds.h`), `CMakeLists.txt`
 - Test: `tests/test_types.py` (append)
 
 **Interfaces:**
@@ -1259,7 +1259,7 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_types.py::test_types
 
 Expected: FAIL — `assert 'Type' == 'IntegerType'`.
 
-- [ ] **Step 3: Write `src/ir/Kinds.h`**
+- [ ] **Step 3: Write `src/IR/Kinds.h`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -1304,14 +1304,14 @@ template <> struct nanobind::detail::type_hook<llvm::Value> {
 };
 ```
 
-- [ ] **Step 4: Write the `Type` half of `src/ir/Kinds.cpp`**
+- [ ] **Step 4: Write the `Type` half of `src/IR/Kinds.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Kinds.h"
+#include "IR/Kinds.h"
 
 #include <llvm/IR/DerivedTypes.h>
 
@@ -1344,7 +1344,7 @@ const std::type_info *typeTypeInfo(llvm::Type::TypeID id) {
 
 - [ ] **Step 5: Include the hook everywhere a `Type*` or `Value*` is returned**
 
-`type_hook` must be visible in every TU that converts an `llvm::Type *` or `llvm::Value *`, or that TU silently keeps the base-class behaviour. Add `#include "ir/Kinds.h"` to `Common.h` — that guarantees it, since every binding file includes `Common.h`. Add `src/ir/Kinds.cpp` to `nanobind_add_module` in `CMakeLists.txt`.
+`type_hook` must be visible in every TU that converts an `llvm::Type *` or `llvm::Value *`, or that TU silently keeps the base-class behaviour. Add `#include "IR/Kinds.h"` to `Common.h` — that guarantees it, since every binding file includes `Common.h`. Add `src/IR/Kinds.cpp` to `nanobind_add_module` in `CMakeLists.txt`.
 
 - [ ] **Step 6: Rebuild and run the full type test file**
 
@@ -1367,8 +1367,8 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 7: `Value` base and `User`
 
 **Files:**
-- Create: `src/ir/Values.cpp`
-- Modify: `CMakeLists.txt` (add `src/ir/Values.cpp`), `src/eudslllvm_ext.cpp`
+- Create: `src/IR/Values.cpp`
+- Modify: `CMakeLists.txt` (add `src/IR/Values.cpp`), `src/eudslllvm_ext.cpp`
 - Test: `tests/test_values.py`
 
 **Interfaces:**
@@ -1428,14 +1428,14 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_values.py -v
 
 Expected: FAIL at import of a not-yet-added symbol, or PASS trivially — if it passes, still proceed (the class registrations are the deliverable and are verified by Task 9's tests).
 
-- [ ] **Step 3: Write `src/ir/Values.cpp`**
+- [ ] **Step 3: Write `src/IR/Values.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
+#include "IR/Common.h"
 
 #include <llvm/IR/Value.h>
 #include <llvm/IR/User.h>
@@ -1483,7 +1483,7 @@ void populate_values(nb::module_ &m) {
 
 `llvm::User::op_begin()` yields `Use*`; dereferencing a `Use` converts to `Value*`, and `std::vector<Value*>(op_begin(), op_end())` uses `Use`'s `operator Value*`. Confirm the build; if the iterator does not implicitly convert, replace with an index loop over `getNumOperands()`/`getOperand(i)`.
 
-- [ ] **Step 4: Register `populate_values` in `src/eudslllvm_ext.cpp`** (after `populate_types`), add `src/ir/Values.cpp` to `nanobind_add_module`.
+- [ ] **Step 4: Register `populate_values` in `src/eudslllvm_ext.cpp`** (after `populate_types`), add `src/IR/Values.cpp` to `nanobind_add_module`.
 
 - [ ] **Step 5: Rebuild and run the suite**
 
@@ -1508,14 +1508,14 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 `getValueID()` returns `InstructionVal + opcode` for instructions and a plain `ValueTy` enumerator otherwise. The hook dispatches accordingly. Both tables are generated by including the `.def` files with local macro definitions, and each returned `type_info` is guarded by `pick()` so a not-yet-registered class falls back to base `Value` — this keeps every commit green while later tasks register the leaves.
 
 **Files:**
-- Modify: `src/ir/Kinds.cpp`, `src/ir/Values.cpp` (register the structural spine)
+- Modify: `src/IR/Kinds.cpp`, `src/IR/Values.cpp` (register the structural spine)
 - Test: covered by Task 9's tests (no `Value*` is obtainable from Python until Task 9).
 
 **Interfaces:**
 - Consumes: `type_hook<llvm::Value>` declaration from Task 6's `Kinds.h`.
 - Produces: `eudsl::valueTypeInfo(unsigned) -> const std::type_info *`, and `eudsl::pick(const std::type_info *) -> const std::type_info *`.
 
-- [ ] **Step 1: Add `pick()` and `valueTypeInfo` to `src/ir/Kinds.cpp`**
+- [ ] **Step 1: Add `pick()` and `valueTypeInfo` to `src/IR/Kinds.cpp`**
 
 Add includes and code:
 
@@ -1578,7 +1578,7 @@ const std::type_info *pick(const std::type_info *concrete,
 
 The `HANDLE_INST`/`HANDLE_VALUE` includes expand a `case` per opcode and per value kind. Because `Value.def` routes `HANDLE_GLOBAL_VALUE`, `HANDLE_CONSTANT`, `HANDLE_MEMORY_VALUE`, `HANDLE_INSTRUCTION`, etc. through `HANDLE_VALUE` when only `HANDLE_VALUE` is defined, every enumerator gets a case. `MemoryUse`/`MemoryDef`/`MemoryPhi` are not real IR `Value` subclasses reachable here (they belong to MemorySSA) but their enumerators exist; `pick()` sends them to base since they are never registered. The `HANDLE_INSTRUCTION(Instruction)` marker and any opcode gap default to `llvm::Instruction`.
 
-- [ ] **Step 2: Register the structural spine in `src/ir/Values.cpp`**
+- [ ] **Step 2: Register the structural spine in `src/IR/Values.cpp`**
 
 Insert these *between* `User` and the end of `populate_values`, so the inheritance chain the hook can name exists as registered classes (methods are added by later tasks reopening them):
 
@@ -1594,7 +1594,7 @@ Insert these *between* `User` and the end of `populate_values`, so the inheritan
 
 Add `#include <llvm/IR/Constant.h>`, `#include <llvm/IR/GlobalValue.h>`, `#include <llvm/IR/GlobalObject.h>`, `#include <llvm/IR/Instruction.h>`, `#include <llvm/IR/Constants.h>` to `Values.cpp`.
 
-- [ ] **Step 3: Add the reopen helper to `src/ir/Common.h`**
+- [ ] **Step 3: Add the reopen helper to `src/IR/Common.h`**
 
 ```cpp
 /// Fetch an already-registered nanobind class so a later translation unit can
@@ -1626,7 +1626,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 9: `Function`, `Argument`, `BasicBlock`, and traversal iterators
 
 **Files:**
-- Modify: `src/ir/Values.cpp`, `src/ir/Context.cpp` (module traversal)
+- Modify: `src/IR/Values.cpp`, `src/IR/Context.cpp` (module traversal)
 - Test: `tests/test_values.py` (append), `tests/test_context.py` (append)
 
 **Interfaces:**
@@ -1711,7 +1711,7 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_values.py -v -k "tra
 
 Expected: `AttributeError: 'Module' object has no attribute 'functions'`.
 
-- [ ] **Step 3: Add `Function`, `Argument`, `BasicBlock` to `src/ir/Values.cpp`**
+- [ ] **Step 3: Add `Function`, `Argument`, `BasicBlock` to `src/IR/Values.cpp`**
 
 Add includes `<llvm/IR/Function.h>`, `<llvm/IR/Argument.h>`, `<llvm/IR/BasicBlock.h>`, `<llvm/IR/DerivedTypes.h>`, and at the end of `populate_values`:
 
@@ -1812,7 +1812,7 @@ Add includes `<llvm/IR/Function.h>`, `<llvm/IR/Argument.h>`, `<llvm/IR/BasicBloc
 
 Remove the trailing no-op line if the linter objects. `reopen<llvm::GlobalObject>()` is only to assert existence; drop it — `GlobalObject` is already registered in Task 8's spine.
 
-- [ ] **Step 4: Add module traversal to `src/ir/Context.cpp`**
+- [ ] **Step 4: Add module traversal to `src/IR/Context.cpp`**
 
 Add `#include <llvm/IR/Function.h>` and, in the `Module` class body:
 
@@ -1853,7 +1853,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 10: `Instruction` subclasses with accessors; `PHINode` incoming values
 
 **Files:**
-- Create: `src/ir/Instructions.cpp`
+- Create: `src/IR/Instructions.cpp`
 - Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`
 - Test: `tests/test_instructions.py`
 
@@ -1942,14 +1942,14 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_instructions.py -v
 
 Expected: `AssertionError` — `type(i).__name__` is `"Instruction"` because the opcode classes are not registered yet, so `_insts_by_class` finds nothing and the unpack fails.
 
-- [ ] **Step 3: Write `src/ir/Instructions.cpp`**
+- [ ] **Step 3: Write `src/IR/Instructions.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
+#include "IR/Common.h"
 
 #include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/Instructions.h>
@@ -2084,7 +2084,7 @@ void populate_instructions(nb::module_ &m) {
 
 Note the opcode `Add`..`Xor` all map to `BinaryOperator` (there is no `AddInst` class); the type_hook's `Instruction.def` table returns `&typeid(llvm::BinaryOperator)` for those opcodes, matching the test's `type(insts[0]).__name__ == "BinaryOperator"`. `FNeg` maps to `FPUnaryOperator`. `FAdd`..`FRem` map to `FPBinaryOperator`. These are what `Instruction.def`'s `HANDLE_BINARY_INST(15, FAdd, FPBinaryOperator)` third column names — confirm the third-column class name equals the registered class name for each entry.
 
-- [ ] **Step 4: Register `populate_instructions`** in `src/eudslllvm_ext.cpp` (after `populate_values`), add `src/ir/Instructions.cpp` to `nanobind_add_module`.
+- [ ] **Step 4: Register `populate_instructions`** in `src/eudslllvm_ext.cpp` (after `populate_values`), add `src/IR/Instructions.cpp` to `nanobind_add_module`.
 
 - [ ] **Step 5: Rebuild and run the suite**
 
@@ -2107,7 +2107,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 11: `Constant` subclasses and constant construction
 
 **Files:**
-- Create: `src/ir/Constants.cpp`
+- Create: `src/IR/Constants.cpp`
 - Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`
 - Test: `tests/test_constants.py`
 
@@ -2167,15 +2167,15 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_constants.py -v
 
 Expected: `AttributeError: module 'llvm' has no attribute 'const_int'`.
 
-- [ ] **Step 3: Write `src/ir/Constants.cpp`**
+- [ ] **Step 3: Write `src/IR/Constants.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
-#include "ir/Ownership.h"
+#include "IR/Common.h"
+#include "IR/Ownership.h"
 
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/GlobalAlias.h>
@@ -2278,7 +2278,7 @@ void populate_constants(nb::module_ &m) {
 
 `ConstantInt::get(IntegerType*, uint64_t, bool)` and `ConstantFP::get(Type*, double)` were verified present. `null(ptr_t)` produces a `ConstantPointerNull`, matching the test.
 
-- [ ] **Step 4: Register `populate_constants`** in `src/eudslllvm_ext.cpp` (after `populate_instructions`), add `src/ir/Constants.cpp` to `nanobind_add_module`.
+- [ ] **Step 4: Register `populate_constants`** in `src/eudslllvm_ext.cpp` (after `populate_instructions`), add `src/IR/Constants.cpp` to `nanobind_add_module`.
 
 - [ ] **Step 5: Rebuild and run the suite**
 
@@ -2301,7 +2301,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 12: `IRBuilder` with an insertion-point context manager
 
 **Files:**
-- Create: `src/ir/Builder.cpp`
+- Create: `src/IR/Builder.cpp`
 - Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`
 - Test: `tests/test_builder.py`
 
@@ -2377,15 +2377,15 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_builder.py -v
 
 Expected: `AttributeError: module 'llvm' has no attribute 'IRBuilder'`.
 
-- [ ] **Step 3: Write `src/ir/Builder.cpp`**
+- [ ] **Step 3: Write `src/IR/Builder.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
-#include "ir/Ownership.h"
+#include "IR/Common.h"
+#include "IR/Ownership.h"
 
 #include <llvm/IR/IRBuilder.h>
 
@@ -2510,7 +2510,7 @@ void populate_builder(nb::module_ &m) {
 
 Add `#include <llvm/IR/Function.h>` for `getFunctionType`. `CreatePHI` returns `PHINode*`; the Value type_hook makes the Python object a `PHINode`, so `.add_incoming` from Task 10 works.
 
-- [ ] **Step 4: Register `populate_builder`** in `src/eudslllvm_ext.cpp` (after `populate_constants`), add `src/ir/Builder.cpp` to `nanobind_add_module`.
+- [ ] **Step 4: Register `populate_builder`** in `src/eudslllvm_ext.cpp` (after `populate_constants`), add `src/IR/Builder.cpp` to `nanobind_add_module`.
 
 - [ ] **Step 5: Rebuild and run the suite**
 
@@ -2533,8 +2533,8 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 13: Attributes, linkage, visibility, calling convention
 
 **Files:**
-- Create: `src/ir/Attributes.cpp`
-- Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`, `src/ir/Values.cpp` (Function attribute methods)
+- Create: `src/IR/Attributes.cpp`
+- Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`, `src/IR/Values.cpp` (Function attribute methods)
 - Test: `tests/test_attributes.py`
 
 **Interfaces:**
@@ -2592,14 +2592,14 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_attributes.py -v
 
 Expected: `AttributeError: module 'llvm' has no attribute 'Linkage'`.
 
-- [ ] **Step 3: Write `src/ir/Attributes.cpp`**
+- [ ] **Step 3: Write `src/IR/Attributes.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
+#include "IR/Common.h"
 
 #include <llvm/AsmParser/Parser.h> // unused-safe; keeps include set uniform
 #include <llvm/IR/CallingConv.h>
@@ -2634,7 +2634,7 @@ void populate_attributes(nb::module_ &m) {
 
 `CallingConv` values are `unsigned` constants (`llvm::CallingConv::C == 0`, `Fast == 8`), not an `enum class`. The test compares `f.calling_conv == llvm.CallingConv.FAST`; `.calling_conv` is bound as an `unsigned` in Step 4, so equality is int-vs-int. Confirm `llvm.CallingConv.FAST` is `8`.
 
-- [ ] **Step 4: Add the Function attribute methods in `src/ir/Values.cpp`**
+- [ ] **Step 4: Add the Function attribute methods in `src/IR/Values.cpp`**
 
 Add these `.def`s to the `Function` class binding (add `#include <llvm/IR/Attributes.h>`, `#include <llvm/IR/CallingConv.h>`):
 
@@ -2668,7 +2668,7 @@ Add these `.def`s to the `Function` class binding (add `#include <llvm/IR/Attrib
 
 `Function::addFnAttr(StringRef, StringRef)`, `hasFnAttribute(StringRef)`, `getFnAttribute(StringRef)` are the string-keyed attribute API (verified in the exploration). `getVisibility`/`setVisibility`/`getLinkage`/`setLinkage` come from `GlobalValue`.
 
-- [ ] **Step 5: Register `populate_attributes`** in `src/eudslllvm_ext.cpp` **before** `populate_values` (the `Linkage`/`Visibility` enums must exist before `Function`'s `def_prop_rw("linkage", ...)` references them at binding time — actually the property lambdas only need the *C++* enum type, which nanobind maps to the registered `nb::enum_`; register `populate_attributes` before `populate_values` to be safe). Add `src/ir/Attributes.cpp` to `nanobind_add_module`.
+- [ ] **Step 5: Register `populate_attributes`** in `src/eudslllvm_ext.cpp` **before** `populate_values` (the `Linkage`/`Visibility` enums must exist before `Function`'s `def_prop_rw("linkage", ...)` references them at binding time — actually the property lambdas only need the *C++* enum type, which nanobind maps to the registered `nb::enum_`; register `populate_attributes` before `populate_values` to be safe). Add `src/IR/Attributes.cpp` to `nanobind_add_module`.
 
 - [ ] **Step 6: Rebuild and run the suite**
 
@@ -2691,8 +2691,8 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 14: Metadata, MDNode, named metadata
 
 **Files:**
-- Create: `src/ir/Metadata.cpp`
-- Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`, `src/ir/Context.cpp` (named metadata on Module)
+- Create: `src/IR/Metadata.cpp`
+- Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`, `src/IR/Context.cpp` (named metadata on Module)
 - Test: `tests/test_metadata.py`
 
 **Interfaces:**
@@ -2734,15 +2734,15 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_metadata.py -v
 
 Expected: `AttributeError: module 'llvm' has no attribute 'MDString'`.
 
-- [ ] **Step 3: Write `src/ir/Metadata.cpp`**
+- [ ] **Step 3: Write `src/IR/Metadata.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
-#include "ir/Ownership.h"
+#include "IR/Common.h"
+#include "IR/Ownership.h"
 
 #include <llvm/IR/Metadata.h>
 
@@ -2784,7 +2784,7 @@ void populate_metadata(nb::module_ &m) {
 
 `MDString` has no public constructor, so the `__init__` stub above is wrong; drop the `.def("__init__", ...)` and rely on the free `m.def("MDString", ...)` factory (nanobind lets a free function share the class name — `llvm.MDString(ctx, "x")` calls the factory, which returns an `MDString*`). Remove the `__init__` lambda entirely.
 
-- [ ] **Step 4: Add named metadata to `src/ir/Context.cpp`**
+- [ ] **Step 4: Add named metadata to `src/IR/Context.cpp`**
 
 Add `#include <llvm/IR/Metadata.h>` and to the `Module` class:
 
@@ -2807,7 +2807,7 @@ Add `#include <llvm/IR/Metadata.h>` and to the `Module` class:
           "name"_a)
 ```
 
-- [ ] **Step 5: Register `populate_metadata`** in `src/eudslllvm_ext.cpp` (after `populate_constants`), add `src/ir/Metadata.cpp` to `nanobind_add_module`.
+- [ ] **Step 5: Register `populate_metadata`** in `src/eudslllvm_ext.cpp` (after `populate_constants`), add `src/IR/Metadata.cpp` to `nanobind_add_module`.
 
 - [ ] **Step 6: Rebuild and run the suite**
 
@@ -2830,8 +2830,8 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 15: Error handling — `ParseError`, `VerifyError`, fatal error handler
 
 **Files:**
-- Create: `src/ir/Errors.h`, `src/ir/Errors.cpp`
-- Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`, `src/ir/Context.cpp` (raise `ParseError`)
+- Create: `src/IR/Errors.h`, `src/IR/Errors.cpp`
+- Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`, `src/IR/Context.cpp` (raise `ParseError`)
 - Test: `tests/test_errors.py`
 
 **Interfaces:**
@@ -2872,7 +2872,7 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_errors.py -v
 
 Expected: `AttributeError: module 'llvm' has no attribute 'ParseError'`.
 
-- [ ] **Step 3: Write `src/ir/Errors.h`**
+- [ ] **Step 3: Write `src/IR/Errors.h`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -2902,14 +2902,14 @@ void registerExceptions(nanobind::module_ &m);
 } // namespace eudsl
 ```
 
-- [ ] **Step 4: Write `src/ir/Errors.cpp`**
+- [ ] **Step 4: Write `src/IR/Errors.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Errors.h"
+#include "IR/Errors.h"
 
 #include <llvm/Support/ErrorHandling.h>
 
@@ -2942,12 +2942,12 @@ void registerExceptions(nb::module_ &m) {
 
 - [ ] **Step 5: Raise `ParseError` from `parse_assembly`**
 
-In `src/ir/Context.cpp`, add `#include "ir/Errors.h"` and change the `throw std::runtime_error(msg);` in `parse_assembly` to `throw eudsl::ParseError(msg);`.
+In `src/IR/Context.cpp`, add `#include "IR/Errors.h"` and change the `throw std::runtime_error(msg);` in `parse_assembly` to `throw eudsl::ParseError(msg);`.
 
 - [ ] **Step 6: Register exceptions first in `src/eudslllvm_ext.cpp`**
 
 ```cpp
-#include "ir/Errors.h"
+#include "IR/Errors.h"
 ...
 NB_MODULE(eudslllvm_ext, m) {
   m.doc() = "Hand-written nanobind bindings over the LLVM C++ IR API.";
@@ -2963,7 +2963,7 @@ NB_MODULE(eudslllvm_ext, m) {
 }
 ```
 
-Add `src/ir/Errors.cpp` to `nanobind_add_module`.
+Add `src/IR/Errors.cpp` to `nanobind_add_module`.
 
 - [ ] **Step 7: Rebuild and run the suite**
 
@@ -2988,7 +2988,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 16: `verifyModule`; bitcode read and write
 
 **Files:**
-- Modify: `src/ir/Context.cpp`, `CMakeLists.txt` (link `LLVMBitReader`, `LLVMBitWriter`)
+- Modify: `src/IR/Context.cpp`, `CMakeLists.txt` (link `LLVMBitReader`, `LLVMBitWriter`)
 - Test: `tests/test_verify_bitcode.py`
 
 **Interfaces:**
@@ -3050,12 +3050,12 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_verify_bitcode.py -v
 
 Expected: `AttributeError: 'Module' object has no attribute 'verify'`.
 
-- [ ] **Step 3: Add verify and bitcode to `src/ir/Context.cpp`**
+- [ ] **Step 3: Add verify and bitcode to `src/IR/Context.cpp`**
 
 Add includes:
 
 ```cpp
-#include "ir/Errors.h"
+#include "IR/Errors.h"
 
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
@@ -3125,7 +3125,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 17: `PassBuilder` and pipeline execution
 
 **Files:**
-- Create: `src/ir/Passes.cpp`
+- Create: `src/IR/Passes.cpp`
 - Modify: `CMakeLists.txt` (link `LLVMPasses LLVMAnalysis LLVMTransformUtils`), `src/eudslllvm_ext.cpp`
 - Test: `tests/test_passes.py`
 
@@ -3187,15 +3187,15 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_passes.py -v
 
 Expected: `AttributeError: module 'llvm' has no attribute 'run_passes'`.
 
-- [ ] **Step 3: Write `src/ir/Passes.cpp`**
+- [ ] **Step 3: Write `src/IR/Passes.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
-#include "ir/Ownership.h"
+#include "IR/Common.h"
+#include "IR/Ownership.h"
 
 #include <llvm/IR/PassManager.h>
 #include <llvm/Passes/PassBuilder.h>
@@ -3225,7 +3225,7 @@ void populate_passes(nb::module_ &m) {
 }
 ```
 
-- [ ] **Step 4: Register `populate_passes`** in `src/eudslllvm_ext.cpp` (after `populate_builder`), add `src/ir/Passes.cpp` to `nanobind_add_module`, add `LLVMPasses LLVMAnalysis LLVMTransformUtils LLVMScalarOpts LLVMInstCombine` to `eudslllvm_ext_libs`.
+- [ ] **Step 4: Register `populate_passes`** in `src/eudslllvm_ext.cpp` (after `populate_builder`), add `src/IR/Passes.cpp` to `nanobind_add_module`, add `LLVMPasses LLVMAnalysis LLVMTransformUtils LLVMScalarOpts LLVMInstCombine` to `eudslllvm_ext_libs`.
 
 - [ ] **Step 5: Rebuild and run the suite**
 
@@ -3248,8 +3248,8 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 18: `Target`, `TargetMachine`, `DataLayout`, assembly and object emission
 
 **Files:**
-- Create: `src/ir/Target.cpp`
-- Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`, `src/ir/Ownership.h`/`.cpp` (Context::take)
+- Create: `src/IR/Target.cpp`
+- Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`, `src/IR/Ownership.h`/`.cpp` (Context::take)
 - Test: `tests/test_target.py`
 
 **Interfaces:**
@@ -3308,15 +3308,15 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_target.py -v
 
 Expected: `AttributeError: module 'llvm' has no attribute 'host_triple'`.
 
-- [ ] **Step 3: Write `src/ir/Target.cpp`**
+- [ ] **Step 3: Write `src/IR/Target.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
-#include "ir/Ownership.h"
+#include "IR/Common.h"
+#include "IR/Ownership.h"
 
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/MC/TargetRegistry.h>
@@ -3391,7 +3391,7 @@ void populate_target(nb::module_ &m) {
 }
 ```
 
-Add to `src/ir/Context.cpp`'s `Module` class, `set_data_layout_from`:
+Add to `src/IR/Context.cpp`'s `Module` class, `set_data_layout_from`:
 
 ```cpp
       .def("set_data_layout_from",
@@ -3407,7 +3407,7 @@ Add to `src/ir/Context.cpp`'s `Module` class, `set_data_layout_from`:
 
 `Triple(const std::string&)` and `TargetRegistry::lookupTarget(const Triple&, std::string&)` were verified. `addPassesToEmitFile` uses the legacy pass manager (still the codegen path). `emit` returns the assembly/object as a string; `emit_object` wraps it in `bytes`.
 
-- [ ] **Step 4: Register `populate_target`** in `src/eudslllvm_ext.cpp` (after `populate_passes`), add `src/ir/Target.cpp` to `nanobind_add_module`, add `LLVMCodeGen LLVMTarget LLVMMC` (already present from Task 2) and confirm the target libs from Task 2 are linked.
+- [ ] **Step 4: Register `populate_target`** in `src/eudslllvm_ext.cpp` (after `populate_passes`), add `src/IR/Target.cpp` to `nanobind_add_module`, add `LLVMCodeGen LLVMTarget LLVMMC` (already present from Task 2) and confirm the target libs from Task 2 are linked.
 
 - [ ] **Step 5: Rebuild and run the suite**
 
@@ -3430,7 +3430,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 19: `Linker`
 
 **Files:**
-- Create: `src/ir/Linker.cpp`
+- Create: `src/IR/Linker.cpp`
 - Modify: `CMakeLists.txt` (link `LLVMLinker`), `src/eudslllvm_ext.cpp`
 - Test: `tests/test_linker.py`
 
@@ -3485,15 +3485,15 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_linker.py -v
 
 Expected: `AttributeError: module 'llvm' has no attribute 'link_into'`.
 
-- [ ] **Step 3: Write `src/ir/Linker.cpp`**
+- [ ] **Step 3: Write `src/IR/Linker.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
-#include "ir/Ownership.h"
+#include "IR/Common.h"
+#include "IR/Ownership.h"
 
 #include <llvm/Linker/Linker.h>
 
@@ -3513,7 +3513,7 @@ void populate_linker(nb::module_ &m) {
 
 `Linker::linkModules(Module&, std::unique_ptr<Module>)` returns `true` on error (verified). `src.take()` transfers ownership and flips `_is_consumed`.
 
-- [ ] **Step 4: Register `populate_linker`** in `src/eudslllvm_ext.cpp` (after `populate_target`), add `src/ir/Linker.cpp` to `nanobind_add_module`, add `LLVMLinker` to `eudslllvm_ext_libs`.
+- [ ] **Step 4: Register `populate_linker`** in `src/eudslllvm_ext.cpp` (after `populate_target`), add `src/IR/Linker.cpp` to `nanobind_add_module`, add `LLVMLinker` to `eudslllvm_ext_libs`.
 
 - [ ] **Step 5: Rebuild and run the suite**
 
@@ -3536,8 +3536,8 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 20: ORC `LLJIT` — add module, lookup, ctypes-callable addresses, execution
 
 **Files:**
-- Create: `src/ir/JIT.cpp`
-- Modify: `CMakeLists.txt` (link `LLVMOrcJIT LLVMExecutionEngine LLVMJITLink LLVMOrcTargetProcess LLVMOrcShared`), `src/eudslllvm_ext.cpp`, `src/ir/Ownership.h`/`.cpp` (`Context::take`)
+- Create: `src/IR/JIT.cpp`
+- Modify: `CMakeLists.txt` (link `LLVMOrcJIT LLVMExecutionEngine LLVMJITLink LLVMOrcTargetProcess LLVMOrcShared`), `src/eudslllvm_ext.cpp`, `src/IR/Ownership.h`/`.cpp` (`Context::take`)
 - Test: `tests/test_jit.py`
 
 **Interfaces:**
@@ -3591,7 +3591,7 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_jit.py -v
 
 Expected: `AttributeError: module 'llvm' has no attribute 'LLJIT'`.
 
-- [ ] **Step 3: Add `Context::take` to `src/ir/Ownership.h`/`.cpp`**
+- [ ] **Step 3: Add `Context::take` to `src/IR/Ownership.h`/`.cpp`**
 
 Header, in `class Context`:
 
@@ -3629,15 +3629,15 @@ llvm::LLVMContext &Context::get() const {
       .def_prop_ro("_is_consumed", &eudsl::Context::isConsumed)
 ```
 
-- [ ] **Step 4: Write `src/ir/JIT.cpp`**
+- [ ] **Step 4: Write `src/IR/JIT.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
-#include "ir/Ownership.h"
+#include "IR/Common.h"
+#include "IR/Ownership.h"
 
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
@@ -3681,7 +3681,7 @@ void populate_jit(nb::module_ &m) {
 
 `ThreadSafeModule(unique_ptr<Module>, unique_ptr<LLVMContext>)`, `LLJITBuilder().create()`, `addIRModule(ThreadSafeModule)`, `lookup(StringRef)`, `ExecutorAddr::getValue()` all verified. Taking the context out of `eudsl::Context` drops the live count, so `assert_no_leaks()` passes after the JIT owns everything and is deleted.
 
-- [ ] **Step 5: Register `populate_jit`** in `src/eudslllvm_ext.cpp` (after `populate_linker`), add `src/ir/JIT.cpp` to `nanobind_add_module`, add `LLVMOrcJIT LLVMExecutionEngine LLVMJITLink LLVMOrcTargetProcess LLVMOrcShared LLVMRuntimeDyld` to `eudslllvm_ext_libs`.
+- [ ] **Step 5: Register `populate_jit`** in `src/eudslllvm_ext.cpp` (after `populate_linker`), add `src/IR/JIT.cpp` to `nanobind_add_module`, add `LLVMOrcJIT LLVMExecutionEngine LLVMJITLink LLVMOrcTargetProcess LLVMOrcShared LLVMRuntimeDyld` to `eudslllvm_ext_libs`.
 
 - [ ] **Step 6: Rebuild and run the suite**
 
@@ -3704,7 +3704,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 21: `Intrinsic` lookup and declaration; the `llvm.intrinsics` `__getattr__` module
 
 **Files:**
-- Create: `src/ir/Intrinsics.cpp`, `src/llvm/intrinsics.py`
+- Create: `src/IR/Intrinsics.cpp`, `src/llvm/intrinsics.py`
 - Modify: `CMakeLists.txt`, `src/eudslllvm_ext.cpp`, `src/llvm/__init__.py`
 - Test: `tests/test_intrinsics.py`, and reinstate `test_builder`'s intrinsic assertion
 
@@ -3761,15 +3761,15 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_intrinsics.py -v
 
 Expected: `AttributeError: module 'llvm' has no attribute 'lookup_intrinsic_id'`.
 
-- [ ] **Step 3: Write `src/ir/Intrinsics.cpp`**
+- [ ] **Step 3: Write `src/IR/Intrinsics.cpp`**
 
 ```cpp
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "ir/Common.h"
-#include "ir/Ownership.h"
+#include "IR/Common.h"
+#include "IR/Ownership.h"
 
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Intrinsics.h>
@@ -3832,7 +3832,7 @@ def __getattr__(name):
     return declare
 ```
 
-- [ ] **Step 5: Register `populate_intrinsics`** in `src/eudslllvm_ext.cpp` (after `populate_jit`), add `src/ir/Intrinsics.cpp` to `nanobind_add_module`.
+- [ ] **Step 5: Register `populate_intrinsics`** in `src/eudslllvm_ext.cpp` (after `populate_jit`), add `src/IR/Intrinsics.cpp` to `nanobind_add_module`.
 
 - [ ] **Step 6: Rebuild and run the suite**
 
@@ -4274,7 +4274,7 @@ def _i32_of(any_type):
     raise NotImplementedError
 ```
 
-The `_i32_of` sketch is wrong: `Type` exposes no context, and index constants need a context. Fix by binding `Type.context` in C++ first. **Add to `src/ir/Types.cpp`** a `def_prop_ro("context", ...)` on `Type` returning the owning `eudsl::Context`? The `Type` only knows `LLVMContext&`, not the `eudsl::Context`. Simpler: index constants use a fixed 64-bit index type derived from the builder. **Bind `IRBuilder.i64_const(value)`** in C++ (Builder.cpp): `self.getInt64(v)` returns a `ConstantInt*`. Then the Python sugar calls `current_builder().i64_const(i)`. Add to `Builder.cpp`:
+The `_i32_of` sketch is wrong: `Type` exposes no context, and index constants need a context. Fix by binding `Type.context` in C++ first. **Add to `src/IR/Types.cpp`** a `def_prop_ro("context", ...)` on `Type` returning the owning `eudsl::Context`? The `Type` only knows `LLVMContext&`, not the `eudsl::Context`. Simpler: index constants use a fixed 64-bit index type derived from the builder. **Bind `IRBuilder.i64_const(value)`** in C++ (Builder.cpp): `self.getInt64(v)` returns a `ConstantInt*`. Then the Python sugar calls `current_builder().i64_const(i)`. Add to `Builder.cpp`:
 
 ```cpp
       .def("i64_const",
@@ -4336,7 +4336,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 25: Aggregate construction and indexing
 
 **Files:**
-- Modify: `src/ir/Builder.cpp` (extract/insert value), `src/llvm/dsl/values.py`
+- Modify: `src/IR/Builder.cpp` (extract/insert value), `src/llvm/dsl/values.py`
 - Test: `tests/test_dsl_values.py` (append)
 
 **Interfaces:**
@@ -4371,7 +4371,7 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_dsl_values.py -v -k 
 
 Expected: `AttributeError: 'IRBuilder' object has no attribute 'extract_value'`.
 
-- [ ] **Step 3: Add extract/insert value to `src/ir/Builder.cpp`**
+- [ ] **Step 3: Add extract/insert value to `src/IR/Builder.cpp`**
 
 ```cpp
       .def("extract_value",
@@ -5321,7 +5321,7 @@ cd $EUDSL && git add -A projects/eudsl-llvmpy \
 ### Task 34: Globals, constant initializers, address spaces
 
 **Files:**
-- Modify: `src/ir/Constants.cpp` (GlobalVariable construction), `src/ir/Context.cpp` (module global accessors)
+- Modify: `src/IR/Constants.cpp` (GlobalVariable construction), `src/IR/Context.cpp` (module global accessors)
 - Test: `tests/test_globals.py`
 
 **Interfaces:**
@@ -5376,7 +5376,7 @@ cd $EUDSL/projects/eudsl-llvmpy && $PY -m pytest tests/test_globals.py -v
 
 Expected: `AttributeError: 'Module' object has no attribute 'add_global'`.
 
-- [ ] **Step 3: Add global accessors to `src/ir/Context.cpp`**
+- [ ] **Step 3: Add global accessors to `src/IR/Context.cpp`**
 
 Add `#include <llvm/IR/GlobalVariable.h>` and to the `Module` class:
 
