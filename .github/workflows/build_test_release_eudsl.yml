@@ -396,6 +396,10 @@ jobs:
 
           python -m pip install pytest pytest-cov
           python -m pip install eudsl-llvmpy eudsl-tblgen -f wheelhouse
+          # mlir-native-tools installs the FileCheck binary into sys.prefix/bin,
+          # which llvm.testing.filecheck_with_comments locates.
+          python -m pip install mlir-native-tools \
+            -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
 
       - name: "Test eudsl-llvmpy"
         run: |
