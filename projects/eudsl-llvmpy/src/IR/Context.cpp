@@ -18,6 +18,7 @@
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 
+#include <nanobind/make_iterator.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
@@ -72,6 +73,28 @@ void populate_context(nb::module_ &m) {
                        out.push_back(&f);
                      return out;
                    })
+      .def("__len__",
+           [](eudsl::Module &self) {
+             return static_cast<Py_ssize_t>(std::distance(
+                 self.get().begin(), self.get().end()));
+           })
+      .def(
+          "__getitem__",
+          [](eudsl::Module &self, Py_ssize_t i) {
+            std::vector<llvm::Function *> out;
+            for (llvm::Function &f : self.get().functions())
+              out.push_back(&f);
+            return eudsl::nthOrThrow(out, i);
+          },
+          nb::rv_policy::reference_internal)
+      .def(
+          "__iter__",
+          [](eudsl::Module &self) {
+            return nb::make_iterator<nb::rv_policy::reference>(
+                nb::type<eudsl::Module>(), "FunctionIterator",
+                self.get().begin(), self.get().end());
+          },
+          nb::keep_alive<0, 1>())
       .def(
           "get_function",
           [](eudsl::Module &self, const std::string &name) {
