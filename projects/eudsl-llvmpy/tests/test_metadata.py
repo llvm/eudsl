@@ -8,8 +8,8 @@ from llvm.testing import assert_no_leaks
 def test_named_metadata_round_trips():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        s = llvm.md_string(ctx, "hello")
-        node = llvm.md_node(ctx, [s])
+        s = llvm.md_string("hello", context=ctx)
+        node = llvm.md_node([s], context=ctx)
         mod.add_named_metadata("my.meta", node)
         printed = str(mod)
         assert "!my.meta = !{!0}" in printed
@@ -25,8 +25,8 @@ def test_named_metadata_round_trips():
 
 def test_metadata_str():
     with llvm.Context() as ctx:
-        s = llvm.md_string(ctx, "hi")
-        node = llvm.md_node(ctx, [s])
+        s = llvm.md_string("hi", context=ctx)
+        node = llvm.md_node([s], context=ctx)
         # Metadata.__str__ (base) prints the metadata.
         assert "hi" in str(s)
         assert "hi" in str(node)

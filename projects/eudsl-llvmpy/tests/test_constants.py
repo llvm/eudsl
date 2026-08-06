@@ -23,7 +23,7 @@ def test_const_int_signed_flag_is_currently_inert():
     # the resulting constant for any representable value. Pin that so a future
     # change to the flag's meaning is a visible, deliberate break.
     with llvm.Context() as ctx:
-        for ty in (llvm.types.i32(ctx), llvm.types.int(ctx, 128)):
+        for ty in (llvm.types.i32(ctx), llvm.types.int(128, context=ctx)):
             for v in (-1, 7, 0):
                 a = llvm.const_int(ty, v, signed=True)
                 b = llvm.const_int(ty, v, signed=False)
@@ -33,7 +33,7 @@ def test_const_int_signed_flag_is_currently_inert():
 
 def test_const_bool_and_fp():
     with llvm.Context() as ctx:
-        t = llvm.const_bool(ctx, True)
+        t = llvm.const_bool(True, context=ctx)
         assert isinstance(t, llvm.ConstantInt)
         assert str(t) == "i1 true"
         f = llvm.const_fp(llvm.types.f64(ctx), 1.5)
@@ -47,6 +47,6 @@ def test_undef_poison_null():
     with llvm.Context() as ctx:
         assert type(llvm.undef(llvm.types.i32(ctx))).__name__ == "UndefValue"
         assert type(llvm.poison(llvm.types.i32(ctx))).__name__ == "PoisonValue"
-        assert type(llvm.null(llvm.types.ptr(ctx))).__name__ == "ConstantPointerNull"
+        assert type(llvm.null(llvm.types.ptr(context=ctx))).__name__ == "ConstantPointerNull"
         assert str(llvm.undef(llvm.types.i32(ctx))) == "i32 undef"
     assert_no_leaks()

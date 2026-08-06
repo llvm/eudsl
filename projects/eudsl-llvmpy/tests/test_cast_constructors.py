@@ -44,8 +44,8 @@ def test_type_cast_constructors():
     with llvm.Context() as ctx:
         cases = [
             (llvm.types.IntegerType, llvm.types.i32(ctx)),
-            (llvm.types.PointerType, llvm.types.ptr(ctx)),
-            (llvm.types.StructType, llvm.types.struct(ctx, [llvm.types.i32(ctx)])),
+            (llvm.types.PointerType, llvm.types.ptr(context=ctx)),
+            (llvm.types.StructType, llvm.types.struct([llvm.types.i32(ctx)], context=ctx)),
             (llvm.types.ArrayType, llvm.types.array(llvm.types.i32(ctx), 2)),
             (llvm.types.VectorType, llvm.types.vector(llvm.types.i32(ctx), 2)),
             (llvm.types.FunctionType, llvm.types.function(llvm.types.void(ctx), [])),
@@ -56,7 +56,7 @@ def test_type_cast_constructors():
             assert narrowed == ty
         # Mismatch raises ValueError (shared throw path for every cast ctor).
         with pytest.raises(ValueError, match="is not a"):
-            llvm.types.IntegerType(llvm.types.ptr(ctx))
+            llvm.types.IntegerType(llvm.types.ptr(context=ctx))
     assert_no_leaks()
 
 

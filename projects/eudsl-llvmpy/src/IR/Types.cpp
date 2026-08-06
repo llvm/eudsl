@@ -151,31 +151,35 @@ void populate_types(nb::module_ &m) {
 
   m.def(
       "int",
-      [](eudsl::Context &ctx, unsigned bits) -> llvm::Type * {
-        return llvm::IntegerType::get(ctx.get(), bits);
+      [](unsigned bits, nb::handle context) -> llvm::Type * {
+        return llvm::IntegerType::get(eudsl::currentOr(context).get(), bits);
       },
-      "context"_a, "bits"_a, nb::rv_policy::reference, nb::keep_alive<0, 1>());
+      "bits"_a, "context"_a = nb::none(), nb::rv_policy::reference,
+      nb::keep_alive<0, 2>());
   m.def(
       "ptr",
-      [](eudsl::Context &ctx, unsigned addressSpace) -> llvm::Type * {
-        return llvm::PointerType::get(ctx.get(), addressSpace);
+      [](unsigned addressSpace, nb::handle context) -> llvm::Type * {
+        return llvm::PointerType::get(eudsl::currentOr(context).get(),
+                                      addressSpace);
       },
-      "context"_a, "address_space"_a = 0, nb::rv_policy::reference,
-      nb::keep_alive<0, 1>());
+      "address_space"_a = 0, "context"_a = nb::none(), nb::rv_policy::reference,
+      nb::keep_alive<0, 2>());
   m.def(
       "struct",
-      [](eudsl::Context &ctx, std::vector<llvm::Type *> elts,
-         bool packed) -> llvm::Type * {
-        return llvm::StructType::get(ctx.get(), elts, packed);
+      [](std::vector<llvm::Type *> elts, bool packed,
+         nb::handle context) -> llvm::Type * {
+        return llvm::StructType::get(eudsl::currentOr(context).get(), elts,
+                                     packed);
       },
-      "context"_a, "element_types"_a, "packed"_a = false,
-      nb::rv_policy::reference, nb::keep_alive<0, 1>());
+      "element_types"_a, "packed"_a = false, "context"_a = nb::none(),
+      nb::rv_policy::reference, nb::keep_alive<0, 3>());
   m.def(
       "named_struct",
-      [](eudsl::Context &ctx, const std::string &name) -> llvm::Type * {
-        return llvm::StructType::create(ctx.get(), name);
+      [](const std::string &name, nb::handle context) -> llvm::Type * {
+        return llvm::StructType::create(eudsl::currentOr(context).get(), name);
       },
-      "context"_a, "name"_a, nb::rv_policy::reference, nb::keep_alive<0, 1>());
+      "name"_a, "context"_a = nb::none(), nb::rv_policy::reference,
+      nb::keep_alive<0, 2>());
   m.def(
       "array",
       [](llvm::Type *elt, uint64_t n) -> llvm::Type * {

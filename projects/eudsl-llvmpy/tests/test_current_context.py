@@ -28,6 +28,11 @@ def test_implicit_context_factories():
         assert llvm.i64().bit_width == 64
         # Explicit context still works and agrees.
         assert llvm.f64() == llvm.f64(ctx)
+        # Reordered multi-arg factories also default to the current context.
+        assert llvm.int_t(7) == llvm.int_t(7, context=ctx)
+        assert str(llvm.ptr_t()) == "ptr"
+        assert llvm.struct_t([llvm.i32()]).num_elements == 1
+        assert "hi" in str(llvm.md_string("hi"))
     assert_no_leaks()
 
 
