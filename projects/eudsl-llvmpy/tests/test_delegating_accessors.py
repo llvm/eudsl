@@ -1,14 +1,20 @@
 #  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-"""Behavioral tests for bindings that delegate straight to an LLVM method.
+"""Behavioral tests for bindings that line coverage cannot force.
 
-These are bound as method pointers (`.def("x", &llvm::T::x)`), so their
-implementation lives in the LLVM libraries, not in src/IR. The only line in
-src/IR is the registration, which runs at `import llvm` and is therefore
-"covered" by any test. Line coverage can't force these to be exercised, so a
-regression (wrong method bound, wrong signature, wrong result) would not show
-up as a coverage drop. This file exercises each one and checks its result.
+Two kinds of binding are invisible to the line-coverage gate:
+
+1. Method pointers (`.def("x", &llvm::T::x)`): the implementation is in the
+   LLVM libraries, not src/IR, so the only src/IR line is the registration.
+2. Accessor/op LAMBDAS (`.def("x", [](...){ ... })`): the lambda body often
+   shares a source line with the enclosing `.def(...)` call, which runs at
+   import. Line coverage marks that line covered even though the lambda body
+   never executes.
+
+The C++ coverage gate now also enforces FUNCTION coverage (each lambda is its
+own function), so a binding whose body is never called fails the gate. This
+file exercises those bindings and checks their results.
 """
 from textwrap import dedent
 
@@ -156,4 +162,98 @@ def test_global_variable_is_constant():
         assert loads[0].pointer_operand.is_constant  # @c
         assert not loads[1].pointer_operand.is_constant  # @v
         del f, loads, mod
+    assert_no_leaks()
+
+
+def test_builder_binary_ops_and_insert_point():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.i32(ctx)
+        f32 = llvm.f32(ctx)
+        fn = llvm.Function.create(
+            llvm.function_t(i32, [i32, i32, f32, f32]), "f", mod
+        )
+        bb = fn.append_basic_block("entry")
+        b = llvm.IRBuilder(ctx)
+        b.set_insert_point(bb)  # set_insert_point
+        assert b.insert_block == bb  # insert_block property
+        ia, ib, fa, fb = fn.arg(0), fn.arg(1), fn.arg(2), fn.arg(3)
+        b.add(ia, ib)
+        b.sub(ia, ib)
+        b.mul(ia, ib)
+        b.sdiv(ia, ib)
+        b.udiv(ia, ib)
+        b.fadd(fa, fb)
+        b.fsub(fa, fb)
+        b.fmul(fa, fb)
+        b.fdiv(fa, fb)
+        b.ret(ia)
+        printed = str(mod)
+        for op in ("add i32", "sub i32", "mul i32", "sdiv i32", "udiv i32",
+                   "fadd float", "fsub float", "fmul float", "fdiv float"):
+            assert op in printed, op
+        del b, bb, fn, ia, ib, fa, fb, mod
+    assert_no_leaks()
+
+
+def test_instruction_accessors():
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(
+            dedent(
+                """\
+                declare i32 @g(i32)
+                define i32 @f(i1 %c, ptr %p) {
+                entry:
+                  %s = alloca i32
+                  store i32 7, ptr %s
+                  %v = load i32, ptr %s
+                  %r = call i32 @g(i32 %v)
+                  br i1 %c, label %a, label %b
+                a:
+                  br label %b
+                b:
+                  ret i32 %r
+                }
+                """
+            ),
+            ctx,
+            "m",
+        )
+        f = mod.get_function("f")
+        insts = f.entry_block.instructions
+
+        def first(kind):
+            return next(i for i in insts if type(i).__name__ == kind)
+
+        alloca = first("AllocaInst")
+        store = first("StoreInst")
+        call = first("CallInst")
+        condbr = f.entry_block.terminator
+        assert str(alloca.allocated_type) == "i32"  # AllocaInst.allocated_type
+        assert store.pointer_operand == alloca  # StoreInst.pointer_operand
+        assert call.called_operand.name == "g"  # CallBase.called_operand
+        assert condbr.is_conditional  # CondBrInst.is_conditional
+        assert condbr.condition == f.arg(0)  # CondBrInst.condition (== %c)
+        a_block = next(b for b in f.basic_blocks if b.name == "a")
+        assert not a_block.terminator.is_conditional  # UncondBrInst.is_conditional
+        b_block = next(b for b in f.basic_blocks if b.name == "b")
+        assert b_block.terminator.return_value == call  # ReturnInst.return_value
+        del f, insts, alloca, store, call, condbr, a_block, b_block, mod
+    assert_no_leaks()
+
+
+def test_value_name_setter_and_instruction_props():
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        f = mod.get_function("f")
+        entry = f.entry_block
+        add = entry.instructions[0]
+        ret = entry.terminator
+        assert add.is_terminator is False  # Instruction.is_terminator
+        assert ret.is_terminator is True
+        assert add.parent == entry  # Instruction.parent
+        add.name = "renamed"  # Value.name setter
+        assert add.name == "renamed"
+        assert "%renamed = add" in str(mod)
+        del f, entry, add, ret, mod
     assert_no_leaks()

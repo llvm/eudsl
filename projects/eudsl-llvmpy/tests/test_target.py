@@ -71,24 +71,7 @@ def test_emit_assembly_and_object():
         mod = llvm.parse_assembly(_SRC, ctx, "m")
         tm = llvm.TargetMachine()
         mod.set_data_layout_from(tm)
-<<<<<<< HEAD
-        asm_out = tm.emit_assembly(mod)
-        assert "%s = add" not in asm_out
-        assert "ret" in asm_out.lower() or "bx" in asm_out.lower() or "blr" in asm_out.lower()
-        obj = tm.emit_object(mod)
-        assert isinstance(obj, bytes)
-        assert len(obj) > 4
-        if sys.platform == "darwin":
-            assert obj[:4] == b"\xcf\xfa\xed\xfe" or obj[:4] == b"\xfe\xed\xfa\xcf"
-        elif sys.platform == "linux":
-            assert obj[:4] == b"\x7fELF"
-        del tm, mod
-=======
         asm = tm.emit_assembly(mod)
-        # "add" alone is vacuous: the symbol @add puts it in the output no matter
-        # what the body compiles to. Prove emit reflects the body by emitting a
-        # same-named function with a different body and asserting they differ,
-        # and that the constant-returning body shows its immediate.
         const_mod = llvm.parse_assembly(_SRC_CONST, ctx, "m2")
         const_mod.set_data_layout_from(tm)
         const_asm = tm.emit_assembly(const_mod)
@@ -96,7 +79,10 @@ def test_emit_assembly_and_object():
         assert "12345" in const_asm and "12345" not in asm
         obj = tm.emit_object(mod)
         assert isinstance(obj, bytes)
-        assert len(obj) > 0
+        assert len(obj) > 4
+        if sys.platform == "darwin":
+            assert obj[:4] == b"\xcf\xfa\xed\xfe" or obj[:4] == b"\xfe\xed\xfa\xcf"
+        elif sys.platform == "linux":
+            assert obj[:4] == b"\x7fELF"
         del tm, mod, const_mod
->>>>>>> 1b08a8e5 ([eudsl-llvmpy] Address test-honesty review findings)
     assert_no_leaks()
