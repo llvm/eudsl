@@ -16,5 +16,8 @@ def test_named_metadata_round_trips():
         assert '!0 = !{!"hello"}' in printed
         got = mod.named_metadata("my.meta")
         assert len(got) == 1
+        # The accessor returns the node we added, not just some node.
+        assert got[0].num_operands == 1
+        assert got[0].operand(0).string == "hello"
         del mod
     assert_no_leaks()

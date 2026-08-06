@@ -86,7 +86,7 @@ def test_use_of_released_context_raises():
 
 
 def test_target_machine_bad_triple_raises():
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="No available targets"):
         llvm.TargetMachine("nonsense-not-a-triple")
 
 
@@ -128,7 +128,7 @@ def test_builder_fcmp_gep_call():
         assert "fcmp olt" in printed and "getelementptr" in printed
         assert "icmp eq" in printed
         assert "call i32 @callee" in printed
-        del b, fn, callee, mod
+        del b, bb, fn, callee, mod
     assert_no_leaks()
 
 
@@ -157,7 +157,7 @@ def test_constant_int_zext_and_global_initializer():
         g = loads[0].pointer_operand
         e = loads[1].pointer_operand
         assert type(g).__name__ == "GlobalVariable"
-        assert g.initializer is not None  # @g has an initializer
+        assert g.initializer.value == 5  # @g's initializer is the constant i32 5
         assert e.initializer is None  # @e is external, no initializer
         del loads, g, e, mod
     assert_no_leaks()
@@ -216,7 +216,7 @@ def test_jit_lookup_missing_symbol_raises():
     )
     jit = llvm.LLJIT()
     jit.add_module(mod)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="Symbols not found"):
         jit.lookup("absent")
     del jit, mod, ctx
 

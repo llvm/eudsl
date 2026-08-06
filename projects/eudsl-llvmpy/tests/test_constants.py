@@ -16,6 +16,21 @@ def test_const_int():
     assert_no_leaks()
 
 
+def test_const_int_signed_flag_is_currently_inert():
+    # const_int takes an int64: a negative value is always built signed
+    # (isSigned || value < 0), and a non-negative int64 has bit 63 clear, so
+    # sign- and zero-extension coincide. So the `signed` flag does not change
+    # the resulting constant for any representable value. Pin that so a future
+    # change to the flag's meaning is a visible, deliberate break.
+    with llvm.Context() as ctx:
+        for ty in (llvm.i32(ctx), llvm.int_t(ctx, 128)):
+            for v in (-1, 7, 0):
+                a = llvm.const_int(ty, v, signed=True)
+                b = llvm.const_int(ty, v, signed=False)
+                assert str(a) == str(b)
+    assert_no_leaks()
+
+
 def test_const_bool_and_fp():
     with llvm.Context() as ctx:
         t = llvm.const_bool(ctx, True)
