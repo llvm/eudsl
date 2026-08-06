@@ -8,7 +8,9 @@ from llvm.testing import assert_no_leaks
 def test_primitive_types_print():
     with llvm.Context() as ctx:
         assert str(llvm.types.void(ctx)) == "void"
+        assert str(llvm.types.label(ctx)) == "label"
         assert str(llvm.types.i1(ctx)) == "i1"
+        assert str(llvm.types.i16(ctx)) == "i16"
         assert str(llvm.types.i32(ctx)) == "i32"
         assert str(llvm.types.f32(ctx)) == "float"
         assert str(llvm.types.f64(ctx)) == "double"

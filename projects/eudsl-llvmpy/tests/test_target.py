@@ -33,6 +33,13 @@ def test_host_triple_is_nonempty():
     assert llvm.host_triple()
 
 
+def test_target_machine_triple():
+    tm = llvm.TargetMachine(llvm.host_triple())
+    # TargetMachine.triple round-trips a normalized host triple.
+    assert isinstance(tm.triple, str)
+    assert "-" in tm.triple
+
+
 def test_emit_assembly_and_object():
     with llvm.Context() as ctx:
         mod = llvm.parse_assembly(_SRC, ctx, "m")

@@ -21,3 +21,13 @@ def test_named_metadata_round_trips():
         assert got[0].operand(0).string == "hello"
         del mod
     assert_no_leaks()
+
+
+def test_metadata_str():
+    with llvm.Context() as ctx:
+        s = llvm.md_string(ctx, "hi")
+        node = llvm.md_node(ctx, [s])
+        # Metadata.__str__ (base) prints the metadata.
+        assert "hi" in str(s)
+        assert "hi" in str(node)
+    assert_no_leaks()
