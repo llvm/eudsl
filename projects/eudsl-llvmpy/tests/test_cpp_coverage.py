@@ -156,7 +156,7 @@ def test_constant_int_zext_and_global_initializer():
         # The load pointer operands are the GlobalVariables @g and @e.
         g = loads[0].pointer_operand
         e = loads[1].pointer_operand
-        assert type(g).__name__ == "GlobalVariable"
+        assert isinstance(g, llvm.GlobalVariable)
         assert g.initializer.value == 5  # @g's initializer is the constant i32 5
         assert e.initializer is None  # @e is external, no initializer
         del loads, g, e, mod
