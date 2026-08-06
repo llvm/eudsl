@@ -15,15 +15,25 @@
 #include <llvm/IR/GlobalObject.h>
 #include <llvm/IR/GlobalValue.h>
 #include <llvm/IR/InstrTypes.h>
+#include <llvm/IR/InstIterator.h>
 #include <llvm/IR/Instruction.h>
+#include <llvm/IR/Use.h>
 #include <llvm/IR/User.h>
 #include <llvm/IR/Value.h>
 
 #include <nanobind/make_iterator.h>
 
+#include <algorithm>
 #include <vector>
 
 void populate_values(nb::module_ &m) {
+  // A def-use edge: which User uses a value, and at which operand index.
+  nb::class_<llvm::Use>(m, "Use")
+      .def_prop_ro(
+          "user", [](llvm::Use &self) { return self.getUser(); },
+          nb::rv_policy::reference_internal)
+      .def_prop_ro("operand_number", &llvm::Use::getOperandNo);
+
   nb::class_<llvm::Value>(m, "Value")
       .def_prop_rw(
           "name", [](llvm::Value &self) { return self.getName().str(); },
@@ -36,7 +46,24 @@ void populate_values(nb::module_ &m) {
                      return std::vector<llvm::User *>(self.user_begin(),
                                                       self.user_end());
                    })
+      .def_prop_ro("uses",
+                   [](llvm::Value &self) {
+                     std::vector<llvm::Use *> out;
+                     for (llvm::Use &u : self.uses())
+                       out.push_back(&u);
+                     return out;
+                   })
       .def("replace_all_uses_with", &llvm::Value::replaceAllUsesWith, "value"_a)
+      .def(
+          "replace_all_uses_except",
+          [](llvm::Value &self, llvm::Value *newValue,
+             std::vector<llvm::User *> exceptions) {
+            self.replaceUsesWithIf(newValue, [&](llvm::Use &u) {
+              return std::find(exceptions.begin(), exceptions.end(),
+                               u.getUser()) == exceptions.end();
+            });
+          },
+          "value"_a, "exceptions"_a)
       .def("__str__", [](llvm::Value &self) { return eudsl::toString(self); })
       .def("__eq__",
            [](llvm::Value &self, nb::handle other) {
@@ -229,6 +256,16 @@ void populate_values(nb::module_ &m) {
             return llvm::BasicBlock::Create(self.getContext(), name, &self);
           },
           "name"_a = "", nb::rv_policy::reference_internal)
+      .def(
+          "walk",
+          [](llvm::Function &self) {
+            // Every instruction in the function, in block then program order --
+            // the LLVM analogue of MLIR's op.walk() over a single region.
+            return nb::make_iterator<nb::rv_policy::reference>(
+                nb::type<llvm::Function>(), "WalkIterator",
+                llvm::inst_begin(self), llvm::inst_end(self));
+          },
+          nb::keep_alive<0, 1>())
       .def_prop_rw("linkage", &llvm::Function::getLinkage,
                    &llvm::Function::setLinkage)
       .def_prop_rw("visibility", &llvm::Function::getVisibility,
