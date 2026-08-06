@@ -170,9 +170,8 @@ class MyInt(llvm.Value):
 - **The fatal-error path is best-effort.** LLVM's fatal error handler cannot
   return, so where a bad argument would trip it, the bindings validate up front
   and raise. A genuine LLVM fatal error still aborts the process after a warning.
-- **No raw C-API escape hatch.** The `llvm-c` surface and `from_capsule` are
-  not exposed. If something isn't bound, it isn't reachable from Python; the fix
-  is to bind it.
+- **No raw C-API escape hatch.** The `llvm-c` surface is not exposed. If
+  something isn't bound, it isn't reachable from Python; the fix is to bind it.
 - **Scope of the binding.** `llvm/IR` is not bound exhaustively. The rule is:
   what the DSL needs, what `llvmlite.binding` exposes, and everything reachable
   by traversal from a `Module`. Out of scope for now: DIBuilder/DebugInfo,
