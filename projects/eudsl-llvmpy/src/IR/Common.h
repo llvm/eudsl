@@ -65,6 +65,15 @@ enum class CallingConvEnum : unsigned {
   COLD = llvm::CallingConv::Cold,
 };
 
+/// MLIR-style checked-downcast constructor, chained onto an nb::class_:
+///   nb::class_<llvm::IntegerType, llvm::Type>(m, "IntegerType")
+///       .EUDSL_CAST_CTOR(llvm::IntegerType, llvm::Type)
+/// makes `IntegerType(v)` re-type v when isa<IntegerType>(v), else raise
+/// ValueError -- the parity analogue of MLIR's `IntegerType(t)`. The result
+/// borrows v's non-owning pointer; keep_alive<0,1> keeps the source (and thus
+/// the owning Context/Module) alive for the new wrapper's lifetime, and
+/// rv_policy::reference stops nanobind from trying to delete a context-owned
+/// object.
 #define EUDSL_CAST_CTOR(Derived, Base)                                         \
   def(nb::new_([](Base *v) -> Derived * {                                      \
         if (auto *d = llvm::dyn_cast_or_null<Derived>(v))                      \
