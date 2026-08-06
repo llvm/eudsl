@@ -45,6 +45,18 @@ inline void unwrap(llvm::Error &&e) {
     throw std::runtime_error(llvm::toString(std::move(e))); // LCOV_EXCL_LINE
 }
 
+/// Python __getitem__ helper: negative-index aware, raises IndexError (not a
+/// C++ crash) past the ends. Used by the iterable container bindings.
+template <typename T>
+T *nthOrThrow(const std::vector<T *> &items, Py_ssize_t i) {
+  Py_ssize_t n = static_cast<Py_ssize_t>(items.size());
+  if (i < 0)
+    i += n;
+  if (i < 0 || i >= n)
+    throw nb::index_error("index out of range");
+  return items[i];
+}
+
 } // namespace eudsl
 
 enum class CallingConvEnum : unsigned {
