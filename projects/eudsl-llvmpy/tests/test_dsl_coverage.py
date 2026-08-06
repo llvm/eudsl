@@ -114,6 +114,37 @@ def test_insert_value_and_extract():
     assert_no_leaks()
 
 
+def test_insert_extract_value_index_via_jit():
+    # Pin the index argument of insert_value/extract_value at BOTH 0 and 1 by
+    # executing: a wrong or dropped index would return the other field.
+    import ctypes
+
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    i32 = llvm.i32(ctx)
+    st = llvm.struct_t(ctx, [i32, i32])
+
+    def build(name, idx):
+        fn = llvm.Function.create(llvm.function_t(i32, [i32, i32]), name, mod)
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(fn.append_basic_block("entry")):
+            agg = llvm.undef(st)
+            agg = b.insert_value(agg, fn.arg(0), 0)
+            agg = b.insert_value(agg, fn.arg(1), 1)
+            b.ret(b.extract_value(agg, idx))
+
+    build("get0", 0)
+    build("get1", 1)
+    jit = llvm.LLJIT()
+    jit.add_module(mod)
+    sig = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_int32)
+    g0 = sig(jit.lookup("get0"))
+    g1 = sig(jit.lookup("get1"))
+    assert g0(10, 20) == 10  # field 0
+    assert g1(10, 20) == 20  # field 1
+    del jit, mod, ctx, g0, g1, sig, st, i32
+
+
 def test_typed_pointer_setitem_with_value_index():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)

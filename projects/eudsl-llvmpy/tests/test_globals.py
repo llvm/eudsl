@@ -19,7 +19,18 @@ def test_add_global_with_initializer():
     assert_no_leaks()
 
 
-def test_constant_global_in_address_space():
+def test_add_global_external_and_get_global_miss():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.i32(ctx)
+        # No initializer -> external declaration (the init=None default path).
+        g = mod.add_global(i32, "ext")
+        assert g.initializer is None
+        assert "@ext = external global i32" in str(mod)
+        # get_global miss path returns None.
+        assert mod.get_global("nope") is None
+        del g, mod
+    assert_no_leaks()
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.i32(ctx)
