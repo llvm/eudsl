@@ -73,8 +73,12 @@ void populate_context(nb::module_ &m) {
       .def_static("_get_live_module_count", &eudsl::Module::liveCount);
 
   nb::class_<eudsl::Module>(m, "Module")
-      .def(nb::init<const std::string &, eudsl::Context &>(), "name"_a,
-           "context"_a, nb::keep_alive<1, 3>())
+      .def(
+          "__init__",
+          [](eudsl::Module *self, const std::string &name, nb::handle context) {
+            new (self) eudsl::Module(name, eudsl::currentOr(context));
+          },
+          "name"_a, "context"_a = nb::none(), nb::keep_alive<1, 3>())
       .def_prop_rw(
           "module_identifier",
           [](eudsl::Module &self) { return self.get().getModuleIdentifier(); },
@@ -225,9 +229,10 @@ void populate_context(nb::module_ &m) {
 
   m.def(
       "parse_assembly",
-      [](const std::string &ir, eudsl::Context &ctx,
+      [](const std::string &ir, nb::handle context,
          const std::string &module_identifier,
          const std::string &source_filename) {
+        eudsl::Context &ctx = eudsl::currentOr(context);
         llvm::SMDiagnostic err;
         std::unique_ptr<llvm::Module> mod =
             llvm::parseAssemblyString(ir, err, ctx.get());
@@ -241,13 +246,14 @@ void populate_context(nb::module_ &m) {
         mod->setSourceFileName(source_filename);
         return new eudsl::Module(std::move(mod), ctx);
       },
-      "ir"_a, "context"_a, "module_identifier"_a = "<string>",
+      "ir"_a, "context"_a = nb::none(), "module_identifier"_a = "<string>",
       "source_filename"_a = "", nb::keep_alive<0, 2>(),
       "Parse LLVM textual IR into a new Module.");
 
   m.def(
       "parse_bitcode",
-      [](nb::bytes data, eudsl::Context &ctx) {
+      [](nb::bytes data, nb::handle context) {
+        eudsl::Context &ctx = eudsl::currentOr(context);
         llvm::StringRef ref(data.c_str(), data.size());
         auto buf = llvm::MemoryBuffer::getMemBuffer(ref, "<bitcode>", false);
         llvm::Expected<std::unique_ptr<llvm::Module>> mod =
@@ -256,7 +262,7 @@ void populate_context(nb::module_ &m) {
           throw eudsl::ParseError(llvm::toString(mod.takeError()));
         return new eudsl::Module(std::move(*mod), ctx);
       },
-      "data"_a, "context"_a, nb::keep_alive<0, 2>(),
+      "data"_a, "context"_a = nb::none(), nb::keep_alive<0, 2>(),
       "Parse an LLVM bitcode buffer into a new Module.");
 
   eudsl::initializeTargets();

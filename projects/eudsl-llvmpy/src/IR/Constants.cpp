@@ -144,10 +144,11 @@ void populate_constants(nb::module_ &m) {
       nb::keep_alive<0, 1>());
   m.def(
       "const_bool",
-      [](eudsl::Context &ctx, bool b) -> llvm::Constant * {
-        return llvm::ConstantInt::getBool(ctx.get(), b);
+      [](bool b, nb::handle context) -> llvm::Constant * {
+        return llvm::ConstantInt::getBool(eudsl::currentOr(context).get(), b);
       },
-      "context"_a, "value"_a, nb::rv_policy::reference, nb::keep_alive<0, 1>());
+      "value"_a, "context"_a = nb::none(), nb::rv_policy::reference,
+      nb::keep_alive<0, 2>());
   m.def(
       "const_fp",
       [](llvm::Type *ty, double value) -> llvm::Constant * {
