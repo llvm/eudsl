@@ -58,17 +58,17 @@ void populate_types(nb::module_ &m) {
             reinterpret_cast<std::uintptr_t>(&self));
       });
 
-  // Primitive type factories. Each takes the owning context and returns an
-  // interned Type*, non-owning, kept alive by the context (keep_alive<0,1>:
-  // the returned type keeps its context argument alive). reference_internal is
-  // not usable here because these are free functions with no bound self.
+  // Primitive type factories. The context is optional: when omitted, the
+  // thread-local current context (from `with Context():`) is used. Returns an
+  // interned Type*, non-owning, kept alive by the context argument when given.
 #define EUDSL_PRIMITIVE_TYPE(pyName, getter)                                   \
   m.def(                                                                       \
       pyName,                                                                  \
-      [](eudsl::Context &ctx) -> llvm::Type * {                                \
-        return llvm::Type::getter(ctx.get());                                  \
+      [](nb::handle context) -> llvm::Type * {                                 \
+        return llvm::Type::getter(eudsl::currentOr(context).get());            \
       },                                                                       \
-      "context"_a, nb::rv_policy::reference, nb::keep_alive<0, 1>())
+      "context"_a = nb::none(), nb::rv_policy::reference,                      \
+      nb::keep_alive<0, 1>())
 
   EUDSL_PRIMITIVE_TYPE("void", getVoidTy);
   EUDSL_PRIMITIVE_TYPE("label", getLabelTy);

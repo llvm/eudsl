@@ -28,15 +28,24 @@ void populate_context(nb::module_ &m) {
       .def(nb::init<>())
       .def(
           "__enter__",
-          [](eudsl::Context &self) -> eudsl::Context & { return self; },
+          [](eudsl::Context &self) -> eudsl::Context & {
+            self.pushCurrent();
+            return self;
+          },
           nb::rv_policy::reference_internal)
       .def(
           "__exit__",
           [](eudsl::Context &self, nb::object, nb::object, nb::object) {
+            self.popCurrent();
             self.release();
           },
           nb::arg("exc_type").none(), nb::arg("exc_value").none(),
           nb::arg("traceback").none())
+      .def_static(
+          "current",
+          []() -> eudsl::Context * { return eudsl::Context::current(); },
+          nb::rv_policy::reference,
+          "The innermost active `with Context():`, or None.")
       .def_static("_get_live_count", &eudsl::Context::liveCount)
       .def_static("_get_live_module_count", &eudsl::Module::liveCount);
 
