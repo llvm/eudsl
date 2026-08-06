@@ -42,9 +42,11 @@ void populate_instructions(nb::module_ &m) {
   nb::class_<llvm::FuncletPadInst, llvm::Instruction>(m, "FuncletPadInst");
 
   nb::class_<llvm::CmpInst, llvm::Instruction>(m, "CmpInst")
+      .EUDSL_CAST_CTOR(llvm::CmpInst, llvm::Value)
       .def_prop_ro("predicate", &llvm::CmpInst::getPredicate);
 
   nb::class_<llvm::CallBase, llvm::Instruction>(m, "CallBase")
+      .EUDSL_CAST_CTOR(llvm::CallBase, llvm::Value)
       .def_prop_ro("num_args", &llvm::CallBase::arg_size)
       .def(
           "arg_operand",
@@ -66,6 +68,7 @@ void populate_instructions(nb::module_ &m) {
   nb::class_<llvm::CallBrInst, llvm::CallBase>(m, "CallBrInst");
 
   nb::class_<llvm::PHINode, llvm::Instruction>(m, "PHINode")
+      .EUDSL_CAST_CTOR(llvm::PHINode, llvm::Value)
       .def_prop_ro("num_incoming", &llvm::PHINode::getNumIncomingValues)
       .def(
           "incoming_value",
@@ -86,21 +89,25 @@ void populate_instructions(nb::module_ &m) {
       .def("add_incoming", &llvm::PHINode::addIncoming, "value"_a, "block"_a);
 
   nb::class_<llvm::AllocaInst, llvm::UnaryInstruction>(m, "AllocaInst")
+      .EUDSL_CAST_CTOR(llvm::AllocaInst, llvm::Value)
       .def_prop_ro(
           "allocated_type",
           [](llvm::AllocaInst &self) { return self.getAllocatedType(); },
           nb::rv_policy::reference_internal);
   nb::class_<llvm::LoadInst, llvm::UnaryInstruction>(m, "LoadInst")
+      .EUDSL_CAST_CTOR(llvm::LoadInst, llvm::Value)
       .def_prop_ro(
           "pointer_operand",
           [](llvm::LoadInst &self) { return self.getPointerOperand(); },
           nb::rv_policy::reference_internal);
   nb::class_<llvm::StoreInst, llvm::Instruction>(m, "StoreInst")
+      .EUDSL_CAST_CTOR(llvm::StoreInst, llvm::Value)
       .def_prop_ro(
           "pointer_operand",
           [](llvm::StoreInst &self) { return self.getPointerOperand(); },
           nb::rv_policy::reference_internal);
   nb::class_<llvm::GetElementPtrInst, llvm::Instruction>(m, "GetElementPtrInst")
+      .EUDSL_CAST_CTOR(llvm::GetElementPtrInst, llvm::Value)
       .def_prop_ro(
           "source_element_type",
           [](llvm::GetElementPtrInst &self) {
@@ -109,13 +116,16 @@ void populate_instructions(nb::module_ &m) {
           nb::rv_policy::reference_internal);
 
   nb::class_<llvm::ReturnInst, llvm::Instruction>(m, "ReturnInst")
+      .EUDSL_CAST_CTOR(llvm::ReturnInst, llvm::Value)
       .def_prop_ro(
           "return_value",
           [](llvm::ReturnInst &self) { return self.getReturnValue(); },
           nb::rv_policy::reference_internal);
   nb::class_<llvm::UncondBrInst, llvm::Instruction>(m, "UncondBrInst")
+      .EUDSL_CAST_CTOR(llvm::UncondBrInst, llvm::Value)
       .def_prop_ro("is_conditional", [](llvm::UncondBrInst &) { return false; });
   nb::class_<llvm::CondBrInst, llvm::Instruction>(m, "CondBrInst")
+      .EUDSL_CAST_CTOR(llvm::CondBrInst, llvm::Value)
       .def_prop_ro("is_conditional", [](llvm::CondBrInst &) { return true; })
       .def_prop_ro(
           "condition",
