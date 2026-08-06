@@ -9,6 +9,39 @@ import llvm
 from llvm.testing import assert_no_leaks
 
 
+def test_module_is_counted():
+    # The module count is tied to actual destruction, so it detects a leak the
+    # context count cannot: __exit__ zeroes the context count even while a
+    # Module still keeps the LLVMContext alive.
+    assert llvm.Context._get_live_module_count() == 0
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        assert llvm.Context._get_live_module_count() == 1
+        second = llvm.Module("m2", ctx)
+        assert llvm.Context._get_live_module_count() == 2
+        del second
+        gc.collect()
+        assert llvm.Context._get_live_module_count() == 1
+        del mod
+    gc.collect()
+    assert llvm.Context._get_live_module_count() == 0
+    assert_no_leaks()
+
+
+def test_leaked_module_is_detected_by_module_count():
+    # A module held past the context's release is invisible to the context count
+    # (release() dropped it to 0) but visible to the module count.
+    ctx = llvm.Context()
+    leaked = llvm.Module("leak", ctx)
+    ctx.__exit__(None, None, None)  # as if leaving a `with` block
+    gc.collect()
+    assert llvm.Context._get_live_count() == 0  # released
+    assert llvm.Context._get_live_module_count() == 1  # but the module lives
+    del leaked, ctx
+    gc.collect()
+    assert_no_leaks()
+
+
 def test_context_is_counted():
     assert llvm.Context._get_live_count() == 0
     ctx = llvm.Context()
