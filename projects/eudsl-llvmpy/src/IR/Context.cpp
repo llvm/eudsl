@@ -5,6 +5,7 @@
 #include "IR/Common.h"
 #include "IR/Errors.h"
 #include "IR/Ownership.h"
+#include "IR/Sequence.h"
 #include "IR/TargetInit.h"
 
 #include <llvm/AsmParser/Parser.h>
@@ -66,13 +67,23 @@ void populate_context(nb::module_ &m) {
           "context",
           [](eudsl::Module &self) -> eudsl::Context & { return self.context(); },
           nb::rv_policy::reference_internal)
-      .def_prop_ro("functions",
-                   [](eudsl::Module &self) {
-                     std::vector<llvm::Function *> out;
-                     for (llvm::Function &f : self.get().functions())
-                       out.push_back(&f);
-                     return out;
-                   })
+      .def_prop_ro(
+          "functions",
+          [](eudsl::Module &self) {
+            llvm::Module *mod = &self.get();
+            eudsl::Sequence<llvm::Function> seq;
+            seq.length = [mod] {
+              return static_cast<std::size_t>(
+                  std::distance(mod->begin(), mod->end()));
+            };
+            seq.at = [mod](std::size_t i) {
+              auto it = mod->begin();
+              std::advance(it, i);
+              return &*it;
+            };
+            return seq;
+          },
+          nb::keep_alive<0, 1>())
       .def("__len__",
            [](eudsl::Module &self) {
              return static_cast<Py_ssize_t>(std::distance(
