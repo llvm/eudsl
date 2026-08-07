@@ -7,6 +7,7 @@
 #include "IR/TargetInit.h"
 
 #include <llvm/AsmParser/Parser.h>
+#include <llvm/IR/Function.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/SourceMgr.h>
 
@@ -56,6 +57,19 @@ void populate_context(nb::module_ &m) {
           "context",
           [](eudsl::Module &self) -> eudsl::Context & { return self.context(); },
           nb::rv_policy::reference_internal)
+      .def_prop_ro("functions",
+                   [](eudsl::Module &self) {
+                     std::vector<llvm::Function *> out;
+                     for (llvm::Function &f : self.get().functions())
+                       out.push_back(&f);
+                     return out;
+                   })
+      .def(
+          "get_function",
+          [](eudsl::Module &self, const std::string &name) {
+            return self.get().getFunction(name);
+          },
+          "name"_a, nb::rv_policy::reference)
       .def("__str__", [](eudsl::Module &self) {
         std::string s;
         llvm::raw_string_ostream os(s);
