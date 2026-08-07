@@ -10,7 +10,7 @@ from llvm.testing import assert_no_leaks
 def test_break_raises_not_implemented():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="break"):
 
             @llvm.function(module=mod)
@@ -30,11 +30,11 @@ def test_break_raises_not_implemented():
 def test_early_return_in_if_raises():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="return"):
 
             @llvm.function(module=mod)
-            def bad2(c: llvm.i1, a: i32) -> i32:
+            def bad2(c: llvm.types.i1, a: i32) -> i32:
                 if c:
                     return a
                 return a
@@ -46,7 +46,7 @@ def test_early_return_in_if_raises():
 def test_continue_raises_not_implemented():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="continue"):
 
             @llvm.function(module=mod)
