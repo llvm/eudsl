@@ -134,10 +134,10 @@ def test_for_range_sum_jits():
 def test_if_else_multiple_results():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
-    def swap_if(c: llvm.i1, a: i32, b: i32) -> i32:
+    def swap_if(c: llvm.types.i1, a: i32, b: i32) -> i32:
         if c:
             x, y = yield a, b
         else:
@@ -159,10 +159,10 @@ def test_if_no_else_side_effect_only():
     # A single-branch if with no yielded result: side effect via store.
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
-    def clamp0(c: llvm.i1, p: llvm.ptr_t) -> i32:
+    def clamp0(c: llvm.types.i1, p: llvm.types.ptr) -> i32:
         tp = with_element_type(p, i32)
         if c:
             tp[0] = llvm.const_int(i32, 0)
@@ -178,7 +178,7 @@ def test_if_no_else_side_effect_only():
 def test_elif_elif_three_way():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
     def sign(x: i32) -> i32:
@@ -206,7 +206,7 @@ def test_elif_elif_three_way():
 def test_while_two_carried_values():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     # Fibonacci-ish: iterate n times advancing (a, b) -> (b, a+b).
     @llvm.function(module=mod)
@@ -233,7 +233,7 @@ def test_while_two_carried_values():
 def test_for_with_step_and_two_carried():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     # Sum every other value in [0, n) and count how many; step 2.
     @llvm.function(module=mod)
@@ -258,7 +258,7 @@ def test_for_with_step_and_two_carried():
 def test_for_result_used_after_loop():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
     def total_plus_one(n: i32) -> i32:
@@ -279,7 +279,7 @@ def test_for_result_used_after_loop():
 def test_for_mixed_start_stop():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
     def sum_range(lo: i32, hi: i32) -> i32:

@@ -6,7 +6,9 @@
 import ast
 import inspect
 
-from .. import Function, IRBuilder, Type, function_t
+from .. import Function, IRBuilder
+from ..eudslllvm_ext.types import Type
+from ..eudslllvm_ext.types import function as function_t
 from ..ast.canonicalize import canonicalize
 from ..ast.util import get_module_cst
 from .casters import maybe_downcast
