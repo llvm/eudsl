@@ -94,8 +94,10 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     # triggers LLVMMlirDevelopmentExports.cmake
     mlirdevelopment-cmake-exports
     llvm-config
+    llvm-cov
     llvm-headers
     llvm-libraries
+    llvm-profdata
     llvm-tblgen
 
     split-file
