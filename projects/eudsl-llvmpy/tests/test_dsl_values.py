@@ -4,7 +4,7 @@
 import llvm
 from llvm.dsl.casters import maybe_downcast
 from llvm.dsl.context import building
-from llvm.dsl.values import ArithValue
+from llvm.dsl.values import ArithValue, extract, with_element_type
 from llvm.testing import assert_no_leaks
 
 
@@ -112,8 +112,6 @@ def test_eq_ne_named_methods():
 
 
 def test_gep_load_store_via_alloca():
-    from llvm.dsl.values import with_element_type
-
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.i32(ctx)
@@ -135,8 +133,6 @@ def test_gep_load_store_via_alloca():
 
 
 def test_pointer_subscript_returns_arithvalue():
-    from llvm.dsl.values import with_element_type
-
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.i32(ctx)
@@ -156,8 +152,6 @@ def test_pointer_subscript_returns_arithvalue():
 
 
 def test_extract_value_from_struct_arg():
-    from llvm.dsl.values import extract
-
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.i32(ctx)
