@@ -8,7 +8,11 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -40,3 +44,8 @@ inline void unwrap(llvm::Error &&e) {
 }
 
 } // namespace eudsl
+
+// Pulled in here so every translation unit that returns an llvm::Type* or
+// llvm::Value* sees the downcasting type_hook specializations. Without this a
+// TU would silently fall back to base-class conversion.
+#include "IR/Kinds.h"

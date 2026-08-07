@@ -26,7 +26,7 @@ build-dir = "build/{wheel_tag}"
 cmake.source-dir = "."
 wheel.packages = ["src/llvm"]
 wheel.py-api = "cp312"
-editable.mode = "inplace"
+editable.mode = "redirect"
 editable.verbose = true
 editable.rebuild = false
 
