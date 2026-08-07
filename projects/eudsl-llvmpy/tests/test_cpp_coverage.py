@@ -41,13 +41,13 @@ def test_value_eq_hash_and_operands():
 
 def test_type_eq_and_anonymous_struct_name():
     with llvm.Context() as ctx:
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         assert (i32 == "not a type") is False
         # A literal (anonymous) struct has no name.
-        lit = llvm.struct_t(ctx, [i32, i32])
+        lit = llvm.types.struct(ctx, [i32, i32])
         assert lit.name is None
         # A named struct reports its name.
-        named = llvm.named_struct_t(ctx, "S")
+        named = llvm.types.named_struct(ctx, "S")
         assert named.name == "S"
     assert_no_leaks()
 
@@ -65,7 +65,7 @@ def test_basic_block_create_static_and_empty_entry_block():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         fn = llvm.Function.create(
-            llvm.function_t(llvm.void_t(ctx), []), "f", mod
+            llvm.types.function(llvm.types.void(ctx), []), "f", mod
         )
         # A declaration (no blocks) has no entry block.
         assert fn.entry_block is None
@@ -81,7 +81,7 @@ def test_use_of_released_context_raises():
     ctx = llvm.Context()
     ctx.__exit__(None, None, None)  # release the underlying LLVMContext
     with pytest.raises(RuntimeError, match="released"):
-        llvm.i32(ctx)
+        llvm.types.i32(ctx)
     del ctx
 
 
@@ -107,11 +107,11 @@ def test_linker_conflicting_symbols_raises():
 def test_builder_fcmp_gep_call():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        f32 = llvm.f32(ctx)
-        i32 = llvm.i32(ctx)
-        callee = llvm.Function.create(llvm.function_t(i32, [i32]), "callee", mod)
+        f32 = llvm.types.f32(ctx)
+        i32 = llvm.types.i32(ctx)
+        callee = llvm.Function.create(llvm.types.function(i32, [i32]), "callee", mod)
         fn = llvm.Function.create(
-            llvm.function_t(llvm.i1(ctx), [f32, f32, llvm.ptr_t(ctx), i32]),
+            llvm.types.function(llvm.types.i1(ctx), [f32, f32, llvm.types.ptr(ctx), i32]),
             "f",
             mod,
         )
@@ -146,7 +146,7 @@ def test_constant_int_zext_and_global_initializer():
         """
     )
     with llvm.Context() as ctx:
-        assert llvm.const_int(llvm.i32(ctx), 7).zext_value == 7
+        assert llvm.const_int(llvm.types.i32(ctx), 7).zext_value == 7
         mod = llvm.parse_assembly(src, ctx, "m")
         loads = [
             i
@@ -167,8 +167,8 @@ def test_constant_int_zext_and_global_initializer():
 def test_verify_rejects_malformed_module():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        fn = llvm.Function.create(llvm.function_t(i32, []), "bad", mod)
+        i32 = llvm.types.i32(ctx)
+        fn = llvm.Function.create(llvm.types.function(i32, []), "bad", mod)
         # A basic block with no terminator is invalid IR.
         fn.append_basic_block("entry")
         with pytest.raises(llvm.VerifyError):
@@ -292,11 +292,11 @@ def test_valuetypeinfo_downcasts_many_opcodes_and_kinds():
 
 def test_valuetypeinfo_downcasts_constant_kinds():
     with llvm.Context() as ctx:
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         assert type(llvm.const_int(i32, 1)).__name__ == "ConstantInt"
-        assert type(llvm.const_fp(llvm.f32(ctx), 1.0)).__name__ == "ConstantFP"
+        assert type(llvm.const_fp(llvm.types.f32(ctx), 1.0)).__name__ == "ConstantFP"
         assert type(llvm.undef(i32)).__name__ == "UndefValue"
         assert type(llvm.poison(i32)).__name__ == "PoisonValue"
-        assert type(llvm.null(llvm.ptr_t(ctx))).__name__ == "ConstantPointerNull"
+        assert type(llvm.null(llvm.types.ptr(ctx))).__name__ == "ConstantPointerNull"
         assert type(llvm.null(i32)).__name__ == "ConstantInt"  # zero int
     assert_no_leaks()
