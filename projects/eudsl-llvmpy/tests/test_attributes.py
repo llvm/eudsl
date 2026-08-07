@@ -6,7 +6,7 @@ from llvm.testing import assert_no_leaks
 
 
 def _fn(ctx, mod):
-    return llvm.Function.create(llvm.function_t(llvm.void_t(ctx), []), "f", mod)
+    return llvm.Function.create(llvm.types.function(llvm.types.void(ctx), []), "f", mod)
 
 
 def test_linkage_and_calling_conv():
