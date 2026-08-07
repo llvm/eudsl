@@ -31,6 +31,7 @@ binds to the phi that `return r` uses.
 
 from contextlib import contextmanager
 
+from ..eudslllvm_ext import Value, const_int
 from ..ast.canonicalize import Canonicalizer, FunctionPatcher
 from ..ast import cf_transformers as _T
 from .casters import maybe_downcast
@@ -233,8 +234,6 @@ def while_loop(cond_fn, body_fn, inits):
 
 def _as_value(x, like):
     """Coerce a Python int to a constant of `like`'s type; pass Values through."""
-    from .. import Value, const_int
-
     if isinstance(x, Value):
         return x
     return const_int(like.type, int(x), signed=True)
