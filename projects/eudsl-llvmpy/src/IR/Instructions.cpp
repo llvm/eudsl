@@ -49,6 +49,8 @@ void populate_instructions(nb::module_ &m) {
       .def(
           "arg_operand",
           [](llvm::CallBase &self, unsigned i) {
+            if (i >= self.arg_size())
+              throw nb::index_error("argument index out of range");
             return self.getArgOperand(i);
           },
           "index"_a, nb::rv_policy::reference_internal)
@@ -68,12 +70,16 @@ void populate_instructions(nb::module_ &m) {
       .def(
           "incoming_value",
           [](llvm::PHINode &self, unsigned i) {
+            if (i >= self.getNumIncomingValues())
+              throw nb::index_error("incoming index out of range");
             return self.getIncomingValue(i);
           },
           "index"_a, nb::rv_policy::reference_internal)
       .def(
           "incoming_block",
           [](llvm::PHINode &self, unsigned i) {
+            if (i >= self.getNumIncomingValues())
+              throw nb::index_error("incoming index out of range");
             return self.getIncomingBlock(i);
           },
           "index"_a, nb::rv_policy::reference_internal)
