@@ -37,9 +37,36 @@ include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
-if(NOT TARGET LLVMSupport)
-  message(FATAL_ERROR "LLVMSupport not found")
-endif()
+# Which LLVM targets to link and initialize. Defaults to the host target the
+# linked LLVM was built for (LLVM_NATIVE_ARCH), so it works against a host-only
+# distro on any arch. Extra targets stay reachable by flag rather than by patch,
+# e.g. -DEUDSL_LLVMPY_TARGETS="X86;AArch64;AMDGPU" (each must exist in the LLVM
+# being built against).
+set(EUDSL_LLVMPY_TARGETS "${LLVM_NATIVE_ARCH}" CACHE STRING
+    "LLVM targets to link into eudslllvm_ext (semicolon-separated)")
+message(STATUS "EUDSL_LLVMPY_TARGETS: ${EUDSL_LLVMPY_TARGETS}")
+
+set(EUDSLLLVM_TARGET_LIBS)
+set(EUDSLLLVM_TARGET_INITS)
+foreach(_tgt IN LISTS EUDSL_LLVMPY_TARGETS)
+  if(NOT TARGET LLVM${_tgt}Info)
+    message(FATAL_ERROR
+        "EUDSL_LLVMPY_TARGETS names ${_tgt} but LLVM${_tgt}Info does not exist; "
+        "the LLVM being built against was configured without that target")
+  endif()
+  list(APPEND EUDSLLLVM_TARGET_LIBS
+      LLVM${_tgt}Info LLVM${_tgt}Desc LLVM${_tgt}CodeGen
+      LLVM${_tgt}AsmParser LLVM${_tgt}Disassembler)
+  string(APPEND EUDSLLLVM_TARGET_INITS
+      "  LLVMInitialize${_tgt}Target();\n"
+      "  LLVMInitialize${_tgt}TargetInfo();\n"
+      "  LLVMInitialize${_tgt}TargetMC();\n"
+      "  LLVMInitialize${_tgt}AsmParser();\n"
+      "  LLVMInitialize${_tgt}AsmPrinter();\n")
+endforeach()
+configure_file("${CMAKE_CURRENT_LIST_DIR}/src/IR/TargetInit.h.in"
+               "${EUDSLLLVM_BINARY_DIR}/IR/TargetInit.h" @ONLY)
+include_directories("${EUDSLLLVM_BINARY_DIR}")
 
 execute_process(
   COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
@@ -60,81 +87,7 @@ set(nanobind_options
 )
 
 set(EUDSLLLVM_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/src")
-include_directories(${EUDSLLLVM_BINARY_DIR})
 include_directories(${EUDSLLLVM_SRC_DIR})
-
-if (EUDSLLLVM_STANDALONE_BUILD)
-  execute_process(
-        COMMAND "${Python_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/eudsl-llvmpy-generate.py"
-                                        ${LLVM_INCLUDE_DIRS}
-                                        "${EUDSLLLVM_BINARY_DIR}/generated"
-                                        "${EUDSLLLVM_SRC_DIR}/llvm"
-        RESULT_VARIABLE _has_err_generate
-        COMMAND_ECHO STDOUT
-  )
-  if (_has_err_generate AND NOT _has_err_generate EQUAL 0)
-    message(FATAL_ERROR "couldn't generate sources: ${_has_err_generate}")
-  endif()
-  include_directories("${EUDSLLLVM_BINARY_DIR}/generated")
-  file(GLOB _gen_src CONFIGURE_DEPENDS "${EUDSLLLVM_BINARY_DIR}/generated/*.cpp")
-else()
-  set(_gen_src
-      Analysis.cpp
-      BitReader.cpp
-      BitWriter.cpp
-      Comdat.cpp
-      Core.cpp
-      DataTypes.cpp
-      DebugInfo.cpp
-      Deprecated.cpp
-      Disassembler.cpp
-      DisassemblerTypes.cpp
-      Error.cpp
-      ErrorHandling.cpp
-      ExecutionEngine.cpp
-      ExternC.cpp
-      IRReader.cpp
-      LLJIT.cpp
-      LLJITUtils.cpp
-      Linker.cpp
-      Object.cpp
-      Orc.cpp
-      OrcEE.cpp
-      PassBuilder.cpp
-      Remarks.cpp
-      Support.cpp
-      Target.cpp
-      TargetMachine.cpp
-      Types.cpp
-      Visibility.cpp
-      blake3.cpp
-  )
-  list(TRANSFORM _gen_src PREPEND "${EUDSLLLVM_BINARY_DIR}/generated/")
-  #If we're building against third_party/llvm-project then build/include will also be in this list...
-  set(_llvm_include_dirs ${LLVM_INCLUDE_DIRS})
-  list(LENGTH _llvm_include_dirs _llvm_include_dirs_len)
-  if (_llvm_include_dirs_len GREATER_EQUAL 2)
-    list(GET _llvm_include_dirs 0 _llvm_include_dirs)
-    set(_llvm_include_dir "llvm/include")
-    cmake_path(SET _llvm_include_dir NORMALIZE "${_llvm_include_dir}")
-    if(NOT "${_llvm_include_dirs}" MATCHES "${_llvm_include_dir}$")
-      message(FATAL_ERROR "Expected 0th entry in ${LLVM_INCLUDE_DIRS} to be ${_llvm_include_dir}")
-    endif()
-  endif ()
-  cmake_path(SET _eudsl_tblgen_path NORMALIZE "${CMAKE_CURRENT_LIST_DIR}/../eudsl-tblgen/src")
-  add_custom_command(
-    OUTPUT ${_gen_src}
-    COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${_eudsl_tblgen_path}:$ENV{PYTHONPATH}
-                                    "${Python_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/eudsl-llvmpy-generate.py"
-                                    ${_llvm_include_dirs}
-                                    "${EUDSLLLVM_BINARY_DIR}/generated"
-                                    "${EUDSLLLVM_SRC_DIR}/llvm"
-    DEPENDS eudsl_tblgen_ext
-  )
-endif ()
-
-
-include_directories("${EUDSLLLVM_BINARY_DIR}/generated")
 
 # FREE_THREADED marks the module Py_MOD_GIL_NOT_USED so importing under a
 # free-threaded interpreter (cp3XXt) doesn't re-enable the GIL. Note: actual
@@ -143,56 +96,21 @@ nanobind_add_module(eudslllvm_ext
   NB_STATIC STABLE_ABI FREE_THREADED
   NB_DOMAIN eudslllvm
   src/eudslllvm_ext.cpp
-  ${_gen_src}
+  src/IR/Ownership.cpp
+  src/IR/Context.cpp
 )
+
 set(eudslllvm_ext_libs
   LLVMCore
-  LLVMExecutionEngine
-  LLVMOrcJIT
-  LLVMOrcDebugging
-  LLVMInterpreter
-  LLVMMCDisassembler
-  LLVMMCJIT
-  # AMDGPU
-  LLVMAMDGPUCodeGen
-  LLVMAMDGPUAsmParser
-  LLVMAMDGPUDisassembler
-  LLVMAMDGPUTargetMCA
-  LLVMAMDGPUDesc
-  LLVMAMDGPUInfo
-  LLVMAMDGPUUtils
-  # NVPTX
-  LLVMNVPTXCodeGen
-  LLVMNVPTXDesc
-  LLVMNVPTXInfo)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-  list(APPEND eudslllvm_ext_libs
-    LLVMX86Info
-    LLVMX86CodeGen
-    LLVMX86AsmParser
-    LLVMX86Disassembler)
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-  list(APPEND eudslllvm_ext_libs
-    LLVMAArch64Info
-    LLVMAArch64Desc
-    LLVMAArch64CodeGen
-    LLVMAArch64AsmParser
-    LLVMAArch64Disassembler)
-endif()
-if(TARGET LLVMDirectXCodeGen)
-  list(APPEND eudslllvm_ext_libs
-    LLVMDirectXCodeGen
-    LLVMDirectXDesc
-    LLVMDirectXInfo)
-endif()
-
-if(APPLE)
-  list(APPEND eudslllvm_ext_libs ${LLVM_AVAILABLE_LIBS})
-  list(REMOVE_ITEM eudslllvm_ext_libs Remarks LTO LLVM LLVMTableGen)
-  list(REMOVE_DUPLICATES eudslllvm_ext_libs)
-  target_link_directories(eudslllvm_ext PRIVATE "${LLVM_LIBRARY_DIR}")
-  list(TRANSFORM eudslllvm_ext_libs PREPEND "-Wl,-hidden-l")
-endif()
+  LLVMAsmParser
+  LLVMSupport
+  LLVMTarget
+  LLVMMC
+  LLVMMCParser
+  LLVMCodeGen
+  LLVMTargetParser
+  ${EUDSLLLVM_TARGET_LIBS}
+)
 target_link_libraries(eudslllvm_ext PRIVATE ${eudslllvm_ext_libs})
 
 set_target_properties(eudslllvm_ext

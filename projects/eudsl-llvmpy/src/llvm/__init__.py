@@ -4,3 +4,4 @@
 #  Copyright (c) 2025.
 
 from .eudslllvm_ext import *
+from .eudslllvm_ext import __doc__

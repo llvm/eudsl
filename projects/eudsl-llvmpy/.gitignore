@@ -1,0 +1,19 @@
+# Build artifacts (scikit-build-core in-place editable build)
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+/CMakeInit.txt
+/cmake_install.cmake
+/build.ninja
+/rules.ninja
+/.ninja_deps
+/.ninja_log
+/.skbuild-info.json
+/compile_commands.json
+/.cache/
+# Generated headers land in the package-root binary dir (configure_file output),
+# e.g. IR/TargetInit.h from src/IR/TargetInit.h.in. Root-anchored so it does not
+# match the src/IR/ source directory.
+/IR/
+
+# Compiled extension and generated stubs land in src/llvm (see src/llvm/.gitignore)
