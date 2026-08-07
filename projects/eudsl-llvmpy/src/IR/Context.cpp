@@ -65,20 +65,24 @@ void populate_context(nb::module_ &m) {
 
   m.def(
       "parse_assembly",
-      [](const std::string &ir, eudsl::Context &ctx, const std::string &name) {
+      [](const std::string &ir, eudsl::Context &ctx,
+         const std::string &module_identifier,
+         const std::string &source_filename) {
         llvm::SMDiagnostic err;
         std::unique_ptr<llvm::Module> mod =
             llvm::parseAssemblyString(ir, err, ctx.get());
         if (!mod) {
           std::string msg;
           llvm::raw_string_ostream os(msg);
-          err.print(name.c_str(), os);
+          err.print(module_identifier.c_str(), os);
           throw std::runtime_error(msg);
         }
-        mod->setModuleIdentifier(name);
+        mod->setModuleIdentifier(module_identifier);
+        mod->setSourceFileName(source_filename);
         return new eudsl::Module(std::move(mod), ctx);
       },
-      "ir"_a, "context"_a, "name"_a = "<string>", nb::keep_alive<0, 2>(),
+      "ir"_a, "context"_a, "module_identifier"_a = "<string>",
+      "source_filename"_a = "", nb::keep_alive<0, 2>(),
       "Parse LLVM textual IR into a new Module.");
 
   eudsl::initializeTargets();
