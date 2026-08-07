@@ -134,8 +134,6 @@ def else_ctx_manager(op):
     op.else_block = fn.append_basic_block("if.else")
     # Repoint the entry conditional branch's false edge to the else block.
     op.cond_br.set_successor(1, op.else_block)
-    # Switch to else-branch state so yield_ builds phis (both edges known)
-    # rather than just recording then-branch values.
     op.active = "else"
     _if_stack.append(op)
     b.set_insert_point(op.else_block)

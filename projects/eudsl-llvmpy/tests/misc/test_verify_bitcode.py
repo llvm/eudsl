@@ -19,16 +19,16 @@ _GOOD = dedent(
 
 
 def test_verify_accepts_good_module():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_GOOD, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_GOOD, ctx, "m")
         mod.verify()
         del mod
     assert_no_leaks()
 
 
 def test_verify_rejects_bad_module():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
             dedent(
                 """\
                 define i32 @f(i32 %x) {
@@ -45,28 +45,28 @@ def test_verify_rejects_bad_module():
             ctx,
             "m",
         )
-        with pytest.raises(llvm.VerifyError):
+        with pytest.raises(llvm.ir.VerifyError):
             mod.verify()
         del mod
     assert_no_leaks()
 
 
 def test_parse_bitcode_rejects_garbage():
-    with llvm.Context() as ctx:
-        with pytest.raises(llvm.ParseError, match="Invalid bitcode signature"):
-            llvm.parse_bitcode(b"not bitcode", ctx)
+    with llvm.ir.Context() as ctx:
+        with pytest.raises(llvm.ir.ParseError, match="Invalid bitcode signature"):
+            llvm.ir.parse_bitcode(b"not bitcode", ctx)
     assert_no_leaks()
 
 
 def test_bitcode_round_trip():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_GOOD, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_GOOD, ctx, "m")
         data = mod.to_bitcode()
         assert isinstance(data, bytes)
         assert data[:2] == b"BC"
         del mod
-    with llvm.Context() as ctx2:
-        mod2 = llvm.parse_bitcode(data, ctx2)
+    with llvm.ir.Context() as ctx2:
+        mod2 = llvm.ir.parse_bitcode(data, ctx2)
         mod2.verify()
         printed = str(mod2)
         assert "define i32 @f(i32 %x)" in printed

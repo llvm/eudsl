@@ -29,8 +29,8 @@ _RAUW_SRC = dedent(
 
 
 def test_use_edges():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_EDGE_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_EDGE_SRC, ctx, "m")
         f = mod.get_function("f")
         x = f.arg(0)
         add = x.users[0]
@@ -52,8 +52,8 @@ def test_use_edges():
 
 
 def test_uses_usable_without_value_handle():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_EDGE_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_EDGE_SRC, ctx, "m")
         # The module owns the use list, so `.uses` (and its Use edges) stay
         # valid without holding the intermediate function/argument handle -- as
         # with every other reference accessor, lifetime is bounded by the module.
@@ -66,8 +66,8 @@ def test_uses_usable_without_value_handle():
 
 
 def test_replace_all_uses_except():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_RAUW_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_RAUW_SRC, ctx, "m")
         f = mod.get_function("f")
         x = f.arg(0)
         a, b, c = list(f.entry_block)[:3]
@@ -87,8 +87,8 @@ def test_replace_all_uses_except():
 
 
 def test_replace_all_uses_except_empty_is_full_rauw():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_RAUW_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_RAUW_SRC, ctx, "m")
         f = mod.get_function("f")
         x = f.arg(0)
         a, b, c = list(f.entry_block)[:3]
@@ -101,8 +101,8 @@ def test_replace_all_uses_except_empty_is_full_rauw():
 
 
 def test_replace_all_uses_except_all_users_excepted_is_noop():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_RAUW_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_RAUW_SRC, ctx, "m")
         f = mod.get_function("f")
         x = f.arg(0)
         a, b, c = list(f.entry_block)[:3]
@@ -115,13 +115,13 @@ def test_replace_all_uses_except_all_users_excepted_is_noop():
 
 
 def test_replace_all_uses_except_type_mismatch_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_RAUW_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_RAUW_SRC, ctx, "m")
         f = mod.get_function("f")
         a, b, _ = list(f.entry_block)[:3]
         # A mismatched type would trip LLVM's assert and abort the interpreter;
         # the binding must reject it as a Python error instead.
-        wrong_type = llvm.const_int(llvm.types.i1(ctx), 0)
+        wrong_type = llvm.ir.const_int(llvm.types.i1(ctx), 0)
         with pytest.raises(ValueError, match="type does not match"):
             a.replace_all_uses_except(wrong_type, [b])
         assert a.num_uses == 2  # unchanged
@@ -130,8 +130,8 @@ def test_replace_all_uses_except_type_mismatch_raises():
 
 
 def test_function_walk():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
             dedent(
                 """\
                 define i32 @f(i32 %x) {
@@ -164,8 +164,8 @@ def test_function_walk():
 
 
 def test_function_walk_declaration_is_empty():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly("declare i32 @ext(i32)\n", ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly("declare i32 @ext(i32)\n", ctx, "m")
         ext = mod.get_function("ext")
         # A declaration has no body -> walk() yields nothing.
         assert list(ext.walk()) == []

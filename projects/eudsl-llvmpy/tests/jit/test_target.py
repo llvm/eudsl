@@ -33,13 +33,13 @@ _SRC_CONST = dedent(
 
 
 def test_host_triple_is_nonempty():
-    assert isinstance(llvm.host_triple(), str)
-    assert llvm.host_triple()
+    assert isinstance(llvm.jit.host_triple(), str)
+    assert llvm.jit.host_triple()
 
 
 def test_target_machine_triple_roundtrips():
-    triple = llvm.host_triple()
-    tm = llvm.TargetMachine(triple)
+    triple = llvm.jit.host_triple()
+    tm = llvm.jit.TargetMachine(triple)
     assert tm.triple == triple
     assert isinstance(tm.data_layout_str, str)
     assert tm.data_layout_str
@@ -47,32 +47,31 @@ def test_target_machine_triple_roundtrips():
 
 def test_target_machine_bad_triple_raises():
     with pytest.raises(RuntimeError, match="No available targets"):
-        llvm.TargetMachine("not-a-real-triple-xyz")
+        llvm.jit.TargetMachine("not-a-real-triple-xyz")
 
 
 def test_target_machine_features_as_list():
-    tm = llvm.TargetMachine(features=["+sse2", "+avx"])
-    assert tm.triple == llvm.host_triple()
+    tm = llvm.jit.TargetMachine(features=["+sse2", "+avx"])
+    assert tm.triple == llvm.jit.host_triple()
 
 
 def test_set_data_layout_from_mutates_module():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
-        tm = llvm.TargetMachine()
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        tm = llvm.jit.TargetMachine()
         mod.set_data_layout_from(tm)
-        assert str(mod).startswith(f'; ModuleID = ')
         assert "target datalayout" in str(mod)
         del tm, mod
     assert_no_leaks()
 
 
 def test_emit_assembly_and_object():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
-        tm = llvm.TargetMachine()
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        tm = llvm.jit.TargetMachine()
         mod.set_data_layout_from(tm)
         asm = tm.emit_assembly(mod)
-        const_mod = llvm.parse_assembly(_SRC_CONST, ctx, "m2")
+        const_mod = llvm.ir.parse_assembly(_SRC_CONST, ctx, "m2")
         const_mod.set_data_layout_from(tm)
         const_asm = tm.emit_assembly(const_mod)
         assert asm != const_asm

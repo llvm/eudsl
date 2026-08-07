@@ -31,8 +31,8 @@ _SRC = dedent(
 
 
 def test_iteration_and_indexing():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
 
         # Module -> functions
         fns = list(mod)

@@ -21,18 +21,18 @@ _SRC = dedent(
 
 def test_value_and_user_registered():
     # The Value/User classes are registered and module round-tripping works.
-    assert hasattr(llvm, "Value")
-    assert hasattr(llvm, "User")
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    assert hasattr(llvm.ir, "Value")
+    assert hasattr(llvm.ir, "User")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         assert "define i32 @f(i32 %x, i32 %y)" in str(mod)
         del mod
     assert_no_leaks()
 
 
 def test_function_traversal():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         assert [f.name for f in mod.functions] == ["f"]
         f = mod.get_function("f")
         assert f is not None
@@ -48,8 +48,8 @@ def test_function_traversal():
 
 
 def test_basic_block_and_instruction_traversal():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         blocks = f.basic_blocks
         assert [b.name for b in blocks] == ["entry"]
@@ -63,14 +63,14 @@ def test_basic_block_and_instruction_traversal():
         # The Value type_hook downcasts the add to its concrete class. Pin the
         # exact class: BinaryOperator has a subclass (FPBinaryOperator), so
         # isinstance would also accept a mis-downcast of this integer add.
-        assert type(insts[0]) is llvm.BinaryOperator
+        assert type(insts[0]) is llvm.ir.BinaryOperator
         del f, entry, blocks, insts, mod
     assert_no_leaks()
 
 
 def test_value_users_and_operands():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         x = f.arg(0)
         # %x is used by the add.
@@ -78,7 +78,7 @@ def test_value_users_and_operands():
         add = x.users[0]
         # Exact class, not isinstance: FPBinaryOperator subclasses
         # BinaryOperator, so isinstance would not catch a mis-downcast.
-        assert type(add) is llvm.BinaryOperator
+        assert type(add) is llvm.ir.BinaryOperator
         assert add.num_operands == 2
         assert add.operand(0) == x
         del f, x, add, mod
@@ -86,10 +86,10 @@ def test_value_users_and_operands():
 
 
 def test_append_basic_block():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly("declare void @g()\n", ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly("declare void @g()\n", ctx, "m")
         ft = llvm.types.function(llvm.types.void(ctx), [])
-        fn = llvm.Function.create(ft, "h", mod)
+        fn = llvm.ir.Function.create(ft, "h", mod)
         bb = fn.append_basic_block("entry")
         assert bb.name == "entry"
         assert fn.entry_block == bb
@@ -101,10 +101,10 @@ def test_append_basic_block():
 def test_function_create_linkage():
     # Function.create takes a linkage argument (default external); selecting
     # internal linkage is reflected in the printed IR.
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         ft = llvm.types.function(llvm.types.void(ctx), [])
-        fn = llvm.Function.create(ft, "priv", mod, linkage=llvm.Linkage.INTERNAL)
+        fn = llvm.ir.Function.create(ft, "priv", mod, linkage=llvm.ir.Linkage.INTERNAL)
         fn.append_basic_block("entry")
         assert "define internal void @priv" in str(mod)
         del fn, mod
@@ -115,12 +115,12 @@ def test_entry_block_and_terminator_are_none_when_absent():
     # entry_block (Function -> BasicBlock*) and terminator
     # (BasicBlock -> Instruction*) can both return null on the C++ side; the
     # Value type_hook must map that null to None rather than dereferencing it.
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly("declare void @g()\n", ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly("declare void @g()\n", ctx, "m")
         g = mod.get_function("g")
         assert g.entry_block is None
         ft = llvm.types.function(llvm.types.void(ctx), [])
-        fn = llvm.Function.create(ft, "h", mod)
+        fn = llvm.ir.Function.create(ft, "h", mod)
         bb = fn.append_basic_block("entry")
         assert bb.terminator is None
         del g, fn, bb, mod
@@ -128,8 +128,8 @@ def test_entry_block_and_terminator_are_none_when_absent():
 
 
 def test_replace_all_uses_with():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         x, y = f.arg(0), f.arg(1)
         assert x.num_uses == 1
@@ -142,8 +142,8 @@ def test_replace_all_uses_with():
 
 
 def test_value_name_setter():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         x = f.arg(0)
         x.name = "renamed"
@@ -154,8 +154,8 @@ def test_value_name_setter():
 
 
 def test_instruction_base_accessors():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         entry = f.entry_block
         add, ret = entry.instructions
@@ -168,8 +168,8 @@ def test_instruction_base_accessors():
 
 
 def test_function_type_accessor():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         assert f.function_type.num_params == 2
         assert str(f.function_type.return_type) == "i32"
@@ -183,10 +183,10 @@ def test_module_outlives_released_context():
     # drops at __exit__ (nothing leaked), but the underlying LLVMContext survives
     # until the module itself is gone. Under a unique_ptr Context, dereferencing
     # the module here would be a use-after-free.
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
     # Context released; the live count is already back to zero.
-    assert llvm.Context._get_live_count() == 0
+    assert llvm.ir.Context._get_live_count() == 0
     # Dereference the still-live module: print it and walk its instructions.
     assert "define i32 @f(i32 %x, i32 %y)" in str(mod)
     for f in mod.functions:

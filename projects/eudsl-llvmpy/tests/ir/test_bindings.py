@@ -38,8 +38,8 @@ def test_smoke():
         }
         """
     )
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(src, ctx, "test_smoke")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(src, ctx, "test_smoke")
         assert mod.module_identifier == "test_smoke"
         printed = str(mod)
         assert "define i32 @entry(i32 %argc)" in printed

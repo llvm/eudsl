@@ -21,10 +21,10 @@ _SRC = dedent(
 
 
 def test_jit_execute():
-    ctx = llvm.Context()
-    mod = llvm.parse_assembly(_SRC, ctx, "m")
-    jit = llvm.LLJIT()
-    jit.add_module(mod)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)  # consumes mod
     assert mod._is_consumed
     addr = jit.lookup("sub")
     assert addr != 0
@@ -36,9 +36,9 @@ def test_jit_execute():
 
 
 def test_consumed_module_raises_on_use():
-    ctx = llvm.Context()
-    mod = llvm.parse_assembly(_SRC, ctx, "m")
-    jit = llvm.LLJIT()
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     with pytest.raises(RuntimeError, match="has been consumed"):
         str(mod)

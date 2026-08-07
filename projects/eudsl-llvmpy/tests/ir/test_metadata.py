@@ -6,10 +6,10 @@ from llvm.testing import assert_no_leaks
 
 
 def test_named_metadata_round_trips():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
-        s = llvm.md_string("hello", context=ctx)
-        node = llvm.md_node([s], context=ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        s = llvm.ir.md_string("hello", context=ctx)
+        node = llvm.ir.md_node([s], context=ctx)
         mod.add_named_metadata("my.meta", node)
         printed = str(mod)
         assert "!my.meta = !{!0}" in printed

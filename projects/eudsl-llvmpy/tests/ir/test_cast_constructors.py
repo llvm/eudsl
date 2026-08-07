@@ -44,7 +44,7 @@ _SRC = dedent(
 
 
 def test_type_cast_constructors():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         # (concrete class, a value that IS one, a probe reading a subclass-only
         # accessor on the narrowed handle -> proves the cast yields a usable
         # concrete object, not just an object that compares equal).
@@ -94,72 +94,76 @@ def test_type_cast_constructors():
         # A Value handed to a Type ctor is the other hierarchy entirely:
         # nanobind rejects it as a TypeError before the cast body runs.
         with pytest.raises(TypeError):
-            llvm.types.IntegerType(llvm.const_int(llvm.types.i32(ctx), 1))
+            llvm.types.IntegerType(llvm.ir.const_int(llvm.types.i32(ctx), 1))
     assert_no_leaks()
 
 
 def test_value_cast_constructors():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         entry = f.entry_block
 
         def by(cls):
             return next(i for i in entry.instructions if isinstance(i, cls))
 
-        alloca = by(llvm.AllocaInst)
-        store = by(llvm.StoreInst)
-        gep = by(llvm.GetElementPtrInst)
-        cmp = by(llvm.CmpInst)
-        call = by(llvm.CallBase)
+        alloca = by(llvm.ir.AllocaInst)
+        store = by(llvm.ir.StoreInst)
+        gep = by(llvm.ir.GetElementPtrInst)
+        cmp = by(llvm.ir.CmpInst)
+        call = by(llvm.ir.CallBase)
         load_v = next(
-            i for i in entry.instructions if isinstance(i, llvm.LoadInst)
+            i for i in entry.instructions if isinstance(i, llvm.ir.LoadInst)
         )
         gvar = [
-            i for i in entry.instructions if isinstance(i, llvm.LoadInst)
+            i for i in entry.instructions if isinstance(i, llvm.ir.LoadInst)
         ][-1].pointer_operand
         join = next(b for b in f.basic_blocks if b.name == "join")
-        phi = next(i for i in join.instructions if isinstance(i, llvm.PHINode))
+        phi = next(i for i in join.instructions if isinstance(i, llvm.ir.PHINode))
         ret = join.terminator
         a_block = next(b for b in f.basic_blocks if b.name == "a")
 
         # (concrete class, a value that IS one, a probe reading a subclass-only
         # accessor on the narrowed handle).
         cases = [
-            (llvm.Function, f, lambda v: v.num_args == 3),
-            (llvm.Argument, f.arg(0), lambda v: v.arg_no == 0),
-            (llvm.BasicBlock, entry, lambda v: v.name == "entry"),
-            (llvm.Instruction, alloca, lambda v: v.is_terminator is False),
-            (llvm.User, alloca, lambda v: isinstance(v.num_operands, int)),
-            (llvm.AllocaInst, alloca, lambda v: str(v.allocated_type) == "i32"),
-            (llvm.StoreInst, store, lambda v: v.pointer_operand is not None),
-            (llvm.LoadInst, load_v, lambda v: v.pointer_operand is not None),
+            (llvm.ir.Function, f, lambda v: v.num_args == 3),
+            (llvm.ir.Argument, f.arg(0), lambda v: v.arg_no == 0),
+            (llvm.ir.BasicBlock, entry, lambda v: v.name == "entry"),
+            (llvm.ir.Instruction, alloca, lambda v: v.is_terminator is False),
+            (llvm.ir.User, alloca, lambda v: isinstance(v.num_operands, int)),
+            (llvm.ir.AllocaInst, alloca, lambda v: str(v.allocated_type) == "i32"),
+            (llvm.ir.StoreInst, store, lambda v: v.pointer_operand is not None),
+            (llvm.ir.LoadInst, load_v, lambda v: v.pointer_operand is not None),
             (
-                llvm.GetElementPtrInst,
+                llvm.ir.GetElementPtrInst,
                 gep,
                 lambda v: str(v.source_element_type) == "i32",
             ),
-            (llvm.CmpInst, cmp, lambda v: v.predicate is not None),
-            (llvm.CallBase, call, lambda v: v.num_args == 1),
-            (llvm.PHINode, phi, lambda v: v.num_incoming == 2),
-            (llvm.ReturnInst, ret, lambda v: v.return_value is not None),
-            (llvm.CondBrInst, entry.terminator, lambda v: v.is_conditional is True),
+            (llvm.ir.CmpInst, cmp, lambda v: v.predicate is not None),
+            (llvm.ir.CallBase, call, lambda v: v.num_args == 1),
+            (llvm.ir.PHINode, phi, lambda v: v.num_incoming == 2),
+            (llvm.ir.ReturnInst, ret, lambda v: v.return_value is not None),
             (
-                llvm.UncondBrInst,
+                llvm.ir.CondBrInst,
+                entry.terminator,
+                lambda v: v.is_conditional is True,
+            ),
+            (
+                llvm.ir.UncondBrInst,
                 a_block.terminator,
                 lambda v: v.is_conditional is False,
             ),
             (
-                llvm.ConstantInt,
-                llvm.const_int(llvm.types.i32(ctx), 1),
+                llvm.ir.ConstantInt,
+                llvm.ir.const_int(llvm.types.i32(ctx), 1),
                 lambda v: v.value == 1,
             ),
             (
-                llvm.ConstantFP,
-                llvm.const_fp(llvm.types.f32(ctx), 1.0),
+                llvm.ir.ConstantFP,
+                llvm.ir.const_fp(llvm.types.f32(ctx), 1.0),
                 lambda v: v.double_value == 1.0,
             ),
-            (llvm.GlobalVariable, gvar, lambda v: v.is_constant is False),
+            (llvm.ir.GlobalVariable, gvar, lambda v: v.is_constant is False),
         ]
         for cls, val, probe in cases:
             narrowed = cls(val)
@@ -169,17 +173,17 @@ def test_value_cast_constructors():
         # Wrong kind within the Value hierarchy raises ValueError (siblings, not
         # obviously-unrelated). A no-op `return v` ctor would NOT raise.
         with pytest.raises(ValueError, match="is not a"):
-            llvm.LoadInst(store)
+            llvm.ir.LoadInst(store)
         with pytest.raises(ValueError, match="is not a"):
-            llvm.StoreInst(load_v)
+            llvm.ir.StoreInst(load_v)
         with pytest.raises(ValueError, match="is not a"):
-            llvm.PHINode(ret)
+            llvm.ir.PHINode(ret)
         # None reaches the dyn_cast_or_null null branch -> ValueError.
         with pytest.raises(ValueError, match="is not a"):
-            llvm.LoadInst(None)
+            llvm.ir.LoadInst(None)
         # A Type handed to a Value ctor is the other hierarchy: nanobind rejects
         # it as a TypeError before the cast body runs.
         with pytest.raises(TypeError):
-            llvm.LoadInst(llvm.types.i32(ctx))
+            llvm.ir.LoadInst(llvm.types.i32(ctx))
         del f, entry, mod
     assert_no_leaks()

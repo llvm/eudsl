@@ -15,7 +15,7 @@ import gc
 
 import pytest
 
-from llvm import Context
+from llvm.ir import Context
 
 
 @pytest.fixture(autouse=True)

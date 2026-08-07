@@ -33,10 +33,10 @@ _SRC = dedent(
 
 
 def test_type_is_pointer_and_is_label():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         assert llvm.types.ptr(context=ctx).is_pointer
         assert not llvm.types.i32(ctx).is_pointer
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         # A basic block is a Value; its type is the label type.
         assert f.entry_block.type.is_label
@@ -46,14 +46,14 @@ def test_type_is_pointer_and_is_label():
 
 
 def test_vector_type_element_type():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         assert llvm.types.vector(llvm.types.f32(ctx), 8).element_type == llvm.types.f32(ctx)
     assert_no_leaks()
 
 
 def test_value_type_accessor():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         assert f.arg(0).type == llvm.types.i32(ctx)
         del f, mod
@@ -61,12 +61,12 @@ def test_value_type_accessor():
 
 
 def test_replace_all_uses_with():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         add = f.arg(0).users[0]  # %sum = add, used by the ret
         assert "ret i32 %sum" in str(mod)
-        zero = llvm.const_int(llvm.types.i32(ctx), 0)
+        zero = llvm.ir.const_int(llvm.types.i32(ctx), 0)
         add.replace_all_uses_with(zero)
         # The ret now returns the constant; the (dead) add is untouched.
         assert "ret i32 0" in str(mod)
@@ -76,8 +76,8 @@ def test_replace_all_uses_with():
 
 
 def test_instruction_successor():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
             dedent(
                 """\
                 define void @f(i1 %c) {
@@ -102,8 +102,8 @@ def test_instruction_successor():
 
 
 def test_function_type_and_var_arg():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
             dedent(
                 """\
                 declare i32 @printf(ptr, ...)
@@ -124,20 +124,20 @@ def test_function_type_and_var_arg():
 
 
 def test_function_visibility_roundtrip():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly("define void @f() {\n ret void\n}\n", ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly("define void @f() {\n ret void\n}\n", ctx, "m")
         f = mod.get_function("f")
-        assert f.visibility == llvm.Visibility.DEFAULT
-        f.visibility = llvm.Visibility.HIDDEN
-        assert f.visibility == llvm.Visibility.HIDDEN
+        assert f.visibility == llvm.ir.Visibility.DEFAULT
+        f.visibility = llvm.ir.Visibility.HIDDEN
+        assert f.visibility == llvm.ir.Visibility.HIDDEN
         assert "hidden" in str(mod)
         del f, mod
     assert_no_leaks()
 
 
 def test_global_variable_is_constant():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
             dedent(
                 """\
                 @c = constant i32 5
@@ -166,15 +166,15 @@ def test_global_variable_is_constant():
 
 
 def test_builder_binary_ops_and_insert_point():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         f32 = llvm.types.f32(ctx)
-        fn = llvm.Function.create(
+        fn = llvm.ir.Function.create(
             llvm.types.function(i32, [i32, i32, f32, f32]), "f", mod
         )
         bb = fn.append_basic_block("entry")
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         b.set_insert_point(bb)  # set_insert_point
         assert b.insert_block == bb  # insert_block property
         ia, ib, fa, fb = fn.arg(0), fn.arg(1), fn.arg(2), fn.arg(3)
@@ -197,8 +197,8 @@ def test_builder_binary_ops_and_insert_point():
 
 
 def test_instruction_accessors():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
             dedent(
                 """\
                 declare i32 @g(i32)
@@ -243,8 +243,8 @@ def test_instruction_accessors():
 
 
 def test_value_name_setter_and_instruction_props():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         entry = f.entry_block
         add = entry.instructions[0]
@@ -262,8 +262,8 @@ def test_value_name_setter_and_instruction_props():
 def test_instruction_set_successor():
     # set_successor is used by the DSL elif lowering (dsl/cf.py) and validated
     # indirectly by the elif JIT tests; assert it directly here too.
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
             dedent(
                 """\
                 define void @f(i1 %cond) {

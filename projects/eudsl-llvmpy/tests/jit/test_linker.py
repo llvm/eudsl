@@ -10,9 +10,9 @@ from llvm.testing import assert_no_leaks
 
 
 def test_link_two_modules():
-    with llvm.Context() as ctx:
-        dest = llvm.parse_assembly("declare i32 @a()\n", ctx, "dest")
-        src = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        dest = llvm.ir.parse_assembly("declare i32 @a()\n", ctx, "dest")
+        src = llvm.ir.parse_assembly(
             dedent(
                 """\
                 define i32 @a() {
@@ -23,7 +23,7 @@ def test_link_two_modules():
             ctx,
             "src",
         )
-        llvm.link_into(dest, src)
+        llvm.jit.link_into(dest, src)
         assert src._is_consumed
         assert "define i32 @a()" in str(dest)
         with pytest.raises(RuntimeError, match="has been consumed"):

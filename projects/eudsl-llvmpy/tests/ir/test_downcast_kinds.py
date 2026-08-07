@@ -147,9 +147,9 @@ def _leaf_instruction_classes():
 def test_instruction_kinds_downcast():
     expected = _leaf_instruction_classes()
     seen = set()
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         for name, src in _SOURCES.items():
-            mod = llvm.parse_assembly(dedent(src), ctx, name)
+            mod = llvm.ir.parse_assembly(dedent(src), ctx, name)
             seen |= _instruction_kinds(mod)
             del mod
     # This test covers the "hard" kinds (EH, atomics, vector, etc.) that the
@@ -210,8 +210,8 @@ _CONSTANTS_SRC = """\
 
 
 def test_constant_and_global_kinds_downcast():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(dedent(_CONSTANTS_SRC), ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(dedent(_CONSTANTS_SRC), ctx, "m")
         f = mod.get_function("f")
         # Map each load's pointed-at global name -> (global class, init class).
         by_name = {}

@@ -29,8 +29,8 @@ _SRC = dedent(
 
 
 def test_lazy_sequence_views():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
 
         # Module.functions is a lazy view, not a list.
         fns = mod.functions
@@ -59,22 +59,22 @@ def test_lazy_sequence_views():
 
         bbs = f.basic_blocks  # BasicBlockSequence
         assert type(bbs).__name__ == "BasicBlockSequence"
-        assert len(bbs) == 1 and isinstance(bbs[0], llvm.BasicBlock)
+        assert len(bbs) == 1 and isinstance(bbs[0], llvm.ir.BasicBlock)
 
         args = f.args  # ArgumentSequence
         assert type(args).__name__ == "ArgumentSequence"
-        assert len(args) == 2 and isinstance(args[0], llvm.Argument)
+        assert len(args) == 2 and isinstance(args[0], llvm.ir.Argument)
         assert len(args[:1]) == 1
 
         insts = f.entry_block.instructions  # InstructionSequence
         assert type(insts).__name__ == "InstructionSequence"
         # element downcasts to the concrete class, lazily
-        assert isinstance(insts[0], llvm.BinaryOperator)
+        assert isinstance(insts[0], llvm.ir.BinaryOperator)
 
         add = insts[0]
         ops = add.operands  # ValueSequence
         assert type(ops).__name__ == "ValueSequence"
-        assert len(ops) == 2 and isinstance(ops[0], llvm.Value)
+        assert len(ops) == 2 and isinstance(ops[0], llvm.ir.Value)
         assert ops[0] == args[0]
         assert ops[1] == args[1]
         # Distinct operands compare unequal -- not an identity-collapsed tautology.

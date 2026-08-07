@@ -46,18 +46,18 @@ _SRC = dedent(
 def _globals(ctx):
     """Parse _SRC and map each global's name to the pointer operand (the
     global/alias/ifunc) of the load that reads it."""
-    mod = llvm.parse_assembly(_SRC, ctx, "m")
+    mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
     f = mod.get_function("f")
     ptr_of = {}
     for i in f.walk():
-        if isinstance(i, llvm.LoadInst):
+        if isinstance(i, llvm.ir.LoadInst):
             g = i.pointer_operand
             ptr_of[g.name] = g
     return mod, ptr_of
 
 
 def test_constant_data_array_string():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         mod, ptr_of = _globals(ctx)
         darr = ptr_of["darr"].initializer  # ConstantDataArray
         assert darr.num_elements == 4
@@ -69,7 +69,7 @@ def test_constant_data_array_string():
 
 
 def test_get_element_as_int_is_unsigned():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         mod, ptr_of = _globals(ctx)
         # get_element_as_int has only the unsigned form (unlike ConstantInt's
         # value/zext_value): a high-bit byte reads unsigned, not sign-extended.
@@ -81,7 +81,7 @@ def test_get_element_as_int_is_unsigned():
 
 
 def test_constant_data_vector_int():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         mod, ptr_of = _globals(ctx)
         dvec = ptr_of["dvec"].initializer  # ConstantDataVector (ints)
         assert dvec.num_elements == 4
@@ -91,7 +91,7 @@ def test_constant_data_vector_int():
 
 
 def test_constant_data_vector_double():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         mod, ptr_of = _globals(ctx)
         fvec = ptr_of["fvec"].initializer  # ConstantDataVector (doubles)
         assert fvec.get_element_as_double(0) == 1.5
@@ -103,7 +103,7 @@ def test_constant_data_vector_double():
 
 
 def test_get_element_out_of_range_raises():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         mod, ptr_of = _globals(ctx)
         dvec = ptr_of["dvec"].initializer  # 4 elements
         fvec = ptr_of["fvec"].initializer  # 2 elements
@@ -120,7 +120,7 @@ def test_get_element_out_of_range_raises():
 
 
 def test_get_element_wrong_type_raises():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         mod, ptr_of = _globals(ctx)
         dvec = ptr_of["dvec"].initializer  # int elements
         fvec = ptr_of["fvec"].initializer  # double elements
@@ -134,7 +134,7 @@ def test_get_element_wrong_type_raises():
 
 
 def test_constant_expr_opcode_name():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         mod, ptr_of = _globals(ctx)
         ce = ptr_of["ce"].initializer  # ConstantExpr
         assert ce.opcode_name == "ptrtoint"
@@ -143,7 +143,7 @@ def test_constant_expr_opcode_name():
 
 
 def test_block_address():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         mod, ptr_of = _globals(ctx)
         ba = ptr_of["ba"].initializer  # BlockAddress
         assert ba.function.name == "f"
@@ -153,7 +153,7 @@ def test_block_address():
 
 
 def test_global_alias():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         mod, ptr_of = _globals(ctx)
         al = ptr_of["al"]  # GlobalAlias
         assert al.aliasee.name == "g"
@@ -162,7 +162,7 @@ def test_global_alias():
 
 
 def test_global_ifunc():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         mod, ptr_of = _globals(ctx)
         ifu = ptr_of["if"]  # GlobalIFunc
         assert ifu.resolver.name == "res"

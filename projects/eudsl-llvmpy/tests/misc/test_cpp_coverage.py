@@ -22,8 +22,8 @@ _SRC = dedent(
 
 
 def test_value_eq_hash_and_operands():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         add = f.arg(0).users[0]
         # __eq__ against a non-Value returns False (try_cast fails).
@@ -40,7 +40,7 @@ def test_value_eq_hash_and_operands():
 
 
 def test_type_eq_and_anonymous_struct_name():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         i32 = llvm.types.i32(ctx)
         assert (i32 == "not a type") is False
         # A literal (anonymous) struct has no name.
@@ -53,24 +53,24 @@ def test_type_eq_and_anonymous_struct_name():
 
 
 def test_mdnode_operand_accessor():
-    with llvm.Context() as ctx:
-        s = llvm.md_string("x", context=ctx)
-        node = llvm.md_node([s], context=ctx)
+    with llvm.ir.Context() as ctx:
+        s = llvm.ir.md_string("x", context=ctx)
+        node = llvm.ir.md_node([s], context=ctx)
         assert node.num_operands == 1
         assert node.operand(0).string == "x"
     assert_no_leaks()
 
 
 def test_basic_block_create_static_and_empty_entry_block():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
-        fn = llvm.Function.create(
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        fn = llvm.ir.Function.create(
             llvm.types.function(llvm.types.void(ctx), []), "f", mod
         )
         # A declaration (no blocks) has no entry block.
         assert fn.entry_block is None
         # BasicBlock.create with an explicit parent.
-        bb = llvm.BasicBlock.create("entry", fn, context=ctx)
+        bb = llvm.ir.BasicBlock.create("entry", fn, context=ctx)
         assert bb.name == "entry"
         assert fn.entry_block == bb
         del fn, bb, mod
@@ -78,7 +78,7 @@ def test_basic_block_create_static_and_empty_entry_block():
 
 
 def test_use_of_released_context_raises():
-    ctx = llvm.Context()
+    ctx = llvm.ir.Context()
     ctx.__exit__(None, None, None)  # release the underlying LLVMContext
     with pytest.raises(RuntimeError, match="released"):
         llvm.types.i32(ctx)
@@ -87,43 +87,43 @@ def test_use_of_released_context_raises():
 
 def test_target_machine_bad_triple_raises():
     with pytest.raises(RuntimeError, match="No available targets"):
-        llvm.TargetMachine("nonsense-not-a-triple")
+        llvm.jit.TargetMachine("nonsense-not-a-triple")
 
 
 def test_linker_conflicting_symbols_raises():
-    with llvm.Context() as ctx:
-        a = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        a = llvm.ir.parse_assembly(
             "define i32 @dup() {\n ret i32 1\n}\n", ctx, "a"
         )
-        b = llvm.parse_assembly(
+        b = llvm.ir.parse_assembly(
             "define i32 @dup() {\n ret i32 2\n}\n", ctx, "b"
         )
         with pytest.raises(RuntimeError, match="linkModules failed"):
-            llvm.link_into(a, b)
+            llvm.jit.link_into(a, b)
         del a, b
     assert_no_leaks()
 
 
 def test_builder_fcmp_gep_call():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         f32 = llvm.types.f32(ctx)
         i32 = llvm.types.i32(ctx)
-        callee = llvm.Function.create(llvm.types.function(i32, [i32]), "callee", mod)
-        fn = llvm.Function.create(
+        callee = llvm.ir.Function.create(llvm.types.function(i32, [i32]), "callee", mod)
+        fn = llvm.ir.Function.create(
             llvm.types.function(llvm.types.i1(ctx), [f32, f32, llvm.types.ptr(context=ctx), i32]),
             "f",
             mod,
         )
         bb = fn.append_basic_block("entry")
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb):
-            b.fcmp(llvm.FCmpPredicate.OLT, fn.arg(0), fn.arg(1), "lt")
+            b.fcmp(llvm.ir.FCmpPredicate.OLT, fn.arg(0), fn.arg(1), "lt")
             # Runtime operand so the icmp isn't constant-folded away.
-            b.icmp(llvm.ICmpPredicate.EQ, fn.arg(3), b.i32_const(2), "e")
+            b.icmp(llvm.ir.ICmpPredicate.EQ, fn.arg(3), b.i32_const(2), "e")
             b.gep(i32, fn.arg(2), [b.i64_const(1)], "g")
-            b.call(callee, [llvm.const_int(i32, 3)], "c")
-            b.ret(b.fcmp(llvm.FCmpPredicate.OEQ, fn.arg(0), fn.arg(1)))
+            b.call(callee, [llvm.ir.const_int(i32, 3)], "c")
+            b.ret(b.fcmp(llvm.ir.FCmpPredicate.OEQ, fn.arg(0), fn.arg(1)))
         printed = str(mod)
         assert "fcmp olt" in printed and "getelementptr" in printed
         assert "icmp eq" in printed
@@ -145,9 +145,9 @@ def test_constant_int_zext_and_global_initializer():
         }
         """
     )
-    with llvm.Context() as ctx:
-        assert llvm.const_int(llvm.types.i32(ctx), 7).zext_value == 7
-        mod = llvm.parse_assembly(src, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        assert llvm.ir.const_int(llvm.types.i32(ctx), 7).zext_value == 7
+        mod = llvm.ir.parse_assembly(src, ctx, "m")
         loads = [
             i
             for i in mod.get_function("f").basic_blocks[0].instructions
@@ -156,7 +156,7 @@ def test_constant_int_zext_and_global_initializer():
         # The load pointer operands are the GlobalVariables @g and @e.
         g = loads[0].pointer_operand
         e = loads[1].pointer_operand
-        assert isinstance(g, llvm.GlobalVariable)
+        assert isinstance(g, llvm.ir.GlobalVariable)
         assert g.initializer.value == 5  # @g's initializer is the constant i32 5
         assert e.initializer is None  # @e is external, no initializer
         del loads, g, e, mod
@@ -165,22 +165,22 @@ def test_constant_int_zext_and_global_initializer():
 
 
 def test_verify_rejects_malformed_module():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        fn = llvm.Function.create(llvm.types.function(i32, []), "bad", mod)
+        fn = llvm.ir.Function.create(llvm.types.function(i32, []), "bad", mod)
         # A basic block with no terminator is invalid IR.
         fn.append_basic_block("entry")
-        with pytest.raises(llvm.VerifyError):
+        with pytest.raises(llvm.ir.VerifyError):
             mod.verify()
         del fn, mod
     assert_no_leaks()
 
 
 def test_parse_bitcode_garbage_raises():
-    with llvm.Context() as ctx:
-        with pytest.raises(llvm.ParseError):
-            llvm.parse_bitcode(b"not real bitcode", ctx)
+    with llvm.ir.Context() as ctx:
+        with pytest.raises(llvm.ir.ParseError):
+            llvm.ir.parse_bitcode(b"not real bitcode", ctx)
     assert_no_leaks()
 
 
@@ -196,8 +196,8 @@ def test_callinst_arg_operand_and_gep_source_type():
         }
         """
     )
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(src, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(src, ctx, "m")
         f = mod.get_function("f")
         insts = f.basic_blocks[0].instructions
         gep = next(i for i in insts if type(i).__name__ == "GetElementPtrInst")
@@ -210,11 +210,11 @@ def test_callinst_arg_operand_and_gep_source_type():
 
 
 def test_jit_lookup_missing_symbol_raises():
-    ctx = llvm.Context()
-    mod = llvm.parse_assembly(
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.parse_assembly(
         "define i32 @present() {\n ret i32 0\n}\n", ctx, "m"
     )
-    jit = llvm.LLJIT()
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     with pytest.raises(RuntimeError, match="Symbols not found"):
         jit.lookup("absent")
@@ -222,8 +222,8 @@ def test_jit_lookup_missing_symbol_raises():
 
 
 def test_module_context_accessor():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         assert mod.context is ctx
         del mod
     assert_no_leaks()
@@ -286,8 +286,8 @@ def test_valuetypeinfo_downcasts_many_opcodes_and_kinds():
         "ca": "CallInst",
         "ph": "PHINode",
     }
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(src, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(src, ctx, "m")
         f = mod.get_function("f")
         named_insts = {}
         for bb in f.basic_blocks:
@@ -319,12 +319,12 @@ def test_valuetypeinfo_downcasts_many_opcodes_and_kinds():
 
 
 def test_valuetypeinfo_downcasts_constant_kinds():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         i32 = llvm.types.i32(ctx)
-        assert type(llvm.const_int(i32, 1)).__name__ == "ConstantInt"
-        assert type(llvm.const_fp(llvm.types.f32(ctx), 1.0)).__name__ == "ConstantFP"
-        assert type(llvm.undef(i32)).__name__ == "UndefValue"
-        assert type(llvm.poison(i32)).__name__ == "PoisonValue"
-        assert type(llvm.null(llvm.types.ptr(context=ctx))).__name__ == "ConstantPointerNull"
-        assert type(llvm.null(i32)).__name__ == "ConstantInt"  # zero int
+        assert type(llvm.ir.const_int(i32, 1)).__name__ == "ConstantInt"
+        assert type(llvm.ir.const_fp(llvm.types.f32(ctx), 1.0)).__name__ == "ConstantFP"
+        assert type(llvm.ir.undef(i32)).__name__ == "UndefValue"
+        assert type(llvm.ir.poison(i32)).__name__ == "PoisonValue"
+        assert type(llvm.ir.null(llvm.types.ptr(context=ctx))).__name__ == "ConstantPointerNull"
+        assert type(llvm.ir.null(i32)).__name__ == "ConstantInt"  # zero int
     assert_no_leaks()

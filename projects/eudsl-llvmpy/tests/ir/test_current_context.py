@@ -12,13 +12,13 @@ from llvm.testing import assert_no_leaks
 
 
 def test_current_context_stack():
-    assert llvm.Context.current() is None
-    with llvm.Context() as a:
-        assert llvm.Context.current() is a
-        with llvm.Context() as b:
-            assert llvm.Context.current() is b  # innermost wins
-        assert llvm.Context.current() is a  # popped back to a
-    assert llvm.Context.current() is None
+    assert llvm.ir.Context.current() is None
+    with llvm.ir.Context() as a:
+        assert llvm.ir.Context.current() is a
+        with llvm.ir.Context() as b:
+            assert llvm.ir.Context.current() is b  # innermost wins
+        assert llvm.ir.Context.current() is a  # popped back to a
+    assert llvm.ir.Context.current() is None
 
 
 def test_current_context_is_thread_local():
@@ -81,7 +81,7 @@ def test_same_context_reentered():
 
 
 def test_implicit_context_factories():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         # No explicit context -> uses the current one.
         assert llvm.types.i32() == llvm.types.i32(ctx)
         assert str(llvm.types.f32()) == "float"
@@ -99,11 +99,11 @@ def test_implicit_context_factories():
         assert llvm.types.int(7) == llvm.types.int(7, context=ctx)
         assert str(llvm.types.ptr()) == "ptr"
         assert llvm.types.struct([llvm.types.i32()]).num_elements == 1
-        assert "hi" in str(llvm.md_string("hi"))
+        assert "hi" in str(llvm.ir.md_string("hi"))
     assert_no_leaks()
 
 
 def test_no_current_context_raises():
-    assert llvm.Context.current() is None
+    assert llvm.ir.Context.current() is None
     with pytest.raises(RuntimeError, match="no context given and no current"):
         llvm.types.i32()

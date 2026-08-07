@@ -6,7 +6,7 @@ from llvm.testing import assert_no_leaks
 
 
 def _fn(ctx, mod):
-    return llvm.Function.create(llvm.types.function(llvm.types.void(ctx), []), "f", mod)
+    return llvm.ir.Function.create(llvm.types.function(llvm.types.void(ctx), []), "f", mod)
 
 
 def test_linkage_internal():
@@ -111,8 +111,8 @@ def test_visibility_default():
 
 
 def test_string_fn_attribute():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         f = _fn(ctx, mod)
         f.add_fn_attr("target-cpu", "znver3")
         assert f.has_fn_attr("target-cpu")

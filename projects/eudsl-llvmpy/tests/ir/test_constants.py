@@ -29,56 +29,56 @@ _AGGREGATE_SRC = dedent(
 
 
 def test_const_int():
-    with llvm.Context() as ctx:
-        c = llvm.const_int(llvm.types.i32(ctx), 42)
-        assert isinstance(c, llvm.ConstantInt)
+    with llvm.ir.Context() as ctx:
+        c = llvm.ir.const_int(llvm.types.i32(ctx), 42)
+        assert isinstance(c, llvm.ir.ConstantInt)
         assert c.value == 42
         assert str(c) == "i32 42"
-        neg = llvm.const_int(llvm.types.i32(ctx), -1, signed=True)
+        neg = llvm.ir.const_int(llvm.types.i32(ctx), -1, signed=True)
         assert neg.value == -1
         assert neg.zext_value == 4294967295
     assert_no_leaks()
 
 
 def test_const_int_out_of_range_raises():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         i8 = llvm.types.i8(ctx)
         with pytest.raises(ValueError):
-            llvm.const_int(i8, 300, signed=False)
+            llvm.ir.const_int(i8, 300, signed=False)
         with pytest.raises(ValueError):
-            llvm.const_int(i8, -1, signed=False)
+            llvm.ir.const_int(i8, -1, signed=False)
         with pytest.raises(ValueError):
-            llvm.const_int(i8, 200, signed=True)
+            llvm.ir.const_int(i8, 200, signed=True)
         # in-range values on both sides of zero still work
-        assert llvm.const_int(i8, 255, signed=False).zext_value == 255
-        assert llvm.const_int(i8, -128, signed=True).value == -128
+        assert llvm.ir.const_int(i8, 255, signed=False).zext_value == 255
+        assert llvm.ir.const_int(i8, -128, signed=True).value == -128
     assert_no_leaks()
 
 
 def test_const_bool_and_fp():
-    with llvm.Context() as ctx:
-        t = llvm.const_bool(True, context=ctx)
-        assert isinstance(t, llvm.ConstantInt)
+    with llvm.ir.Context() as ctx:
+        t = llvm.ir.const_bool(True, context=ctx)
+        assert isinstance(t, llvm.ir.ConstantInt)
         assert str(t) == "i1 true"
-        f = llvm.const_fp(llvm.types.f64(ctx), 1.5)
-        assert isinstance(f, llvm.ConstantFP)
+        f = llvm.ir.const_fp(llvm.types.f64(ctx), 1.5)
+        assert isinstance(f, llvm.ir.ConstantFP)
         assert f.double_value == 1.5
     assert_no_leaks()
 
 
 def test_undef_poison_null():
-    with llvm.Context() as ctx:
-        assert type(llvm.undef(llvm.types.i32(ctx))).__name__ == "UndefValue"
-        assert type(llvm.poison(llvm.types.i32(ctx))).__name__ == "PoisonValue"
-        assert type(llvm.null(llvm.types.ptr(context=ctx))).__name__ == "ConstantPointerNull"
-        assert llvm.null is llvm.const_null
-        assert str(llvm.undef(llvm.types.i32(ctx))) == "i32 undef"
+    with llvm.ir.Context() as ctx:
+        assert type(llvm.ir.undef(llvm.types.i32(ctx))).__name__ == "UndefValue"
+        assert type(llvm.ir.poison(llvm.types.i32(ctx))).__name__ == "PoisonValue"
+        assert type(llvm.ir.null(llvm.types.ptr(context=ctx))).__name__ == "ConstantPointerNull"
+        assert llvm.ir.null is llvm.ir.const_null
+        assert str(llvm.ir.undef(llvm.types.i32(ctx))) == "i32 undef"
     assert_no_leaks()
 
 
 def test_global_variable_is_constant_and_initializer():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_GLOBALS_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_GLOBALS_SRC, ctx, "m")
 
         g_const = mod.get_global_variable("g_const")
         assert g_const.is_constant is True
@@ -100,8 +100,8 @@ def test_global_variable_is_constant_and_initializer():
 
 
 def test_aggregate_and_expr_constant_downcasts():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_AGGREGATE_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_AGGREGATE_SRC, ctx, "m")
 
         assert type(mod.get_global_variable("arr").initializer).__name__ == (
             "ConstantDataArray"
