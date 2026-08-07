@@ -51,7 +51,7 @@ def test_replace_all_uses_except():
         insts = list(f.entry_block)
         a, b, c = insts[0], insts[1], insts[2]
         assert a.num_uses == 2  # used by %b and %c
-        zero = llvm.const_int(llvm.i32(ctx), 0)
+        zero = llvm.const_int(llvm.types.i32(ctx), 0)
         a.replace_all_uses_except(zero, [b])
         printed = str(mod)
         assert "%b = add i32 %a, 2" in printed  # kept (b was excepted)
