@@ -29,21 +29,21 @@ _SRC_CONST = dedent(
 
 
 def test_host_triple_is_nonempty():
-    assert isinstance(llvm.host_triple(), str)
-    assert llvm.host_triple()
+    assert isinstance(llvm.jit.host_triple(), str)
+    assert llvm.jit.host_triple()
 
 
 def test_target_machine_triple():
-    tm = llvm.TargetMachine(llvm.host_triple())
+    tm = llvm.jit.TargetMachine(llvm.jit.host_triple())
     # TargetMachine.triple round-trips a normalized host triple.
     assert isinstance(tm.triple, str)
     assert "-" in tm.triple
 
 
 def test_emit_assembly_and_object():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
-        tm = llvm.TargetMachine(llvm.host_triple())
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        tm = llvm.jit.TargetMachine(llvm.jit.host_triple())
         assert tm.data_layout_str
         mod.set_data_layout_from(tm)
         asm = tm.emit_assembly(mod)
@@ -51,7 +51,7 @@ def test_emit_assembly_and_object():
         # what the body compiles to. Prove emit reflects the body by emitting a
         # same-named function with a different body and asserting they differ,
         # and that the constant-returning body shows its immediate.
-        const_mod = llvm.parse_assembly(_SRC_CONST, ctx, "m2")
+        const_mod = llvm.ir.parse_assembly(_SRC_CONST, ctx, "m2")
         const_mod.set_data_layout_from(tm)
         const_asm = tm.emit_assembly(const_mod)
         assert asm != const_asm

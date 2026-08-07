@@ -13,64 +13,64 @@ def test_module_is_counted():
     # The module count is tied to actual destruction, so it detects a leak the
     # context count cannot: __exit__ zeroes the context count even while a
     # Module still keeps the LLVMContext alive.
-    assert llvm.Context._get_live_module_count() == 0
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
-        assert llvm.Context._get_live_module_count() == 1
-        second = llvm.Module("m2", ctx)
-        assert llvm.Context._get_live_module_count() == 2
+    assert llvm.ir.Context._get_live_module_count() == 0
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        assert llvm.ir.Context._get_live_module_count() == 1
+        second = llvm.ir.Module("m2", ctx)
+        assert llvm.ir.Context._get_live_module_count() == 2
         del second
         gc.collect()
-        assert llvm.Context._get_live_module_count() == 1
+        assert llvm.ir.Context._get_live_module_count() == 1
         del mod
     gc.collect()
-    assert llvm.Context._get_live_module_count() == 0
+    assert llvm.ir.Context._get_live_module_count() == 0
     assert_no_leaks()
 
 
 def test_leaked_module_is_detected_by_module_count():
     # A module held past the context's release is invisible to the context count
     # (release() dropped it to 0) but visible to the module count.
-    ctx = llvm.Context()
-    leaked = llvm.Module("leak", ctx)
+    ctx = llvm.ir.Context()
+    leaked = llvm.ir.Module("leak", ctx)
     ctx.__exit__(None, None, None)  # as if leaving a `with` block
     gc.collect()
-    assert llvm.Context._get_live_count() == 0  # released
-    assert llvm.Context._get_live_module_count() == 1  # but the module lives
+    assert llvm.ir.Context._get_live_count() == 0  # released
+    assert llvm.ir.Context._get_live_module_count() == 1  # but the module lives
     del leaked, ctx
     assert_no_leaks()
 
 
 def test_context_is_counted():
-    assert llvm.Context._get_live_count() == 0
-    ctx = llvm.Context()
-    assert llvm.Context._get_live_count() == 1
+    assert llvm.ir.Context._get_live_count() == 0
+    ctx = llvm.ir.Context()
+    assert llvm.ir.Context._get_live_count() == 1
     del ctx
     assert_no_leaks()
 
 
 def test_nested_contexts_are_counted():
-    with llvm.Context() as a, llvm.Context() as b:
+    with llvm.ir.Context() as a, llvm.ir.Context() as b:
         assert a is not b
-        assert llvm.Context._get_live_count() == 2
+        assert llvm.ir.Context._get_live_count() == 2
     assert_no_leaks()
 
 
 def test_module_keeps_context_alive():
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     del ctx
     gc.collect()
     # The module's keep_alive kept the context object alive, so this is safe.
-    assert llvm.Context._get_live_count() == 1
+    assert llvm.ir.Context._get_live_count() == 1
     assert mod.module_identifier == "m"
     del mod
     assert_no_leaks()
 
 
 def test_module_rename():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("before", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("before", ctx)
         mod.module_identifier = "after"
         assert mod.module_identifier == "after"
         assert "ModuleID = 'after'" in str(mod)
@@ -79,8 +79,8 @@ def test_module_rename():
 
 
 def test_consumed_module_raises_instead_of_crashing():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         assert mod._is_consumed is False
         mod._take()
         assert mod._is_consumed is True

@@ -42,12 +42,12 @@ _SRC = dedent(
 
 
 def test_constant_and_global_accessors():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         ptr_of = {}  # global name -> its pointer operand (the global/alias/ifunc)
         for i in f.walk():
-            if isinstance(i, llvm.LoadInst):
+            if isinstance(i, llvm.ir.LoadInst):
                 g = i.pointer_operand
                 ptr_of[g.name] = g
 

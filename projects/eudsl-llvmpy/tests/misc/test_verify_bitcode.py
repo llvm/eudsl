@@ -17,22 +17,22 @@ _GOOD = dedent(
 
 
 def test_verify_accepts_good_module():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_GOOD, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_GOOD, ctx, "m")
         assert mod.verify() is None
         del mod
     assert_no_leaks()
 
 
 def test_bitcode_round_trip():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_GOOD, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_GOOD, ctx, "m")
         data = mod.to_bitcode()
         assert isinstance(data, bytes)
         assert data[:2] == b"BC"
         del mod
-    with llvm.Context() as ctx2:
-        mod2 = llvm.parse_bitcode(data, ctx2)
+    with llvm.ir.Context() as ctx2:
+        mod2 = llvm.ir.parse_bitcode(data, ctx2)
         assert "define i32 @f(i32 %x)" in str(mod2)
         del mod2
     assert_no_leaks()

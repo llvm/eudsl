@@ -6,26 +6,26 @@ from llvm.testing import assert_no_leaks
 
 
 def _fn(ctx, mod):
-    return llvm.Function.create(llvm.types.function(llvm.types.void(ctx), []), "f", mod)
+    return llvm.ir.Function.create(llvm.types.function(llvm.types.void(ctx), []), "f", mod)
 
 
 def test_linkage_and_calling_conv():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         f = _fn(ctx, mod)
-        f.linkage = llvm.Linkage.INTERNAL
-        assert f.linkage == llvm.Linkage.INTERNAL
+        f.linkage = llvm.ir.Linkage.INTERNAL
+        assert f.linkage == llvm.ir.Linkage.INTERNAL
         # A body-less function prints as `declare`; linkage still shows.
         assert "declare internal void @f()" in str(mod)
-        f.calling_conv = llvm.CallingConv.FAST
-        assert f.calling_conv == llvm.CallingConv.FAST
+        f.calling_conv = llvm.ir.CallingConv.FAST
+        assert f.calling_conv == llvm.ir.CallingConv.FAST
         del f, mod
     assert_no_leaks()
 
 
 def test_string_fn_attribute():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         f = _fn(ctx, mod)
         f.add_fn_attr("target-cpu", "znver3")
         assert f.has_fn_attr("target-cpu")

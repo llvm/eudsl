@@ -7,7 +7,7 @@ import llvm
 def test_only_host_targets_are_linked():
     # TargetRegistry reports the short target names (lowercase), not the LLVM
     # library names (AArch64/X86).
-    targets = llvm.registered_targets()
+    targets = llvm.jit.registered_targets()
     # Host targets are present.
     assert any(t in targets for t in ("aarch64", "x86", "x86-64", "arm64"))
     # The GPU backends were dropped from the default build.

@@ -6,12 +6,12 @@ from llvm.testing import assert_no_leaks, filecheck_with_comments
 
 
 def test_build_add_function():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        fn = llvm.Function.create(llvm.types.function(i32, [i32, i32]), "add2", mod)
+        fn = llvm.ir.Function.create(llvm.types.function(i32, [i32, i32]), "add2", mod)
         bb = fn.append_basic_block("entry")
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb):
             s = b.add(fn.arg(0), fn.arg(1), "s")
             b.ret(s)
@@ -24,16 +24,16 @@ def test_build_add_function():
 
 
 def test_build_conditional_with_phi():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         i1 = llvm.types.i1(ctx)
-        fn = llvm.Function.create(llvm.types.function(i32, [i1]), "sel", mod)
+        fn = llvm.ir.Function.create(llvm.types.function(i32, [i1]), "sel", mod)
         entry = fn.append_basic_block("entry")
         a = fn.append_basic_block("a")
         b_ = fn.append_basic_block("b")
         join = fn.append_basic_block("join")
-        bld = llvm.IRBuilder(ctx)
+        bld = llvm.ir.IRBuilder(ctx)
         with bld.at_end_of(entry):
             bld.cond_br(fn.arg(0), a, b_)
         with bld.at_end_of(a):
@@ -42,8 +42,8 @@ def test_build_conditional_with_phi():
             bld.br(join)
         with bld.at_end_of(join):
             p = bld.phi(i32, "p")
-            p.add_incoming(llvm.const_int(i32, 1), a)
-            p.add_incoming(llvm.const_int(i32, 2), b_)
+            p.add_incoming(llvm.ir.const_int(i32, 1), a)
+            p.add_incoming(llvm.ir.const_int(i32, 2), b_)
             bld.ret(p)
         # CHECK:   br i1 %0, label %a, label %b
         # CHECK:   %p = phi i32 [ 1, %a ], [ 2, %b ]
@@ -54,15 +54,15 @@ def test_build_conditional_with_phi():
 
 
 def test_alloca_load_store():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        fn = llvm.Function.create(llvm.types.function(i32, []), "f", mod)
+        fn = llvm.ir.Function.create(llvm.types.function(i32, []), "f", mod)
         bb = fn.append_basic_block("entry")
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb):
             slot = b.alloca(i32, "slot")
-            b.store(llvm.const_int(i32, 5), slot)
+            b.store(llvm.ir.const_int(i32, 5), slot)
             loaded = b.load(i32, slot, "loaded")
             b.ret(loaded)
         # CHECK:   %slot = alloca i32

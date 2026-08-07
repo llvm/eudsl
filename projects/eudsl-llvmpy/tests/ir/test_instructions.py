@@ -62,8 +62,8 @@ def _only(mod, name):
 
 
 def test_instructions_downcast():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_PHI_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_PHI_SRC, ctx, "m")
         # add-style ops become BinaryOperator; the icmp becomes ICmpInst; the
         # phi becomes PHINode; the conditional branch becomes CondBrInst.
         assert len(_insts_by_class(mod, "PHINode")) == 1
@@ -74,8 +74,8 @@ def test_instructions_downcast():
 
 
 def test_phi_incoming():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_PHI_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_PHI_SRC, ctx, "m")
         (phi,) = _insts_by_class(mod, "PHINode")
         assert phi.num_incoming == 2
         assert phi.incoming_block(0).name == "a"
@@ -87,8 +87,8 @@ def test_phi_incoming():
 
 
 def test_phi_add_incoming():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_PHI_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_PHI_SRC, ctx, "m")
         phi = _only(mod, "PHINode")
         entry = mod.get_function("f").entry_block
         # add_incoming(value, block) is the write path. Feed back an existing
@@ -109,17 +109,17 @@ def test_phi_add_incoming():
 
 
 def test_icmp_predicate():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_PHI_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_PHI_SRC, ctx, "m")
         (icmp,) = _insts_by_class(mod, "ICmpInst")
-        assert icmp.predicate == llvm.ICmpPredicate.EQ
+        assert icmp.predicate == llvm.ir.ICmpPredicate.EQ
         del icmp, mod
     assert_no_leaks()
 
 
 def test_conditional_branch():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_PHI_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_PHI_SRC, ctx, "m")
         cbrs = _insts_by_class(mod, "CondBrInst")
         assert len(cbrs) == 1
         assert cbrs[0].is_conditional
@@ -131,8 +131,8 @@ def test_conditional_branch():
 
 
 def test_unconditional_branch():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_PHI_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_PHI_SRC, ctx, "m")
         # The a->join and b->join branches are unconditional.
         ubrs = _insts_by_class(mod, "UncondBrInst")
         assert len(ubrs) == 2
@@ -143,8 +143,8 @@ def test_unconditional_branch():
 
 
 def test_return_value():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_PHI_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_PHI_SRC, ctx, "m")
         ret = _only(mod, "ReturnInst")
         assert ret.return_value.name == "p"
         del ret, mod
@@ -152,8 +152,8 @@ def test_return_value():
 
 
 def test_memory_accessors():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_MEM_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_MEM_SRC, ctx, "m")
         alloca = _only(mod, "AllocaInst")
         assert str(alloca.allocated_type) == "i32"
         load = _only(mod, "LoadInst")
@@ -169,8 +169,8 @@ def test_memory_accessors():
 
 
 def test_call_accessors():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_MEM_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_MEM_SRC, ctx, "m")
         call = _only(mod, "CallInst")
         assert call.num_args == 2
         assert call.arg_operand(0).name == "x"
@@ -184,9 +184,9 @@ def test_call_accessors():
 
 
 def test_fcmp_predicate():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_MEM_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_MEM_SRC, ctx, "m")
         fcmp = _only(mod, "FCmpInst")
-        assert fcmp.predicate == llvm.FCmpPredicate.OGT
+        assert fcmp.predicate == llvm.ir.FCmpPredicate.OGT
         del fcmp, mod
     assert_no_leaks()

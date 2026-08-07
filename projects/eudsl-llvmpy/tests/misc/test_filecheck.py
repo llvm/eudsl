@@ -12,8 +12,8 @@ _SRC = "define i32 @f(i32 %x) {\nentry:\n  %s = add i32 %x, 1\n  ret i32 %s\n}\n
 
 
 def test_filecheck_matches_ordered():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         # CHECK: define i32 @f(i32 %x)
         # CHECK:   %s = add i32 %x, 1
         # CHECK-NEXT:   ret i32 %s
@@ -28,8 +28,8 @@ def _check_absent_pattern(mod):
 
 
 def test_filecheck_reports_mismatch():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         with pytest.raises(ValueError, match="FileCheck failed"):
             _check_absent_pattern(mod)
         del mod

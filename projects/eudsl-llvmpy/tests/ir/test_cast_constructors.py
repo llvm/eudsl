@@ -41,7 +41,7 @@ _SRC = dedent(
 
 
 def test_type_cast_constructors():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         cases = [
             (llvm.types.IntegerType, llvm.types.i32(ctx)),
             (llvm.types.PointerType, llvm.types.ptr(context=ctx)),
@@ -61,50 +61,50 @@ def test_type_cast_constructors():
 
 
 def test_value_cast_constructors():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         entry = f.entry_block
 
         def by(cls):
             return next(i for i in entry.instructions if isinstance(i, cls))
 
-        alloca = by(llvm.AllocaInst)
-        store = by(llvm.StoreInst)
-        gep = by(llvm.GetElementPtrInst)
-        cmp = by(llvm.CmpInst)
-        call = by(llvm.CallBase)
+        alloca = by(llvm.ir.AllocaInst)
+        store = by(llvm.ir.StoreInst)
+        gep = by(llvm.ir.GetElementPtrInst)
+        cmp = by(llvm.ir.CmpInst)
+        call = by(llvm.ir.CallBase)
         load_v = next(
-            i for i in entry.instructions if isinstance(i, llvm.LoadInst)
+            i for i in entry.instructions if isinstance(i, llvm.ir.LoadInst)
         )
         gvar = [
-            i for i in entry.instructions if isinstance(i, llvm.LoadInst)
+            i for i in entry.instructions if isinstance(i, llvm.ir.LoadInst)
         ][-1].pointer_operand
         join = next(b for b in f.basic_blocks if b.name == "join")
-        phi = next(i for i in join.instructions if isinstance(i, llvm.PHINode))
+        phi = next(i for i in join.instructions if isinstance(i, llvm.ir.PHINode))
         ret = join.terminator
         a_block = next(b for b in f.basic_blocks if b.name == "a")
 
         # (concrete class, a value that IS one) -> cast round-trips to the class.
         cases = [
-            (llvm.Function, f),
-            (llvm.Argument, f.arg(0)),
-            (llvm.BasicBlock, entry),
-            (llvm.Instruction, alloca),
-            (llvm.User, alloca),
-            (llvm.AllocaInst, alloca),
-            (llvm.StoreInst, store),
-            (llvm.LoadInst, load_v),
-            (llvm.GetElementPtrInst, gep),
-            (llvm.CmpInst, cmp),
-            (llvm.CallBase, call),
-            (llvm.PHINode, phi),
-            (llvm.ReturnInst, ret),
-            (llvm.CondBrInst, entry.terminator),
-            (llvm.UncondBrInst, a_block.terminator),
-            (llvm.ConstantInt, llvm.const_int(llvm.types.i32(ctx), 1)),
-            (llvm.ConstantFP, llvm.const_fp(llvm.types.f32(ctx), 1.0)),
-            (llvm.GlobalVariable, gvar),
+            (llvm.ir.Function, f),
+            (llvm.ir.Argument, f.arg(0)),
+            (llvm.ir.BasicBlock, entry),
+            (llvm.ir.Instruction, alloca),
+            (llvm.ir.User, alloca),
+            (llvm.ir.AllocaInst, alloca),
+            (llvm.ir.StoreInst, store),
+            (llvm.ir.LoadInst, load_v),
+            (llvm.ir.GetElementPtrInst, gep),
+            (llvm.ir.CmpInst, cmp),
+            (llvm.ir.CallBase, call),
+            (llvm.ir.PHINode, phi),
+            (llvm.ir.ReturnInst, ret),
+            (llvm.ir.CondBrInst, entry.terminator),
+            (llvm.ir.UncondBrInst, a_block.terminator),
+            (llvm.ir.ConstantInt, llvm.ir.const_int(llvm.types.i32(ctx), 1)),
+            (llvm.ir.ConstantFP, llvm.ir.const_fp(llvm.types.f32(ctx), 1.0)),
+            (llvm.ir.GlobalVariable, gvar),
         ]
         for cls, val in cases:
             narrowed = cls(val)
@@ -112,6 +112,6 @@ def test_value_cast_constructors():
             assert narrowed == val
         # Mismatch raises ValueError.
         with pytest.raises(ValueError, match="is not a"):
-            llvm.LoadInst(store)
+            llvm.ir.LoadInst(store)
         del f, entry, mod
     assert_no_leaks()

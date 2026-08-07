@@ -11,11 +11,11 @@ from llvm.testing import assert_no_leaks
 
 
 def test_declaration_has_no_body():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod)
+        @llvm.dsl.function(module=mod)
         def extern(a: i32) -> i32: ...
 
         printed = str(mod)
@@ -26,19 +26,19 @@ def test_declaration_has_no_body():
 
 
 def test_call_between_functions_jits():
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def inc(x: i32) -> i32:
         return x + 1
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def inc2(x: i32) -> i32:
         return inc(inc(x))
 
-    jit = llvm.LLJIT()
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("inc2"))
     assert fn(40) == 42
@@ -47,13 +47,13 @@ def test_call_between_functions_jits():
 
 
 def test_function_options():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(
+        @llvm.dsl.function(
             module=mod,
-            linkage=llvm.Linkage.INTERNAL,
+            linkage=llvm.ir.Linkage.INTERNAL,
             attrs={"target-cpu": "znver3"},
         )
         def f(x: i32) -> i32:
@@ -67,11 +67,11 @@ def test_function_options():
 
 
 def test_varargs_declaration():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod, var_arg=True)
+        @llvm.dsl.function(module=mod, var_arg=True)
         def printf_like(fmt: llvm.types.ptr(context=ctx)) -> i32: ...
 
         assert "declare i32 @printf_like(ptr, ...)" in str(mod)
@@ -80,12 +80,12 @@ def test_varargs_declaration():
 
 
 def test_bad_annotation_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(TypeError, match="cannot resolve type annotation"):
 
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def bad(x: "not a type") -> i32:  # noqa: F821
                 return x
 
@@ -93,11 +93,11 @@ def test_bad_annotation_raises():
 
 
 def test_void_return_no_explicit_return():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod)
+        @llvm.dsl.function(module=mod)
         def store_it(p: llvm.types.ptr, v: i32) -> llvm.types.void:
             tp = with_element_type(p, i32)
             tp[0] = v
@@ -110,15 +110,15 @@ def test_void_return_no_explicit_return():
 
 
 def test_calling_conv_option():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod, calling_conv=llvm.CallingConv.FAST)
+        @llvm.dsl.function(module=mod, calling_conv=llvm.ir.CallingConv.FAST)
         def f(x: i32) -> i32:
             return x
 
-        assert f.fn.calling_conv == llvm.CallingConv.FAST
+        assert f.fn.calling_conv == llvm.ir.CallingConv.FAST
         del mod
     assert_no_leaks()
 
@@ -127,10 +127,10 @@ def test_function_without_closure():
     # Body references only its argument and the `llvm` global (no enclosing
     # locals), so the compiled function has no __closure__ -> exercises the
     # no-closure path in transform_ast.
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
 
-        @llvm.function(module=mod)
+        @llvm.dsl.function(module=mod)
         def ident(x: llvm.types.i1) -> llvm.types.i1:
             return x
 
@@ -140,11 +140,11 @@ def test_function_without_closure():
 
 
 def test_declaration_with_pass_body():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod)
+        @llvm.dsl.function(module=mod)
         def extern2(a: i32) -> i32:
             pass  # empty body -> declaration
 

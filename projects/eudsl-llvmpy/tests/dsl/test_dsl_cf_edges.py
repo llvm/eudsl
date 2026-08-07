@@ -13,19 +13,19 @@ from llvm.testing import assert_no_leaks
 
 
 def test_range_single_arg():
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def total(n: i32) -> i32:
-        acc = llvm.const_int(i32, 0)
+        acc = llvm.ir.const_int(i32, 0)
         for i in range_(n):  # single-arg range_: start defaults to 0
             acc = acc + i
             yield acc
         return acc
 
-    jit = llvm.LLJIT()
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("total"))
     assert fn(5) == 0 + 1 + 2 + 3 + 4
@@ -35,11 +35,11 @@ def test_range_single_arg():
 
 def test_for_side_effect_bare_yield():
     # No loop-carried values: body ends with a bare `yield`; stores into a ptr.
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def fill(p: llvm.types.ptr, n: i32) -> i32:
         tp = with_element_type(p, i32)
         for i in range_(0, n):
@@ -54,14 +54,14 @@ def test_for_side_effect_bare_yield():
 
 
 def test_range_too_many_args_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="range_ takes 1-3"):
 
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def bad(n: i32) -> i32:
-                acc = llvm.const_int(i32, 0)
+                acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n, 1, 2):
                     acc = acc + i
                     yield acc
@@ -71,14 +71,14 @@ def test_range_too_many_args_raises():
 
 
 def test_for_non_name_target_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="single name"):
 
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def bad(n: i32) -> i32:
-                acc = llvm.const_int(i32, 0)
+                acc = llvm.ir.const_int(i32, 0)
                 for (i, j) in range_(0, n):
                     acc = acc + acc
                     yield acc
@@ -88,14 +88,14 @@ def test_for_non_name_target_raises():
 
 
 def test_for_body_without_trailing_yield_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="must end with"):
 
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def bad(n: i32) -> i32:
-                acc = llvm.const_int(i32, 0)
+                acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n):
                     acc = acc + i
                 return acc
@@ -104,14 +104,14 @@ def test_for_body_without_trailing_yield_raises():
 
 
 def test_while_body_without_trailing_yield_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="must end with"):
 
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def bad(n: i32) -> i32:
-                i = llvm.const_int(i32, 0)
+                i = llvm.ir.const_int(i32, 0)
                 while i.ne(n):
                     i = i + 1
                 return i
@@ -120,14 +120,14 @@ def test_while_body_without_trailing_yield_raises():
 
 
 def test_loop_yield_non_name_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="loop-carried variable names"):
 
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def bad(n: i32) -> i32:
-                acc = llvm.const_int(i32, 0)
+                acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n):
                     acc = acc + i
                     yield acc + i  # not a plain name
@@ -137,21 +137,21 @@ def test_loop_yield_non_name_raises():
 
 
 def test_elif_multiple_carried_results():
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def pick2(x: i32, a: i32, b: i32) -> i32:
         if x < 0:
             p, q = yield a, b
-        elif x.eq(llvm.const_int(i32, 0)):
+        elif x.eq(llvm.ir.const_int(i32, 0)):
             p, q = yield b, a
         else:
             p, q = yield a, a
         return p - q
 
-    jit = llvm.LLJIT()
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     fn = ctypes.CFUNCTYPE(
         ctypes.c_int32, ctypes.c_int32, ctypes.c_int32, ctypes.c_int32
@@ -172,13 +172,13 @@ def test_range_runtime_callable():
 
 def test_for_over_python_list_unrolls():
     # A non-range_ `for` is left as a Python loop and unrolls at trace time.
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def sum3(a: i32, b: i32, c: i32) -> i32:
-        acc = llvm.const_int(i32, 0)
+        acc = llvm.ir.const_int(i32, 0)
         for x in [a, b, c]:
             acc = acc + x
         return acc
@@ -186,7 +186,7 @@ def test_for_over_python_list_unrolls():
     printed = str(mod)
     assert "while.header" not in printed  # unrolled, no loop
     assert printed.count("add i32") == 3
-    jit = llvm.LLJIT()
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     fn = ctypes.CFUNCTYPE(
         ctypes.c_int32, ctypes.c_int32, ctypes.c_int32, ctypes.c_int32
@@ -199,11 +199,11 @@ def test_for_over_python_list_unrolls():
 def test_nested_if_in_then_branch():
     # A nested if in the THEN branch that yields forces the body-forward path
     # of CanonicalizeElIfs.
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def f(c: llvm.types.i1, d: llvm.types.i1, a: i32, b: i32) -> i32:
         if c:
             if d:
@@ -214,7 +214,7 @@ def test_nested_if_in_then_branch():
             r = yield b
         return r
 
-    jit = llvm.LLJIT()
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     fn = ctypes.CFUNCTYPE(
         ctypes.c_int32, ctypes.c_bool, ctypes.c_bool, ctypes.c_int32, ctypes.c_int32

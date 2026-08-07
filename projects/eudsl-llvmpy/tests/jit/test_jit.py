@@ -19,9 +19,9 @@ _SRC = dedent(
 
 
 def test_jit_execute():
-    ctx = llvm.Context()
-    mod = llvm.parse_assembly(_SRC, ctx, "m")
-    jit = llvm.LLJIT()
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)  # consumes mod
     assert mod._is_consumed
     addr = jit.lookup("add")

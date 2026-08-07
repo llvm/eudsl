@@ -6,11 +6,11 @@ from llvm.testing import assert_no_leaks
 
 
 def test_add_global_with_initializer():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        g = mod.add_global(i32, "counter", llvm.const_int(i32, 7))
-        assert isinstance(g, llvm.GlobalVariable)
+        g = mod.add_global(i32, "counter", llvm.ir.const_int(i32, 7))
+        assert isinstance(g, llvm.ir.GlobalVariable)
         assert g.name == "counter"
         assert "@counter = global i32 7" in str(mod)
         assert mod.get_global("counter") == g
@@ -20,8 +20,8 @@ def test_add_global_with_initializer():
 
 
 def test_add_global_external_and_get_global_miss():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         # No initializer -> external declaration (the init=None default path).
         g = mod.add_global(i32, "ext")
@@ -31,11 +31,11 @@ def test_add_global_external_and_get_global_miss():
         assert mod.get_global("nope") is None
         del g, mod
     assert_no_leaks()
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         g = mod.add_global(
-            i32, "ro", llvm.const_int(i32, 1), constant=True, address_space=1
+            i32, "ro", llvm.ir.const_int(i32, 1), constant=True, address_space=1
         )
         printed = str(mod)
         assert "addrspace(1)" in printed

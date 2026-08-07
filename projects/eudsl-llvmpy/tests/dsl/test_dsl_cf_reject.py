@@ -9,15 +9,15 @@ from llvm.testing import assert_no_leaks
 
 
 def test_break_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="break"):
 
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def bad(n: i32) -> i32:
                 for i in range_(0, n):
-                    if i.eq(llvm.const_int(i32, 3)):
+                    if i.eq(llvm.ir.const_int(i32, 3)):
                         break
                     yield i
                 return n
@@ -26,15 +26,15 @@ def test_break_raises():
 
 
 def test_continue_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="continue"):
 
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def bad(n: i32) -> i32:
                 for i in range_(0, n):
-                    if i.eq(llvm.const_int(i32, 3)):
+                    if i.eq(llvm.ir.const_int(i32, 3)):
                         continue
                     yield i
                 return n
@@ -43,12 +43,12 @@ def test_continue_raises():
 
 
 def test_early_return_in_if_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="return"):
 
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def bad2(c: llvm.types.i1, a: i32) -> i32:
                 if c:
                     return a
@@ -58,14 +58,14 @@ def test_early_return_in_if_raises():
 
 
 def test_nested_control_flow_in_loop_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="nested inside"):
 
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def bad3(n: i32) -> i32:
-                acc = llvm.const_int(i32, 0)
+                acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n):
                     if i < n:
                         acc = yield i
@@ -77,11 +77,11 @@ def test_nested_control_flow_in_loop_raises():
 
 def test_trailing_return_is_allowed():
     # The function's own trailing return must NOT be rejected.
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod)
+        @llvm.dsl.function(module=mod)
         def ok(c: llvm.types.i1, a: i32, b: i32) -> i32:
             if c:
                 r = yield a

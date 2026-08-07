@@ -138,9 +138,9 @@ _EXPECTED_INSTRUCTIONS = {
 
 def test_instruction_kinds_downcast():
     seen = set()
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         for name, src in _SOURCES.items():
-            mod = llvm.parse_assembly(dedent(src), ctx, name)
+            mod = llvm.ir.parse_assembly(dedent(src), ctx, name)
             seen |= _instruction_kinds(mod)
             del mod
     missing = _EXPECTED_INSTRUCTIONS - seen
@@ -189,8 +189,8 @@ _CONSTANTS_SRC = """\
 
 
 def test_constant_and_global_kinds_downcast():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(dedent(_CONSTANTS_SRC), ctx, "m")
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(dedent(_CONSTANTS_SRC), ctx, "m")
         f = mod.get_function("f")
         # Map each load's pointed-at global name -> (global class, init class).
         by_name = {}

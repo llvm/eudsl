@@ -10,8 +10,8 @@ from llvm.testing import assert_no_leaks
 
 
 def test_use_edges():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
             "define i32 @f(i32 %x, i32 %y) {\n"
             "entry:\n  %sum = add i32 %x, %y\n  ret i32 %sum\n}\n",
             ctx,
@@ -31,8 +31,8 @@ def test_use_edges():
 
 
 def test_replace_all_uses_except():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
             dedent(
                 """\
                 define i32 @f(i32 %x) {
@@ -51,7 +51,7 @@ def test_replace_all_uses_except():
         insts = list(f.entry_block)
         a, b, c = insts[0], insts[1], insts[2]
         assert a.num_uses == 2  # used by %b and %c
-        zero = llvm.const_int(llvm.types.i32(ctx), 0)
+        zero = llvm.ir.const_int(llvm.types.i32(ctx), 0)
         a.replace_all_uses_except(zero, [b])
         printed = str(mod)
         assert "%b = add i32 %a, 2" in printed  # kept (b was excepted)
@@ -62,8 +62,8 @@ def test_replace_all_uses_except():
 
 
 def test_function_walk():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
             dedent(
                 """\
                 define i32 @f(i32 %x) {

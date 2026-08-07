@@ -6,7 +6,7 @@ from llvm.testing import assert_no_leaks
 
 
 def test_primitive_types_print():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         assert str(llvm.types.void(ctx)) == "void"
         assert str(llvm.types.label(ctx)) == "label"
         assert str(llvm.types.i1(ctx)) == "i1"
@@ -19,7 +19,7 @@ def test_primitive_types_print():
 
 
 def test_type_predicates():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         assert llvm.types.void(ctx).is_void
         assert not llvm.types.void(ctx).is_sized
         assert llvm.types.i32(ctx).is_integer
@@ -35,7 +35,7 @@ def test_type_predicates():
 
 
 def test_types_are_uniqued_and_hashable():
-    with llvm.Context() as a, llvm.Context() as b:
+    with llvm.ir.Context() as a, llvm.ir.Context() as b:
         assert llvm.types.i32(a) == llvm.types.i32(a)
         assert llvm.types.i32(a) != llvm.types.i64(a)
         # Types are interned per context, so two contexts give distinct types.
@@ -53,7 +53,7 @@ def test_types_are_uniqued_and_hashable():
 # test_concrete_type_accessors, since the Type type_hook makes the factories
 # below return concrete-subclass instances rather than base Type objects.
 def test_derived_types_print():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         assert str(llvm.types.int(7, context=ctx)) == "i7"
         assert str(llvm.types.ptr(context=ctx)) == "ptr"
         assert str(llvm.types.ptr(3, context=ctx)) == "ptr addrspace(3)"
@@ -77,7 +77,7 @@ def test_derived_types_print():
 
 
 def test_named_struct_prints_opaque():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         named = llvm.types.named_struct("Pair", context=ctx)
         # An opaque named struct prints its full definition. set_body and the
         # concrete-subclass accessors are validated in
@@ -87,7 +87,7 @@ def test_named_struct_prints_opaque():
 
 
 def test_types_downcast_to_concrete_classes():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         assert type(llvm.types.i32(ctx)).__name__ == "IntegerType"
         assert type(llvm.types.ptr(context=ctx)).__name__ == "PointerType"
         assert type(llvm.types.array(llvm.types.i32(ctx), 2)).__name__ == "ArrayType"
@@ -115,7 +115,7 @@ def test_types_downcast_to_concrete_classes():
 
 
 def test_concrete_type_accessors():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         assert llvm.types.int(7, context=ctx).bit_width == 7
         assert llvm.types.ptr(3, context=ctx).address_space == 3
         a = llvm.types.array(llvm.types.i32(ctx), 4)
@@ -146,7 +146,7 @@ def test_concrete_type_accessors():
 
 
 def test_named_struct_set_body_and_name():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         named = llvm.types.named_struct("Pair", context=ctx)
         assert named.name == "Pair"
         assert named.is_opaque
