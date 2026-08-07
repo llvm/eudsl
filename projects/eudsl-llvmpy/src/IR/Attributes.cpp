@@ -8,17 +8,8 @@
 #include <llvm/IR/GlobalValue.h>
 
 void populate_attributes(nb::module_ &m) {
-  nb::enum_<llvm::GlobalValue::LinkageTypes>(m, "Linkage")
-      .value("EXTERNAL", llvm::GlobalValue::ExternalLinkage)
-      .value("INTERNAL", llvm::GlobalValue::InternalLinkage)
-      .value("PRIVATE", llvm::GlobalValue::PrivateLinkage)
-      .value("LINKONCE", llvm::GlobalValue::LinkOnceAnyLinkage)
-      .value("LINKONCE_ODR", llvm::GlobalValue::LinkOnceODRLinkage)
-      .value("WEAK", llvm::GlobalValue::WeakAnyLinkage)
-      .value("COMMON", llvm::GlobalValue::CommonLinkage)
-      .value("APPENDING", llvm::GlobalValue::AppendingLinkage)
-      .value("EXTERNAL_WEAK", llvm::GlobalValue::ExternalWeakLinkage);
-
+  // Linkage (GlobalValue::LinkageTypes) is bound with the GlobalValue hierarchy
+  // in Values.cpp, next to the Function/global classes that use it.
   nb::enum_<llvm::GlobalValue::VisibilityTypes>(m, "Visibility")
       .value("DEFAULT", llvm::GlobalValue::DefaultVisibility)
       .value("HIDDEN", llvm::GlobalValue::HiddenVisibility)
