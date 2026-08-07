@@ -2,7 +2,9 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import ast
+import sys
 
+from llvm.ast import canonicalize, util
 from llvm.ast import cf_transformers as T
 
 
@@ -88,8 +90,6 @@ def test_nested_if_in_body_forwards_tuple_yield():
 
 def test_canonicalize_module_imports_clean():
     # The vendored canonicalize/util import with no MLIR deps.
-    import sys
-    from llvm.ast import canonicalize, util  # noqa: F401
     assert hasattr(canonicalize, "canonicalize")
     assert hasattr(util, "get_module_cst")
     assert not any(
