@@ -15,7 +15,7 @@ from llvm.testing import assert_no_leaks
 
 
 def _entry(ctx, mod, ret_ty, arg_tys, name="f"):
-    fn = llvm.Function.create(llvm.function_t(ret_ty, arg_tys), name, mod)
+    fn = llvm.Function.create(llvm.types.function(ret_ty, arg_tys), name, mod)
     bb = fn.append_basic_block("entry")
     args = [maybe_downcast(fn.arg(i), fn) for i in range(len(arg_tys))]
     return fn, bb, args
@@ -24,7 +24,7 @@ def _entry(ctx, mod, ret_ty, arg_tys, name="f"):
 def test_all_binary_dunders():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32, f32 = llvm.i32(ctx), llvm.f32(ctx)
+        i32, f32 = llvm.types.i32(ctx), llvm.types.f32(ctx)
         fn, bb, (a, b) = _entry(ctx, mod, i32, [i32, i32])
         bld = llvm.IRBuilder(ctx)
         with bld.at_end_of(bb), building(bld):
@@ -43,7 +43,7 @@ def test_all_binary_dunders():
 def test_float_binary_and_compare():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        f32 = llvm.f32(ctx)
+        f32 = llvm.types.f32(ctx)
         fn, bb, (a, b) = _entry(ctx, mod, f32, [f32, f32])
         bld = llvm.IRBuilder(ctx)
         with bld.at_end_of(bb), building(bld):
@@ -66,8 +66,8 @@ def test_float_binary_and_compare():
 def test_int_le_ge_eq_ne():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        fn, bb, (a, b) = _entry(ctx, mod, llvm.i1(ctx), [i32, i32])
+        i32 = llvm.types.i32(ctx)
+        fn, bb, (a, b) = _entry(ctx, mod, llvm.types.i1(ctx), [i32, i32])
         bld = llvm.IRBuilder(ctx)
         with bld.at_end_of(bb), building(bld):
             _ = a <= b
@@ -84,7 +84,7 @@ def test_int_le_ge_eq_ne():
 def test_float_scalar_coercion():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        f32 = llvm.f32(ctx)
+        f32 = llvm.types.f32(ctx)
         fn, bb, (a,) = _entry(ctx, mod, f32, [f32])
         bld = llvm.IRBuilder(ctx)
         with bld.at_end_of(bb), building(bld):
@@ -97,9 +97,9 @@ def test_float_scalar_coercion():
 def test_insert_value_and_extract():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        st = llvm.struct_t(ctx, [i32, i32])
-        fn = llvm.Function.create(llvm.function_t(st, [st, i32]), "f", mod)
+        i32 = llvm.types.i32(ctx)
+        st = llvm.types.struct(ctx, [i32, i32])
+        fn = llvm.Function.create(llvm.types.function(st, [st, i32]), "f", mod)
         bb = fn.append_basic_block("entry")
         bld = llvm.IRBuilder(ctx)
         with bld.at_end_of(bb), building(bld):
@@ -120,11 +120,11 @@ def test_insert_extract_value_index_via_jit():
     # executing: a wrong or dropped index would return the other field.
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
-    st = llvm.struct_t(ctx, [i32, i32])
+    i32 = llvm.types.i32(ctx)
+    st = llvm.types.struct(ctx, [i32, i32])
 
     def build(name, idx):
-        fn = llvm.Function.create(llvm.function_t(i32, [i32, i32]), name, mod)
+        fn = llvm.Function.create(llvm.types.function(i32, [i32, i32]), name, mod)
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(fn.append_basic_block("entry")):
             agg = llvm.undef(st)
@@ -147,9 +147,9 @@ def test_insert_extract_value_index_via_jit():
 def test_typed_pointer_setitem_with_value_index():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         fn = llvm.Function.create(
-            llvm.function_t(llvm.void_t(ctx), [llvm.ptr_t(ctx), i32]), "f", mod
+            llvm.types.function(llvm.types.void(ctx), [llvm.types.ptr(ctx), i32]), "f", mod
         )
         bb = fn.append_basic_block("entry")
         bld = llvm.IRBuilder(ctx)
@@ -167,7 +167,7 @@ def test_maybe_downcast_no_caster_passthrough():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         # A void-typed value has no registered caster: returned unchanged.
-        fn = llvm.Function.create(llvm.function_t(llvm.void_t(ctx), []), "f", mod)
+        fn = llvm.Function.create(llvm.types.function(llvm.types.void(ctx), []), "f", mod)
         v = maybe_downcast(fn, fn)  # Function's type kind has no caster
         assert not isinstance(v, ArithValue)
         del fn, mod
@@ -185,9 +185,9 @@ def test_register_value_caster_decorator_form():
     # Exercise the decorator form and unregister afterward.
     sentinel = object()
 
-    @register_value_caster(llvm.TypeID.Void)
+    @register_value_caster(llvm.types.TypeID.Void)
     def _caster(v):  # pragma: no cover - not invoked, just registered
         return sentinel
 
-    assert _c._casters[llvm.TypeID.Void] is _caster
-    del _c._casters[llvm.TypeID.Void]
+    assert _c._casters[llvm.types.TypeID.Void] is _caster
+    del _c._casters[llvm.types.TypeID.Void]

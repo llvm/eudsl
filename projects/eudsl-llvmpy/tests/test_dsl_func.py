@@ -82,7 +82,7 @@ def test_varargs_declaration():
 def test_bad_annotation_raises():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         with pytest.raises(TypeError, match="cannot resolve type annotation"):
 
             @llvm.function(module=mod)
@@ -95,10 +95,10 @@ def test_bad_annotation_raises():
 def test_void_return_no_explicit_return():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
 
         @llvm.function(module=mod)
-        def store_it(p: llvm.ptr_t, v: i32) -> llvm.void_t:
+        def store_it(p: llvm.types.ptr, v: i32) -> llvm.types.void:
             tp = with_element_type(p, i32)
             tp[0] = v
             # no return -> ret void synthesized
@@ -112,7 +112,7 @@ def test_void_return_no_explicit_return():
 def test_calling_conv_option():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
 
         @llvm.function(module=mod, calling_conv=llvm.CallingConv.FAST)
         def f(x: i32) -> i32:
@@ -131,7 +131,7 @@ def test_function_without_closure():
         mod = llvm.Module("m", ctx)
 
         @llvm.function(module=mod)
-        def ident(x: llvm.i1) -> llvm.i1:
+        def ident(x: llvm.types.i1) -> llvm.types.i1:
             return x
 
         assert "define i1 @ident(i1 %0)" in str(mod)
@@ -142,7 +142,7 @@ def test_function_without_closure():
 def test_declaration_with_pass_body():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
 
         @llvm.function(module=mod)
         def extern2(a: i32) -> i32:
