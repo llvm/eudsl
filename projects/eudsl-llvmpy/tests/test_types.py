@@ -24,6 +24,11 @@ def test_type_predicates():
         assert not llvm.types.i32(ctx).is_floating_point
         assert llvm.types.f64(ctx).is_floating_point
         assert llvm.types.i32(ctx).is_sized
+        assert llvm.types.ptr(ctx).is_pointer
+        assert not llvm.types.i32(ctx).is_pointer
+        assert llvm.types.label(ctx).is_label
+        assert not llvm.types.i32(ctx).is_label
+        assert not llvm.types.void(ctx).is_integer
     assert_no_leaks()
 
 
@@ -34,12 +39,17 @@ def test_types_are_uniqued_and_hashable():
         # Types are interned per context, so two contexts give distinct types.
         assert llvm.types.i32(a) != llvm.types.i32(b)
         assert len({llvm.types.i32(a), llvm.types.i32(a), llvm.types.i64(a)}) == 2
+        # __eq__ falls back to False (rather than raising) against non-Type
+        # operands, so equality against unrelated Python objects works normally.
+        assert llvm.types.i32(a) != 5
+        assert llvm.types.i32(a) != "i32"
     assert_no_leaks()
 
 
 # Derived-type str() round-trips. Concrete-subclass accessors (.bit_width etc.)
-# and downcasting are validated in test_types_downcast (added with the Type
-# type_hook), since until the hook lands the factories return base Type objects.
+# and downcasting are validated in test_types_downcast_to_concrete_classes and
+# test_concrete_type_accessors, since the Type type_hook makes the factories
+# below return concrete-subclass instances rather than base Type objects.
 def test_derived_types_print():
     with llvm.Context() as ctx:
         assert str(llvm.types.int(ctx, 7)) == "i7"
@@ -68,8 +78,8 @@ def test_named_struct_prints_opaque():
     with llvm.Context() as ctx:
         named = llvm.types.named_struct(ctx, "Pair")
         # An opaque named struct prints its full definition. set_body and the
-        # concrete-subclass accessors are validated in test_types_downcast,
-        # once the Type type_hook makes named_struct_t return a StructType.
+        # concrete-subclass accessors are validated in
+        # test_named_struct_set_body_and_name.
         assert str(named) == "%Pair = type opaque"
     assert_no_leaks()
 
@@ -110,7 +120,12 @@ def test_concrete_type_accessors():
         v = llvm.types.vector(llvm.types.f32(ctx), 8)
         assert v.min_num_elements == 8
         assert not v.is_scalable
-        assert llvm.types.vector(llvm.types.f32(ctx), 8, scalable=True).is_scalable
+        assert v.element_type == llvm.types.f32(ctx)
+        fv = llvm.types.vector(llvm.types.i32(ctx), 3)
+        assert fv.num_elements == 3
+        sv = llvm.types.vector(llvm.types.f32(ctx), 8, scalable=True)
+        assert sv.is_scalable
+        assert sv.min_num_elements == 8
         s = llvm.types.struct(ctx, [llvm.types.i32(ctx), llvm.types.f64(ctx)])
         assert s.num_elements == 2
         assert s.element_type(1) == llvm.types.f64(ctx)
@@ -122,6 +137,7 @@ def test_concrete_type_accessors():
         assert ft.param_type(1) == llvm.types.f32(ctx)
         assert ft.params == [llvm.types.i32(ctx), llvm.types.f32(ctx)]
         assert not ft.is_var_arg
+        assert llvm.types.function(llvm.types.void(ctx), [], var_arg=True).is_var_arg
     assert_no_leaks()
 
 
@@ -133,4 +149,8 @@ def test_named_struct_set_body_and_name():
         named.set_body([llvm.types.i32(ctx), llvm.types.i32(ctx)])
         assert not named.is_opaque
         assert named.num_elements == 2
+        assert not named.is_packed
+        packed = llvm.types.named_struct(ctx, "Packed")
+        packed.set_body([llvm.types.i8(ctx), llvm.types.i32(ctx)], packed=True)
+        assert packed.is_packed
     assert_no_leaks()
