@@ -38,7 +38,6 @@ def test_leaked_module_is_detected_by_module_count():
     assert llvm.Context._get_live_count() == 0  # released
     assert llvm.Context._get_live_module_count() == 1  # but the module lives
     del leaked, ctx
-    gc.collect()
     assert_no_leaks()
 
 
