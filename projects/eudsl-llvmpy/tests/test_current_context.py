@@ -22,16 +22,16 @@ def test_current_context_stack():
 def test_implicit_context_factories():
     with llvm.Context() as ctx:
         # No explicit context -> uses the current one.
-        assert llvm.i32() == llvm.i32(ctx)
-        assert str(llvm.f32()) == "float"
-        assert str(llvm.void_t()) == "void"
-        assert llvm.i64().bit_width == 64
+        assert llvm.types.i32() == llvm.types.i32(ctx)
+        assert str(llvm.types.f32()) == "float"
+        assert str(llvm.types.void()) == "void"
+        assert llvm.types.i64().bit_width == 64
         # Explicit context still works and agrees.
-        assert llvm.f64() == llvm.f64(ctx)
+        assert llvm.types.f64() == llvm.types.f64(ctx)
         # Reordered multi-arg factories also default to the current context.
-        assert llvm.int_t(7) == llvm.int_t(7, context=ctx)
-        assert str(llvm.ptr_t()) == "ptr"
-        assert llvm.struct_t([llvm.i32()]).num_elements == 1
+        assert llvm.types.int(7) == llvm.types.int(7, context=ctx)
+        assert str(llvm.types.ptr()) == "ptr"
+        assert llvm.types.struct([llvm.types.i32()]).num_elements == 1
         assert "hi" in str(llvm.md_string("hi"))
     assert_no_leaks()
 
@@ -39,4 +39,4 @@ def test_implicit_context_factories():
 def test_no_current_context_raises():
     assert llvm.Context.current() is None
     with pytest.raises(RuntimeError, match="no context given and no current"):
-        llvm.i32()
+        llvm.types.i32()
