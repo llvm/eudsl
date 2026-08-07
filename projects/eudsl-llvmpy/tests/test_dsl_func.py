@@ -10,7 +10,7 @@ from llvm.testing import assert_no_leaks
 def test_declaration_has_no_body():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
 
         @llvm.function(module=mod)
         def extern(a: i32) -> i32: ...
@@ -25,7 +25,7 @@ def test_declaration_has_no_body():
 def test_call_between_functions_jits():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
     def inc(x: i32) -> i32:
@@ -46,7 +46,7 @@ def test_call_between_functions_jits():
 def test_function_options():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
 
         @llvm.function(
             module=mod,
@@ -66,10 +66,10 @@ def test_function_options():
 def test_varargs_declaration():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
 
         @llvm.function(module=mod, var_arg=True)
-        def printf_like(fmt: llvm.ptr_t(ctx)) -> i32: ...
+        def printf_like(fmt: llvm.types.ptr(ctx)) -> i32: ...
 
         assert "declare i32 @printf_like(ptr, ...)" in str(mod)
         del mod
