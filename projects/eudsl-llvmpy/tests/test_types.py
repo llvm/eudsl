@@ -91,7 +91,19 @@ def test_types_downcast_to_concrete_classes():
         assert type(llvm.types.i32(ctx)).__name__ == "IntegerType"
         assert type(llvm.types.ptr(context=ctx)).__name__ == "PointerType"
         assert type(llvm.types.array(llvm.types.i32(ctx), 2)).__name__ == "ArrayType"
-        assert type(llvm.types.vector(llvm.types.i32(ctx), 2)).__name__ == "VectorType"
+        # A non-scalable vector downcasts to FixedVectorType, a scalable one to
+        # ScalableVectorType; both are VectorType subclasses.
+        assert (
+            type(llvm.types.vector(llvm.types.i32(ctx), 2)).__name__
+            == "FixedVectorType"
+        )
+        assert (
+            type(llvm.types.vector(llvm.types.i32(ctx), 2, scalable=True)).__name__
+            == "ScalableVectorType"
+        )
+        assert isinstance(
+            llvm.types.vector(llvm.types.i32(ctx), 2), llvm.types.VectorType
+        )
         assert type(llvm.types.struct([llvm.types.i32(ctx)], context=ctx)).__name__ == "StructType"
         assert (
             type(llvm.types.function(llvm.types.void(ctx), [])).__name__ == "FunctionType"
