@@ -23,7 +23,7 @@ def test_const_int_signed_flag_is_currently_inert():
     # the resulting constant for any representable value. Pin that so a future
     # change to the flag's meaning is a visible, deliberate break.
     with llvm.Context() as ctx:
-        for ty in (llvm.i32(ctx), llvm.int_t(ctx, 128)):
+        for ty in (llvm.types.i32(ctx), llvm.types.int(ctx, 128)):
             for v in (-1, 7, 0):
                 a = llvm.const_int(ty, v, signed=True)
                 b = llvm.const_int(ty, v, signed=False)

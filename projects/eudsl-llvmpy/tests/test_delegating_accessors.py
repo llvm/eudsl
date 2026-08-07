@@ -34,8 +34,8 @@ _SRC = dedent(
 
 def test_type_is_pointer_and_is_label():
     with llvm.Context() as ctx:
-        assert llvm.ptr_t(ctx).is_pointer
-        assert not llvm.i32(ctx).is_pointer
+        assert llvm.types.ptr(ctx).is_pointer
+        assert not llvm.types.i32(ctx).is_pointer
         mod = llvm.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         # A basic block is a Value; its type is the label type.
@@ -47,7 +47,7 @@ def test_type_is_pointer_and_is_label():
 
 def test_vector_type_element_type():
     with llvm.Context() as ctx:
-        assert llvm.vector_t(llvm.f32(ctx), 8).element_type == llvm.f32(ctx)
+        assert llvm.types.vector(llvm.types.f32(ctx), 8).element_type == llvm.types.f32(ctx)
     assert_no_leaks()
 
 
@@ -55,7 +55,7 @@ def test_value_type_accessor():
     with llvm.Context() as ctx:
         mod = llvm.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
-        assert f.arg(0).type == llvm.i32(ctx)
+        assert f.arg(0).type == llvm.types.i32(ctx)
         del f, mod
     assert_no_leaks()
 
@@ -66,7 +66,7 @@ def test_replace_all_uses_with():
         f = mod.get_function("f")
         add = f.arg(0).users[0]  # %sum = add, used by the ret
         assert "ret i32 %sum" in str(mod)
-        zero = llvm.const_int(llvm.i32(ctx), 0)
+        zero = llvm.const_int(llvm.types.i32(ctx), 0)
         add.replace_all_uses_with(zero)
         # The ret now returns the constant; the (dead) add is untouched.
         assert "ret i32 0" in str(mod)
@@ -168,10 +168,10 @@ def test_global_variable_is_constant():
 def test_builder_binary_ops_and_insert_point():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        f32 = llvm.f32(ctx)
+        i32 = llvm.types.i32(ctx)
+        f32 = llvm.types.f32(ctx)
         fn = llvm.Function.create(
-            llvm.function_t(i32, [i32, i32, f32, f32]), "f", mod
+            llvm.types.function(i32, [i32, i32, f32, f32]), "f", mod
         )
         bb = fn.append_basic_block("entry")
         b = llvm.IRBuilder(ctx)
