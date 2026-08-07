@@ -9,7 +9,7 @@ from llvm.testing import assert_no_leaks
 
 
 def _entry(ctx, mod, ret_ty, arg_tys, name="f"):
-    fn = llvm.Function.create(llvm.function_t(ret_ty, arg_tys), name, mod)
+    fn = llvm.Function.create(llvm.types.function(ret_ty, arg_tys), name, mod)
     bb = fn.append_basic_block("entry")
     # Wrap args the way @function will, so integer/float args are ArithValue.
     args = [maybe_downcast(fn.arg(i), fn) for i in range(len(arg_tys))]
@@ -19,7 +19,7 @@ def _entry(ctx, mod, ret_ty, arg_tys, name="f"):
 def test_args_are_arithvalue():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         fn, bb, args = _entry(ctx, mod, i32, [i32])
         assert isinstance(args[0], ArithValue)
         del fn, mod
@@ -29,7 +29,7 @@ def test_args_are_arithvalue():
 def test_integer_add_and_mul():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         fn, bb, args = _entry(ctx, mod, i32, [i32, i32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
@@ -46,7 +46,7 @@ def test_integer_add_and_mul():
 def test_float_add_uses_fadd():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        f32 = llvm.f32(ctx)
+        f32 = llvm.types.f32(ctx)
         fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
@@ -59,7 +59,7 @@ def test_float_add_uses_fadd():
 def test_scalar_coercion():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         fn, bb, args = _entry(ctx, mod, i32, [i32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
@@ -72,8 +72,8 @@ def test_scalar_coercion():
 def test_integer_comparison_signed():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        fn, bb, args = _entry(ctx, mod, llvm.i1(ctx), [i32, i32])
+        i32 = llvm.types.i32(ctx)
+        fn, bb, args = _entry(ctx, mod, llvm.types.i1(ctx), [i32, i32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] < args[1])
@@ -85,8 +85,8 @@ def test_integer_comparison_signed():
 def test_float_comparison_ordered():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        f32 = llvm.f32(ctx)
-        fn, bb, args = _entry(ctx, mod, llvm.i1(ctx), [f32, f32])
+        f32 = llvm.types.f32(ctx)
+        fn, bb, args = _entry(ctx, mod, llvm.types.i1(ctx), [f32, f32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] > args[1])
@@ -98,8 +98,8 @@ def test_float_comparison_ordered():
 def test_eq_ne_named_methods():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        fn, bb, args = _entry(ctx, mod, llvm.i1(ctx), [i32, i32])
+        i32 = llvm.types.i32(ctx)
+        fn, bb, args = _entry(ctx, mod, llvm.types.i1(ctx), [i32, i32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0].eq(args[1]))
@@ -114,8 +114,8 @@ def test_eq_ne_named_methods():
 def test_gep_load_store_via_alloca():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        fn = llvm.Function.create(llvm.function_t(i32, []), "f", mod)
+        i32 = llvm.types.i32(ctx)
+        fn = llvm.Function.create(llvm.types.function(i32, []), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
@@ -135,8 +135,8 @@ def test_gep_load_store_via_alloca():
 def test_pointer_subscript_returns_arithvalue():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        fn = llvm.Function.create(llvm.function_t(i32, [llvm.ptr_t(ctx)]), "g", mod)
+        i32 = llvm.types.i32(ctx)
+        fn = llvm.Function.create(llvm.types.function(i32, [llvm.types.ptr(ctx)]), "g", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
@@ -154,9 +154,9 @@ def test_pointer_subscript_returns_arithvalue():
 def test_extract_value_from_struct_arg():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        st = llvm.struct_t(ctx, [i32, i32])
-        fn = llvm.Function.create(llvm.function_t(i32, [st]), "f", mod)
+        i32 = llvm.types.i32(ctx)
+        st = llvm.types.struct(ctx, [i32, i32])
+        fn = llvm.Function.create(llvm.types.function(i32, [st]), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):

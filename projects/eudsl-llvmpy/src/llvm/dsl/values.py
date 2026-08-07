@@ -14,12 +14,12 @@ chaining stays typed.
 
 from ..eudslllvm_ext import (
     Value,
-    TypeID,
     ICmpPredicate,
     FCmpPredicate,
     const_int,
     const_fp,
 )
+from ..eudslllvm_ext.types import TypeID
 from .casters import register_value_caster, maybe_downcast
 from .context import current_builder
 
