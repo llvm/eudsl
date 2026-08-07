@@ -8,6 +8,7 @@ import pytest
 import llvm
 from llvm.ast.canonicalize import canonicalize
 from llvm.dsl.cf import LLVMCanonicalizer
+from llvm.dsl.values import with_element_type
 from llvm.testing import assert_no_leaks
 
 
@@ -549,13 +550,12 @@ def test_for_negative_step_countdown_jits():
 
 def test_if_no_else_side_effect_only():
     # A single-branch if with no yielded result: side effect via store.
-    from llvm.dsl.values import with_element_type
-
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def clamp0(c: llvm.types.i1, p: llvm.types.ptr) -> i32:
         tp = with_element_type(p, i32)
         if c:
@@ -575,6 +575,7 @@ def test_elif_elif_three_way():
     i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def sign(x: i32) -> i32:
         if x < 0:
             r = yield llvm.const_int(i32, -1)
@@ -604,6 +605,7 @@ def test_while_two_carried_values():
 
     # Fibonacci-ish: iterate n times advancing (a, b) -> (b, a+b).
     @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def fib(n: i32) -> i32:
         a = llvm.const_int(i32, 0)
         b = llvm.const_int(i32, 1)
@@ -631,6 +633,7 @@ def test_for_with_step_and_two_carried():
 
     # Sum every other value in [0, n) and count how many; step 2.
     @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def strided(n: i32) -> i32:
         acc = llvm.const_int(i32, 0)
         cnt = llvm.const_int(i32, 0)
@@ -655,6 +658,7 @@ def test_for_result_used_after_loop():
     i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def total_plus_one(n: i32) -> i32:
         acc = llvm.const_int(i32, 0)
         for i in range_(0, n):
@@ -676,6 +680,7 @@ def test_for_mixed_start_stop():
     i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def sum_range(lo: i32, hi: i32) -> i32:
         acc = llvm.const_int(i32, 0)
         for i in range_(lo, hi):
