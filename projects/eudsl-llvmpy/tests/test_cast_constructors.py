@@ -43,12 +43,12 @@ _SRC = dedent(
 def test_type_cast_constructors():
     with llvm.Context() as ctx:
         cases = [
-            (llvm.IntegerType, llvm.i32(ctx)),
-            (llvm.PointerType, llvm.ptr_t(ctx)),
-            (llvm.StructType, llvm.struct_t(ctx, [llvm.i32(ctx)])),
-            (llvm.ArrayType, llvm.array_t(llvm.i32(ctx), 2)),
-            (llvm.VectorType, llvm.vector_t(llvm.i32(ctx), 2)),
-            (llvm.FunctionType, llvm.function_t(llvm.void_t(ctx), [])),
+            (llvm.types.IntegerType, llvm.types.i32(ctx)),
+            (llvm.types.PointerType, llvm.types.ptr(ctx)),
+            (llvm.types.StructType, llvm.types.struct(ctx, [llvm.types.i32(ctx)])),
+            (llvm.types.ArrayType, llvm.types.array(llvm.types.i32(ctx), 2)),
+            (llvm.types.VectorType, llvm.types.vector(llvm.types.i32(ctx), 2)),
+            (llvm.types.FunctionType, llvm.types.function(llvm.types.void(ctx), [])),
         ]
         for cls, ty in cases:
             narrowed = cls(ty)  # cast from the base Type handle
@@ -56,7 +56,7 @@ def test_type_cast_constructors():
             assert narrowed == ty
         # Mismatch raises ValueError (shared throw path for every cast ctor).
         with pytest.raises(ValueError, match="is not a"):
-            llvm.IntegerType(llvm.ptr_t(ctx))
+            llvm.types.IntegerType(llvm.types.ptr(ctx))
     assert_no_leaks()
 
 
@@ -102,8 +102,8 @@ def test_value_cast_constructors():
             (llvm.ReturnInst, ret),
             (llvm.CondBrInst, entry.terminator),
             (llvm.UncondBrInst, a_block.terminator),
-            (llvm.ConstantInt, llvm.const_int(llvm.i32(ctx), 1)),
-            (llvm.ConstantFP, llvm.const_fp(llvm.f32(ctx), 1.0)),
+            (llvm.ConstantInt, llvm.const_int(llvm.types.i32(ctx), 1)),
+            (llvm.ConstantFP, llvm.const_fp(llvm.types.f32(ctx), 1.0)),
             (llvm.GlobalVariable, gvar),
         ]
         for cls, val in cases:
