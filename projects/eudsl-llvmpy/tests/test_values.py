@@ -103,3 +103,69 @@ def test_function_create_linkage():
         assert "define internal void @priv" in str(mod)
         del fn, mod
     assert_no_leaks()
+
+
+def test_entry_block_and_terminator_are_none_when_absent():
+    # entry_block (Function -> BasicBlock*) and terminator
+    # (BasicBlock -> Instruction*) can both return null on the C++ side; the
+    # Value type_hook must map that null to None rather than dereferencing it.
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly("declare void @g()\n", ctx, "m")
+        g = mod.get_function("g")
+        assert g.entry_block is None
+        ft = llvm.types.function(llvm.types.void(ctx), [])
+        fn = llvm.Function.create(ft, "h", mod)
+        bb = fn.append_basic_block("entry")
+        assert bb.terminator is None
+        del g, fn, bb, mod
+    assert_no_leaks()
+
+
+def test_replace_all_uses_with():
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        f = mod.get_function("f")
+        x, y = f.arg(0), f.arg(1)
+        assert x.num_uses == 1
+        assert y.num_uses == 1
+        x.replace_all_uses_with(y)
+        assert x.num_uses == 0
+        assert y.num_uses == 2
+        del f, x, y, mod
+    assert_no_leaks()
+
+
+def test_value_name_setter():
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        f = mod.get_function("f")
+        x = f.arg(0)
+        x.name = "renamed"
+        assert x.name == "renamed"
+        assert "%renamed" in str(mod)
+        del f, x, mod
+    assert_no_leaks()
+
+
+def test_instruction_base_accessors():
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        f = mod.get_function("f")
+        entry = f.entry_block
+        add, ret = entry.instructions
+        assert not add.is_terminator
+        assert ret.is_terminator
+        assert add.parent == entry
+        assert ret.num_successors == 0
+        del f, entry, add, ret, mod
+    assert_no_leaks()
+
+
+def test_function_type_accessor():
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        f = mod.get_function("f")
+        assert f.function_type.num_params == 2
+        assert str(f.function_type.return_type) == "i32"
+        del f, mod
+    assert_no_leaks()
