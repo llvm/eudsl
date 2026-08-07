@@ -37,7 +37,5 @@ def test_intrinsics_getattr_shim():
 
 
 def test_intrinsics_shim_unknown_raises():
-    import llvm.intrinsics
-
     with pytest.raises(AttributeError, match="unknown intrinsic"):
         llvm.intrinsics.definitely_not_an_intrinsic
