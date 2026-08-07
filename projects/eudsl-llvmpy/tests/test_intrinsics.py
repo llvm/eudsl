@@ -16,7 +16,7 @@ def test_get_overloaded_declaration():
         mod = llvm.Module("m", ctx)
         sqrt_id = llvm.lookup_intrinsic_id("llvm.sqrt")
         assert llvm.intrinsic_is_overloaded(sqrt_id)
-        f32 = llvm.f32(ctx)
+        f32 = llvm.types.f32(ctx)
         decl = llvm.get_intrinsic_declaration(mod, sqrt_id, [f32])
         assert decl.name == "llvm.sqrt.f32"
         assert "declare float @llvm.sqrt.f32(float)" in str(mod)
@@ -27,7 +27,7 @@ def test_get_overloaded_declaration():
 def test_intrinsics_getattr_shim():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        f64 = llvm.f64(ctx)
+        f64 = llvm.types.f64(ctx)
         decl = llvm.intrinsics.sqrt(mod, [f64])
         assert decl.name == "llvm.sqrt.f64"
         del decl, mod
