@@ -255,8 +255,8 @@ def test_integer_gt_uses_sgt():
     # The int path of __gt__ is otherwise only used on floats (-> OGT); pin SGT.
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        fn, bb, args = _entry(ctx, mod, llvm.i1(ctx), [i32, i32])
+        i32 = llvm.types.i32(ctx)
+        fn, bb, args = _entry(ctx, mod, llvm.types.i1(ctx), [i32, i32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] > args[1])
@@ -269,8 +269,8 @@ def test_float_lt_uses_olt():
     # The float path of __lt__ is otherwise only used on ints (-> SLT); pin OLT.
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        f32 = llvm.f32(ctx)
-        fn, bb, args = _entry(ctx, mod, llvm.i1(ctx), [f32, f32])
+        f32 = llvm.types.f32(ctx)
+        fn, bb, args = _entry(ctx, mod, llvm.types.i1(ctx), [f32, f32])
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] < args[1])
@@ -282,7 +282,7 @@ def test_float_lt_uses_olt():
 def test_double_and_half_are_arithvalue():
     # The float caster is registered for Half/Double too, not just Float.
     with llvm.Context() as ctx:
-        for ty, want in ((llvm.f64(ctx), "fadd double"), (llvm.f16(ctx), "fadd half")):
+        for ty, want in ((llvm.types.f64(ctx), "fadd double"), (llvm.types.f16(ctx), "fadd half")):
             mod = llvm.Module("m", ctx)
             fn, bb, args = _entry(ctx, mod, ty, [ty, ty])
             b = llvm.IRBuilder(ctx)

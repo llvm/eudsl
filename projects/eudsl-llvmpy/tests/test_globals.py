@@ -8,7 +8,7 @@ from llvm.testing import assert_no_leaks
 def test_add_global_with_initializer():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         g = mod.add_global(i32, "counter", llvm.const_int(i32, 7))
         assert type(g).__name__ == "GlobalVariable"
         assert g.name == "counter"
@@ -22,7 +22,7 @@ def test_add_global_with_initializer():
 def test_add_global_external_and_get_global_miss():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         # No initializer -> external declaration (the init=None default path).
         g = mod.add_global(i32, "ext")
         assert g.initializer is None
@@ -33,7 +33,7 @@ def test_add_global_external_and_get_global_miss():
     assert_no_leaks()
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
         g = mod.add_global(
             i32, "ro", llvm.const_int(i32, 1), constant=True, address_space=1
         )
