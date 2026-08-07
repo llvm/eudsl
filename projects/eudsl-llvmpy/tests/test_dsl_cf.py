@@ -4,6 +4,7 @@
 import ctypes
 
 import llvm
+from llvm.dsl.values import with_element_type
 from llvm.testing import assert_no_leaks
 
 
@@ -156,8 +157,6 @@ def test_if_else_multiple_results():
 
 def test_if_no_else_side_effect_only():
     # A single-branch if with no yielded result: side effect via store.
-    from llvm.dsl.values import with_element_type
-
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
     i32 = llvm.i32(ctx)
