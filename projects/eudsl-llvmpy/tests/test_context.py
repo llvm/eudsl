@@ -14,15 +14,13 @@ def test_context_is_counted():
     ctx = llvm.Context()
     assert llvm.Context._get_live_count() == 1
     del ctx
-    gc.collect()
-    assert llvm.Context._get_live_count() == 0
+    assert_no_leaks()
 
 
 def test_nested_contexts_are_counted():
     with llvm.Context() as a, llvm.Context() as b:
         assert a is not b
         assert llvm.Context._get_live_count() == 2
-    gc.collect()
     assert_no_leaks()
 
 
@@ -33,20 +31,18 @@ def test_module_keeps_context_alive():
     gc.collect()
     # The module's keep_alive kept the context object alive, so this is safe.
     assert llvm.Context._get_live_count() == 1
-    assert mod.name == "m"
+    assert mod.module_identifier == "m"
     del mod
-    gc.collect()
     assert_no_leaks()
 
 
 def test_module_rename():
     with llvm.Context() as ctx:
         mod = llvm.Module("before", ctx)
-        mod.name = "after"
-        assert mod.name == "after"
+        mod.module_identifier = "after"
+        assert mod.module_identifier == "after"
         assert "ModuleID = 'after'" in str(mod)
         del mod
-    gc.collect()
     assert_no_leaks()
 
 
@@ -57,9 +53,8 @@ def test_consumed_module_raises_instead_of_crashing():
         mod._take()
         assert mod._is_consumed is True
         with pytest.raises(RuntimeError, match="has been consumed"):
-            _ = mod.name
+            _ = mod.module_identifier
         with pytest.raises(RuntimeError, match="has been consumed"):
             str(mod)
         del mod
-    gc.collect()
     assert_no_leaks()

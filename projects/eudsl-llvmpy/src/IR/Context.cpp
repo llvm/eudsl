@@ -33,10 +33,15 @@ void populate_context(nb::module_ &m) {
       .def(nb::init<const std::string &, eudsl::Context &>(), "name"_a,
            "context"_a, nb::keep_alive<1, 3>())
       .def_prop_rw(
-          "name",
+          "module_identifier",
           [](eudsl::Module &self) { return self.get().getModuleIdentifier(); },
+          [](eudsl::Module &self, const std::string &id) {
+            self.get().setModuleIdentifier(id);
+          })
+      .def_prop_rw(
+          "source_filename",
+          [](eudsl::Module &self) { return self.get().getSourceFileName(); },
           [](eudsl::Module &self, const std::string &name) {
-            self.get().setModuleIdentifier(name);
             self.get().setSourceFileName(name);
           })
       .def_prop_ro("_is_consumed", &eudsl::Module::isConsumed)
@@ -71,7 +76,6 @@ void populate_context(nb::module_ &m) {
           throw std::runtime_error(msg);
         }
         mod->setModuleIdentifier(name);
-        mod->setSourceFileName(name);
         return new eudsl::Module(std::move(mod), ctx);
       },
       "ir"_a, "context"_a, "name"_a = "<string>", nb::keep_alive<0, 2>(),

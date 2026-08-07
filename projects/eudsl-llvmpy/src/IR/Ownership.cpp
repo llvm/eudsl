@@ -38,10 +38,11 @@ Module::Module(std::unique_ptr<llvm::Module> m, Context &ctx)
     : mod(std::move(m)), owner(&ctx) {}
 
 llvm::Module &Module::get() const {
-  if (!mod)
+  if (!mod) {
     throw std::runtime_error(
         "module has been consumed (moved into the JIT) and can no longer be "
         "used");
+  }
   return *mod;
 }
 

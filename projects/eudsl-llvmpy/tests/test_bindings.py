@@ -1,18 +1,19 @@
 #  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-import gc
 from textwrap import dedent
 
+import eudsl_tblgen  # noqa: F401
+
 import llvm
+from llvm.testing import assert_no_leaks
 
 
 def test_symbol_collision():
     # eudsl-tblgen is a separate extension in a different nanobind domain;
-    # importing both must not clash.
-    import eudsl_tblgen  # noqa: F401
-
-    import llvm  # noqa: F401
+    # importing both (done at module scope above) must not clash.
+    assert eudsl_tblgen is not None
+    assert llvm is not None
 
 
 def test_smoke():
@@ -39,10 +40,9 @@ def test_smoke():
     )
     with llvm.Context() as ctx:
         mod = llvm.parse_assembly(src, ctx, "test_smoke")
-        assert mod.name == "test_smoke"
+        assert mod.module_identifier == "test_smoke"
         printed = str(mod)
         assert "define i32 @entry(i32 %argc)" in printed
         assert "phi i32" in printed
         del mod
-    gc.collect()
-    assert llvm.Context._get_live_count() == 0
+    assert_no_leaks()
