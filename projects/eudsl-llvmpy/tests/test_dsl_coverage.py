@@ -7,6 +7,7 @@ import ctypes
 import pytest
 
 import llvm
+from llvm.dsl import casters as _c
 from llvm.dsl.casters import maybe_downcast, register_value_caster
 from llvm.dsl.context import building, current_builder, current_function
 from llvm.dsl.values import ArithValue, with_element_type, extract
@@ -117,8 +118,6 @@ def test_insert_value_and_extract():
 def test_insert_extract_value_index_via_jit():
     # Pin the index argument of insert_value/extract_value at BOTH 0 and 1 by
     # executing: a wrong or dropped index would return the other field.
-    import ctypes
-
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
     i32 = llvm.i32(ctx)
@@ -184,8 +183,6 @@ def test_current_builder_and_function_raise_outside_context():
 
 def test_register_value_caster_decorator_form():
     # Exercise the decorator form and unregister afterward.
-    from llvm.dsl import casters as _c
-
     sentinel = object()
 
     @register_value_caster(llvm.TypeID.Void)

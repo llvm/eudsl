@@ -6,6 +6,7 @@ import ctypes
 import pytest
 
 import llvm
+from llvm.dsl.values import with_element_type
 from llvm.testing import assert_no_leaks
 
 
@@ -98,8 +99,6 @@ def test_void_return_no_explicit_return():
 
         @llvm.function(module=mod)
         def store_it(p: llvm.ptr_t, v: i32) -> llvm.void_t:
-            from llvm.dsl.values import with_element_type
-
             tp = with_element_type(p, i32)
             tp[0] = v
             # no return -> ret void synthesized

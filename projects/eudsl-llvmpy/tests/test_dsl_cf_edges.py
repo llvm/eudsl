@@ -8,6 +8,7 @@ import pytest
 
 import llvm
 from llvm.dsl.cf import range_
+from llvm.dsl.values import with_element_type
 from llvm.testing import assert_no_leaks
 
 
@@ -34,8 +35,6 @@ def test_range_single_arg():
 
 def test_for_side_effect_bare_yield():
     # No loop-carried values: body ends with a bare `yield`; stores into a ptr.
-    from llvm.dsl.values import with_element_type
-
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
     i32 = llvm.i32(ctx)
