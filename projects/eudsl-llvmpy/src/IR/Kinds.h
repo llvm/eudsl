@@ -20,7 +20,6 @@
 
 #include <nanobind/nanobind.h>
 
-#include <cassert>
 #include <typeinfo>
 
 namespace eudsl {
@@ -30,16 +29,14 @@ const std::type_info *valueTypeInfo(unsigned valueID);
 
 template <> struct nanobind::detail::type_hook<llvm::Type> {
   static const std::type_info *get(llvm::Type *t) {
-    // nanobind resolves a null pointer to None before consulting the hook, so
-    // a non-null argument is an invariant here.
-    assert(t && "type_hook<llvm::Type> invoked with a null pointer");
-    return eudsl::typeTypeInfo(t->getTypeID());
+    // The hook IS consulted for null pointers (a null-returning accessor that
+    // nanobind renders as None), so map null to the base type.
+    return t ? eudsl::typeTypeInfo(t->getTypeID()) : &typeid(llvm::Type);
   }
 };
 
 template <> struct nanobind::detail::type_hook<llvm::Value> {
   static const std::type_info *get(llvm::Value *v) {
-    assert(v && "type_hook<llvm::Value> invoked with a null pointer");
-    return eudsl::valueTypeInfo(v->getValueID());
+    return v ? eudsl::valueTypeInfo(v->getValueID()) : &typeid(llvm::Value);
   }
 };
