@@ -87,7 +87,7 @@ def test_value_users_and_operands():
 def test_append_basic_block():
     with llvm.Context() as ctx:
         mod = llvm.parse_assembly("declare void @g()\n", ctx, "m")
-        ft = llvm.function_t(llvm.void_t(ctx), [])
+        ft = llvm.types.function(llvm.types.void(ctx), [])
         fn = llvm.Function.create(ft, "h", mod)
         bb = fn.append_basic_block("entry")
         assert bb.name == "entry"
