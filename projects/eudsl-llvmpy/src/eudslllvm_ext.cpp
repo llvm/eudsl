@@ -26,21 +26,36 @@ void populate_intrinsics(nb::module_ &m);
 
 NB_MODULE(eudslllvm_ext, m) {
   m.doc() = "Hand-written nanobind bindings over the LLVM C++ IR API.";
-  eudsl::registerExceptions(m);
-  populate_context(m);
-  populate_sequences(m);
-  populate_casters(m);
-  populate_attributes(m);
+
+  // llvm.ir -- the IR-core submodule (Context/Module, the Value and Constant
+  // hierarchies, instructions, metadata, IRBuilder, attribute enums, errors).
+  nb::module_ ir = m.def_submodule("ir");
+  eudsl::registerExceptions(ir);
+  populate_context(ir);
+  populate_sequences(ir);
+  populate_casters(ir);
+  populate_attributes(ir);
+  populate_values(ir);
+  populate_instructions(ir);
+  populate_constants(ir);
+  populate_metadata(ir);
+  populate_builder(ir);
+
+  // llvm.types -- the Type hierarchy and type factories.
   nb::module_ types = m.def_submodule("types");
   populate_types(types);
-  populate_values(m);
-  populate_instructions(m);
-  populate_constants(m);
-  populate_metadata(m);
-  populate_builder(m);
-  populate_passes(m);
-  populate_target(m);
-  populate_linker(m);
-  populate_jit(m);
-  populate_intrinsics(m);
+
+  // llvm.passmanager -- pass pipeline execution.
+  nb::module_ passmanager = m.def_submodule("passmanager");
+  populate_passes(passmanager);
+
+  // llvm.jit -- codegen and execution: target machine, linker, ORC JIT.
+  nb::module_ jit = m.def_submodule("jit");
+  populate_target(jit);
+  populate_linker(jit);
+  populate_jit(jit);
+
+  // llvm.intrinsics -- intrinsic lookup and declaration.
+  nb::module_ intrinsics = m.def_submodule("intrinsics");
+  populate_intrinsics(intrinsics);
 }
