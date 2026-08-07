@@ -43,13 +43,6 @@ inline void unwrap(llvm::Error &&e) {
     throw std::runtime_error(llvm::toString(std::move(e)));
 }
 
-/// Fetch an already-registered nanobind class so a later translation unit can
-/// add methods to it. Used because the Value hierarchy is registered as a spine
-/// in Values.cpp and filled in by Instructions.cpp / Constants.cpp.
-template <typename T> nb::class_<T> reopen() {
-  return nb::borrow<nb::class_<T>>(nb::type<T>());
-}
-
 } // namespace eudsl
 
 // Pulled in here so every translation unit that returns an llvm::Type* or

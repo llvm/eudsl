@@ -18,10 +18,7 @@ _SRC = dedent(
 
 
 def test_value_and_user_registered():
-    # Value/User accessors only become reachable once a Value can be obtained
-    # from Python (functions()/traversal in Task 9). This test confirms
-    # populate_values did not break module round-tripping and that the classes
-    # exist on the module.
+    # The Value/User classes are registered and module round-tripping works.
     assert hasattr(llvm, "Value")
     assert hasattr(llvm, "User")
     with llvm.Context() as ctx:
@@ -76,8 +73,6 @@ def test_value_users_and_operands():
         # %x is used by the add.
         assert x.num_uses == 1
         add = x.users[0]
-        # Concrete opcode downcast (BinaryOperator) activates in Task 10; here
-        # the add arrives as a registered base (User/Instruction).
         assert add.num_operands == 2
         assert add.operand(0) == x
         del f, x, add, mod
@@ -94,4 +89,17 @@ def test_append_basic_block():
         assert fn.entry_block == bb
         assert bb.parent == fn
         del fn, bb, mod
+    assert_no_leaks()
+
+
+def test_function_create_linkage():
+    # Function.create takes a linkage argument (default external); selecting
+    # internal linkage is reflected in the printed IR.
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        ft = llvm.types.function(llvm.types.void(ctx), [])
+        fn = llvm.Function.create(ft, "priv", mod, linkage=llvm.Linkage.INTERNAL)
+        fn.append_basic_block("entry")
+        assert "define internal void @priv" in str(mod)
+        del fn, mod
     assert_no_leaks()

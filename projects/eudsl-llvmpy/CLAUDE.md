@@ -14,6 +14,22 @@ both. Do not collapse them into one `name`, and do not set the source filename
 as a side effect of setting the identifier. If a rename genuinely seems
 worthwhile, raise it rather than doing it silently.
 
+## Bind the full API; do not hardcode assumptions
+
+Expose the LLVM API's parameters to the user rather than fixing them to a
+default in C++. For example, `Function.create` takes a `linkage` argument
+(defaulting to `ExternalLinkage`) instead of hardcoding the linkage; likewise
+for calling convention, visibility, address space, and similar. If a binding
+would silently bake in one choice from a set the LLVM API offers, surface that
+choice as an argument.
+
+## No forward-reference comments
+
+Do not write comments that reference future work, later PRs, or task numbers
+("added in Task 10", "activates once X lands"). They go stale as the stack is
+rebased and squash-merged. Describe what the code does now; if something is
+intentionally a stub, say so without pointing at a future commit.
+
 ## C++ coding style (LLVM)
 
 Follow the LLVM coding standards. A conditional takes braces whenever its

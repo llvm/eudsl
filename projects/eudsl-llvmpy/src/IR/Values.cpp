@@ -58,12 +58,27 @@ void populate_values(nb::module_ &m) {
         return out;
       });
 
-  // Structural spine of the Value hierarchy. Leaf method bindings are added by
-  // Tasks 9-11, which reopen these classes via reopen<T>(). Registering them
-  // here lets the Value type_hook name them without raising.
+  // Structural spine of the Value hierarchy. These base classes are registered
+  // bare so the concrete subclasses bound in Instructions.cpp / Constants.cpp
+  // can name them as their nanobind base, and so the Value type_hook can name
+  // them without raising.
   nb::class_<llvm::Constant, llvm::User>(m, "Constant");
   nb::class_<llvm::GlobalValue, llvm::Constant>(m, "GlobalValue");
   nb::class_<llvm::GlobalObject, llvm::GlobalValue>(m, "GlobalObject");
+
+  // GlobalValue linkage kinds (llvm::GlobalValue::LinkageTypes). Bound with the
+  // GlobalValue hierarchy so Function.create and the global factories can take a
+  // linkage argument rather than hardcoding one.
+  nb::enum_<llvm::GlobalValue::LinkageTypes>(m, "Linkage")
+      .value("EXTERNAL", llvm::GlobalValue::ExternalLinkage)
+      .value("INTERNAL", llvm::GlobalValue::InternalLinkage)
+      .value("PRIVATE", llvm::GlobalValue::PrivateLinkage)
+      .value("LINKONCE", llvm::GlobalValue::LinkOnceAnyLinkage)
+      .value("LINKONCE_ODR", llvm::GlobalValue::LinkOnceODRLinkage)
+      .value("WEAK", llvm::GlobalValue::WeakAnyLinkage)
+      .value("COMMON", llvm::GlobalValue::CommonLinkage)
+      .value("APPENDING", llvm::GlobalValue::AppendingLinkage)
+      .value("EXTERNAL_WEAK", llvm::GlobalValue::ExternalWeakLinkage);
   nb::class_<llvm::Instruction, llvm::User>(m, "Instruction")
       .def_prop_ro("num_successors",
                    [](llvm::Instruction &self) {
@@ -110,12 +125,12 @@ void populate_values(nb::module_ &m) {
       .def_static(
           "create",
           [](llvm::FunctionType *ft, const std::string &name,
-             eudsl::Module &mod) {
-            return llvm::Function::Create(
-                ft, llvm::GlobalValue::ExternalLinkage, name, mod.get());
+             eudsl::Module &mod, llvm::GlobalValue::LinkageTypes linkage) {
+            return llvm::Function::Create(ft, linkage, name, mod.get());
           },
-          "function_type"_a, "name"_a, "module"_a, nb::rv_policy::reference,
-          nb::keep_alive<0, 3>())
+          "function_type"_a, "name"_a, "module"_a,
+          "linkage"_a = llvm::GlobalValue::ExternalLinkage,
+          nb::rv_policy::reference, nb::keep_alive<0, 3>())
       .def_prop_ro("function_type", &llvm::Function::getFunctionType,
                    nb::rv_policy::reference_internal)
       .def_prop_ro("return_type", &llvm::Function::getReturnType,
