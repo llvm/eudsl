@@ -8,8 +8,8 @@ from llvm.testing import assert_no_leaks
 def test_build_add_function():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        fn = llvm.Function.create(llvm.function_t(i32, [i32, i32]), "add2", mod)
+        i32 = llvm.types.i32(ctx)
+        fn = llvm.Function.create(llvm.types.function(i32, [i32, i32]), "add2", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb):
@@ -26,9 +26,9 @@ def test_build_add_function():
 def test_build_conditional_with_phi():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        i1 = llvm.i1(ctx)
-        fn = llvm.Function.create(llvm.function_t(i32, [i1]), "sel", mod)
+        i32 = llvm.types.i32(ctx)
+        i1 = llvm.types.i1(ctx)
+        fn = llvm.Function.create(llvm.types.function(i32, [i1]), "sel", mod)
         entry = fn.append_basic_block("entry")
         a = fn.append_basic_block("a")
         b_ = fn.append_basic_block("b")
@@ -54,8 +54,8 @@ def test_build_conditional_with_phi():
 def test_alloca_load_store():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
-        fn = llvm.Function.create(llvm.function_t(i32, []), "f", mod)
+        i32 = llvm.types.i32(ctx)
+        fn = llvm.Function.create(llvm.types.function(i32, []), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb):
