@@ -3,6 +3,7 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import ast
 
+from llvm.ast import canonicalize, util
 from llvm.ast import cf_transformers as T
 
 
@@ -42,6 +43,5 @@ def test_no_else_still_yields():
 
 def test_canonicalize_module_imports_clean():
     # The vendored canonicalize/util import with no MLIR deps.
-    from llvm.ast import canonicalize, util  # noqa: F401
     assert hasattr(canonicalize, "canonicalize")
     assert hasattr(util, "get_module_cst")
