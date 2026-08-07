@@ -31,7 +31,7 @@ binds to the phi that `return r` uses.
 
 from contextlib import contextmanager
 
-from ..eudslllvm_ext import Value, const_int
+from ..eudslllvm_ext.ir import Value, const_int
 from ..ast.canonicalize import Canonicalizer, FunctionPatcher
 from ..ast import cf_transformers as _T
 from .casters import maybe_downcast

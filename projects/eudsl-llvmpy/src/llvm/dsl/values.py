@@ -12,7 +12,7 @@ constants of the other operand's type; results are re-wrapped as ArithValue so
 chaining stays typed.
 """
 
-from ..eudslllvm_ext import (
+from ..eudslllvm_ext.ir import (
     Value,
     ICmpPredicate,
     FCmpPredicate,

@@ -14,7 +14,7 @@ references at interpreter-shutdown time. C++ provides only the stateless
 `_wrap_value_as` primitive (nb::inst_reference).
 """
 
-from ..eudslllvm_ext import Value, _wrap_value_as
+from ..eudslllvm_ext.ir import Value, _wrap_value_as
 
 # Type.type_id (a TypeID enum value) -> caster callable.
 _casters: dict = {}
