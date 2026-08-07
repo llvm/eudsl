@@ -8,11 +8,6 @@
 
 namespace eudsl {
 
-const std::type_info *pick(const std::type_info *concrete,
-                           const std::type_info *base) {
-  return nanobind::detail::nb_type_lookup(concrete) ? concrete : base;
-}
-
 const std::type_info *typeTypeInfo(llvm::Type::TypeID id) {
   switch (id) {
   case llvm::Type::IntegerTyID:
@@ -26,8 +21,9 @@ const std::type_info *typeTypeInfo(llvm::Type::TypeID id) {
   case llvm::Type::ArrayTyID:
     return &typeid(llvm::ArrayType);
   case llvm::Type::FixedVectorTyID:
+    return &typeid(llvm::FixedVectorType);
   case llvm::Type::ScalableVectorTyID:
-    return &typeid(llvm::VectorType);
+    return &typeid(llvm::ScalableVectorType);
   default:
     // Void, Label, Metadata, Token, the float kinds, TypedPointer and
     // TargetExtType have no bound subclass; they stay llvm::Type.

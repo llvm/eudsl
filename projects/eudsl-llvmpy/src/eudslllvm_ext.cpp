@@ -12,5 +12,6 @@ void populate_types(nb::module_ &m);
 NB_MODULE(eudslllvm_ext, m) {
   m.doc() = "Hand-written nanobind bindings over the LLVM C++ IR API.";
   populate_context(m);
-  populate_types(m);
+  nb::module_ types = m.def_submodule("types");
+  populate_types(types);
 }

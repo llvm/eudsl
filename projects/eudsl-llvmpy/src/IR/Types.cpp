@@ -49,8 +49,8 @@ void populate_types(nb::module_ &m) {
       },                                                                       \
       "context"_a, nb::rv_policy::reference, nb::keep_alive<0, 1>())
 
-  EUDSL_PRIMITIVE_TYPE("void_t", getVoidTy);
-  EUDSL_PRIMITIVE_TYPE("label_t", getLabelTy);
+  EUDSL_PRIMITIVE_TYPE("void", getVoidTy);
+  EUDSL_PRIMITIVE_TYPE("label", getLabelTy);
   EUDSL_PRIMITIVE_TYPE("i1", getInt1Ty);
   EUDSL_PRIMITIVE_TYPE("i8", getInt8Ty);
   EUDSL_PRIMITIVE_TYPE("i16", getInt16Ty);
@@ -102,6 +102,13 @@ void populate_types(nb::module_ &m) {
       .def_prop_ro("element_type", &llvm::VectorType::getElementType,
                    nb::rv_policy::reference);
 
+  nb::class_<llvm::FixedVectorType, llvm::VectorType>(m, "FixedVectorType")
+      .def_prop_ro("num_elements", &llvm::FixedVectorType::getNumElements);
+
+  nb::class_<llvm::ScalableVectorType, llvm::VectorType>(m, "ScalableVectorType")
+      .def_prop_ro("min_num_elements",
+                   &llvm::ScalableVectorType::getMinNumElements);
+
   nb::class_<llvm::FunctionType, llvm::Type>(m, "FunctionType")
       .def_prop_ro("return_type", &llvm::FunctionType::getReturnType,
                    nb::rv_policy::reference)
@@ -116,20 +123,20 @@ void populate_types(nb::module_ &m) {
       .def_prop_ro("is_var_arg", &llvm::FunctionType::isVarArg);
 
   m.def(
-      "int_t",
+      "int",
       [](eudsl::Context &ctx, unsigned bits) -> llvm::Type * {
         return llvm::IntegerType::get(ctx.get(), bits);
       },
       "context"_a, "bits"_a, nb::rv_policy::reference, nb::keep_alive<0, 1>());
   m.def(
-      "ptr_t",
+      "ptr",
       [](eudsl::Context &ctx, unsigned addressSpace) -> llvm::Type * {
         return llvm::PointerType::get(ctx.get(), addressSpace);
       },
       "context"_a, "address_space"_a = 0, nb::rv_policy::reference,
       nb::keep_alive<0, 1>());
   m.def(
-      "struct_t",
+      "struct",
       [](eudsl::Context &ctx, std::vector<llvm::Type *> elts,
          bool packed) -> llvm::Type * {
         return llvm::StructType::get(ctx.get(), elts, packed);
@@ -137,27 +144,27 @@ void populate_types(nb::module_ &m) {
       "context"_a, "element_types"_a, "packed"_a = false,
       nb::rv_policy::reference, nb::keep_alive<0, 1>());
   m.def(
-      "named_struct_t",
+      "named_struct",
       [](eudsl::Context &ctx, const std::string &name) -> llvm::Type * {
         return llvm::StructType::create(ctx.get(), name);
       },
       "context"_a, "name"_a, nb::rv_policy::reference, nb::keep_alive<0, 1>());
   m.def(
-      "array_t",
+      "array",
       [](llvm::Type *elt, uint64_t n) -> llvm::Type * {
         return llvm::ArrayType::get(elt, n);
       },
       "element_type"_a, "num_elements"_a, nb::rv_policy::reference,
       nb::keep_alive<0, 1>());
   m.def(
-      "vector_t",
+      "vector",
       [](llvm::Type *elt, unsigned n, bool scalable) -> llvm::Type * {
         return llvm::VectorType::get(elt, n, scalable);
       },
       "element_type"_a, "num_elements"_a, "scalable"_a = false,
       nb::rv_policy::reference, nb::keep_alive<0, 1>());
   m.def(
-      "function_t",
+      "function",
       [](llvm::Type *ret, std::vector<llvm::Type *> params,
          bool varArg) -> llvm::Type * {
         return llvm::FunctionType::get(ret, params, varArg);
