@@ -10,10 +10,10 @@ from llvm.testing import assert_no_leaks
 def test_if_else_produces_phi():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        i32 = llvm.i32(ctx)
+        i32 = llvm.types.i32(ctx)
 
         @llvm.function(module=mod)
-        def pick(c: llvm.i1, a: i32, b: i32) -> i32:
+        def pick(c: llvm.types.i1, a: i32, b: i32) -> i32:
             if c:
                 r = yield a + 1
             else:
@@ -31,10 +31,10 @@ def test_if_else_produces_phi():
 def test_if_else_jits_correctly():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
-    def pick(c: llvm.i1, a: i32, b: i32) -> i32:
+    def pick(c: llvm.types.i1, a: i32, b: i32) -> i32:
         if c:
             r = yield a
         else:
@@ -55,7 +55,7 @@ def test_if_else_jits_correctly():
 def test_elif_chain_jits():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
     def classify(x: i32) -> i32:
@@ -82,7 +82,7 @@ def test_elif_chain_jits():
 def test_while_countdown_jits():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
     def sum_to(n: i32) -> i32:
@@ -109,7 +109,7 @@ def test_while_countdown_jits():
 def test_for_range_sum_jits():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
-    i32 = llvm.i32(ctx)
+    i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
     def total(n: i32) -> i32:

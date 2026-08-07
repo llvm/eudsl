@@ -16,7 +16,7 @@ def _resolve(annotation, ctx):
     """Resolve a parameter/return annotation to an llvm.Type.
 
     Accepts a Type instance directly, or a callable `ctx -> Type` (e.g. the
-    `llvm.i32` factory used bare as an annotation).
+    `llvm.types.i32` factory used bare as an annotation).
     """
     if isinstance(annotation, Type):
         return annotation
