@@ -23,6 +23,10 @@ const std::type_info *pick(const std::type_info *concrete,
   return nanobind::detail::nb_type_lookup(concrete) ? concrete : base;
 }
 
+// `id` is an llvm::Value::getValueID() result, which is an `unsigned` rather
+// than the Value::ValueTy enum: instruction IDs are `InstructionVal + opcode`
+// and run past the ValueTy enumerators, so `unsigned` is what the LLVM API
+// hands back here.
 const std::type_info *valueTypeInfo(unsigned id) {
   const std::type_info *base = &typeid(llvm::Value);
 
