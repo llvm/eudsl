@@ -73,7 +73,10 @@ if(APPLE)
     get_property(LLVM_AVAILABLE_LIBS GLOBAL PROPERTY LLVM_LIBS)
   endif()
   list(APPEND eudsl_tblgen_ext_libs ${LLVM_AVAILABLE_LIBS})
-  list(REMOVE_ITEM eudsl_tblgen_ext_libs Remarks LTO LLVM)
+  # CASPluginTest is built as a shared plugin (libCASPluginTest.dylib), not a
+  # static archive, so linking it leaves an @rpath dependency that delocate
+  # can't bundle into the wheel. Drop it along with the other non-static libs.
+  list(REMOVE_ITEM eudsl_tblgen_ext_libs Remarks LTO LLVM CASPluginTest)
   list(REMOVE_DUPLICATES eudsl_tblgen_ext_libs)
   target_link_directories(eudsl_tblgen_ext PRIVATE "${LLVM_LIBRARY_DIR}")
   add_dependencies(eudsl_tblgen_ext ${eudsl_tblgen_ext_libs})
