@@ -15,6 +15,7 @@ void populate_constants(nb::module_ &m) {
   nb::class_<llvm::ConstantAggregate, llvm::Constant>(m, "ConstantAggregate");
 
   nb::class_<llvm::ConstantInt, llvm::ConstantData>(m, "ConstantInt")
+      .EUDSL_CAST_CTOR(llvm::ConstantInt, llvm::Value)
       .def_prop_ro("value",
                    [](llvm::ConstantInt &self) {
                      return self.getValue().getSExtValue();
@@ -24,6 +25,7 @@ void populate_constants(nb::module_ &m) {
       });
 
   nb::class_<llvm::ConstantFP, llvm::ConstantData>(m, "ConstantFP")
+      .EUDSL_CAST_CTOR(llvm::ConstantFP, llvm::Value)
       .def_prop_ro("double_value", [](llvm::ConstantFP &self) {
         return self.getValueAPF().convertToDouble();
       });
@@ -49,6 +51,7 @@ void populate_constants(nb::module_ &m) {
   nb::class_<llvm::BlockAddress, llvm::Constant>(m, "BlockAddress");
 
   nb::class_<llvm::GlobalVariable, llvm::GlobalObject>(m, "GlobalVariable")
+      .EUDSL_CAST_CTOR(llvm::GlobalVariable, llvm::Value)
       .def_prop_ro("is_constant", &llvm::GlobalVariable::isConstant)
       .def_prop_ro(
           "initializer",

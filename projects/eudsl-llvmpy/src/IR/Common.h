@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 
@@ -44,6 +45,23 @@ inline void unwrap(llvm::Error &&e) {
 }
 
 } // namespace eudsl
+
+/// MLIR-style checked-downcast constructor, chained onto an nb::class_:
+///   nb::class_<llvm::IntegerType, llvm::Type>(m, "IntegerType")
+///       .EUDSL_CAST_CTOR(llvm::IntegerType, llvm::Type)
+/// makes `IntegerType(v)` re-type v when isa<IntegerType>(v), else raise
+/// ValueError -- the parity analogue of MLIR's `IntegerType(t)`. The result
+/// borrows v's non-owning pointer; keep_alive<0,1> keeps the source (and thus
+/// the owning Context/Module) alive for the new wrapper's lifetime, and
+/// rv_policy::reference stops nanobind from trying to delete a context-owned
+/// object.
+#define EUDSL_CAST_CTOR(Derived, Base)                                         \
+  def(nb::new_([](Base *v) -> Derived * {                                      \
+        if (auto *d = llvm::dyn_cast_or_null<Derived>(v))                      \
+          return d;                                                            \
+        throw nb::value_error("value is not a " #Derived);                     \
+      }),                                                                      \
+      nb::rv_policy::reference, nb::keep_alive<0, 1>())
 
 // Pulled in here so every translation unit that returns an llvm::Type* or
 // llvm::Value* sees the downcasting type_hook specializations. Without this a
