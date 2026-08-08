@@ -112,7 +112,16 @@ void populate_context(nb::module_ &m) {
         llvm::WriteBitcodeToFile(self.get(), os);
         os.flush();
         return nb::bytes(buf.data(), buf.size());
-      });
+      })
+      .def(
+          "set_data_layout_from",
+          [](eudsl::Module &self, nb::handle tm) {
+            // TargetMachine lives in Target.cpp; fetch its data-layout string
+            // through the bound property to avoid a cross-file C++ dependency.
+            std::string dl = nb::cast<std::string>(tm.attr("data_layout_str"));
+            self.get().setDataLayout(dl);
+          },
+          "target_machine"_a);
 
   m.def(
       "parse_assembly",
