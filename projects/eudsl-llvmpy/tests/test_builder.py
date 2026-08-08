@@ -2,7 +2,7 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import llvm
-from llvm.testing import assert_no_leaks
+from llvm.testing import assert_no_leaks, filecheck_with_comments
 
 
 def test_build_add_function():
@@ -15,10 +15,10 @@ def test_build_add_function():
         with b.at_end_of(bb):
             s = b.add(fn.arg(0), fn.arg(1), "s")
             b.ret(s)
-        printed = str(mod)
-        assert "define i32 @add2(i32 %0, i32 %1)" in printed
-        assert "%s = add i32 %0, %1" in printed
-        assert "ret i32 %s" in printed
+        # CHECK: define i32 @add2(i32 %0, i32 %1)
+        # CHECK:   %s = add i32 %0, %1
+        # CHECK-NEXT:   ret i32 %s
+        filecheck_with_comments(mod)
         del b, fn, bb, mod
     assert_no_leaks()
 
@@ -45,8 +45,10 @@ def test_build_conditional_with_phi():
             p.add_incoming(llvm.const_int(i32, 1), a)
             p.add_incoming(llvm.const_int(i32, 2), b_)
             bld.ret(p)
-        printed = str(mod)
-        assert "phi i32 [ 1, %a ], [ 2, %b ]" in printed
+        # CHECK:   br i1 %0, label %a, label %b
+        # CHECK:   %p = phi i32 [ 1, %a ], [ 2, %b ]
+        # CHECK-NEXT:   ret i32 %p
+        filecheck_with_comments(mod)
         del bld, fn, entry, a, b_, join, p, mod
     assert_no_leaks()
 
@@ -63,9 +65,10 @@ def test_alloca_load_store():
             b.store(llvm.const_int(i32, 5), slot)
             loaded = b.load(i32, slot, "loaded")
             b.ret(loaded)
-        printed = str(mod)
-        assert "alloca i32" in printed
-        assert "store i32 5" in printed
-        assert "load i32" in printed
+        # CHECK:   %slot = alloca i32
+        # CHECK-NEXT:   store i32 5, ptr %slot
+        # CHECK-NEXT:   %loaded = load i32, ptr %slot
+        # CHECK-NEXT:   ret i32 %loaded
+        filecheck_with_comments(mod)
         del b, fn, bb, mod
     assert_no_leaks()
