@@ -178,14 +178,20 @@ else()
   message(FATAL_ERROR "Could not find a nanobind static helper target")
 endif()
 
-# note WORKING_DIRECTORY
+# Run stubgen from the src dir (parent of llvm/), addressing the extension as
+# llvm.eudslllvm_ext -- NOT from src/llvm with --module eudslllvm_ext. Running
+# from src/llvm puts it on sys.path[0], where the vendored `ast` and `types`
+# packages shadow the stdlib modules of the same name. nanobind.stubgen imports
+# stdlib inspect, whose module body does `class _ClassFinder(ast.NodeVisitor)`,
+# so a shadowed `ast` makes stubgen abort with AttributeError. From src/ the
+# stdlib wins; stubs still land in src/llvm/eudslllvm_ext/ via --output-dir llvm.
 set(NB_STUBGEN_CMD "${Python_EXECUTABLE}" "-m" "nanobind.stubgen"
-  --module eudslllvm_ext --recursive --include-private --output-dir .)
+  --module llvm.eudslllvm_ext --recursive --include-private --output-dir llvm)
 set(NB_STUBGEN_OUTPUTS "__init__.pyi")
 add_custom_command(
   OUTPUT ${NB_STUBGEN_OUTPUTS}
   COMMAND ${NB_STUBGEN_CMD}
-  WORKING_DIRECTORY "${EUDSLLLVM_SRC_DIR}/llvm"
+  WORKING_DIRECTORY "${EUDSLLLVM_SRC_DIR}"
   DEPENDS eudslllvm_ext
 )
 add_custom_target(eudslllvm_ext_stub ALL DEPENDS ${NB_STUBGEN_OUTPUTS})
