@@ -8,9 +8,13 @@
 #include "IR/TargetInit.h"
 
 #include <llvm/AsmParser/Parser.h>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Metadata.h>
+#include <llvm/IR/Verifier.h>
 #include <llvm/MC/TargetRegistry.h>
+#include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 
 #include <nanobind/stl/string.h>
@@ -88,11 +92,26 @@ void populate_context(nb::module_ &m) {
             return out;
           },
           "name"_a)
-      .def("__str__", [](eudsl::Module &self) {
-        std::string s;
-        llvm::raw_string_ostream os(s);
-        self.get().print(os, nullptr);
-        return s;
+      .def("__str__",
+           [](eudsl::Module &self) {
+             std::string s;
+             llvm::raw_string_ostream os(s);
+             self.get().print(os, nullptr);
+             return s;
+           })
+      .def("verify",
+           [](eudsl::Module &self) {
+             std::string msg;
+             llvm::raw_string_ostream os(msg);
+             if (llvm::verifyModule(self.get(), &os))
+               throw eudsl::VerifyError(msg);
+           })
+      .def("to_bitcode", [](eudsl::Module &self) {
+        std::string buf;
+        llvm::raw_string_ostream os(buf);
+        llvm::WriteBitcodeToFile(self.get(), os);
+        os.flush();
+        return nb::bytes(buf.data(), buf.size());
       });
 
   m.def(
@@ -116,6 +135,20 @@ void populate_context(nb::module_ &m) {
       "ir"_a, "context"_a, "module_identifier"_a = "<string>",
       "source_filename"_a = "", nb::keep_alive<0, 2>(),
       "Parse LLVM textual IR into a new Module.");
+
+  m.def(
+      "parse_bitcode",
+      [](nb::bytes data, eudsl::Context &ctx) {
+        llvm::StringRef ref(data.c_str(), data.size());
+        auto buf = llvm::MemoryBuffer::getMemBuffer(ref, "<bitcode>", false);
+        llvm::Expected<std::unique_ptr<llvm::Module>> mod =
+            llvm::parseBitcodeFile(buf->getMemBufferRef(), ctx.get());
+        if (!mod)
+          throw eudsl::ParseError(llvm::toString(mod.takeError()));
+        return new eudsl::Module(std::move(*mod), ctx);
+      },
+      "data"_a, "context"_a, nb::keep_alive<0, 2>(),
+      "Parse an LLVM bitcode buffer into a new Module.");
 
   eudsl::initializeTargets();
 
