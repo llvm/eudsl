@@ -8,7 +8,7 @@ from llvm.testing import assert_no_leaks
 def test_const_int():
     with llvm.Context() as ctx:
         c = llvm.const_int(llvm.types.i32(ctx), 42)
-        assert type(c).__name__ == "ConstantInt"
+        assert isinstance(c, llvm.ConstantInt)
         assert c.value == 42
         assert str(c) == "i32 42"
         neg = llvm.const_int(llvm.types.i32(ctx), -1, signed=True)
@@ -34,10 +34,10 @@ def test_const_int_signed_flag_is_currently_inert():
 def test_const_bool_and_fp():
     with llvm.Context() as ctx:
         t = llvm.const_bool(ctx, True)
-        assert type(t).__name__ == "ConstantInt"
+        assert isinstance(t, llvm.ConstantInt)
         assert str(t) == "i1 true"
         f = llvm.const_fp(llvm.types.f64(ctx), 1.5)
-        assert type(f).__name__ == "ConstantFP"
+        assert isinstance(f, llvm.ConstantFP)
         assert f.double_value == 1.5
         assert str(f) == "double 1.500000e+00"
     assert_no_leaks()
