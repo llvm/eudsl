@@ -111,6 +111,7 @@ nanobind_add_module(eudslllvm_ext
   src/IR/Target.cpp
   src/IR/Linker.cpp
   src/IR/JIT.cpp
+  src/IR/Intrinsics.cpp
 )
 
 set(eudslllvm_ext_libs
