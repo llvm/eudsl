@@ -13,8 +13,11 @@
 
 namespace eudsl {
 
-/// Owns an llvm::LLVMContext. Counts live instances so tests can assert that
-/// nothing leaked, mirroring mlir/test/python/ir/*.py.
+/// Owns an llvm::LLVMContext via shared_ptr. Counts live instances so tests can
+/// assert nothing leaked, mirroring mlir/test/python/ir/*.py. The shared_ptr is
+/// so a Module (which holds its own copy) can safely outlive the Python context
+/// manager's __exit__: release() drops this object's reference and the live
+/// count, but the underlying LLVMContext survives until the last Module is gone.
 class Context {
 public:
   Context();
@@ -24,19 +27,23 @@ public:
 
   llvm::LLVMContext &get() const;
 
-  /// Destroy the underlying LLVMContext and drop the live count. Idempotent;
-  /// called by both __exit__ and the destructor.
+  /// Shared handle for a Module to keep the LLVMContext alive independently.
+  std::shared_ptr<llvm::LLVMContext> shared() const { return ctx; }
+
+  /// Drop this object's reference and the live count. Idempotent; called by
+  /// both __exit__ and the destructor.
   void release();
   bool isReleased() const { return ctx == nullptr; }
 
   static int64_t liveCount();
 
 private:
-  std::unique_ptr<llvm::LLVMContext> ctx;
+  std::shared_ptr<llvm::LLVMContext> ctx;
 };
 
-/// Owns an llvm::Module. `get()` throws once the module has been handed to the
-/// JIT, so a stale reference is a Python exception rather than a segfault.
+/// Owns an llvm::Module plus a shared reference to the LLVMContext it was built
+/// in, so destruction order is safe regardless of when the Context manager
+/// exits. `get()` throws once the module has been handed to the JIT.
 class Module {
 public:
   Module(const std::string &name, Context &ctx);
@@ -50,6 +57,7 @@ public:
   Context &context() const { return *owner; }
 
 private:
+  std::shared_ptr<llvm::LLVMContext> ctxKeepAlive;
   std::unique_ptr<llvm::Module> mod;
   Context *owner;
 };

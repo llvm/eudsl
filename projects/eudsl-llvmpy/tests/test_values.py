@@ -3,6 +3,8 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 from textwrap import dedent
 
+import gc
+
 import llvm
 from llvm.testing import assert_no_leaks
 
@@ -58,9 +60,8 @@ def test_basic_block_and_instruction_traversal():
         # add, ret
         assert len(insts) == 2
         assert entry.terminator == insts[-1]
-        # Instruction is registered (the spine); concrete opcode downcasting
-        # (BinaryOperator) activates once the instruction classes are bound.
-        assert type(insts[0]).__name__ == "Instruction"
+        # The Value type_hook downcasts the add to its concrete class.
+        assert type(insts[0]).__name__ == "BinaryOperator"
         del f, entry, blocks, insts, mod
     assert_no_leaks()
 
@@ -73,6 +74,7 @@ def test_value_users_and_operands():
         # %x is used by the add.
         assert x.num_uses == 1
         add = x.users[0]
+        assert type(add).__name__ == "BinaryOperator"
         assert add.num_operands == 2
         assert add.operand(0) == x
         del f, x, add, mod
@@ -168,4 +170,25 @@ def test_function_type_accessor():
         assert f.function_type.num_params == 2
         assert str(f.function_type.return_type) == "i32"
         del f, mod
+    assert_no_leaks()
+
+
+def test_module_outlives_released_context():
+    # A Module holds a shared_ptr to the LLVMContext, so it stays usable after
+    # the Python context manager's __exit__ releases the Context. The live count
+    # drops at __exit__ (nothing leaked), but the underlying LLVMContext survives
+    # until the module itself is gone. Under a unique_ptr Context, dereferencing
+    # the module here would be a use-after-free.
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+    # Context released; the live count is already back to zero.
+    assert llvm.Context._get_live_count() == 0
+    # Dereference the still-live module: print it and walk its instructions.
+    assert "define i32 @f(i32 %x, i32 %y)" in str(mod)
+    for f in mod.functions:
+        for bb in f.basic_blocks:
+            for inst in bb.instructions:
+                assert str(inst)
+    del mod
+    gc.collect()
     assert_no_leaks()
