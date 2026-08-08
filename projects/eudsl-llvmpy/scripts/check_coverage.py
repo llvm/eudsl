@@ -56,6 +56,72 @@ def parse_lcov(lcov_text):
     return file_hits
 
 
+def parse_lcov_functions(lcov_text):
+    """Parse LCOV FN/FNDA records into per-file, per-function data.
+
+    Line coverage alone misses an accessor lambda whose body shares a source
+    line with the enclosing `.def(...)` registration call: the registration
+    runs at import, so the line is marked covered even though the lambda body
+    never executes. Each lambda is its own FUNCTION in the coverage data, so
+    function coverage (FNDA execution counts) catches these. The X-macro
+    dispatch (e.g. valueTypeInfo) stays a single function, so this does not
+    penalize its many unreachable case regions.
+
+    Returns {filepath: {name: {"line": lineno, "count": hits}, ...}, ...}
+    """
+    file_fns = {}
+    current_file = None
+
+    for line in lcov_text.splitlines():
+        if line.startswith("SF:"):
+            current_file = line[3:]
+            file_fns.setdefault(current_file, {})
+        elif line.startswith("FN:"):
+            if current_file is None:
+                continue
+            # FN:<line>,<name>  (llvm-cov) or FN:<start>,<end>,<name>
+            rest = line[3:]
+            head, _, name = rest.rpartition(",")
+            first = head.split(",", 1)[0]
+            try:
+                lineno = int(first)
+            except ValueError:
+                continue
+            entry = file_fns[current_file].setdefault(name, {"line": None, "count": 0})
+            entry["line"] = lineno
+        elif line.startswith("FNDA:"):
+            if current_file is None:
+                continue
+            count_str, _, name = line[5:].partition(",")
+            try:
+                count = int(count_str)
+            except ValueError:
+                continue
+            entry = file_fns[current_file].setdefault(name, {"line": None, "count": 0})
+            entry["count"] = count
+        elif line == "end_of_record":
+            current_file = None
+
+    return file_fns
+
+
+def demangle(names):
+    """Best-effort demangling for nicer reporting. Returns {name: pretty}."""
+    stripped = [n.split(":", 1)[-1] for n in names]  # drop any "file:" prefix
+    for tool in ("llvm-cxxfilt", "c++filt"):
+        try:
+            out = subprocess.run(
+                [tool], input="\n".join(stripped), capture_output=True, text=True
+            )
+            if out.returncode == 0:
+                pretty = out.stdout.splitlines()
+                if len(pretty) == len(names):
+                    return dict(zip(names, pretty))
+        except (OSError, FileNotFoundError):
+            continue
+    return {n: s for n, s in zip(names, stripped)}
+
+
 def get_excluded_lines(filepath):
     """Read a source file and return the set of line numbers excluded by
     LCOV_EXCL_LINE, LCOV_EXCL_START, and LCOV_EXCL_STOP markers.
@@ -130,6 +196,15 @@ def main():
         help="Minimum required line coverage percentage (default: 97)",
     )
     parser.add_argument(
+        "--function-threshold",
+        type=float,
+        default=None,
+        help="Minimum required function coverage percentage "
+        "(default: same as --threshold). Function coverage catches accessor "
+        "lambdas whose body never runs even though their registration line is "
+        "covered.",
+    )
+    parser.add_argument(
         "--ignore-filename-regex",
         default=None,
         help="Skip files matching this regex",
@@ -147,6 +222,7 @@ def main():
     ignore_re = re.compile(args.ignore_filename_regex) if args.ignore_filename_regex else None
 
     file_hits = parse_lcov(lcov_text)
+    file_fns = parse_lcov_functions(lcov_text)
 
     file_stats = {}
     for filepath, line_counts in file_hits.items():
@@ -170,19 +246,63 @@ def main():
             else:
                 missed.append(lineno)
 
-        file_stats[filepath] = {"total": total, "covered": covered, "missed": missed}
+        # Function coverage: a function whose definition line is excluded
+        # (e.g. an LCOV_EXCL_START/STOP block like the fatal handler) is
+        # dropped, mirroring the line-coverage exclusion.
+        f_total = 0
+        f_covered = 0
+        f_missed = []
+        for name, info in file_fns.get(filepath, {}).items():
+            ln = info["line"]
+            if ln is not None and ln in excluded:
+                continue
+            f_total += 1
+            if info["count"] > 0:
+                f_covered += 1
+            else:
+                f_missed.append((ln if ln is not None else 0, name))
+
+        file_stats[filepath] = {
+            "total": total,
+            "covered": covered,
+            "missed": missed,
+            "f_total": f_total,
+            "f_covered": f_covered,
+            "f_missed": f_missed,
+        }
 
     total_lines = sum(s["total"] for s in file_stats.values())
     covered_lines = sum(s["covered"] for s in file_stats.values())
     percent = (covered_lines / total_lines * 100.0) if total_lines > 0 else 0.0
 
+    total_fns = sum(s["f_total"] for s in file_stats.values())
+    covered_fns = sum(s["f_covered"] for s in file_stats.values())
+    fn_percent = (covered_fns / total_fns * 100.0) if total_fns > 0 else 100.0
+
+    fn_threshold = (
+        args.function_threshold
+        if args.function_threshold is not None
+        else args.threshold
+    )
+
     print(f"eudsl-llvmpy C++ coverage: {covered_lines}/{total_lines} lines ({percent:.2f}%)")
+    print(f"eudsl-llvmpy C++ coverage: {covered_fns}/{total_fns} functions ({fn_percent:.2f}%)")
+
+    # Demangle any missed function names for readable reporting.
+    all_missed = [name for s in file_stats.values() for _, name in s["f_missed"]]
+    pretty = demangle(all_missed) if all_missed else {}
 
     for filename, stats in sorted(file_stats.items()):
         f_total = stats["total"]
         f_covered = stats["covered"]
         f_percent = (f_covered / f_total * 100.0) if f_total > 0 else 0.0
-        print(f"  {filename}: {f_covered}/{f_total} ({f_percent:.2f}%)")
+        fn_t = stats["f_total"]
+        fn_c = stats["f_covered"]
+        fn_p = (fn_c / fn_t * 100.0) if fn_t > 0 else 100.0
+        print(
+            f"  {filename}: {f_covered}/{f_total} lines ({f_percent:.2f}%), "
+            f"{fn_c}/{fn_t} functions ({fn_p:.2f}%)"
+        )
         if stats["missed"]:
             sorted_lines = sorted(stats["missed"])
             ranges = []
@@ -195,12 +315,26 @@ def main():
                     start = prev = l
             ranges.append(f"{start}-{prev}" if prev > start else str(start))
             print(f"    missed lines: {', '.join(ranges)}")
+        for ln, name in sorted(stats["f_missed"]):
+            print(f"    missed function (line {ln}): {pretty.get(name, name)}")
 
-    if percent < args.threshold:
-        print(f"\nFAILED: coverage {percent:.2f}% < threshold {args.threshold:.2f}%")
+    line_ok = percent >= args.threshold
+    fn_ok = fn_percent >= fn_threshold
+    if not line_ok or not fn_ok:
+        if not line_ok:
+            print(f"\nFAILED: line coverage {percent:.2f}% < threshold {args.threshold:.2f}%")
+        if not fn_ok:
+            print(
+                f"\nFAILED: function coverage {fn_percent:.2f}% < threshold "
+                f"{fn_threshold:.2f}% (an accessor/binding runs at registration "
+                f"but its body is never called by a test)"
+            )
         return 1
 
-    print(f"\nPASSED: coverage {percent:.2f}% >= threshold {args.threshold:.2f}%")
+    print(
+        f"\nPASSED: line coverage {percent:.2f}% >= {args.threshold:.2f}%, "
+        f"function coverage {fn_percent:.2f}% >= {fn_threshold:.2f}%"
+    )
     return 0
 
 

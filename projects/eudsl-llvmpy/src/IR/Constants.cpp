@@ -63,8 +63,13 @@ void populate_constants(nb::module_ &m) {
       "const_int",
       [](llvm::Type *ty, int64_t value, bool isSigned) -> llvm::Constant * {
         auto *ity = llvm::cast<llvm::IntegerType>(ty);
+        // A negative value must be built as signed: its uint64 bit pattern does
+        // not fit the type width unsigned, and ConstantInt::get would trip an
+        // APInt assertion (aborting the process) rather than raise. Forcing
+        // signed for value < 0 keeps const_int(i32, -1) working with the
+        // default signed=False.
         return llvm::ConstantInt::get(ity, static_cast<uint64_t>(value),
-                                      isSigned);
+                                      isSigned || value < 0);
       },
       "type"_a, "value"_a, "signed"_a = false, nb::rv_policy::reference,
       nb::keep_alive<0, 1>());
