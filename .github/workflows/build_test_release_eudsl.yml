@@ -409,16 +409,24 @@ jobs:
 
     needs: [build-eudsl]
 
-    runs-on: "ubuntu-22.04"
+    # Must run on macOS. The coverage build instruments eudslllvm_ext with
+    # -fcoverage-mapping, but nanobind strips the module at link time. On Linux
+    # that strip is -Wl,-s (--strip-all), which removes the non-allocated
+    # __llvm_covmap/__llvm_covfun metadata, so llvm-cov reports "no coverage data
+    # found" -- the runtime __llvm_prf_* counters are SHF_ALLOC and survive, so
+    # .profraw still generates and merges, but the export finds no mapping. macOS
+    # strips via -Wl,-dead_strip, which preserves the __LLVM_COV segment, so the
+    # mapping is retained. Keep this job on macos-*.
+    runs-on: "macos-14"
 
-    name: "Coverage llvmpy ubuntu_x86_64"
+    name: "Coverage llvmpy macos_arm64"
 
     defaults:
       run:
         shell: bash
 
     env:
-      cache-key: eudsl_ubuntu_x86_64_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+      cache-key: eudsl_macos_arm64_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
 
     steps:
       - name: "Check out repository"
@@ -430,15 +438,15 @@ jobs:
         uses: ./.github/actions/setup_base
         with:
           cache-key: ${{ env.cache-key }}
-          restore-key: "eudsl_ubuntu_x86_64_clang"
-          os: "ubuntu"
-          host-arch: "x86_64"
-          target-arch: "x86_64"
+          restore-key: "eudsl_macos_arm64_clang"
+          os: "macos"
+          host-arch: "arm64"
+          target-arch: "arm64"
           python-version: "3.12"
 
       - uses: actions/download-artifact@v4
         with:
-          name: eudsl_ubuntu_x86_64_artifact
+          name: eudsl_macos_arm64_artifact
           path: wheelhouse
 
       - name: "Fetch LLVM distro (ships llvm-cov/llvm-profdata)"
