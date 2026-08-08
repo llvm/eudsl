@@ -36,6 +36,13 @@ public:
 
   static int64_t liveCount();
 
+  /// Thread-local "current" context stack, set by the Python context manager
+  /// (__enter__/__exit__). Lets factories default to the innermost active
+  /// Context, mirroring MLIR's Context.current.
+  void pushCurrent();
+  void popCurrent();
+  static Context *current();
+
 private:
   std::shared_ptr<llvm::LLVMContext> ctx;
 };

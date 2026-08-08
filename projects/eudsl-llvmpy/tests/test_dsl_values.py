@@ -179,7 +179,7 @@ def test_pointer_subscript_returns_arithvalue():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        fn = llvm.Function.create(llvm.types.function(i32, [llvm.types.ptr(ctx)]), "g", mod)
+        fn = llvm.Function.create(llvm.types.function(i32, [llvm.types.ptr(context=ctx)]), "g", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
@@ -198,7 +198,7 @@ def test_extract_value_from_struct_arg():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        st = llvm.types.struct(ctx, [i32, i32])
+        st = llvm.types.struct([i32, i32], context=ctx)
         fn = llvm.Function.create(llvm.types.function(i32, [st]), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.IRBuilder(ctx)

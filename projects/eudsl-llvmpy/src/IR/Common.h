@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "IR/Ownership.h"
+
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
@@ -54,6 +56,20 @@ T *nthOrThrow(const std::vector<T *> &items, Py_ssize_t i) {
   if (i < 0 || i >= n)
     throw nb::index_error("index out of range");
   return items[i];
+}
+
+/// Resolve a factory's optional `context` argument: use the passed Context, or
+/// fall back to the thread-local current one (set by `with Context():`). Raises
+/// if neither is available, mirroring MLIR's implicit-context factories.
+inline Context &currentOr(nb::handle context) {
+  if (!context.is_none())
+    return nb::cast<Context &>(context);
+  Context *cur = Context::current();
+  if (!cur)
+    throw std::runtime_error(
+        "no context given and no current Context; pass context= or enter a "
+        "'with Context():' block");
+  return *cur;
 }
 
 } // namespace eudsl

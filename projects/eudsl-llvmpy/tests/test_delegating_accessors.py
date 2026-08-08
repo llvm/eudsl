@@ -34,7 +34,7 @@ _SRC = dedent(
 
 def test_type_is_pointer_and_is_label():
     with llvm.Context() as ctx:
-        assert llvm.types.ptr(ctx).is_pointer
+        assert llvm.types.ptr(context=ctx).is_pointer
         assert not llvm.types.i32(ctx).is_pointer
         mod = llvm.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")

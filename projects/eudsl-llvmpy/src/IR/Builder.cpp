@@ -35,8 +35,10 @@ void populate_builder(nb::module_ &m) {
   nb::class_<B>(m, "IRBuilder")
       .def(
           "__init__",
-          [](B *self, eudsl::Context &ctx) { new (self) B(ctx.get()); },
-          "context"_a, nb::keep_alive<1, 2>())
+          [](B *self, nb::handle context) {
+            new (self) B(eudsl::currentOr(context).get());
+          },
+          "context"_a = nb::none(), nb::keep_alive<1, 2>())
       .def(
           "set_insert_point",
           [](B &self, llvm::BasicBlock *bb) { self.SetInsertPoint(bb); },
