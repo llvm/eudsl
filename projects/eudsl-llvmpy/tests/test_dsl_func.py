@@ -3,7 +3,10 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import ctypes
 
+import pytest
+
 import llvm
+from llvm.dsl.values import with_element_type
 from llvm.testing import assert_no_leaks
 
 
@@ -72,5 +75,79 @@ def test_varargs_declaration():
         def printf_like(fmt: llvm.types.ptr(ctx)) -> i32: ...
 
         assert "declare i32 @printf_like(ptr, ...)" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_bad_annotation_raises():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        with pytest.raises(TypeError, match="cannot resolve type annotation"):
+
+            @llvm.function(module=mod)
+            def bad(x: "not a type") -> i32:  # noqa: F821
+                return x
+
+        del mod
+
+
+def test_void_return_no_explicit_return():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.function(module=mod)
+        def store_it(p: llvm.types.ptr, v: i32) -> llvm.types.void:
+            tp = with_element_type(p, i32)
+            tp[0] = v
+            # no return -> ret void synthesized
+
+        printed = str(mod)
+        assert "ret void" in printed
+        del mod
+    assert_no_leaks()
+
+
+def test_calling_conv_option():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.function(module=mod, calling_conv=llvm.CallingConv.FAST)
+        def f(x: i32) -> i32:
+            return x
+
+        assert f.fn.calling_conv == llvm.CallingConv.FAST
+        del mod
+    assert_no_leaks()
+
+
+def test_function_without_closure():
+    # Body references only its argument and the `llvm` global (no enclosing
+    # locals), so the compiled function has no __closure__ -> exercises the
+    # no-closure path in transform_ast.
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+
+        @llvm.function(module=mod)
+        def ident(x: llvm.types.i1) -> llvm.types.i1:
+            return x
+
+        assert "define i1 @ident(i1 %0)" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_declaration_with_pass_body():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.function(module=mod)
+        def extern2(a: i32) -> i32:
+            pass  # empty body -> declaration
+
+        assert "declare i32 @extern2(i32)" in str(mod)
         del mod
     assert_no_leaks()

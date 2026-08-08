@@ -58,17 +58,6 @@ class InsertEmptyYield(StrictTransformer):
         updated_node = ast.fix_missing_locations(updated_node)
         return updated_node
 
-    def visit_For(self, updated_node: ast.For) -> ast.For:
-        line = ast.dump(updated_node.iter.func)
-        if "range_" not in line and "for_" not in line:
-            return updated_node
-        updated_node = self.generic_visit(updated_node)
-        new_yield = ast.Expr(ast.Yield(value=None))
-        if not is_yield(updated_node.body[-1]):
-            updated_node.body = append_hidden_node(updated_node.body, new_yield)
-        updated_node = ast.fix_missing_locations(updated_node)
-        return updated_node
-
 
 def forward_yield_from_nested_if(node_body):
     last_statement = node_body[0].body[-1]
@@ -110,46 +99,6 @@ class CanonicalizeElIfs(StrictTransformer):
             updated_node.orelse = forward_yield_from_nested_if(updated_node.orelse)
         updated_node = ast.fix_missing_locations(updated_node)
         return updated_node
-
-
-class CanonicalizeWhile(StrictTransformer):
-    def visit_While(self, updated_node: ast.While) -> List[ast.AST]:
-        # postorder
-        updated_node = self.generic_visit(updated_node)
-        if isinstance(updated_node.test, ast.NamedExpr):
-            test = updated_node.test.value
-        else:
-            test = updated_node.test
-        w = ast_call("while_", [test])
-        w = ast.copy_location(w, updated_node)
-        assign = ast.Assign(
-            targets=[ast.Name(f"w_{updated_node.lineno}", ctx=ast.Store())],
-            value=w,
-        )
-        assign = ast.fix_missing_locations(ast.copy_location(assign, updated_node))
-
-        next_ = ast_call(
-            "next",
-            [
-                ast.Name(f"w_{updated_node.lineno}", ctx=ast.Load()),
-                ast.Constant(False, kind="bool"),
-            ],
-        )
-        next_ = ast.fix_missing_locations(ast.copy_location(next_, updated_node))
-        if isinstance(updated_node.test, ast.NamedExpr):
-            updated_node.test.value = next_
-        else:
-            new_test = ast.NamedExpr(
-                target=ast.Name(f"__init__{updated_node.lineno}", ctx=ast.Store()),
-                value=next_,
-            )
-            new_test = ast.copy_location(new_test, updated_node)
-            updated_node.test = new_test
-
-        updated_node = ast.fix_missing_locations(updated_node)
-        assign = ast.fix_missing_locations(assign)
-
-        return [assign, updated_node]
 
 
 class ReplaceYieldWithLLVMYield(StrictTransformer):
@@ -439,39 +388,6 @@ class ForToForLoop(StrictTransformer):
             ast.copy_location(n, node)
             ast.fix_missing_locations(n)
         return out
-
-
-class RejectUnsupportedJumps(StrictTransformer):
-    """Reject control flow the phi-based lowering does not model.
-
-    break/continue and early `return` inside an if/while/for would need edge
-    duplication, predecessor bookkeeping, or returning across the nested
-    cond/body functions the loop transforms introduce. Rather than emit wrong
-    IR, detect and refuse. Must run before the loop/if transformers so it only
-    sees user-written jumps (not the `return`s those transforms synthesize).
-    """
-
-    def visit_Break(self, node):
-        raise NotImplementedError(
-            "`break` inside DSL control flow is not supported"
-        )
-
-    def visit_Continue(self, node):
-        raise NotImplementedError(
-            "`continue` inside DSL control flow is not supported"
-        )
-
-    def _reject_nested_return(self, node):
-        for child in ast.walk(node):
-            if isinstance(child, ast.Return):
-                raise NotImplementedError(
-                    "early `return` inside DSL control flow is not supported"
-                )
-        return self.generic_visit(node)
-
-    visit_If = _reject_nested_return
-    visit_While = _reject_nested_return
-    visit_For = _reject_nested_return
 
 
 class RejectUnsupportedJumps(StrictTransformer):

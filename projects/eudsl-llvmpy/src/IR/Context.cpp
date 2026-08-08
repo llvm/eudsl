@@ -11,6 +11,7 @@
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/Metadata.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/MC/TargetRegistry.h>
@@ -122,7 +123,31 @@ void populate_context(nb::module_ &m) {
             std::string dl = nb::cast<std::string>(tm.attr("data_layout_str"));
             self.get().setDataLayout(dl);
           },
-          "target_machine"_a);
+          "target_machine"_a)
+      .def(
+          "add_global",
+          [](eudsl::Module &self, llvm::Type *ty, const std::string &name,
+             llvm::Constant *init, bool isConstant,
+             unsigned addressSpace) -> llvm::GlobalVariable * {
+            return new llvm::GlobalVariable(
+                self.get(), ty, isConstant,
+                llvm::GlobalValue::ExternalLinkage, init, name, nullptr,
+                llvm::GlobalValue::NotThreadLocal, addressSpace);
+          },
+          "type"_a, "name"_a, "init"_a = nullptr, "constant"_a = false,
+          "address_space"_a = 0, nb::rv_policy::reference_internal)
+      .def(
+          "get_global",
+          [](eudsl::Module &self, const std::string &name) {
+            return self.get().getNamedGlobal(name);
+          },
+          "name"_a, nb::rv_policy::reference_internal)
+      .def_prop_ro("globals", [](eudsl::Module &self) {
+        std::vector<llvm::GlobalVariable *> out;
+        for (llvm::GlobalVariable &g : self.get().globals())
+          out.push_back(&g);
+        return out;
+      });
 
   m.def(
       "parse_assembly",
