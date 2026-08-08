@@ -3,11 +3,13 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include "IR/Common.h"
+#include "IR/Errors.h"
 #include "IR/Ownership.h"
 #include "IR/TargetInit.h"
 
 #include <llvm/AsmParser/Parser.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/Metadata.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/SourceMgr.h>
 
@@ -70,6 +72,22 @@ void populate_context(nb::module_ &m) {
             return self.get().getFunction(name);
           },
           "name"_a, nb::rv_policy::reference)
+      .def(
+          "add_named_metadata",
+          [](eudsl::Module &self, const std::string &name, llvm::MDNode *node) {
+            self.get().getOrInsertNamedMetadata(name)->addOperand(node);
+          },
+          "name"_a, "node"_a)
+      .def(
+          "named_metadata",
+          [](eudsl::Module &self, const std::string &name) {
+            std::vector<llvm::MDNode *> out;
+            if (auto *nmd = self.get().getNamedMetadata(name))
+              for (llvm::MDNode *op : nmd->operands())
+                out.push_back(op);
+            return out;
+          },
+          "name"_a)
       .def("__str__", [](eudsl::Module &self) {
         std::string s;
         llvm::raw_string_ostream os(s);
@@ -89,7 +107,7 @@ void populate_context(nb::module_ &m) {
           std::string msg;
           llvm::raw_string_ostream os(msg);
           err.print(module_identifier.c_str(), os);
-          throw std::runtime_error(msg);
+          throw eudsl::ParseError(msg);
         }
         mod->setModuleIdentifier(module_identifier);
         mod->setSourceFileName(source_filename);
