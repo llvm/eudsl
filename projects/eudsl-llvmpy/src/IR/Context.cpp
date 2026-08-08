@@ -235,14 +235,4 @@ void populate_context(nb::module_ &m) {
       "Parse an LLVM bitcode buffer into a new Module.");
 
   eudsl::initializeTargets();
-
-  m.def(
-      "registered_targets",
-      []() {
-        std::vector<std::string> names;
-        for (const llvm::Target &t : llvm::TargetRegistry::targets())
-          names.emplace_back(t.getName());
-        return names;
-      },
-      "Names of the LLVM targets linked into this extension.");
 }

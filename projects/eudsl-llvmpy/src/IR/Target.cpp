@@ -79,4 +79,14 @@ void populate_target(nb::module_ &m) {
             return nb::bytes(obj.data(), obj.size());
           },
           "module"_a);
+
+  m.def(
+      "registered_targets",
+      []() {
+        std::vector<std::string> names;
+        for (const llvm::Target &t : llvm::TargetRegistry::targets())
+          names.emplace_back(t.getName());
+        return names;
+      },
+      "Names of the LLVM targets linked into this extension.");
 }

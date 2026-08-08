@@ -8,8 +8,9 @@ it exists, and emits the overloaded declaration. Overload resolution happens
 in C++ against LLVM's own tables.
 """
 
-from . import (
+from .eudslllvm_ext.intrinsics import (  # noqa: F401
     lookup_intrinsic_id,
+    intrinsic_is_overloaded,
     get_intrinsic_declaration,
 )
 
