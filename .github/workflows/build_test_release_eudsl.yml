@@ -405,7 +405,7 @@ jobs:
 
   coverage-eudsl-llvmpy:
 
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' || inputs.workflow_call }}
 
     needs: [build-eudsl]
 
@@ -441,10 +441,23 @@ jobs:
           name: eudsl_ubuntu_x86_64_artifact
           path: wheelhouse
 
-      - name: "Fetch LLVM distro (ships llvm-cov/llvm-profdata)"
+      - name: "Pip download MLIR from releases"
+        if: ${{ !inputs.workflow_call }}
         run: |
 
           pip download mlir-wheel -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
+
+      - name: "Download LLVM distro artifact"
+        if: ${{ inputs.workflow_call }}
+        uses: dawidd6/action-download-artifact@v11
+        with:
+          name: mlir_wheel_manylinux_x86_64_artifact
+          path: "./"
+          run_id: ${{ inputs.workflow_caller_run_id }}
+
+      - name: "Unpack LLVM distro (ships llvm-cov/llvm-profdata)"
+        run: |
+
           unzip -q mlir_wheel*.whl
           mv mlir_wheel llvm-install
 
