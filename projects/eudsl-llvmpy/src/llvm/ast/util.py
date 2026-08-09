@@ -41,40 +41,6 @@ def get_module_cst(f):
     return tree
 
 
-# based on https://github.com/python/cpython/blob/6078f2033ea15a16cf52fe8d644a95a3be72d2e3/Tools/build/deepfreeze.py#L48
-def get_localsplus_name_to_idx(code: types.CodeType):
-    localsplus = code.co_varnames + code.co_cellvars + code.co_freevars
-    return localsplus, {v: i for i, v in enumerate(localsplus)}
-
-
-class _empty_cell_value:
-    """Sentinel for empty closures."""
-
-    @classmethod
-    def __reduce__(cls):
-        return cls.__name__
-
-
-_empty_cell_value = _empty_cell_value()
-
-
-# based on https://github.com/cloudpipe/cloudpickle/blob/f111f7ab6d302e9b1e2a568d0e4c574895db6a6e/cloudpickle/cloudpickle.py#L513
-def make_empty_cell():
-    if False:
-        # trick the compiler into creating an empty cell in our lambda
-        cell = None
-        raise AssertionError("this route should not be executed")
-
-    return (lambda: cell).__closure__[0]
-
-
-def make_cell(value=_empty_cell_value):
-    cell = make_empty_cell()
-    if value is not _empty_cell_value:
-        cell.cell_contents = value
-    return cell
-
-
 def append_hidden_node(node_body, new_node):
     last_statement = node_body[-1]
     assert (

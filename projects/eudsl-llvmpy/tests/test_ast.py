@@ -40,8 +40,54 @@ def test_no_else_still_yields():
     assert "yield_" in out
 
 
+def test_explicit_yield_skips_empty_yield_insertion():
+    # Both branches already end in an explicit yield, so InsertEmptyYield
+    # takes the "already yields" arc instead of inserting one.
+    src = (
+        "def f():\n"
+        "    if c:\n"
+        "        r = yield a\n"
+        "    else:\n"
+        "        r = yield b\n"
+    )
+    out = _rewrite(src)
+    assert "if_ctx_manager" in out
+    assert "else_ctx_manager" in out
+
+
+def test_elif_chain_forwards_yield_from_nested_if():
+    # An elif is a nested If in the outer If's orelse; when the nested arm
+    # already yields, CanonicalizeElIfs must forward that yield up so the
+    # outer If's own orelse also ends in a yield.
+    src = (
+        "def f():\n"
+        "    if c1:\n"
+        "        r = yield 1\n"
+        "    elif c2:\n"
+        "        r = yield 2\n"
+        "    else:\n"
+        "        r = yield 3\n"
+    )
+    out = _rewrite(src)
+    assert out.count("yield_") >= 3
+
+
+def test_nested_if_in_body_forwards_tuple_yield():
+    # A nested If as the first statement of a body, itself yielding a tuple,
+    # exercises the tuple-target branch of forward_yield_from_nested_if.
+    src = (
+        "def f():\n"
+        "    if outer:\n"
+        "        if inner:\n"
+        "            a, b = yield 1, 2\n"
+        "        x = 2\n"
+    )
+    out = _rewrite(src)
+    assert "yield_" in out
+
+
 def test_canonicalize_module_imports_clean():
-    # The vendored canonicalize/util/py_type import with no MLIR deps.
-    from llvm.ast import canonicalize, util, py_type  # noqa: F401
+    # The vendored canonicalize/util import with no MLIR deps.
+    from llvm.ast import canonicalize, util  # noqa: F401
     assert hasattr(canonicalize, "canonicalize")
     assert hasattr(util, "get_module_cst")
