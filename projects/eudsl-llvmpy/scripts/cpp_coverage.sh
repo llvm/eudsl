@@ -31,15 +31,28 @@ if [[ ! -x "$LLVM_COV" || ! -x "$LLVM_PROFDATA" ]]; then
 fi
 
 echo ">> building eudslllvm_ext with coverage instrumentation"
-"$PY" -m pip install -e "$PROJ_DIR" --no-build-isolation \
-  --config-settings=cmake.define.EUDSL_LLVMPY_ENABLE_COVERAGE=ON >/dev/null
+BUILD_LOG="${PROJ_DIR}/build/coverage-build.log"
+mkdir -p "$(dirname "$BUILD_LOG")"
+if ! "$PY" -m pip install -e "$PROJ_DIR" --no-build-isolation \
+  --config-settings=cmake.define.EUDSL_LLVMPY_ENABLE_COVERAGE=ON >"$BUILD_LOG" 2>&1; then
+  echo "error: instrumented build failed; full output:" >&2
+  cat "$BUILD_LOG" >&2
+  exit 1
+fi
+echo ">> build OK"
 
 echo ">> running the test suite under LLVM_PROFILE_FILE"
 rm -rf "$COV_DIR"
 mkdir -p "$COV_DIR"
+PYTEST_LOG="${COV_DIR}/pytest.log"
 # %p (pid) + %m (per-image id) so parallel/forked runs don't clobber counters.
-LLVM_PROFILE_FILE="${COV_DIR}/pytest-%p-%m.profraw" \
-  "$PY" -m pytest "${PROJ_DIR}/tests" -q -p no:cacheprovider --no-cov >/dev/null
+if ! LLVM_PROFILE_FILE="${COV_DIR}/pytest-%p-%m.profraw" \
+  "$PY" -m pytest "${PROJ_DIR}/tests" -q -p no:cacheprovider --no-cov >"$PYTEST_LOG" 2>&1; then
+  echo "error: pytest failed; full output:" >&2
+  cat "$PYTEST_LOG" >&2
+  exit 1
+fi
+echo ">> test suite passed"
 
 echo ">> merging profraw -> profdata"
 # shellcheck disable=SC2086
