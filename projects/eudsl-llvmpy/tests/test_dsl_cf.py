@@ -578,7 +578,7 @@ def test_elif_elif_three_way():
     @canonicalize(using=LLVMCanonicalizer())
     def sign(x: i32) -> i32:
         if x < 0:
-            r = yield llvm.const_int(i32, -1)
+            r = yield llvm.const_int(i32, -1, signed=True)
         elif x.eq(llvm.const_int(i32, 0)):
             r = yield llvm.const_int(i32, 0)
         elif x < 10:
