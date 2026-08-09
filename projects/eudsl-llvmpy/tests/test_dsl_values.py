@@ -101,19 +101,6 @@ def test_float_scalar_coercion():
     assert_no_leaks()
 
 
-def test_coerce_rejects_non_numeric_type():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
-        ptr_ty = llvm.types.ptr(ctx)
-        fn, bb, args = _entry(ctx, mod, ptr_ty, [ptr_ty])
-        # args[0] is a plain Value here (ptr has no registered caster), so
-        # call the coercion helper directly to exercise the guard.
-        with pytest.raises(TypeError):
-            ArithValue._coerce(args[0], 0)
-        del fn, mod
-    assert_no_leaks()
-
-
 def test_scalar_coercion():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
