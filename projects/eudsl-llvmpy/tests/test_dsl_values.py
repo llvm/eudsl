@@ -342,7 +342,7 @@ def test_pointer_subscript_accepts_value_index():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        fn = llvm.Function.create(llvm.types.function(i32, [llvm.types.ptr(ctx)]), "g", mod)
+        fn = llvm.Function.create(llvm.types.function(i32, [llvm.types.ptr(context=ctx)]), "g", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
@@ -382,7 +382,7 @@ def test_insert_value_into_struct():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        st = llvm.types.struct(ctx, [i32, i32])
+        st = llvm.types.struct([i32, i32], context=ctx)
         fn = llvm.Function.create(llvm.types.function(st, [st, i32]), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.IRBuilder(ctx)
@@ -397,7 +397,7 @@ def test_insert_value_into_struct():
 def test_maybe_downcast_passes_through_unregistered_type():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
-        ptr_ty = llvm.types.ptr(ctx)
+        ptr_ty = llvm.types.ptr(context=ctx)
         fn = llvm.Function.create(llvm.types.function(ptr_ty, [ptr_ty]), "h", mod)
         # ptr has no registered caster, so maybe_downcast must return the
         # same Value unchanged rather than wrapping it.
