@@ -79,13 +79,6 @@ void populate_context(nb::module_ &m) {
             return self.get().getFunction(name);
           },
           "name"_a, nb::rv_policy::reference)
-      .def_prop_ro("globals",
-                   [](eudsl::Module &self) {
-                     std::vector<llvm::GlobalVariable *> out;
-                     for (llvm::GlobalVariable &g : self.get().globals())
-                       out.push_back(&g);
-                     return out;
-                   })
       .def(
           "get_global_variable",
           [](eudsl::Module &self, const std::string &name) {
