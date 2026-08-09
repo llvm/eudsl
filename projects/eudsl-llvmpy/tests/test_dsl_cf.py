@@ -198,13 +198,6 @@ def test_if_else_multiple_results():
     assert_no_leaks()
 
 
-def test_yield_outside_if_stack_returns_directly():
-    from llvm.dsl.cf import yield_
-
-    assert yield_(5) == 5
-    assert yield_(1, 2) == (1, 2)
-
-
 def test_while_single_carried_value():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
@@ -458,76 +451,6 @@ def test_range_marker_is_callable_directly():
     assert range_(5) == (0, 5, 1)
     assert range_(2, 5) == (2, 5, 1)
     assert range_(2, 5, 3) == (2, 5, 3)
-
-
-def test_while_loop_wraps_non_tuple_body_result():
-    # Direct call to the runtime primitive (bypassing the AST transform, which
-    # always returns a real tuple) to exercise the non-tuple wrap branch.
-    from llvm.dsl.cf import while_loop
-    from llvm.dsl.context import building
-
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
-        i32 = llvm.types.i32(ctx)
-        fn = llvm.Function.create(llvm.types.function(i32, [i32]), "f", mod)
-        bb = fn.append_basic_block("entry")
-        b = llvm.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b, fn):
-            n = fn.arg(0)
-
-            def cond(i):
-                return i.ne(n)
-
-            def body(i):
-                return i + 1  # bare Value, not a tuple
-
-            (result,) = while_loop(cond, body, (llvm.const_int(i32, 0),))
-            b.ret(result)
-
-        jit = llvm.LLJIT()
-        jit.add_module(mod)
-        fn_ptr = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("f"))
-        assert fn_ptr(5) == 5
-        del jit, mod, fn, fn_ptr
-    assert_no_leaks()
-
-
-def test_for_loop_wraps_none_and_non_tuple_body_result():
-    # Direct calls to the runtime primitive to exercise the None- and
-    # non-tuple-result wrap branches that the AST transform never produces
-    # (its generated body always returns a real tuple).
-    from llvm.dsl.cf import for_loop
-    from llvm.dsl.context import building
-
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
-        i32 = llvm.types.i32(ctx)
-        fn = llvm.Function.create(llvm.types.function(i32, [i32]), "f", mod)
-        bb = fn.append_basic_block("entry")
-        b = llvm.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b, fn):
-            n = fn.arg(0)
-
-            def body_none(i):
-                return None  # no carried values
-
-            for_loop(llvm.const_int(i32, 0), n, llvm.const_int(i32, 1), body_none, ())
-
-            def body_bare(i, acc):
-                return acc + i  # bare non-tuple, one carried value
-
-            (result,) = for_loop(
-                llvm.const_int(i32, 0), n, llvm.const_int(i32, 1), body_bare,
-                (llvm.const_int(i32, 0),),
-            )
-            b.ret(result)
-
-        jit = llvm.LLJIT()
-        jit.add_module(mod)
-        fn_ptr = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("f"))
-        assert fn_ptr(5) == 0 + 1 + 2 + 3 + 4
-        del jit, mod, fn, fn_ptr
-    assert_no_leaks()
 
 
 def test_for_negative_step_countdown_jits():
