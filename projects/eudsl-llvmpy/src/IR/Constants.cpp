@@ -63,8 +63,20 @@ void populate_constants(nb::module_ &m) {
       "const_int",
       [](llvm::Type *ty, int64_t value, bool isSigned) -> llvm::Constant * {
         auto *ity = llvm::cast<llvm::IntegerType>(ty);
-        return llvm::ConstantInt::get(ity, static_cast<uint64_t>(value),
-                                      isSigned);
+        unsigned bitWidth = ity->getBitWidth();
+        uint64_t uvalue = static_cast<uint64_t>(value);
+        // ConstantInt::get asserts (aborts the process) rather than raising
+        // if the value doesn't fit the type's bit width; check first so an
+        // out-of-range value surfaces as a catchable Python exception.
+        bool fits = isSigned ? llvm::isIntN(bitWidth, value)
+                              : llvm::isUIntN(bitWidth, uvalue);
+        if (!fits)
+          throw nb::value_error(
+              ("value " + std::to_string(value) + " does not fit in a " +
+               std::to_string(bitWidth) + "-bit " +
+               (isSigned ? "signed" : "unsigned") + " integer")
+                  .c_str());
+        return llvm::ConstantInt::get(ity, uvalue, isSigned);
       },
       "type"_a, "value"_a, "signed"_a = false, nb::rv_policy::reference,
       nb::keep_alive<0, 1>());

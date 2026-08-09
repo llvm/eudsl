@@ -8,6 +8,7 @@
 
 #include <llvm/AsmParser/Parser.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/GlobalVariable.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/SourceMgr.h>
 
@@ -68,6 +69,19 @@ void populate_context(nb::module_ &m) {
           "get_function",
           [](eudsl::Module &self, const std::string &name) {
             return self.get().getFunction(name);
+          },
+          "name"_a, nb::rv_policy::reference)
+      .def_prop_ro("globals",
+                   [](eudsl::Module &self) {
+                     std::vector<llvm::GlobalVariable *> out;
+                     for (llvm::GlobalVariable &g : self.get().globals())
+                       out.push_back(&g);
+                     return out;
+                   })
+      .def(
+          "get_global_variable",
+          [](eudsl::Module &self, const std::string &name) {
+            return self.get().getNamedGlobal(name);
           },
           "name"_a, nb::rv_policy::reference)
       .def("__str__", [](eudsl::Module &self) {
