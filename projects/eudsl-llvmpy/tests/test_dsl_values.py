@@ -283,6 +283,24 @@ def test_extract_value_from_struct_arg():
     assert_no_leaks()
 
 
+def test_insert_value_into_struct():
+    # insert_value has no DSL sugar wrapper (only extract_value does, via
+    # extract()), so exercise the raw IRBuilder binding directly.
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        st = llvm.types.struct(ctx, [i32, i32])
+        fn = llvm.Function.create(llvm.types.function(st, [st, i32]), "f", mod)
+        bb = fn.append_basic_block("entry")
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb):
+            updated = b.insert_value(fn.arg(0), fn.arg(1), 1)
+            b.ret(updated)
+        assert "insertvalue { i32, i32 }" in str(mod)
+        del b, fn, mod
+    assert_no_leaks()
+
+
 def test_maybe_downcast_passes_through_unregistered_type():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
