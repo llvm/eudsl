@@ -141,12 +141,19 @@ def test_for_range_sum_jits():
 
 
 def test_function_void_no_explicit_return():
+    # A non-empty body (an empty/pass/docstring-only body is a declaration,
+    # not a definition) that falls off the end without a DSL `return` still
+    # needs the entry block terminated with `ret void`.
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
 
         @llvm.function(module=mod)
-        def noop() -> llvm.types.void:
-            pass
+        def store_and_fall_through(p: llvm.types.ptr) -> llvm.types.void:
+            from llvm.dsl.values import with_element_type
+
+            tp = with_element_type(p, i32)
+            tp[0] = llvm.const_int(i32, 0)
 
         assert "ret void" in str(mod)
         del mod

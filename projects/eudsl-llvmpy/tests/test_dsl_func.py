@@ -22,6 +22,20 @@ def test_declaration_has_no_body():
     assert_no_leaks()
 
 
+def test_declaration_with_pass_body():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.function(module=mod)
+        def extern(a: i32) -> i32:
+            pass
+
+        assert "declare i32 @extern(i32)" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
 def test_call_between_functions_jits():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
@@ -59,6 +73,20 @@ def test_function_options():
         printed = str(mod)
         assert "define internal i32 @f" in printed
         assert 'target-cpu"="znver3' in printed
+        del mod
+    assert_no_leaks()
+
+
+def test_function_calling_conv():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.function(module=mod, calling_conv=llvm.CallingConv.FAST)
+        def f(x: i32) -> i32:
+            return x
+
+        assert "define fastcc i32 @f" in str(mod)
         del mod
     assert_no_leaks()
 
