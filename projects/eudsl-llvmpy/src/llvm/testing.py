@@ -32,10 +32,11 @@ def assert_no_leaks():
 def _find_filecheck():
     """Locate the LLVM FileCheck binary. It ships in mlir-native-tools (into
     sys.prefix/bin) and in the mlir_wheel LLVM distro (LLVM_BINDIR)."""
+    exe = "FileCheck.exe" if sys.platform == "win32" else "FileCheck"
     for cand in (
         os.environ.get("FILECHECK"),
-        os.path.join(os.environ.get("LLVM_BINDIR", ""), "FileCheck"),
-        os.path.join(sys.prefix, "bin", "FileCheck"),
+        os.path.join(os.environ.get("LLVM_BINDIR", ""), exe),
+        os.path.join(sys.prefix, "bin", exe),
         shutil.which("FileCheck"),
     ):
         if cand and os.path.isfile(cand):
