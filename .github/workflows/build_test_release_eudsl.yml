@@ -467,7 +467,14 @@ jobs:
           $python3_command -m pip install eudsl-tblgen -f wheelhouse
 
           export CMAKE_PREFIX_PATH="$PWD/llvm-install"
-          export LLVM_BINDIR="$PWD/llvm-install/bin"
+          # llvm-cov/llvm-profdata must match the clang that instruments the
+          # build (macOS setup_base uses /usr/bin/clang = Apple clang), not the
+          # mlir-wheel distro -- raw .profraw formats are version-locked, so a
+          # mismatched llvm-profdata fails to merge ("no profile can be merged").
+          # Apple clang's tools live in the Xcode toolchain, not /usr/bin, so
+          # resolve them via xcrun. The distro stays on CMAKE_PREFIX_PATH only to
+          # build the extension.
+          export LLVM_BINDIR="$(dirname "$(xcrun -f llvm-cov)")"
           export PYTHON="$python3_command"
           export COVERAGE_THRESHOLD=100
           bash projects/eudsl-llvmpy/scripts/cpp_coverage.sh
