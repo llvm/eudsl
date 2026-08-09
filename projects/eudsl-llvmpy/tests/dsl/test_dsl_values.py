@@ -59,28 +59,28 @@ def test_float_add_uses_fadd():
 
 
 def test_float_remaining_arithmetic():
-    with llvm.Context() as ctx:
+    with llvm.ir.Context() as ctx:
         f32 = llvm.types.f32()
         
-        mod = llvm.Module("m", ctx)
+        mod = llvm.ir.Module("m", ctx)
         fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] - args[1])
         assert "fsub float" in str(mod)
         del b, fn, mod
 
-        mod = llvm.Module("m2", ctx)
+        mod = llvm.ir.Module("m2", ctx)
         fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] * args[1])
         assert "fmul float" in str(mod)
         del b, fn, mod
 
-        mod = llvm.Module("m3", ctx)
+        mod = llvm.ir.Module("m3", ctx)
         fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] / args[1])
         assert "fdiv float" in str(mod)
@@ -89,11 +89,11 @@ def test_float_remaining_arithmetic():
 
 
 def test_float_scalar_coercion():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, f32, [f32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] + 1.5)
         assert "fadd float %0, 1.500000e+00" in str(mod)
@@ -115,51 +115,51 @@ def test_scalar_coercion():
 
 
 def test_remaining_arithmetic_dunders():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32, i32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] - args[1])
         assert "sub i32" in str(mod)
         del b, fn, mod
 
-        mod = llvm.Module("m2", ctx)
+        mod = llvm.ir.Module("m2", ctx)
         fn, bb, args = _entry(ctx, mod, i32, [i32, i32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] / args[1])
         assert "sdiv i32" in str(mod)
         del b, fn, mod
 
-        mod = llvm.Module("m3", ctx)
+        mod = llvm.ir.Module("m3", ctx)
         fn, bb, args = _entry(ctx, mod, i32, [i32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(7 + args[0])
         assert "add i32 %0, 7" in str(mod)
         del b, fn, mod
 
-        mod = llvm.Module("m4", ctx)
+        mod = llvm.ir.Module("m4", ctx)
         fn, bb, args = _entry(ctx, mod, i32, [i32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(7 * args[0])
         assert "mul i32 %0, 7" in str(mod)
         del b, fn, mod
 
-        mod = llvm.Module("m5", ctx)
+        mod = llvm.ir.Module("m5", ctx)
         fn, bb, args = _entry(ctx, mod, i32, [i32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(7 - args[0])
         assert "sub i32 7, %0" in str(mod)
         del b, fn, mod
 
-        mod = llvm.Module("m6", ctx)
+        mod = llvm.ir.Module("m6", ctx)
         fn, bb, args = _entry(ctx, mod, i32, [i32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(7 / args[0])
         assert "sdiv i32 7, %0" in str(mod)
@@ -168,12 +168,12 @@ def test_remaining_arithmetic_dunders():
 
 
 def test_mismatched_types_raises_typeerror():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32()
         f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, i32, [i32, f32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             with pytest.raises(TypeError, match="mismatched types"):
                 args[0] + args[1]
@@ -184,27 +184,27 @@ def test_mismatched_types_raises_typeerror():
 
 
 def test_le_ge_ne_comparisons():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [i32, i32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] <= args[1])
         assert "icmp sle i32" in str(mod)
         del b, fn, mod
 
-        mod = llvm.Module("m2", ctx)
+        mod = llvm.ir.Module("m2", ctx)
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [i32, i32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] >= args[1])
         assert "icmp sge i32" in str(mod)
         del b, fn, mod
 
-        mod = llvm.Module("m3", ctx)
+        mod = llvm.ir.Module("m3", ctx)
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [i32, i32])
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0].ne(args[1]))
         assert "icmp ne i32" in str(mod)
@@ -339,12 +339,12 @@ def test_pointer_subscript_returns_arithvalue():
 
 
 def test_pointer_subscript_accepts_value_index():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32()
-        fn = llvm.Function.create(llvm.types.function(i32, [llvm.types.ptr()]), "g", mod)
+        fn = llvm.ir.Function.create(llvm.types.function(i32, [llvm.types.ptr()]), "g", mod)
         bb = fn.append_basic_block("entry")
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             p = with_element_type(fn.arg(0), i32)
             # An already-built index Value takes the pass-through branch of
@@ -379,13 +379,13 @@ def test_extract_value_from_struct_arg():
 def test_insert_value_into_struct():
     # insert_value has no DSL sugar wrapper (only extract_value does, via
     # extract()), so exercise the raw IRBuilder binding directly.
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32()
         st = llvm.types.struct([i32, i32])
-        fn = llvm.Function.create(llvm.types.function(st, [st, i32]), "f", mod)
+        fn = llvm.ir.Function.create(llvm.types.function(st, [st, i32]), "f", mod)
         bb = fn.append_basic_block("entry")
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb):
             updated = b.insert_value(fn.arg(0), fn.arg(1), 1)
             b.ret(updated)
@@ -395,10 +395,10 @@ def test_insert_value_into_struct():
 
 
 def test_maybe_downcast_passes_through_unregistered_type():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         ptr_ty = llvm.types.ptr()
-        fn = llvm.Function.create(llvm.types.function(ptr_ty, [ptr_ty]), "h", mod)
+        fn = llvm.ir.Function.create(llvm.types.function(ptr_ty, [ptr_ty]), "h", mod)
         # ptr has no registered caster, so maybe_downcast must return the
         # same Value unchanged rather than wrapping it.
         arg = fn.arg(0)
@@ -432,12 +432,12 @@ def test_current_function_raises_without_context():
 
 
 def test_building_sets_current_function():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32()
-        fn = llvm.Function.create(llvm.types.function(i32, []), "f", mod)
+        fn = llvm.ir.Function.create(llvm.types.function(i32, []), "f", mod)
         bb = fn.append_basic_block("entry")
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b, function=fn):
             assert current_function() is fn
         with pytest.raises(RuntimeError, match="no current function"):
