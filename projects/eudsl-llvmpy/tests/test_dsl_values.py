@@ -1,9 +1,11 @@
 #  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+import pytest
+
 import llvm
-from llvm.dsl.casters import maybe_downcast
-from llvm.dsl.context import building
+from llvm.dsl.casters import maybe_downcast, register_value_caster
+from llvm.dsl.context import building, current_builder, current_function
 from llvm.dsl.values import ArithValue, extract, with_element_type
 from llvm.testing import assert_no_leaks
 
@@ -56,6 +58,32 @@ def test_float_add_uses_fadd():
     assert_no_leaks()
 
 
+def test_float_scalar_coercion():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        f32 = llvm.types.f32(ctx)
+        fn, bb, args = _entry(ctx, mod, f32, [f32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(args[0] + 1.5)
+        assert "fadd float %0, 1.500000e+00" in str(mod)
+        del b, fn, mod
+    assert_no_leaks()
+
+
+def test_coerce_rejects_non_numeric_type():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        ptr_ty = llvm.types.ptr(ctx)
+        fn, bb, args = _entry(ctx, mod, ptr_ty, [ptr_ty])
+        # args[0] is a plain Value here (ptr has no registered caster), so
+        # call the coercion helper directly to exercise the guard.
+        with pytest.raises(TypeError):
+            ArithValue._coerce(args[0], 0)
+        del fn, mod
+    assert_no_leaks()
+
+
 def test_scalar_coercion():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
@@ -65,6 +93,72 @@ def test_scalar_coercion():
         with b.at_end_of(bb), building(b):
             b.ret(args[0] + 7)
         assert "add i32 %0, 7" in str(mod)
+        del b, fn, mod
+    assert_no_leaks()
+
+
+def test_remaining_arithmetic_dunders():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        fn, bb, args = _entry(ctx, mod, i32, [i32, i32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(args[0] - args[1])
+        assert "sub i32" in str(mod)
+        del b, fn, mod
+
+        mod = llvm.Module("m2", ctx)
+        fn, bb, args = _entry(ctx, mod, i32, [i32, i32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(args[0] / args[1])
+        assert "sdiv i32" in str(mod)
+        del b, fn, mod
+
+        mod = llvm.Module("m3", ctx)
+        fn, bb, args = _entry(ctx, mod, i32, [i32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(7 + args[0])
+        assert "add i32 %0, 7" in str(mod)
+        del b, fn, mod
+
+        mod = llvm.Module("m4", ctx)
+        fn, bb, args = _entry(ctx, mod, i32, [i32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(7 * args[0])
+        assert "mul i32 %0, 7" in str(mod)
+        del b, fn, mod
+    assert_no_leaks()
+
+
+def test_le_ge_ne_comparisons():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        fn, bb, args = _entry(ctx, mod, llvm.types.i1(ctx), [i32, i32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(args[0] <= args[1])
+        assert "icmp sle i32" in str(mod)
+        del b, fn, mod
+
+        mod = llvm.Module("m2", ctx)
+        fn, bb, args = _entry(ctx, mod, llvm.types.i1(ctx), [i32, i32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(args[0] >= args[1])
+        assert "icmp sge i32" in str(mod)
+        del b, fn, mod
+
+        mod = llvm.Module("m3", ctx)
+        fn, bb, args = _entry(ctx, mod, llvm.types.i1(ctx), [i32, i32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(args[0].ne(args[1]))
+        assert "icmp ne i32" in str(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -151,6 +245,27 @@ def test_pointer_subscript_returns_arithvalue():
     assert_no_leaks()
 
 
+def test_pointer_subscript_accepts_value_index():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        fn = llvm.Function.create(llvm.types.function(i32, [llvm.types.ptr(ctx)]), "g", mod)
+        bb = fn.append_basic_block("entry")
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            p = with_element_type(fn.arg(0), i32)
+            # An already-built index Value takes the pass-through branch of
+            # TypedPointer._idx instead of the python-int -> i64_const branch.
+            idx = b.i64_const(2)
+            v = p[idx]
+            assert isinstance(v, ArithValue)
+            b.ret(v)
+        printed = str(mod)
+        assert "getelementptr i32" in printed
+        del b, fn, mod
+    assert_no_leaks()
+
+
 def test_extract_value_from_struct_arg():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
@@ -164,5 +279,60 @@ def test_extract_value_from_struct_arg():
             assert isinstance(first, ArithValue)
             b.ret(first + 1)
         assert "extractvalue { i32, i32 }" in str(mod)
+        del b, fn, mod
+    assert_no_leaks()
+
+
+def test_maybe_downcast_passes_through_unregistered_type():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        ptr_ty = llvm.types.ptr(ctx)
+        fn = llvm.Function.create(llvm.types.function(ptr_ty, [ptr_ty]), "h", mod)
+        # ptr has no registered caster, so maybe_downcast must return the
+        # same Value unchanged rather than wrapping it.
+        arg = fn.arg(0)
+        assert maybe_downcast(arg, fn) is arg
+        del fn, mod
+    assert_no_leaks()
+
+
+def test_register_value_caster_as_decorator():
+    marker_type_id = llvm.types.TypeID.Label
+    decorator = register_value_caster(marker_type_id)
+
+    class _Marker:
+        pass
+
+    from llvm.dsl.casters import _casters
+
+    try:
+        result = decorator(_Marker)
+        assert result is _Marker  # decorator form returns the class unchanged
+        assert _casters[marker_type_id] is _Marker
+    finally:
+        del _casters[marker_type_id]
+
+
+def test_current_builder_raises_without_context():
+    with pytest.raises(RuntimeError, match="no current IRBuilder"):
+        current_builder()
+
+
+def test_current_function_raises_without_context():
+    with pytest.raises(RuntimeError, match="no current function"):
+        current_function()
+
+
+def test_building_sets_current_function():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        fn = llvm.Function.create(llvm.types.function(i32, []), "f", mod)
+        bb = fn.append_basic_block("entry")
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b, function=fn):
+            assert current_function() is fn
+        with pytest.raises(RuntimeError, match="no current function"):
+            current_function()
         del b, fn, mod
     assert_no_leaks()
