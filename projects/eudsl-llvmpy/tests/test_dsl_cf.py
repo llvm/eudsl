@@ -60,7 +60,7 @@ def test_elif_chain_jits():
     @llvm.function(module=mod)
     def classify(x: i32) -> i32:
         if x < 0:
-            r = yield llvm.const_int(i32, -1)
+            r = yield llvm.const_int(i32, -1, signed=True)
         elif x.eq(llvm.const_int(i32, 0)):
             r = yield llvm.const_int(i32, 0)
         else:
