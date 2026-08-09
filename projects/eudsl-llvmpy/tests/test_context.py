@@ -42,6 +42,9 @@ def test_module_rename():
         mod.module_identifier = "after"
         assert mod.module_identifier == "after"
         assert "ModuleID = 'after'" in str(mod)
+        mod.source_filename = "after.ll"
+        assert mod.source_filename == "after.ll"
+        assert 'source_filename = "after.ll"' in str(mod)
         del mod
     assert_no_leaks()
 
