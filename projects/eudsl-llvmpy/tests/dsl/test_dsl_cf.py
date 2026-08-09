@@ -145,16 +145,16 @@ def test_function_void_no_explicit_return():
     # A non-empty body (an empty/pass/docstring-only body is a declaration,
     # not a definition) that falls off the end without a DSL `return` still
     # needs the entry block terminated with `ret void`.
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod)
+        @llvm.dsl.function(module=mod)
         def store_and_fall_through(p: llvm.types.ptr) -> llvm.types.void:
             from llvm.dsl.values import with_element_type
 
             tp = with_element_type(p, i32)
-            tp[0] = llvm.const_int(i32, 0)
+            tp[0] = llvm.ir.const_int(i32, 0)
 
         assert "ret void" in str(mod)
         del mod
@@ -162,11 +162,11 @@ def test_function_void_no_explicit_return():
 
 
 def test_function_rejects_unresolvable_annotation():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(TypeError, match="cannot resolve type annotation"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def bad(x: "not a type") -> i32:
                 return x
         del mod
@@ -199,19 +199,19 @@ def test_if_else_multiple_results():
 
 
 def test_while_single_carried_value():
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def count_to(n: i32) -> i32:
-        i = llvm.const_int(i32, 0)
+        i = llvm.ir.const_int(i32, 0)
         while i.ne(n):
             i = i + 1
             yield i
         return i
 
-    jit = llvm.LLJIT()
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("count_to"))
     assert fn(5) == 5
@@ -221,27 +221,27 @@ def test_while_single_carried_value():
 
 
 def test_for_range_single_and_stepped_args():
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def sum_upto(n: i32) -> i32:
-        acc = llvm.const_int(i32, 0)
+        acc = llvm.ir.const_int(i32, 0)
         for i in range_(n):
             acc = acc + i
             yield acc
         return acc
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def sum_stepped(n: i32) -> i32:
-        acc = llvm.const_int(i32, 0)
+        acc = llvm.ir.const_int(i32, 0)
         for i in range_(0, n, 2):
             acc = acc + i
             yield acc
         return acc
 
-    jit = llvm.LLJIT()
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     fn1 = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("sum_upto"))
     fn2 = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("sum_stepped"))
@@ -254,18 +254,18 @@ def test_for_range_single_and_stepped_args():
 def test_for_non_range_iterable_is_left_untouched():
     # ForToForLoop only rewrites `for x in range_(...)`; any other iterable
     # is a plain Python loop that unrolls at trace/build time.
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def sum_consts(a: i32) -> i32:
         acc = a
         for v in (1, 2, 3):
-            acc = acc + llvm.const_int(i32, v)
+            acc = acc + llvm.ir.const_int(i32, v)
         return acc
 
-    jit = llvm.LLJIT()
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("sum_consts"))
     assert fn(10) == 10 + 1 + 2 + 3
@@ -274,13 +274,13 @@ def test_for_non_range_iterable_is_left_untouched():
 
 
 def test_break_inside_dsl_control_flow_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="`break`"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def f(n: i32) -> i32:
-                i = llvm.const_int(i32, 0)
+                i = llvm.ir.const_int(i32, 0)
                 while i.ne(n):
                     break
                     i = i + 1
@@ -291,13 +291,13 @@ def test_break_inside_dsl_control_flow_raises():
 
 
 def test_continue_inside_dsl_control_flow_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="`continue`"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def f(n: i32) -> i32:
-                i = llvm.const_int(i32, 0)
+                i = llvm.ir.const_int(i32, 0)
                 while i.ne(n):
                     continue
                     i = i + 1
@@ -308,11 +308,11 @@ def test_continue_inside_dsl_control_flow_raises():
 
 
 def test_early_return_inside_dsl_control_flow_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="early `return`"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def f(c: llvm.types.i1, a: i32) -> i32:
                 if c:
                     return a
@@ -323,13 +323,13 @@ def test_early_return_inside_dsl_control_flow_raises():
 
 
 def test_while_body_without_trailing_yield_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="must end with `yield"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def f(n: i32) -> i32:
-                i = llvm.const_int(i32, 0)
+                i = llvm.ir.const_int(i32, 0)
                 while i.ne(n):
                     i = i + 1
                 return i
@@ -338,13 +338,13 @@ def test_while_body_without_trailing_yield_raises():
 
 
 def test_for_body_without_trailing_yield_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="must end with `yield"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def f(n: i32) -> i32:
-                acc = llvm.const_int(i32, 0)
+                acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n):
                     acc = acc + i
                 return acc
@@ -353,13 +353,13 @@ def test_for_body_without_trailing_yield_raises():
 
 
 def test_for_target_must_be_single_name_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="single name"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def f(n: i32) -> i32:
-                acc = llvm.const_int(i32, 0)
+                acc = llvm.ir.const_int(i32, 0)
                 for i, j in range_(0, n):
                     acc = acc + i
                     yield acc
@@ -369,13 +369,13 @@ def test_for_target_must_be_single_name_raises():
 
 
 def test_for_range_wrong_arg_count_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="1-3 arguments"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def f(n: i32) -> i32:
-                acc = llvm.const_int(i32, 0)
+                acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n, 1, 1):
                     acc = acc + i
                     yield acc
@@ -385,13 +385,13 @@ def test_for_range_wrong_arg_count_raises():
 
 
 def test_loop_yield_non_name_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="plain loop-carried"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def f(n: i32) -> i32:
-                acc = llvm.const_int(i32, 0)
+                acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n):
                     yield acc + i
                 return acc
@@ -399,13 +399,13 @@ def test_loop_yield_non_name_raises():
     assert_no_leaks()
 
 def test_nested_control_flow_inside_loop_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="not supported"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def f(n: i32, c: llvm.types.i1) -> i32:
-                i = llvm.const_int(i32, 0)
+                i = llvm.ir.const_int(i32, 0)
                 while i.ne(n):
                     if c:
                         i = i + 1
@@ -416,13 +416,13 @@ def test_nested_control_flow_inside_loop_raises():
 
 
 def test_while_loop_bare_yield_has_no_carried_values():
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def spin(n: i32) -> i32:
-        while n.eq(llvm.const_int(i32, 0)):
+        while n.eq(llvm.ir.const_int(i32, 0)):
             yield
         return n
 

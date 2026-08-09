@@ -26,11 +26,11 @@ def test_declaration_has_no_body():
 
 
 def test_declaration_with_pass_body():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod)
+        @llvm.dsl.function(module=mod)
         def extern(a: i32) -> i32:
             pass
 
@@ -81,11 +81,11 @@ def test_function_options():
 
 
 def test_function_calling_conv():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod, calling_conv=llvm.CallingConv.FAST)
+        @llvm.dsl.function(module=mod, calling_conv=llvm.ir.CallingConv.FAST)
         def f(x: i32) -> i32:
             return x
 
