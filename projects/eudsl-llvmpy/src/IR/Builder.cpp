@@ -74,12 +74,17 @@ void populate_builder(nb::module_ &m) {
       [](B &self, llvm::Value *l, llvm::Value *r, const std::string &name)     \
           -> llvm::Value * { return self.method(l, r, name); },                \
       "lhs"_a, "rhs"_a, "name"_a = "", nb::rv_policy::reference_internal)
-          EUDSL_BIN("add", CreateAdd) EUDSL_BIN("fadd", CreateFAdd)
-              EUDSL_BIN("sub", CreateSub) EUDSL_BIN("fsub", CreateFSub)
-                  EUDSL_BIN("mul", CreateMul) EUDSL_BIN("fmul", CreateFMul)
-                      EUDSL_BIN("sdiv", CreateSDiv)
-                          EUDSL_BIN("udiv", CreateUDiv)
-                              EUDSL_BIN("fdiv", CreateFDiv)
+      // clang-format off
+      EUDSL_BIN("add", CreateAdd)
+      EUDSL_BIN("fadd", CreateFAdd)
+      EUDSL_BIN("sub", CreateSub)
+      EUDSL_BIN("fsub", CreateFSub)
+      EUDSL_BIN("mul", CreateMul)
+      EUDSL_BIN("fmul", CreateFMul)
+      EUDSL_BIN("sdiv", CreateSDiv)
+      EUDSL_BIN("udiv", CreateUDiv)
+      EUDSL_BIN("fdiv", CreateFDiv)
+      // clang-format on
 #undef EUDSL_BIN
       .def(
           "icmp",
