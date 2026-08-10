@@ -18,3 +18,20 @@ def test_named_metadata_round_trips():
         assert len(got) == 1
         del mod
     assert_no_leaks()
+
+
+def test_metadata_accessors():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        s = llvm.md_string(ctx, "hello")
+        node = llvm.md_node(ctx, [s])
+        mod.add_named_metadata("my.meta", node)
+        got = mod.named_metadata("my.meta")
+        retrieved = got[0]
+        assert isinstance(retrieved, llvm.MDNode)
+        assert retrieved.num_operands == 1
+        op = retrieved.operand(0)
+        assert isinstance(op, llvm.MDString)
+        assert op.string == "hello"
+        del mod
+    assert_no_leaks()

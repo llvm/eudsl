@@ -8,7 +8,6 @@
 #include <llvm/IR/Argument.h>
 #include <llvm/IR/Attributes.h>
 #include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/CallingConv.h>
 #include <llvm/IR/Constant.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -175,9 +174,12 @@ void populate_values(nb::module_ &m) {
                    &llvm::Function::setVisibility)
       .def_prop_rw(
           "calling_conv",
-          [](llvm::Function &self) { return (unsigned)self.getCallingConv(); },
-          [](llvm::Function &self, unsigned cc) {
-            self.setCallingConv((llvm::CallingConv::ID)cc);
+          [](llvm::Function &self) {
+            return static_cast<CallingConvEnum>(self.getCallingConv());
+          },
+          [](llvm::Function &self, CallingConvEnum cc) {
+            self.setCallingConv(
+                static_cast<llvm::CallingConv::ID>(cc));
           })
       .def(
           "add_fn_attr",
