@@ -184,7 +184,7 @@ def test_gep():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        ptr = llvm.types.ptr(ctx)
+        ptr = llvm.types.ptr(context=ctx)
         fn = llvm.Function.create(
             llvm.types.function(ptr, [ptr, i32]), "gep_test", mod
         )

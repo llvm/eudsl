@@ -28,8 +28,8 @@ def test_named_metadata_round_trips():
 
 def test_metadata_str():
     with llvm.Context() as ctx:
-        s = llvm.md_string(ctx, "hi")
-        node = llvm.md_node(ctx, [s])
+        s = llvm.md_string("hi", context=ctx)
+        node = llvm.md_node([s], context=ctx)
         assert "hi" in str(s)
         assert "hi" in str(node)
     assert_no_leaks()
