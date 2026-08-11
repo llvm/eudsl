@@ -60,9 +60,9 @@ def test_verify_pipeline_is_noop():
 
 
 def test_default_pipeline_o2():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
-        llvm.run_default_pipeline(mod, llvm.OptLevel.O2)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        llvm.passmanager.run_default_pipeline(mod, llvm.passmanager.OptLevel.O2)
         printed = str(mod)
         assert "add i32 %x, 0" not in printed
         assert "ret i32 %x" in printed
@@ -71,21 +71,21 @@ def test_default_pipeline_o2():
 
 
 def test_default_pipeline_o0():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
-        llvm.run_default_pipeline(mod, llvm.OptLevel.O0)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        llvm.passmanager.run_default_pipeline(mod, llvm.passmanager.OptLevel.O0)
         assert "define" in str(mod)
         del mod
     assert_no_leaks()
 
 
 def test_default_pipeline_with_tuning():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
-        pto = llvm.PipelineTuningOptions()
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        pto = llvm.passmanager.PipelineTuningOptions()
         pto.loop_vectorization = False
         pto.slp_vectorization = False
-        llvm.run_default_pipeline(mod, llvm.OptLevel.O2, tuning=pto)
+        llvm.passmanager.run_default_pipeline(mod, llvm.passmanager.OptLevel.O2, tuning=pto)
         printed = str(mod)
         assert "add i32 %x, 0" not in printed
         assert "ret i32 %x" in printed
@@ -94,7 +94,7 @@ def test_default_pipeline_with_tuning():
 
 
 def test_pipeline_tuning_options_defaults():
-    pto = llvm.PipelineTuningOptions()
+    pto = llvm.passmanager.PipelineTuningOptions()
     assert pto.loop_unrolling is True
     assert isinstance(pto.loop_vectorization, bool)
     assert isinstance(pto.slp_vectorization, bool)
@@ -103,27 +103,27 @@ def test_pipeline_tuning_options_defaults():
 
 
 def test_run_passes_with_debug(capsys):
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
-        llvm.run_passes(mod, "instcombine", debug=True)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        llvm.passmanager.run_passes(mod, "instcombine", debug=True)
         assert "add i32 %x, 0" not in str(mod)
         del mod
     assert_no_leaks()
 
 
 def test_run_passes_with_verify_each():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
-        llvm.run_passes(mod, "instcombine", verify_each=True)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        llvm.passmanager.run_passes(mod, "instcombine", verify_each=True)
         assert "ret i32 %x" in str(mod)
         del mod
     assert_no_leaks()
 
 
 def test_default_pipeline_with_debug():
-    with llvm.Context() as ctx:
-        mod = llvm.parse_assembly(_SRC, ctx, "m")
-        llvm.run_default_pipeline(mod, llvm.OptLevel.O1, debug=True)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        llvm.passmanager.run_default_pipeline(mod, llvm.passmanager.OptLevel.O1, debug=True)
         assert "define" in str(mod)
         del mod
     assert_no_leaks()
