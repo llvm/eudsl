@@ -30,6 +30,8 @@ def test_target_machine_triple_roundtrips():
     triple = llvm.host_triple()
     tm = llvm.TargetMachine(triple)
     assert tm.triple == triple
+    assert isinstance(tm.data_layout_str, str)
+    assert tm.data_layout_str
 
 
 def test_target_machine_bad_triple_raises():
