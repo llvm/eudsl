@@ -8,6 +8,7 @@
 #include <llvm/IR/PassManager.h>
 #include <llvm/Passes/OptimizationLevel.h>
 #include <llvm/Passes/PassBuilder.h>
+#include <llvm/Passes/StandardInstrumentations.h>
 
 void populate_passes(nb::module_ &m) {
   nb::enum_<llvm::OptimizationLevel>(m, "OptLevel")
@@ -30,8 +31,14 @@ void populate_passes(nb::module_ &m) {
 
   m.def(
       "run_passes",
-      [](eudsl::Module &mod, const std::string &pipeline) {
-        llvm::PassBuilder pb;
+      [](eudsl::Module &mod, const std::string &pipeline, bool debug,
+         bool verify_each) {
+        llvm::PassInstrumentationCallbacks pic;
+        llvm::StandardInstrumentations si(mod.get().getContext(), debug,
+                                          verify_each);
+        si.registerCallbacks(pic);
+        llvm::PassBuilder pb(nullptr, llvm::PipelineTuningOptions(), std::nullopt,
+                             &pic);
         llvm::LoopAnalysisManager lam;
         llvm::FunctionAnalysisManager fam;
         llvm::CGSCCAnalysisManager cgam;
@@ -47,17 +54,21 @@ void populate_passes(nb::module_ &m) {
           throw std::runtime_error(llvm::toString(std::move(err)));
         mpm.run(mod.get(), mam);
       },
-      "module"_a, "pipeline"_a,
+      "module"_a, "pipeline"_a, "debug"_a = false, "verify_each"_a = false,
       "Parse and run a textual pass pipeline over the module in place.");
 
   m.def(
       "run_default_pipeline",
       [](eudsl::Module &mod, llvm::OptimizationLevel level,
-         nb::object pto_obj) {
-        llvm::PipelineTuningOptions pto;
-        if (!pto_obj.is_none())
-          pto = nb::cast<llvm::PipelineTuningOptions>(pto_obj);
-        llvm::PassBuilder pb(nullptr, pto);
+         std::optional<llvm::PipelineTuningOptions> pto, bool debug,
+         bool verify_each) {
+        llvm::PipelineTuningOptions opts = pto.value_or(
+            llvm::PipelineTuningOptions());
+        llvm::PassInstrumentationCallbacks pic;
+        llvm::StandardInstrumentations si(mod.get().getContext(), debug,
+                                          verify_each);
+        si.registerCallbacks(pic);
+        llvm::PassBuilder pb(nullptr, opts, std::nullopt, &pic);
         llvm::LoopAnalysisManager lam;
         llvm::FunctionAnalysisManager fam;
         llvm::CGSCCAnalysisManager cgam;
@@ -74,6 +85,7 @@ void populate_passes(nb::module_ &m) {
                 : pb.buildPerModuleDefaultPipeline(level);
         mpm.run(mod.get(), mam);
       },
-      "module"_a, "level"_a, "tuning"_a = nb::none(),
+      "module"_a, "level"_a, "tuning"_a = nb::none(), "debug"_a = false,
+      "verify_each"_a = false,
       "Run the default optimization pipeline at the given level.");
 }

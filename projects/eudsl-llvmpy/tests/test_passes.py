@@ -100,3 +100,30 @@ def test_pipeline_tuning_options_defaults():
     assert isinstance(pto.slp_vectorization, bool)
     assert isinstance(pto.loop_interleaving, bool)
     assert isinstance(pto.merge_functions, bool)
+
+
+def test_run_passes_with_debug(capsys):
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        llvm.run_passes(mod, "instcombine", debug=True)
+        assert "add i32 %x, 0" not in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_run_passes_with_verify_each():
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        llvm.run_passes(mod, "instcombine", verify_each=True)
+        assert "ret i32 %x" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_default_pipeline_with_debug():
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        llvm.run_default_pipeline(mod, llvm.OptLevel.O1, debug=True)
+        assert "define" in str(mod)
+        del mod
+    assert_no_leaks()
