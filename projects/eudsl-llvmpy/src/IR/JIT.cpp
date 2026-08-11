@@ -16,26 +16,14 @@
 #include <memory>
 #include <string>
 
-namespace {
-struct JIT {
-  std::unique_ptr<llvm::orc::LLJIT> jit;
-};
-} // namespace
-
 void populate_jit(nb::module_ &m) {
-  nb::class_<JIT>(m, "LLJIT")
-      .def("__init__",
-           [](JIT *self) {
-             auto jit = eudsl::unwrap(llvm::orc::LLJITBuilder().create());
-             new (self) JIT{std::move(jit)};
-           })
+  nb::class_<llvm::orc::LLJIT>(m, "LLJIT")
+      .def(nb::new_([]() -> llvm::orc::LLJIT * {
+             return eudsl::unwrap(llvm::orc::LLJITBuilder().create()).release();
+           }))
       .def(
           "add_module",
-          [](JIT &self, eudsl::Module &mod) {
-            // Move the module into the JIT by round-tripping through bitcode
-            // into a fresh, JIT-owned LLVMContext. This avoids extracting a
-            // unique_ptr<LLVMContext> from the shared_ptr the Context/Module
-            // lifetime model uses. The source module is then marked consumed.
+          [](llvm::orc::LLJIT &self, eudsl::Module &mod) {
             std::string buf;
             {
               llvm::raw_string_ostream os(buf);
@@ -47,15 +35,14 @@ void populate_jit(nb::module_ &m) {
             std::unique_ptr<llvm::Module> cloned = eudsl::unwrap(
                 llvm::parseBitcodeFile(memBuf->getMemBufferRef(), *ctx));
             llvm::orc::ThreadSafeModule tsm(std::move(cloned), std::move(ctx));
-            eudsl::unwrap(self.jit->addIRModule(std::move(tsm)));
-            // Mark the source module consumed so later use raises.
+            eudsl::unwrap(self.addIRModule(std::move(tsm)));
             (void)mod.take();
           },
           "module"_a)
       .def(
           "lookup",
-          [](JIT &self, const std::string &name) {
-            llvm::orc::ExecutorAddr addr = eudsl::unwrap(self.jit->lookup(name));
+          [](llvm::orc::LLJIT &self, const std::string &name) {
+            llvm::orc::ExecutorAddr addr = eudsl::unwrap(self.lookup(name));
             return static_cast<uint64_t>(addr.getValue());
           },
           "name"_a);
