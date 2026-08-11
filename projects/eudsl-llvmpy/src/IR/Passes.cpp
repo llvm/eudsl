@@ -31,14 +31,16 @@ void populate_passes(nb::module_ &m) {
 
   m.def(
       "run_passes",
-      [](eudsl::Module &mod, const std::string &pipeline, bool debug,
+      [](eudsl::Module &mod, const std::string &pipeline,
+         std::optional<llvm::PipelineTuningOptions> pto, bool debug,
          bool verify_each) {
+        llvm::PipelineTuningOptions opts = pto.value_or(
+            llvm::PipelineTuningOptions());
         llvm::PassInstrumentationCallbacks pic;
         llvm::StandardInstrumentations si(mod.get().getContext(), debug,
                                           verify_each);
         si.registerCallbacks(pic);
-        llvm::PassBuilder pb(nullptr, llvm::PipelineTuningOptions(), std::nullopt,
-                             &pic);
+        llvm::PassBuilder pb(nullptr, opts, std::nullopt, &pic);
         llvm::LoopAnalysisManager lam;
         llvm::FunctionAnalysisManager fam;
         llvm::CGSCCAnalysisManager cgam;
@@ -54,7 +56,8 @@ void populate_passes(nb::module_ &m) {
           throw std::runtime_error(llvm::toString(std::move(err)));
         mpm.run(mod.get(), mam);
       },
-      "module"_a, "pipeline"_a, "debug"_a = false, "verify_each"_a = false,
+      "module"_a, "pipeline"_a, "tuning"_a = nb::none(), "debug"_a = false,
+      "verify_each"_a = false,
       "Parse and run a textual pass pipeline over the module in place.");
 
   m.def(
