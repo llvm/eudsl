@@ -17,19 +17,19 @@ def test_named_metadata_round_trips():
         got = mod.named_metadata("my.meta")
         assert len(got) == 1
         retrieved = got[0]
-        assert isinstance(retrieved, llvm.MDNode)
+        assert isinstance(retrieved, llvm.ir.MDNode)
         assert retrieved.num_operands == 1
         op = retrieved.operand(0)
-        assert isinstance(op, llvm.MDString)
+        assert isinstance(op, llvm.ir.MDString)
         assert op.string == "hello"
         del mod
     assert_no_leaks()
 
 
 def test_metadata_str():
-    with llvm.Context() as ctx:
-        s = llvm.md_string("hi", context=ctx)
-        node = llvm.md_node([s], context=ctx)
+    with llvm.ir.Context() as ctx:
+        s = llvm.ir.md_string("hi", context=ctx)
+        node = llvm.ir.md_node([s], context=ctx)
         assert "hi" in str(s)
         assert "hi" in str(node)
     assert_no_leaks()
