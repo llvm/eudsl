@@ -57,3 +57,46 @@ def test_verify_pipeline_is_noop():
         assert str(mod) == before
         del mod
     assert_no_leaks()
+
+
+def test_default_pipeline_o2():
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        llvm.run_default_pipeline(mod, llvm.OptLevel.O2)
+        printed = str(mod)
+        assert "add i32 %x, 0" not in printed
+        assert "ret i32 %x" in printed
+        del mod
+    assert_no_leaks()
+
+
+def test_default_pipeline_o0():
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        llvm.run_default_pipeline(mod, llvm.OptLevel.O0)
+        assert "define" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_default_pipeline_with_tuning():
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(_SRC, ctx, "m")
+        pto = llvm.PipelineTuningOptions()
+        pto.loop_vectorization = False
+        pto.slp_vectorization = False
+        llvm.run_default_pipeline(mod, llvm.OptLevel.O2, tuning=pto)
+        printed = str(mod)
+        assert "add i32 %x, 0" not in printed
+        assert "ret i32 %x" in printed
+        del mod
+    assert_no_leaks()
+
+
+def test_pipeline_tuning_options_defaults():
+    pto = llvm.PipelineTuningOptions()
+    assert pto.loop_unrolling is True
+    assert isinstance(pto.loop_vectorization, bool)
+    assert isinstance(pto.slp_vectorization, bool)
+    assert isinstance(pto.loop_interleaving, bool)
+    assert isinstance(pto.merge_functions, bool)
