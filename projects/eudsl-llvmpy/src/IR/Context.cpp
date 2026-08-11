@@ -19,12 +19,6 @@
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Target/TargetMachine.h>
 
-namespace eudsl {
-struct TargetMachine {
-  std::unique_ptr<llvm::TargetMachine> tm;
-};
-} // namespace eudsl
-
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
@@ -136,8 +130,8 @@ void populate_context(nb::module_ &m) {
       })
       .def(
           "set_data_layout_from",
-          [](eudsl::Module &self, eudsl::TargetMachine &tm) {
-            self.get().setDataLayout(tm.tm->createDataLayout());
+          [](eudsl::Module &self, llvm::TargetMachine &tm) {
+            self.get().setDataLayout(tm.createDataLayout());
           },
           "target_machine"_a);
 

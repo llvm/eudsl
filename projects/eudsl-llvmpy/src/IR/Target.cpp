@@ -16,20 +16,14 @@
 #include <memory>
 #include <optional>
 
-namespace eudsl {
-struct TargetMachine {
-  std::unique_ptr<llvm::TargetMachine> tm;
-};
-} // namespace eudsl
-
 namespace {
-std::string emit(eudsl::TargetMachine &self, eudsl::Module &mod,
+std::string emit(llvm::TargetMachine &self, eudsl::Module &mod,
                  llvm::CodeGenFileType type) {
   std::string buf;
   llvm::raw_string_ostream os(buf);
   llvm::buffer_ostream bos(os);
   llvm::legacy::PassManager pm;
-  if (self.tm->addPassesToEmitFile(pm, bos, nullptr, type))
+  if (self.addPassesToEmitFile(pm, bos, nullptr, type))
     throw std::runtime_error("target cannot emit this file type");
   pm.run(mod.get());
   return buf;
@@ -39,58 +33,57 @@ std::string emit(eudsl::TargetMachine &self, eudsl::Module &mod,
 void populate_target(nb::module_ &m) {
   m.def("host_triple", []() { return llvm::sys::getDefaultTargetTriple(); });
 
-  nb::class_<eudsl::TargetMachine>(m, "TargetMachine")
+  nb::class_<llvm::TargetMachine>(m, "TargetMachine")
       .def(
-          "__init__",
-          [](eudsl::TargetMachine *self, std::optional<std::string> triple,
-             std::optional<std::string> cpu,
-             std::optional<std::vector<std::string>> features) {
-            std::string tripleStr =
-                triple.value_or(llvm::sys::getDefaultTargetTriple());
-            std::string cpuStr = cpu.value_or("");
-            std::string featStr;
-            if (features) {
-              for (size_t i = 0; i < features->size(); ++i) {
-                if (i > 0)
-                  featStr += ",";
-                featStr += (*features)[i];
-              }
-            }
-            llvm::Triple tt(tripleStr);
-            std::string err;
-            const llvm::Target *target =
-                llvm::TargetRegistry::lookupTarget(tt, err);
-            if (!target)
-              throw std::runtime_error(err);
-            llvm::TargetOptions opts;
-            llvm::TargetMachine *tm = target->createTargetMachine(
-                tt, cpuStr, featStr, opts, std::nullopt);
-            if (!tm)
-              throw std::runtime_error("could not create TargetMachine for " +
-                                       tripleStr);
-            new (self) eudsl::TargetMachine{
-                std::unique_ptr<llvm::TargetMachine>(tm)};
-          },
+          nb::new_(
+              [](std::optional<std::string> triple,
+                 std::optional<std::string> cpu,
+                 std::optional<std::vector<std::string>> features)
+                  -> llvm::TargetMachine * {
+                std::string tripleStr =
+                    triple.value_or(llvm::sys::getDefaultTargetTriple());
+                std::string cpuStr = cpu.value_or("");
+                std::string featStr;
+                if (features) {
+                  for (size_t i = 0; i < features->size(); ++i) {
+                    if (i > 0)
+                      featStr += ",";
+                    featStr += (*features)[i];
+                  }
+                }
+                llvm::Triple tt(tripleStr);
+                std::string err;
+                const llvm::Target *target =
+                    llvm::TargetRegistry::lookupTarget(tt, err);
+                if (!target)
+                  throw std::runtime_error(err);
+                llvm::TargetOptions opts;
+                llvm::TargetMachine *tm = target->createTargetMachine(
+                    tt, cpuStr, featStr, opts, std::nullopt);
+                if (!tm)
+                  throw std::runtime_error(
+                      "could not create TargetMachine for " + tripleStr);
+                return tm;
+              }),
           "triple"_a = nb::none(), "cpu"_a = nb::none(),
           "features"_a = nb::none())
       .def_prop_ro("triple",
-                   [](eudsl::TargetMachine &self) {
-                     return self.tm->getTargetTriple().str();
+                   [](llvm::TargetMachine &self) {
+                     return self.getTargetTriple().str();
                    })
       .def_prop_ro("data_layout_str",
-                   [](eudsl::TargetMachine &self) {
-                     return self.tm->createDataLayout()
-                         .getStringRepresentation();
+                   [](llvm::TargetMachine &self) {
+                     return self.createDataLayout().getStringRepresentation();
                    })
       .def(
           "emit_assembly",
-          [](eudsl::TargetMachine &self, eudsl::Module &mod) {
+          [](llvm::TargetMachine &self, eudsl::Module &mod) {
             return emit(self, mod, llvm::CodeGenFileType::AssemblyFile);
           },
           "module"_a)
       .def(
           "emit_object",
-          [](eudsl::TargetMachine &self, eudsl::Module &mod) {
+          [](llvm::TargetMachine &self, eudsl::Module &mod) {
             std::string obj =
                 emit(self, mod, llvm::CodeGenFileType::ObjectFile);
             return nb::bytes(obj.data(), obj.size());
