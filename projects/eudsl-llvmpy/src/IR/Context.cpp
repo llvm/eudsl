@@ -17,6 +17,13 @@
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
+#include <llvm/Target/TargetMachine.h>
+
+namespace eudsl {
+struct TargetMachine {
+  std::unique_ptr<llvm::TargetMachine> tm;
+};
+} // namespace eudsl
 
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
@@ -129,11 +136,8 @@ void populate_context(nb::module_ &m) {
       })
       .def(
           "set_data_layout_from",
-          [](eudsl::Module &self, nb::handle tm) {
-            // TargetMachine lives in Target.cpp; fetch its data-layout string
-            // through the bound property to avoid a cross-file C++ dependency.
-            std::string dl = nb::cast<std::string>(tm.attr("data_layout_str"));
-            self.get().setDataLayout(dl);
+          [](eudsl::Module &self, eudsl::TargetMachine &tm) {
+            self.get().setDataLayout(tm.tm->createDataLayout());
           },
           "target_machine"_a);
 
