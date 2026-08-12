@@ -122,28 +122,49 @@ _SOURCES = {
     """,
 }
 
-_EXPECTED_INSTRUCTIONS = {
-    "SExtInst", "FPToUIInst", "UIToFPInst", "FPTruncInst", "FPExtInst",
-    "AddrSpaceCastInst", "PtrToAddrInst", "FPUnaryOperator", "FreezeInst",
-    "ExtractElementInst", "InsertElementInst", "ShuffleVectorInst",
-    "ExtractValueInst", "InsertValueInst",
-    "SwitchInst", "IndirectBrInst", "UnreachableInst", "VAArgInst",
-    "CallBrInst",
-    "AtomicRMWInst", "AtomicCmpXchgInst", "FenceInst",
-    "InvokeInst", "LandingPadInst", "ResumeInst",
-    "CatchSwitchInst", "CatchPadInst", "CatchReturnInst",
-    "CleanupPadInst", "CleanupReturnInst",
-}
+def _leaf_instruction_classes():
+    """Derive the set of leaf Instruction subclasses from the bindings."""
+    instr = llvm.Instruction
+    all_sub = set()
+    for name in dir(llvm):
+        obj = getattr(llvm, name)
+        if isinstance(obj, type) and issubclass(obj, instr) and obj is not instr:
+            all_sub.add(obj)
+    leaves = set()
+    for cls in all_sub:
+        is_parent = any(
+            issubclass(other, cls) and other is not cls for other in all_sub
+        )
+        if not is_parent:
+            leaves.add(cls.__name__)
+    # BinaryOperator is not a leaf (FPBinaryOperator subclasses it) but the
+    # type_hook returns it for integer binops, so include it.
+    if hasattr(llvm, "BinaryOperator"):
+        leaves.add("BinaryOperator")
+    return leaves
 
 
 def test_instruction_kinds_downcast():
+    expected = _leaf_instruction_classes()
     seen = set()
     with llvm.Context() as ctx:
         for name, src in _SOURCES.items():
             mod = llvm.parse_assembly(dedent(src), ctx, name)
             seen |= _instruction_kinds(mod)
             del mod
-    missing = _EXPECTED_INSTRUCTIONS - seen
+    # This test covers the "hard" kinds (EH, atomics, vector, etc.) that the
+    # per-instruction test in test_cpp_coverage.py doesn't exercise. Together
+    # the two files must cover every leaf. Anything missing here means a new
+    # source snippet is needed.
+    covered_by_opcode_sweep = {
+        "BinaryOperator", "FPBinaryOperator",
+        "TruncInst", "ZExtInst", "SIToFPInst", "FPToSIInst",
+        "BitCastInst", "PtrToIntInst", "IntToPtrInst",
+        "ICmpInst", "FCmpInst", "SelectInst",
+        "AllocaInst", "StoreInst", "LoadInst", "GetElementPtrInst",
+        "CallInst", "UncondBrInst", "CondBrInst", "PHINode", "ReturnInst",
+    }
+    missing = expected - seen - covered_by_opcode_sweep
     assert not missing, f"instruction kinds not downcast: {sorted(missing)}"
     assert_no_leaks()
 
