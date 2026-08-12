@@ -37,8 +37,8 @@ def test_intrinsics_getattr_shim():
 
 
 def test_underscore_to_dot_mangling():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         vec4i32 = llvm.types.vector(i32, 4)
         decl = llvm.intrinsics.vector_reduce_add(mod, [vec4i32])
@@ -48,11 +48,11 @@ def test_underscore_to_dot_mangling():
 
 
 def test_non_overloaded_intrinsic():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
-        trap_id = llvm.lookup_intrinsic_id("llvm.trap")
-        assert not llvm.intrinsic_is_overloaded(trap_id)
-        decl = llvm.get_intrinsic_declaration(mod, trap_id)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        trap_id = llvm.intrinsics.lookup_intrinsic_id("llvm.trap")
+        assert not llvm.intrinsics.intrinsic_is_overloaded(trap_id)
+        decl = llvm.intrinsics.get_intrinsic_declaration(mod, trap_id)
         assert decl.name == "llvm.trap"
         assert "declare void @llvm.trap()" in str(mod)
         del decl, mod
@@ -60,8 +60,8 @@ def test_non_overloaded_intrinsic():
 
 
 def test_non_overloaded_via_shim():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         decl = llvm.intrinsics.trap(mod)
         assert decl.name == "llvm.trap"
         del decl, mod
