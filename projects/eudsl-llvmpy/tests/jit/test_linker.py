@@ -33,9 +33,9 @@ def test_link_two_modules():
 
 
 def test_consumed_source_cannot_be_linked_again():
-    with llvm.Context() as ctx:
-        dest = llvm.parse_assembly("declare i32 @a()\n", ctx, "dest")
-        src = llvm.parse_assembly(
+    with llvm.ir.Context() as ctx:
+        dest = llvm.ir.parse_assembly("declare i32 @a()\n", ctx, "dest")
+        src = llvm.ir.parse_assembly(
             dedent(
                 """\
                 define i32 @a() {
@@ -46,9 +46,9 @@ def test_consumed_source_cannot_be_linked_again():
             ctx,
             "src",
         )
-        llvm.link_into(dest, src)
-        dest2 = llvm.parse_assembly("declare i32 @b()\n", ctx, "dest2")
+        llvm.jit.link_into(dest, src)
+        dest2 = llvm.ir.parse_assembly("declare i32 @b()\n", ctx, "dest2")
         with pytest.raises(RuntimeError, match="has been consumed"):
-            llvm.link_into(dest2, src)
+            llvm.jit.link_into(dest2, src)
         del dest, dest2, src
     assert_no_leaks()
