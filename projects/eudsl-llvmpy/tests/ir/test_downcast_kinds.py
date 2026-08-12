@@ -124,10 +124,10 @@ _SOURCES = {
 
 def _leaf_instruction_classes():
     """Derive the set of leaf Instruction subclasses from the bindings."""
-    instr = llvm.Instruction
+    instr = llvm.ir.Instruction
     all_sub = set()
-    for name in dir(llvm):
-        obj = getattr(llvm, name)
+    for name in dir(llvm.ir):
+        obj = getattr(llvm.ir, name)
         if isinstance(obj, type) and issubclass(obj, instr) and obj is not instr:
             all_sub.add(obj)
     leaves = set()
@@ -139,7 +139,7 @@ def _leaf_instruction_classes():
             leaves.add(cls.__name__)
     # BinaryOperator is not a leaf (FPBinaryOperator subclasses it) but the
     # type_hook returns it for integer binops, so include it.
-    if hasattr(llvm, "BinaryOperator"):
+    if hasattr(llvm.ir, "BinaryOperator"):
         leaves.add("BinaryOperator")
     return leaves
 
