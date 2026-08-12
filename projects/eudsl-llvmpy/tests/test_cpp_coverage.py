@@ -230,8 +230,6 @@ def test_module_context_accessor():
 
 
 def test_valuetypeinfo_downcasts_many_opcodes_and_kinds():
-    # Exercises the valueTypeInfo dispatch across a broad range of instruction
-    # opcodes and value kinds, asserting each comes back as its concrete class.
     src = dedent(
         """\
         @g = global i32 0
@@ -265,27 +263,57 @@ def test_valuetypeinfo_downcasts_many_opcodes_and_kinds():
         }
         """
     )
-    expected = {
-        "BinaryOperator",   # add/sub/mul/and/shl
-        "FPBinaryOperator", # fadd
-        "TruncInst", "ZExtInst", "SIToFPInst", "FPToSIInst",
-        "BitCastInst", "PtrToIntInst", "IntToPtrInst",
-        "ICmpInst", "FCmpInst", "SelectInst",
-        "AllocaInst", "StoreInst", "LoadInst", "GetElementPtrInst",
-        "CallInst", "UncondBrInst", "PHINode", "ReturnInst",
+    expected_per_name = {
+        "add": "BinaryOperator",
+        "sub": "BinaryOperator",
+        "mul": "BinaryOperator",
+        "and": "BinaryOperator",
+        "shl": "BinaryOperator",
+        "fadd": "FPBinaryOperator",
+        "tr": "TruncInst",
+        "ze": "ZExtInst",
+        "si": "SIToFPInst",
+        "fp2i": "FPToSIInst",
+        "bc": "BitCastInst",
+        "pti": "PtrToIntInst",
+        "itp": "IntToPtrInst",
+        "cmp": "ICmpInst",
+        "fcmp": "FCmpInst",
+        "sel": "SelectInst",
+        "al": "AllocaInst",
+        "ld": "LoadInst",
+        "ge": "GetElementPtrInst",
+        "ca": "CallInst",
+        "ph": "PHINode",
     }
     with llvm.Context() as ctx:
         mod = llvm.parse_assembly(src, ctx, "m")
-        seen = set()
         f = mod.get_function("f")
+        named_insts = {}
         for bb in f.basic_blocks:
             for inst in bb.instructions:
-                seen.add(type(inst).__name__)
-        missing = expected - seen
-        assert not missing, f"opcodes not downcast: {missing}"
-        # Value kinds: Argument, Function, GlobalVariable, constants.
+                if inst.name:
+                    named_insts[inst.name] = type(inst).__name__
+            terminator = bb.terminator
+            if type(terminator).__name__ == "UncondBrInst":
+                named_insts["__br__"] = "UncondBrInst"
+            elif type(terminator).__name__ == "ReturnInst":
+                named_insts["__ret__"] = "ReturnInst"
+        for name, expected_cls in expected_per_name.items():
+            actual = named_insts.get(name)
+            assert actual == expected_cls, (
+                f"%{name}: expected {expected_cls}, got {actual}"
+            )
+        assert named_insts.get("__br__") == "UncondBrInst"
+        assert named_insts.get("__ret__") == "ReturnInst"
         assert type(f).__name__ == "Function"
         assert type(f.arg(0)).__name__ == "Argument"
+        # StoreInst has no name; check it separately.
+        store_insts = [
+            inst for bb in f.basic_blocks for inst in bb.instructions
+            if type(inst).__name__ == "StoreInst"
+        ]
+        assert len(store_insts) == 1
         del f, mod
     assert_no_leaks()
 
