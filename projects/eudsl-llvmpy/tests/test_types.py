@@ -25,6 +25,7 @@ def test_type_predicates():
         assert not llvm.types.void(ctx).is_sized
         assert llvm.types.i32(ctx).is_integer
         assert not llvm.types.i32(ctx).is_floating_point
+        assert llvm.types.i32(ctx).type_id == llvm.types.TypeID.Integer
         assert llvm.types.f64(ctx).is_floating_point
         assert llvm.types.i32(ctx).is_sized
         assert llvm.types.ptr(ctx).is_pointer
