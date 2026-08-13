@@ -2,32 +2,47 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
-// Stateless support for the Python value-caster layer (see llvm/dsl/casters.py),
-// which is analogous to MLIR's register_value_caster / PyValue::maybeDownCast.
+// Value-caster registry in C++, analogous to MLIR's PyGlobals::valueCasterMap.
 //
-// The C++ type_hook (Kinds.h) already downcasts a returned llvm::Value* to its
-// concrete *bound C++* class (Instruction, ConstantInt, ...). The Python caster
-// layer adds a second, user-extensible step: re-wrapping the same Value* as a
-// Python subclass (e.g. the DSL's ArithValue).
-//
-// This file deliberately holds NO Python references at static scope -- the
-// caster registry lives in Python -- so nothing leaks at interpreter shutdown.
-// The one primitive C++ must provide is nb::inst_reference, which binds an
-// existing C++ pointer into a chosen Python type with its lifetime tied to a
-// parent object (nanobind offers no Python-level equivalent).
+// The C++ type_hook (Kinds.h) already downcasts a returned Value* to its
+// concrete bound C++ class (Instruction, ConstantInt, ...). This layer adds a
+// user-extensible second step: re-wrapping the same Value* as a Python subclass
+// (e.g. the DSL's ArithValue) keyed on the LLVM Type::TypeID.
 
 #include "IR/Common.h"
 
+#include <llvm/IR/Type.h>
 #include <llvm/IR/Value.h>
+
+#include <unordered_map>
+
+namespace {
+std::unordered_map<unsigned, nb::object> &casterMap() {
+  static std::unordered_map<unsigned, nb::object> map;
+  return map;
+}
+} // namespace
 
 void populate_casters(nb::module_ &m) {
   m.def(
-      "_wrap_value_as",
-      [](llvm::Value *v, nb::handle pyType, nb::handle parent) -> nb::object {
-        return nb::steal(nb::detail::nb_inst_reference(
-            (PyTypeObject *)pyType.ptr(), (void *)v, parent.ptr()));
+      "register_value_caster",
+      [](unsigned typeId, nb::object caster) {
+        casterMap()[typeId] = std::move(caster);
       },
-      "value"_a, "py_type"_a, "parent"_a = nb::none(),
-      "Re-wrap an existing Value* as the given Python (sub)type, tying its "
-      "lifetime to `parent`. Backs llvm.dsl.casters.maybe_downcast.");
+      "type_id"_a, "caster"_a,
+      "Register a Python type to wrap Values whose Type has the given TypeID.");
+
+  m.def(
+      "maybe_downcast",
+      [](nb::object value, nb::handle parent) -> nb::object {
+        auto *v = nb::cast<llvm::Value *>(value);
+        auto it = casterMap().find((unsigned)v->getType()->getTypeID());
+        if (it == casterMap().end())
+          return value;
+        nb::handle p = parent.is_none() ? value : parent;
+        return nb::steal(nb::detail::nb_inst_reference(
+            (PyTypeObject *)it->second.ptr(), (void *)v, p.ptr()));
+      },
+      "value"_a, "parent"_a = nb::none(),
+      "Re-wrap a Value as its registered caster subclass, if any.");
 }
