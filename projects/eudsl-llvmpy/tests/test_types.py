@@ -9,10 +9,13 @@ def test_primitive_types_print():
     with llvm.Context() as ctx:
         assert str(llvm.types.void(ctx)) == "void"
         assert str(llvm.types.i1(ctx)) == "i1"
+        assert str(llvm.types.i8(ctx)) == "i8"
+        assert str(llvm.types.i16(ctx)) == "i16"
         assert str(llvm.types.i32(ctx)) == "i32"
+        assert str(llvm.types.i64(ctx)) == "i64"
+        assert str(llvm.types.f16(ctx)) == "half"
         assert str(llvm.types.f32(ctx)) == "float"
         assert str(llvm.types.f64(ctx)) == "double"
-        assert str(llvm.types.f16(ctx)) == "half"
     assert_no_leaks()
 
 
