@@ -58,6 +58,36 @@ def test_float_add_uses_fadd():
     assert_no_leaks()
 
 
+def test_float_remaining_arithmetic():
+    with llvm.Context() as ctx:
+        f32 = llvm.types.f32(ctx)
+        
+        mod = llvm.Module("m", ctx)
+        fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(args[0] - args[1])
+        assert "fsub float" in str(mod)
+        del b, fn, mod
+
+        mod = llvm.Module("m2", ctx)
+        fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(args[0] * args[1])
+        assert "fmul float" in str(mod)
+        del b, fn, mod
+
+        mod = llvm.Module("m3", ctx)
+        fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(args[0] / args[1])
+        assert "fdiv float" in str(mod)
+        del b, fn, mod
+    assert_no_leaks()
+
+
 def test_float_scalar_coercion():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
@@ -131,6 +161,38 @@ def test_remaining_arithmetic_dunders():
             b.ret(7 * args[0])
         assert "mul i32 %0, 7" in str(mod)
         del b, fn, mod
+
+        mod = llvm.Module("m5", ctx)
+        fn, bb, args = _entry(ctx, mod, i32, [i32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(7 - args[0])
+        assert "sub i32 7, %0" in str(mod)
+        del b, fn, mod
+
+        mod = llvm.Module("m6", ctx)
+        fn, bb, args = _entry(ctx, mod, i32, [i32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(7 / args[0])
+        assert "sdiv i32 7, %0" in str(mod)
+        del b, fn, mod
+    assert_no_leaks()
+
+
+def test_mismatched_types_raises_typeerror():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        f32 = llvm.types.f32(ctx)
+        fn, bb, args = _entry(ctx, mod, i32, [i32, f32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            with pytest.raises(TypeError, match="mismatched types"):
+                args[0] + args[1]
+            with pytest.raises(TypeError, match="mismatched types"):
+                args[0] < args[1]
+        del b, fn, mod
     assert_no_leaks()
 
 
@@ -199,6 +261,7 @@ def test_eq_ne_named_methods():
             b.ret(args[0].eq(args[1]))
         assert "icmp eq i32" in str(mod)
         # __eq__ stays identity so the value is still hashable.
+        assert type(args[0] == args[0]) is bool
         assert args[0] == args[0]
         assert len({args[0], args[0]}) == 1
         del b, fn, mod

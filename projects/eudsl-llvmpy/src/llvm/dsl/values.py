@@ -44,12 +44,16 @@ class ArithValue(Value):
 
     def _binary(self, other, int_method, float_method):
         other = self._coerce(other)
+        if self.type != other.type:
+            raise TypeError(f"mismatched types: {self.type} and {other.type}")
         b = current_builder()
         method = float_method if self.type.is_floating_point else int_method
         return self._wrap(getattr(b, method)(self, other))
 
     def _cmp(self, other, icmp_pred, fcmp_pred):
         other = self._coerce(other)
+        if self.type != other.type:
+            raise TypeError(f"mismatched types: {self.type} and {other.type}")
         b = current_builder()
         if self.type.is_floating_point:
             return self._wrap(
@@ -72,8 +76,24 @@ class ArithValue(Value):
     def __radd__(self, other):
         return self._binary(other, "add", "fadd")
 
+    def __rsub__(self, other):
+        other = self._coerce(other)
+        if self.type != other.type:
+            raise TypeError(f"mismatched types: {other.type} and {self.type}")
+        b = current_builder()
+        method = "fsub" if self.type.is_floating_point else "sub"
+        return self._wrap(getattr(b, method)(other, self))
+
     def __rmul__(self, other):
         return self._binary(other, "mul", "fmul")
+
+    def __rtruediv__(self, other):
+        other = self._coerce(other)
+        if self.type != other.type:
+            raise TypeError(f"mismatched types: {other.type} and {self.type}")
+        b = current_builder()
+        method = "fdiv" if self.type.is_floating_point else "sdiv"
+        return self._wrap(getattr(b, method)(other, self))
 
     # Comparisons default to signed-integer / ordered-float predicates.
     def __lt__(self, other):
