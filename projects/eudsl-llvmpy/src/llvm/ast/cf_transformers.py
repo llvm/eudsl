@@ -149,6 +149,7 @@ class ReplaceIfWithWith(StrictTransformer):
         then_with = ast.With(items=[withitem])
         then_with = ast.copy_location(then_with, updated_node)
         then_with = ast.fix_missing_locations(then_with)
+        then_with.end_lineno = then_with.lineno
         then_with.body = updated_node.body
 
         if updated_node.orelse:
@@ -160,9 +161,11 @@ class ReplaceIfWithWith(StrictTransformer):
             else_with = ast.With(items=[withitem])
             if is_elif:
                 else_with = ast.copy_location(else_with, updated_node.orelse[0])
+                else_with = ast.fix_missing_locations(else_with)
+                else_with.end_lineno = else_with.lineno
             else:
                 else_with = set_lineno(else_with, updated_node.orelse[0].lineno - 1)
-            else_with = ast.fix_missing_locations(else_with)
+                else_with = ast.fix_missing_locations(else_with)
             else_with.body = updated_node.orelse
             return [then_with, else_with]
         else:

@@ -119,8 +119,10 @@ def test_if_rewrite_preserves_linenos():
     assert len(with_nodes) == 2
     # then-branch With inherits the If's lineno via ast.copy_location.
     assert with_nodes[0].lineno == 2
+    assert with_nodes[0].end_lineno == 2
     # else-branch With gets orelse[0].lineno - 1 (the `else:` keyword line).
     assert with_nodes[1].lineno == 4
+    assert with_nodes[1].end_lineno == 4
 
 
 def test_insert_empty_yield_linenos():
