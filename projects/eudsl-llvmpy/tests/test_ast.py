@@ -231,3 +231,51 @@ def test_rewrite_produces_expected_ast_structure():
     else_ctx = node.body[1].items[0].context_expr
     assert isinstance(else_ctx, ast.Call)
     assert else_ctx.func.id == "else_ctx_manager"
+
+
+def test_while_to_while_loop_preserves_lineno():
+    # WhileToWhileLoop replaces the while node with [cond_fn, body_fn, call],
+    # each carrying the original while's lineno via ast.copy_location.
+    src = (
+        "def f():\n"       # line 1
+        "    x = 0\n"      # line 2
+        "    while x:\n"   # line 3
+        "        x = 1\n"  # line 4
+        "        yield x\n"  # line 5
+    )
+    tree = ast.parse(src)
+    node = tree.body[0]
+    node = T.WhileToWhileLoop(context=None, first_lineno=0).generic_visit(node)
+    # The while was on line 3; all emitted nodes should carry that lineno.
+    # node.body = [x = 0, cond_fn, body_fn, call]
+    cond_fn = node.body[1]
+    body_fn = node.body[2]
+    call = node.body[3]
+    assert isinstance(cond_fn, ast.FunctionDef)
+    assert isinstance(body_fn, ast.FunctionDef)
+    assert isinstance(call, ast.Assign)
+    assert cond_fn.lineno == 3
+    assert body_fn.lineno == 3
+    assert call.lineno == 3
+
+
+def test_for_to_for_loop_preserves_lineno():
+    # ForToForLoop replaces the for node with [body_fn, call], each carrying
+    # the original for's lineno via ast.copy_location.
+    src = (
+        "def f():\n"         # line 1
+        "    acc = 0\n"      # line 2
+        "    for i in range_(0, 10):\n"  # line 3
+        "        acc = 1\n"  # line 4
+        "        yield acc\n"  # line 5
+    )
+    tree = ast.parse(src)
+    node = tree.body[0]
+    node = T.ForToForLoop(context=None, first_lineno=0).generic_visit(node)
+    # node.body = [acc = 0, body_fn, call]
+    body_fn = node.body[1]
+    call = node.body[2]
+    assert isinstance(body_fn, ast.FunctionDef)
+    assert isinstance(call, ast.Assign)
+    assert body_fn.lineno == 3
+    assert call.lineno == 3

@@ -246,7 +246,8 @@ def for_loop(start, stop, step, body_fn, inits):
             BODY
             yield carried
         # lowered to a while_loop over (i, *carried):
-        #   cond: i < stop ; body: (i + step, *body_fn(i, *carried))
+        #   cond: i < stop (ascending) or i > stop (descending)
+        #   body: (i + step, *body_fn(i, *carried))
 
     body_fn(i, *carried) -> next-carried-tuple. Returns the final carried
     values (the induction variable is internal).
@@ -255,8 +256,11 @@ def for_loop(start, stop, step, body_fn, inits):
     start_v = _as_value(start, stop_v if not isinstance(stop, int) else start)
     inits = [_as_value(v, start_v) for v in inits]
 
+    # Pick comparator based on step sign (negative step → descending).
+    step_negative = step < 0 if isinstance(step, int) else False
+
     def cond(iv, *carried):
-        return iv < stop_v
+        return iv > stop_v if step_negative else iv < stop_v
 
     def body(iv, *carried):
         nxt = body_fn(iv, *carried)

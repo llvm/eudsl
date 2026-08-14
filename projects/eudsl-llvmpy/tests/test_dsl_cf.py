@@ -498,3 +498,123 @@ def test_for_loop_wraps_none_and_non_tuple_body_result():
         assert fn_ptr(5) == 0 + 1 + 2 + 3 + 4
         del jit, mod, fn, fn_ptr
     assert_no_leaks()
+
+
+def test_for_negative_step_countdown_jits():
+    # Exercises the descending-loop condition (iv > stop) for negative step.
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.function(module=mod)
+    def countdown(n: i32) -> i32:
+        acc = llvm.const_int(i32, 0)
+        for i in range_(n, 0, -1):
+            acc = acc + i
+            yield acc
+        return acc
+
+    mod.verify()
+    jit = llvm.LLJIT()
+    jit.add_module(mod)
+    fn_ptr = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("countdown"))
+    # sum(range(5, 0, -1)) = 5 + 4 + 3 + 2 + 1 = 15
+    assert fn_ptr(5) == 15
+    assert fn_ptr(1) == 1
+    assert fn_ptr(0) == 0
+    del jit, mod, fn_ptr, ctx
+
+
+def test_early_return_inside_while_raises():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        with pytest.raises(NotImplementedError, match="early `return`"):
+            @llvm.function(module=mod)
+            def f(n: i32) -> i32:
+                acc = llvm.const_int(i32, 0)
+                while acc.ne(n):
+                    return acc
+                    yield acc
+                return acc
+        del mod
+    assert_no_leaks()
+
+
+def test_early_return_inside_for_raises():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        with pytest.raises(NotImplementedError, match="early `return`"):
+            @llvm.function(module=mod)
+            def f(n: i32) -> i32:
+                acc = llvm.const_int(i32, 0)
+                for i in range_(0, n):
+                    return acc
+                    yield acc
+                return acc
+        del mod
+    assert_no_leaks()
+
+
+def test_if_else_phi_has_correct_incomings():
+    # Structural test: verify the module has correct phi structure.
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.function(module=mod)
+        def pick(c: llvm.types.i1, a: i32, b: i32) -> i32:
+            if c:
+                r = yield a + 1
+            else:
+                r = yield b
+            return r
+
+        mod.verify()
+        printed = str(mod)
+        # phi must have exactly 2 incoming edges (then and else branches).
+        assert printed.count("phi i32") == 1
+        # Each incoming is [value, %block_label]; there should be 2 of them.
+        phi_line = [l for l in printed.splitlines() if "phi i32" in l][0]
+        assert phi_line.count("[") == 2
+        del mod
+    assert_no_leaks()
+
+
+def test_while_loop_verifies_cleanly():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.function(module=mod)
+        def sum_to(n: i32) -> i32:
+            acc = llvm.const_int(i32, 0)
+            i = llvm.const_int(i32, 0)
+            while i.ne(n):
+                acc = acc + i
+                i = i + 1
+                yield acc, i
+            return acc
+
+        mod.verify()
+        del mod
+    assert_no_leaks()
+
+
+def test_for_loop_verifies_cleanly():
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.function(module=mod)
+        def total(n: i32) -> i32:
+            acc = llvm.const_int(i32, 0)
+            for i in range_(0, n):
+                acc = acc + i
+                yield acc
+            return acc
+
+        mod.verify()
+        del mod
+    assert_no_leaks()
