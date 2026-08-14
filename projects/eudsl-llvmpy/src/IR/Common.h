@@ -59,7 +59,8 @@ enum class CallingConvEnum : unsigned {
           return d;                                                            \
         throw nb::value_error("value is not a " #Derived);                     \
       }),                                                                      \
-      nb::rv_policy::reference, nb::keep_alive<0, 1>())
+      nb::arg("value").none(), nb::rv_policy::reference,                       \
+      nb::keep_alive<0, 1>())
 
 // Pulled in here so every translation unit that returns an llvm::Type* or
 // llvm::Value* sees the downcasting type_hook specializations. Without this a
