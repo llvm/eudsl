@@ -179,3 +179,87 @@ def test_declaration_with_pass_body():
         assert "declare i32 @extern2(i32)" in str(mod)
         del mod
     assert_no_leaks()
+
+
+def test_declaration_with_docstring_only():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.dsl.function(module=mod)
+        def extern(a: i32) -> i32:
+            """An external function."""
+
+        assert "declare i32 @extern(i32)" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_real_body_is_not_treated_as_empty():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(x: i32) -> i32:
+            return x + 1
+
+        assert "define i32 @f" in str(mod)
+        assert "add i32" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_call_declared_extern_from_function_body():
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    def add_one(x: i32) -> i32:
+        return x + 1
+
+    @llvm.dsl.function(module=mod)
+    def extern(x: i32) -> i32: ...
+
+    @llvm.dsl.function(module=mod)
+    def caller(x: i32) -> i32:
+        return add_one(extern(x))
+
+    printed = str(mod)
+    assert "call i32 @extern" in printed
+    assert "call i32 @add_one" in printed
+    del mod, ctx, add_one, extern, caller, i32
+    assert_no_leaks()
+
+
+def test_zero_arg_function():
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    def constant() -> i32:
+        return llvm.ir.const_int(i32, 42)
+
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32)(jit.lookup("constant"))
+    assert fn() == 42
+    del jit, mod, ctx, constant, i32, fn
+    assert_no_leaks()
+
+
+def test_name_override():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.dsl.function(module=mod, name="custom_name")
+        def f(x: i32) -> i32:
+            return x
+
+        assert "define i32 @custom_name" in str(mod)
+        assert f.name == "custom_name"
+        del mod
+    assert_no_leaks()
