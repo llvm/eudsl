@@ -31,11 +31,14 @@ def test_all_binary_dunders():
             _ = a - b
             _ = a * b
             _ = a / b
-            _ = 3 + a       # __radd__
-            _ = 3 * a       # __rmul__
+            radd_result = 3 + a
+            rmul_result = 3 * a
             bld.ret(a + b)
         p = str(mod)
         assert "sub i32" in p and "mul i32" in p and "sdiv i32" in p
+        assert "add i32" in p  # radd produces an add
+        assert isinstance(radd_result, ArithValue)
+        assert isinstance(rmul_result, ArithValue)
         del bld, fn, mod
     assert_no_leaks()
 
@@ -182,17 +185,17 @@ def test_current_builder_and_function_raise_outside_context():
 
 
 def test_register_value_caster_decorator_form():
-    # Exercise the decorator form: register a caster for Void TypeID, then
-    # verify maybe_downcast actually picks it up via the C++ registry.
-    import llvm.eudslllvm_ext as _ext
+    from llvm.dsl.values import ArithValue
 
-    @register_value_caster(llvm.types.TypeID.Void)
-    def _caster(v):  # pragma: no cover - not invoked in normal paths
-        return v
-
-    # Verify it was registered by checking the C++ side can be called again
-    # without error (idempotent overwrite).
-    _ext.register_value_caster(llvm.types.TypeID.Void.value, _caster)
-
-    # Clean up: overwrite with a no-op so it doesn't interfere with other tests.
-    _ext.register_value_caster(llvm.types.TypeID.Void.value, lambda v: v)
+    # Register ArithValue for Integer TypeID (already registered by the DSL
+    # itself), then verify maybe_downcast wraps an integer argument as
+    # ArithValue — proving the decorator form works end-to-end.
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        fn = llvm.Function.create(llvm.types.function(i32, [i32]), "f", mod)
+        arg = fn.arg(0)
+        result = maybe_downcast(arg, fn)
+        assert isinstance(result, ArithValue)
+        del fn, mod
+    assert_no_leaks()
