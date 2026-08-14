@@ -45,13 +45,28 @@ void populate_constants(nb::module_ &m) {
       m, "ConstantDataSequential")
       .def_prop_ro("num_elements", &llvm::ConstantDataSequential::getNumElements)
       .def("get_element_as_int",
-           [](llvm::ConstantDataSequential &self, unsigned i) {
-             return self.getElementAsInteger(i);
+           [](llvm::ConstantDataSequential &self, Py_ssize_t i) {
+             // getElementAsInteger asserts (aborts the process) on a bad index
+             // or a non-integer element type; surface both as catchable Python
+             // errors instead.
+             Py_ssize_t n = static_cast<Py_ssize_t>(self.getNumElements());
+             if (i < 0 || i >= n)
+               throw nb::index_error("element index out of range");
+             if (!self.getElementType()->isIntegerTy())
+               throw nb::value_error("element type is not an integer");
+             return self.getElementAsInteger(static_cast<unsigned>(i));
            },
            "index"_a)
       .def("get_element_as_double",
-           [](llvm::ConstantDataSequential &self, unsigned i) {
-             return self.getElementAsDouble(i);
+           [](llvm::ConstantDataSequential &self, Py_ssize_t i) {
+             // getElementAsDouble likewise asserts on a bad index or a
+             // non-double element type.
+             Py_ssize_t n = static_cast<Py_ssize_t>(self.getNumElements());
+             if (i < 0 || i >= n)
+               throw nb::index_error("element index out of range");
+             if (!self.getElementType()->isDoubleTy())
+               throw nb::value_error("element type is not double");
+             return self.getElementAsDouble(static_cast<unsigned>(i));
            },
            "index"_a)
       .def_prop_ro("is_string",
