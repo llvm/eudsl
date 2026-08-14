@@ -3,7 +3,13 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import ast
 
-from llvm.ast.canonicalize import canonicalize, StrictTransformer, find_func_in_code_object
+from llvm.ast.canonicalize import (
+    canonicalize,
+    Canonicalizer,
+    FunctionPatcher,
+    StrictTransformer,
+    find_func_in_code_object,
+)
 from llvm.dsl.cf import LLVMCanonicalizer
 
 

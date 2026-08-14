@@ -7,6 +7,8 @@ import ctypes
 import pytest
 
 import llvm
+from llvm.ast.canonicalize import canonicalize, Canonicalizer, FunctionPatcher
+from llvm.dsl.cf import LLVMCanonicalizer
 from llvm.dsl.cf import range_
 from llvm.dsl.values import with_element_type
 from llvm.testing import assert_no_leaks
@@ -18,6 +20,7 @@ def test_range_single_arg():
     i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def total(n: i32) -> i32:
         acc = llvm.const_int(i32, 0)
         for i in range_(n):  # single-arg range_: start defaults to 0
@@ -40,6 +43,7 @@ def test_for_side_effect_bare_yield():
     i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def fill(p: llvm.types.ptr, n: i32) -> i32:
         tp = with_element_type(p, i32)
         for i in range_(0, n):
@@ -60,6 +64,7 @@ def test_range_too_many_args_raises():
         with pytest.raises(NotImplementedError, match="range_ takes 1-3"):
 
             @llvm.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def bad(n: i32) -> i32:
                 acc = llvm.const_int(i32, 0)
                 for i in range_(0, n, 1, 2):
@@ -77,6 +82,7 @@ def test_for_non_name_target_raises():
         with pytest.raises(NotImplementedError, match="single name"):
 
             @llvm.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def bad(n: i32) -> i32:
                 acc = llvm.const_int(i32, 0)
                 for (i, j) in range_(0, n):
@@ -94,6 +100,7 @@ def test_for_body_without_trailing_yield_raises():
         with pytest.raises(NotImplementedError, match="must end with"):
 
             @llvm.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def bad(n: i32) -> i32:
                 acc = llvm.const_int(i32, 0)
                 for i in range_(0, n):
@@ -110,6 +117,7 @@ def test_while_body_without_trailing_yield_raises():
         with pytest.raises(NotImplementedError, match="must end with"):
 
             @llvm.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def bad(n: i32) -> i32:
                 i = llvm.const_int(i32, 0)
                 while i.ne(n):
@@ -126,6 +134,7 @@ def test_loop_yield_non_name_raises():
         with pytest.raises(NotImplementedError, match="loop-carried variable names"):
 
             @llvm.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def bad(n: i32) -> i32:
                 acc = llvm.const_int(i32, 0)
                 for i in range_(0, n):
@@ -142,6 +151,7 @@ def test_elif_multiple_carried_results():
     i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def pick2(x: i32, a: i32, b: i32) -> i32:
         if x < 0:
             p, q = yield a, b
@@ -177,6 +187,7 @@ def test_for_over_python_list_unrolls():
     i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def sum3(a: i32, b: i32, c: i32) -> i32:
         acc = llvm.const_int(i32, 0)
         for x in [a, b, c]:
@@ -204,6 +215,7 @@ def test_nested_if_in_then_branch():
     i32 = llvm.types.i32(ctx)
 
     @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def f(c: llvm.types.i1, d: llvm.types.i1, a: i32, b: i32) -> i32:
         if c:
             if d:
