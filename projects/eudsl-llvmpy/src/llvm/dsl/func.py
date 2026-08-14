@@ -8,9 +8,7 @@ import inspect
 from .. import Function, IRBuilder
 from ..eudslllvm_ext.types import Type
 from ..eudslllvm_ext.types import function as function_t
-from ..ast.canonicalize import canonicalize
 from .casters import maybe_downcast
-from .cf import LLVMCanonicalizer
 from .context import building
 
 
@@ -38,9 +36,6 @@ def function(*, module, name=None):
         fn = Function.create(function_t(ret_type, param_types), fn_name, module)
         entry = fn.append_basic_block("entry")
         builder = IRBuilder(ctx)
-
-        # Rewrite Python control flow into the cf context-manager calls.
-        f = canonicalize(using=LLVMCanonicalizer())(f)
 
         with builder.at_end_of(entry), building(builder, fn):
             args = [maybe_downcast(fn.arg(i), fn) for i in range(len(param_types))]
