@@ -75,7 +75,15 @@ void populate_values(nb::module_ &m) {
               throw nb::index_error("index out of range");
             return self.getOperand(static_cast<unsigned>(i));
           },
-          nb::rv_policy::reference_internal);
+          nb::rv_policy::reference_internal)
+      .def(
+          "__iter__",
+          [](llvm::User &self) {
+            return nb::make_iterator<nb::rv_policy::reference>(
+                nb::type<llvm::User>(), "OperandIterator",
+                self.value_op_begin(), self.value_op_end());
+          },
+          nb::keep_alive<0, 1>());
 
   // Structural spine of the Value hierarchy. These base classes are registered
   // bare so the concrete subclasses bound in Instructions.cpp / Constants.cpp
