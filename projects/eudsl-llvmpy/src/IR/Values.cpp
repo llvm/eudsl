@@ -58,6 +58,11 @@ void populate_values(nb::module_ &m) {
           "replace_all_uses_except",
           [](llvm::Value &self, llvm::Value *newValue,
              std::vector<llvm::User *> exceptions) {
+            // replaceUsesWithIf asserts the types match and would otherwise
+            // abort the interpreter; reject the mismatch as a Python error.
+            if (newValue->getType() != self.getType())
+              throw nb::value_error(
+                  "replacement value type does not match the value's type");
             self.replaceUsesWithIf(newValue, [&](llvm::Use &u) {
               return std::find(exceptions.begin(), exceptions.end(),
                                u.getUser()) == exceptions.end();
