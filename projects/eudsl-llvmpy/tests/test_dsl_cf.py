@@ -2,6 +2,7 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import ctypes
+import re
 
 import pytest
 
@@ -758,8 +759,8 @@ def test_if_else_phi_has_correct_incomings():
         mod.verify()
         printed = str(mod)
         assert printed.count("phi i32") == 1
-        import re
-        assert len(re.findall(r"\[.*?,\s*%\w+\]", [l for l in printed.splitlines() if "phi i32" in l][0])) == 2
+        phi_line = [l for l in printed.splitlines() if "phi i32" in l][0]
+        assert len(re.findall(r"\[.*?,\s*%[\w.]+\s*\]", phi_line)) == 2
         del mod
     assert_no_leaks()
 

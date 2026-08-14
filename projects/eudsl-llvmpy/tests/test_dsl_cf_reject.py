@@ -35,6 +35,7 @@ def test_continue_raises():
         with pytest.raises(NotImplementedError, match="continue"):
 
             @llvm.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def bad(n: i32) -> i32:
                 for i in range_(0, n):
                     if i.eq(llvm.const_int(i32, 3)):
@@ -87,6 +88,7 @@ def test_trailing_return_is_allowed():
         i32 = llvm.types.i32(ctx)
 
         @llvm.function(module=mod)
+        @canonicalize(using=LLVMCanonicalizer())
         def ok(c: llvm.types.i1, a: i32, b: i32) -> i32:
             if c:
                 r = yield a
