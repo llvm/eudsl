@@ -573,6 +573,7 @@ def test_if_no_else_side_effect_only():
     printed = str(mod)
     assert "br i1" in printed
     assert "store i32 0" in printed
+    mod.verify()
     del mod, ctx, clamp0, i32
     assert_no_leaks()
 
