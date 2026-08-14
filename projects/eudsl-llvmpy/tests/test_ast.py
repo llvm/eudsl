@@ -257,6 +257,9 @@ def test_while_to_while_loop_preserves_lineno():
     assert cond_fn.lineno == 3
     assert body_fn.lineno == 3
     assert call.lineno == 3
+    assert cond_fn.end_lineno == 3
+    assert body_fn.end_lineno == 3
+    assert call.end_lineno == 3
 
 
 def test_for_to_for_loop_preserves_lineno():
@@ -279,3 +282,5 @@ def test_for_to_for_loop_preserves_lineno():
     assert isinstance(call, ast.Assign)
     assert body_fn.lineno == 3
     assert call.lineno == 3
+    assert body_fn.end_lineno == 3
+    assert call.end_lineno == 3

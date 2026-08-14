@@ -286,6 +286,7 @@ class WhileToWhileLoop(StrictTransformer):
         out = [cond_fn, body_fn, call]
         for n in out:
             ast.copy_location(n, node)
+            n.end_lineno = n.lineno
             ast.fix_missing_locations(n)
         return out
 
@@ -386,6 +387,7 @@ class ForToForLoop(StrictTransformer):
         out = [body_fn, call]
         for n in out:
             ast.copy_location(n, node)
+            n.end_lineno = n.lineno
             ast.fix_missing_locations(n)
         return out
 
