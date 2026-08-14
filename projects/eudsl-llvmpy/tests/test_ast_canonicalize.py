@@ -91,3 +91,28 @@ def test_find_func_in_code_object_finds_doubly_nested_target():
     code = compile(ast.parse(src), "<s>", "exec")
     found = find_func_in_code_object(code, "target")
     assert found is not None and found.co_name == "target"
+
+
+def test_multiple_patchers_are_chained():
+    # Verifies that patch_function applies all patchers in sequence, not just
+    # the last one. Each patcher wraps f in a lambda that adds to the result.
+
+    class _AddOnePatcher(FunctionPatcher):
+        def patch_function(self, original_f):
+            return lambda *a, **kw: original_f(*a, **kw) + 1
+
+    class _DoubleCanonicalizer(Canonicalizer):
+        @property
+        def cst_transformers(self):
+            return [StrictTransformer]
+
+        @property
+        def function_patchers(self):
+            return [_AddOnePatcher, _AddOnePatcher]
+
+    def f(x):
+        return x
+
+    g = canonicalize(using=_DoubleCanonicalizer())(f)
+    # f(10) = 10, +1 from first patcher = 11, +1 from second = 12
+    assert g(10) == 12

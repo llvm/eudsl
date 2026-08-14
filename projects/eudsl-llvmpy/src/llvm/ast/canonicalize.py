@@ -25,7 +25,7 @@ class StrictTransformer(Transformer):
         return node
 
 
-def transform_func(f, *transformer_ctors: type(Transformer)):
+def transform_func(f, *transformer_ctors: type[Transformer]):
     module = get_module_cst(f)
     context = types.SimpleNamespace()
     for transformer_ctor in transformer_ctors:
@@ -54,7 +54,8 @@ def transform_func(f, *transformer_ctors: type(Transformer)):
     return module
 
 
-# TODO(max): unify with `replace_closure` in ast/utils.py
+# Wraps `f` in a synthetic enclosing scope that provides its free variables,
+# so the compiled code object has the correct co_freevars layout.
 def insert_closed_vars(f, module):
     enclosing_mod = ast.FunctionDef(
         name="enclosing_mod",
@@ -81,7 +82,7 @@ def insert_closed_vars(f, module):
 
 
 def transform_ast(
-    f, transformers: List[Union[type(Transformer), type(StrictTransformer)]]
+    f, transformers: List[Union[type[Transformer], type[StrictTransformer]]]
 ):
     module = transform_func(f, *transformers)
     if f.__closure__:
@@ -103,10 +104,11 @@ class FunctionPatcher(ABC):
         pass  # pragma: no cover
 
 
-def patch_function(f, patchers: List[type(FunctionPatcher)]):
+def patch_function(f, patchers: List[type[FunctionPatcher]]):
     context = types.SimpleNamespace()
+    new_f = f
     for patcher in patchers:
-        new_f = patcher(context).patch_function(f)
+        new_f = patcher(context).patch_function(new_f)
 
     return new_f
 

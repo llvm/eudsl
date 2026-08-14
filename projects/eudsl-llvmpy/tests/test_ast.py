@@ -88,6 +88,64 @@ def test_nested_if_in_body_forwards_tuple_yield():
 
 def test_canonicalize_module_imports_clean():
     # The vendored canonicalize/util import with no MLIR deps.
+    import sys
     from llvm.ast import canonicalize, util  # noqa: F401
     assert hasattr(canonicalize, "canonicalize")
     assert hasattr(util, "get_module_cst")
+    assert not any(
+        m.startswith("mlir") for m in sys.modules if sys.modules[m] is not None
+    )
+
+
+def test_if_rewrite_preserves_linenos():
+    src = (
+        "def f():\n"
+        "    if c:\n"
+        "        x = a\n"
+        "    else:\n"
+        "        x = b\n"
+    )
+    tree = ast.parse(src)
+    node = tree.body[0]
+    for ctor in (
+        T.CanonicalizeElIfs,
+        T.InsertEmptyYield,
+        T.ReplaceYieldWithLLVMYield,
+        T.ReplaceIfWithWith,
+    ):
+        node = ctor(context=None, first_lineno=0).generic_visit(node)
+    # The transformed With nodes must carry line numbers from the original If.
+    with_nodes = [n for n in ast.walk(node) if isinstance(n, ast.With)]
+    assert len(with_nodes) == 2
+    assert with_nodes[0].lineno == 2
+    assert with_nodes[1].lineno == 4
+
+
+def test_rewrite_produces_expected_ast_structure():
+    src = (
+        "def f():\n"
+        "    if c:\n"
+        "        x = a\n"
+        "    else:\n"
+        "        x = b\n"
+    )
+    tree = ast.parse(src)
+    node = tree.body[0]
+    for ctor in (
+        T.CanonicalizeElIfs,
+        T.InsertEmptyYield,
+        T.ReplaceYieldWithLLVMYield,
+        T.ReplaceIfWithWith,
+    ):
+        node = ctor(context=None, first_lineno=0).generic_visit(node)
+    # The function body should contain exactly two With statements (then + else).
+    assert all(isinstance(stmt, ast.With) for stmt in node.body)
+    assert len(node.body) == 2
+    # The then-branch With's context_expr must be a call to if_ctx_manager.
+    then_ctx = node.body[0].items[0].context_expr
+    assert isinstance(then_ctx, ast.Call)
+    assert then_ctx.func.id == "if_ctx_manager"
+    # The else-branch With's context_expr must be a call to else_ctx_manager.
+    else_ctx = node.body[1].items[0].context_expr
+    assert isinstance(else_ctx, ast.Call)
+    assert else_ctx.func.id == "else_ctx_manager"
