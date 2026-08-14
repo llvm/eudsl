@@ -31,6 +31,9 @@ def test_if_else_produces_phi():
         assert "br i1" in printed
         assert "phi i32" in printed
         assert "add i32" in printed
+        # Verify the phi has exactly 2 incoming edges [value, %pred].
+        phi_line = [l for l in printed.splitlines() if "phi i32" in l][0]
+        assert len(re.findall(r"\[.*?,\s*%[\w.]+\s*\]", phi_line)) == 2
         del mod
     assert_no_leaks()
 
@@ -442,20 +445,20 @@ def test_range_marker_is_callable_directly():
 
 def test_for_negative_step_countdown_jits():
     # Exercises the descending-loop condition (iv > stop) for negative step.
-    ctx = llvm.Context()
-    mod = llvm.Module("m", ctx)
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
 
-    @llvm.function(module=mod)
+    @llvm.dsl.function(module=mod)
     def countdown(n: i32) -> i32:
-        acc = llvm.const_int(i32, 0)
+        acc = llvm.ir.const_int(i32, 0)
         for i in range_(n, 0, -1):
             acc = acc + i
             yield acc
         return acc
 
     mod.verify()
-    jit = llvm.LLJIT()
+    jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     fn_ptr = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("countdown"))
     # sum(range(5, 0, -1)) = 5 + 4 + 3 + 2 + 1 = 15
@@ -618,13 +621,13 @@ def test_for_mixed_start_stop():
 
 
 def test_early_return_inside_while_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="early `return`"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def f(n: i32) -> i32:
-                acc = llvm.const_int(i32, 0)
+                acc = llvm.ir.const_int(i32, 0)
                 while acc.ne(n):
                     return acc
                     yield acc
@@ -634,13 +637,13 @@ def test_early_return_inside_while_raises():
 
 
 def test_early_return_inside_for_raises():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="early `return`"):
-            @llvm.function(module=mod)
+            @llvm.dsl.function(module=mod)
             def f(n: i32) -> i32:
-                acc = llvm.const_int(i32, 0)
+                acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n):
                     return acc
                     yield acc
@@ -650,12 +653,12 @@ def test_early_return_inside_for_raises():
 
 
 def test_if_else_phi_has_correct_incomings():
-    # Structural test: verify the module has correct phi structure.
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod)
+        @llvm.dsl.function(module=mod)
+        @canonicalize(using=LLVMCanonicalizer())
         def pick(c: llvm.types.i1, a: i32, b: i32) -> i32:
             if c:
                 r = yield a + 1
@@ -670,17 +673,15 @@ def test_if_else_phi_has_correct_incomings():
         assert len(re.findall(r"\[.*?,\s*%[\w.]+\s*\]", phi_line)) == 2
         del mod
     assert_no_leaks()
-
-
 def test_while_loop_verifies_cleanly():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod)
+        @llvm.dsl.function(module=mod)
         def sum_to(n: i32) -> i32:
-            acc = llvm.const_int(i32, 0)
-            i = llvm.const_int(i32, 0)
+            acc = llvm.ir.const_int(i32, 0)
+            i = llvm.ir.const_int(i32, 0)
             while i.ne(n):
                 acc = acc + i
                 i = i + 1
@@ -693,13 +694,13 @@ def test_while_loop_verifies_cleanly():
 
 
 def test_for_loop_verifies_cleanly():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
 
-        @llvm.function(module=mod)
+        @llvm.dsl.function(module=mod)
         def total(n: i32) -> i32:
-            acc = llvm.const_int(i32, 0)
+            acc = llvm.ir.const_int(i32, 0)
             for i in range_(0, n):
                 acc = acc + i
                 yield acc
