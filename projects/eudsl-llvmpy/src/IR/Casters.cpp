@@ -46,8 +46,6 @@ void populate_casters(nb::module_ &m) {
       "value"_a, "parent"_a = nb::none(),
       "Re-wrap a Value as its registered caster subclass, if any.");
 
-  m.def("_clear_casters", []() { casterMap().clear(); });
-
   nb::module_::import_("atexit").attr("register")(
       nb::cpp_function([]() { casterMap().clear(); }));
 }
