@@ -60,8 +60,10 @@ def test_basic_block_and_instruction_traversal():
         # add, ret
         assert len(insts) == 2
         assert entry.terminator == insts[-1]
-        # The Value type_hook downcasts the add to its concrete class.
-        assert isinstance(insts[0], llvm.BinaryOperator)
+        # The Value type_hook downcasts the add to its concrete class. Pin the
+        # exact class: BinaryOperator has a subclass (FPBinaryOperator), so
+        # isinstance would also accept a mis-downcast of this integer add.
+        assert type(insts[0]) is llvm.BinaryOperator
         del f, entry, blocks, insts, mod
     assert_no_leaks()
 
@@ -74,7 +76,9 @@ def test_value_users_and_operands():
         # %x is used by the add.
         assert x.num_uses == 1
         add = x.users[0]
-        assert isinstance(add, llvm.BinaryOperator)
+        # Exact class, not isinstance: FPBinaryOperator subclasses
+        # BinaryOperator, so isinstance would not catch a mis-downcast.
+        assert type(add) is llvm.BinaryOperator
         assert add.num_operands == 2
         assert add.operand(0) == x
         del f, x, add, mod
