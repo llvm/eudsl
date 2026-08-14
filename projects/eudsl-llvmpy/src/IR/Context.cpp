@@ -23,6 +23,28 @@
 #include <nanobind/stl/vector.h>
 
 void populate_context(nb::module_ &m) {
+  // GlobalValue linkage kinds (llvm::GlobalValue::LinkageTypes) and thread-local
+  // modes. Registered here, ahead of every other populate_* call, so factories
+  // such as Module.add_global and Function.create can take these as arguments
+  // (rather than hardcoding one choice) with enum defaults.
+  nb::enum_<llvm::GlobalValue::LinkageTypes>(m, "Linkage")
+      .value("EXTERNAL", llvm::GlobalValue::LinkageTypes::ExternalLinkage)
+      .value("INTERNAL", llvm::GlobalValue::LinkageTypes::InternalLinkage)
+      .value("PRIVATE", llvm::GlobalValue::LinkageTypes::PrivateLinkage)
+      .value("LINKONCE", llvm::GlobalValue::LinkageTypes::LinkOnceAnyLinkage)
+      .value("LINKONCE_ODR", llvm::GlobalValue::LinkageTypes::LinkOnceODRLinkage)
+      .value("WEAK", llvm::GlobalValue::LinkageTypes::WeakAnyLinkage)
+      .value("COMMON", llvm::GlobalValue::LinkageTypes::CommonLinkage)
+      .value("APPENDING", llvm::GlobalValue::LinkageTypes::AppendingLinkage)
+      .value("EXTERNAL_WEAK", llvm::GlobalValue::LinkageTypes::ExternalWeakLinkage);
+
+  nb::enum_<llvm::GlobalValue::ThreadLocalMode>(m, "ThreadLocalMode")
+      .value("NOT_THREAD_LOCAL", llvm::GlobalValue::ThreadLocalMode::NotThreadLocal)
+      .value("GENERAL_DYNAMIC", llvm::GlobalValue::ThreadLocalMode::GeneralDynamicTLSModel)
+      .value("LOCAL_DYNAMIC", llvm::GlobalValue::ThreadLocalMode::LocalDynamicTLSModel)
+      .value("INITIAL_EXEC", llvm::GlobalValue::ThreadLocalMode::InitialExecTLSModel)
+      .value("LOCAL_EXEC", llvm::GlobalValue::ThreadLocalMode::LocalExecTLSModel);
+
   nb::class_<eudsl::Context>(m, "Context")
       .def(nb::init<>())
       .def(
@@ -132,13 +154,18 @@ void populate_context(nb::module_ &m) {
           "add_global",
           [](eudsl::Module &self, llvm::Type *ty, const std::string &name,
              llvm::Constant *init, bool isConstant,
+             llvm::GlobalVariable* insertBefore,
+             llvm::GlobalValue::LinkageTypes linkage,
+             llvm::GlobalValue::ThreadLocalMode tlMode,
              unsigned addressSpace) -> llvm::GlobalVariable * {
             return new llvm::GlobalVariable(
-                self.get(), ty, isConstant,
-                llvm::GlobalValue::ExternalLinkage, init, name, nullptr,
-                llvm::GlobalValue::NotThreadLocal, addressSpace);
+                self.get(), ty, isConstant, linkage, init, name, insertBefore,
+                tlMode, addressSpace);
           },
           "type"_a, "name"_a, "init"_a = nullptr, "constant"_a = false,
+          "insert_before"_a = nullptr,
+          "linkage"_a = llvm::GlobalValue::LinkageTypes::ExternalLinkage,
+          "thread_local_mode"_a = llvm::GlobalValue::ThreadLocalMode::NotThreadLocal,
           "address_space"_a = 0, nb::rv_policy::reference_internal)
       .def(
           "get_global",
