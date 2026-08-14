@@ -8,6 +8,26 @@ import pytest
 import llvm
 from llvm.dsl.values import with_element_type
 from llvm.testing import assert_no_leaks
+from llvm.types import (
+    ArrayType,
+    FunctionType,
+    IntegerType,
+    PointerType,
+    StructType,
+    VectorType,
+)
+
+# Deferred type annotations built at import time, with NO live Context. These
+# are types.GenericAlias objects; they are only evaluated (against the module's
+# context) when the @function decorator emits, so annotating needs no context.
+I32 = IntegerType[32]
+I64 = IntegerType[64]
+PTR = PointerType[0]
+PTR3 = PointerType[3]
+ARR = ArrayType[IntegerType[32], 4]
+VEC = VectorType[IntegerType[32], 4]
+STRUCT = StructType[IntegerType[32], IntegerType[64]]
+NESTED_STRUCT = StructType[StructType[IntegerType[32], IntegerType[64]], IntegerType[32]]
 
 
 def test_declaration_has_no_body():
@@ -262,4 +282,193 @@ def test_name_override():
         assert "define i32 @custom_name" in str(mod)
         assert f.name == "custom_name"
         del mod
+    assert_no_leaks()
+
+
+# --- Deferred generic-type annotations (nb::is_generic), one per new type. ---
+# Each annotation is a types.GenericAlias created at import (no live Context);
+# the decorator evaluates it against module.context when it emits.
+
+
+def test_generic_integer_annotation():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(x: IntegerType[32]) -> IntegerType[32]:
+            return x
+
+        assert "define i32 @f(i32" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_pointer_annotation():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(p: PTR) -> PTR:
+            return p
+
+        assert "define ptr @f(ptr" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_pointer_addrspace_annotation():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(p: PTR3) -> I32: ...
+
+        assert "declare i32 @f(ptr addrspace(3))" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_bare_pointer_annotation():
+    # A bare (non-subscripted) PointerType class annotation -> default addrspace.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(p: PointerType) -> I32: ...
+
+        assert "declare i32 @f(ptr)" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_array_annotation():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(a: ARR) -> I32: ...
+
+        assert "declare i32 @f([4 x i32])" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_vector_annotation():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(v: VEC) -> I32: ...
+
+        assert "declare i32 @f(<4 x i32>)" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_struct_annotation():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(s: STRUCT) -> I32: ...
+
+        assert "declare i32 @f({ i32, i64 })" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_nested_function_type_via_pointer():
+    # FunctionType[...] itself isn't a valid by-value parameter type, but it is
+    # a first-class deferred type; verify it evaluates and round-trips through a
+    # declared function's own signature.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+
+        @llvm.dsl.function(module=mod)
+        def callee(p: PTR, n: I64) -> I32: ...
+
+        assert "declare i32 @callee(ptr, i64)" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_nested_struct_annotation():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(s: NESTED_STRUCT) -> I32: ...
+
+        assert "declare i32 @f({ { i32, i64 }, i32 })" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_vector_with_concrete_element():
+    # A concrete Type instance (context-bound) may be used as a subscript arg;
+    # _resolve passes it through unchanged before calling .get().
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(v: VectorType[i32, 4]) -> I32: ...
+
+        assert "declare i32 @f(<4 x i32>)" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_struct_with_concrete_elements():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        i64 = llvm.types.i64(ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(s: StructType[i32, i64]) -> I32: ...
+
+        assert "declare i32 @f({ i32, i64 })" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_array_with_concrete_element():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(a: ArrayType[i32, 8]) -> I32: ...
+
+        assert "declare i32 @f([8 x i32])" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_array_of_bare_pointer_annotation():
+    # A bare (non-subscripted) type class used as a *nested* subscript arg is
+    # evaluated via its .get(): ArrayType[PointerType, 4] -> [4 x ptr].
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(a: ArrayType[PointerType, 4]) -> I32: ...
+
+        assert "declare i32 @f([4 x ptr])" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_generic_function_type_resolves():
+    # FunctionType isn't a valid by-value parameter type, so it can't be a
+    # @function annotation; resolve it directly to cover the deferred
+    # evaluation of a nested params list (FunctionType[ret, [a, b]]).
+    from llvm.dsl.func import _resolve
+
+    with llvm.ir.Context() as ctx:
+        t = _resolve(
+            FunctionType[IntegerType[32], [PointerType[0], IntegerType[64]]], ctx
+        )
+        assert str(t) == "i32 (ptr, i64)"
     assert_no_leaks()
