@@ -31,12 +31,14 @@ def assert_no_leaks():
 
 def _find_filecheck():
     """Locate the LLVM FileCheck binary. It ships in mlir-native-tools (into
-    sys.prefix/bin) and in the mlir_wheel LLVM distro (LLVM_BINDIR)."""
+    sys.prefix/bin, or sys.prefix/Scripts on Windows) and in the mlir_wheel LLVM
+    distro (LLVM_BINDIR)."""
     exe = "FileCheck.exe" if sys.platform == "win32" else "FileCheck"
     for cand in (
         os.environ.get("FILECHECK"),
         os.path.join(os.environ.get("LLVM_BINDIR", ""), exe),
         os.path.join(sys.prefix, "bin", exe),
+        os.path.join(sys.prefix, "Scripts", exe),  # Windows console-script dir
         shutil.which("FileCheck"),
     ):
         if cand and os.path.isfile(cand):
@@ -51,9 +53,10 @@ def filecheck_with_comments(module):
 
     Mirrors eudsl-python-extras' filecheck_with_comments: the calling test
     function's own source is the FileCheck check-file, so `# CHECK:` /
-    `# CHECK-NEXT:` / `# CHECK-NOT:` comments are matched (in order, with SSA
-    name binding) against the printed IR -- catching what a substring `in`
-    check cannot. Uses the real LLVM FileCheck binary.
+    `# CHECK-NEXT:` / `# CHECK-NOT:` comments are matched (in order, and with
+    `[[name:...]]`/`[[name]]` capture-variable binding) against the printed IR --
+    catching what a substring `in` check cannot. Uses the real LLVM FileCheck
+    binary.
     """
     printed = str(module)
     caller = inspect.currentframe().f_back.f_code
@@ -62,14 +65,20 @@ def filecheck_with_comments(module):
     # Prepend blank lines so FileCheck's reported line numbers match the source.
     check_content = "\n" * lnum + fn_source
     filecheck = _find_filecheck()
-    with tempfile.NamedTemporaryFile("w", suffix=".txt") as check_file:
-        check_file.write(check_content)
-        check_file.flush()
+    # Write the check-file and close it *before* invoking FileCheck: on Windows a
+    # still-open NamedTemporaryFile is locked exclusively and the subprocess
+    # cannot reopen the path. mkstemp + explicit close/unlink works everywhere.
+    fd, check_path = tempfile.mkstemp(suffix=".txt")
+    try:
+        with os.fdopen(fd, "w") as check_file:
+            check_file.write(check_content)
         proc = subprocess.run(
-            [filecheck, check_file.name],
+            [filecheck, check_path],
             input=printed,
             capture_output=True,
             text=True,
         )
+    finally:
+        os.unlink(check_path)
     if proc.returncode != 0:
         raise ValueError(f"FileCheck failed:\n{proc.stdout}\n{proc.stderr}")
