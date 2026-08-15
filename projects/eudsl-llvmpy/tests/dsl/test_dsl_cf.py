@@ -207,6 +207,7 @@ def test_while_single_carried_value():
     i32 = llvm.types.i32(ctx)
 
     @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def count_to(n: i32) -> i32:
         i = llvm.ir.const_int(i32, 0)
         while i.ne(n):
@@ -229,6 +230,7 @@ def test_for_range_single_and_stepped_args():
     i32 = llvm.types.i32(ctx)
 
     @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def sum_upto(n: i32) -> i32:
         acc = llvm.ir.const_int(i32, 0)
         for i in range_(n):
@@ -237,6 +239,7 @@ def test_for_range_single_and_stepped_args():
         return acc
 
     @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def sum_stepped(n: i32) -> i32:
         acc = llvm.ir.const_int(i32, 0)
         for i in range_(0, n, 2):
@@ -282,6 +285,7 @@ def test_break_inside_dsl_control_flow_raises():
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="`break`"):
             @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
                 i = llvm.ir.const_int(i32, 0)
                 while i.ne(n):
@@ -299,6 +303,7 @@ def test_continue_inside_dsl_control_flow_raises():
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="`continue`"):
             @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
                 i = llvm.ir.const_int(i32, 0)
                 while i.ne(n):
@@ -316,6 +321,7 @@ def test_early_return_inside_dsl_control_flow_raises():
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="early `return`"):
             @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def f(c: llvm.types.i1, a: i32) -> i32:
                 if c:
                     return a
@@ -331,6 +337,7 @@ def test_while_body_without_trailing_yield_raises():
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="must end with `yield"):
             @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
                 i = llvm.ir.const_int(i32, 0)
                 while i.ne(n):
@@ -346,6 +353,7 @@ def test_for_body_without_trailing_yield_raises():
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="must end with `yield"):
             @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
                 acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n):
@@ -361,6 +369,7 @@ def test_for_target_must_be_single_name_raises():
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="single name"):
             @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
                 acc = llvm.ir.const_int(i32, 0)
                 for i, j in range_(0, n):
@@ -377,6 +386,7 @@ def test_for_range_wrong_arg_count_raises():
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="1-3 arguments"):
             @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
                 acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n, 1, 1):
@@ -393,6 +403,7 @@ def test_loop_yield_non_name_raises():
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="plain loop-carried"):
             @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
                 acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n):
@@ -407,6 +418,7 @@ def test_nested_control_flow_inside_loop_raises():
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="not supported"):
             @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32, c: llvm.types.i1) -> i32:
                 i = llvm.ir.const_int(i32, 0)
                 while i.ne(n):
@@ -424,6 +436,7 @@ def test_while_loop_bare_yield_has_no_carried_values():
     i32 = llvm.types.i32(ctx)
 
     @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def spin(n: i32) -> i32:
         while n.eq(llvm.ir.const_int(i32, 0)):
             yield
@@ -450,6 +463,7 @@ def test_for_negative_step_countdown_jits():
     i32 = llvm.types.i32(ctx)
 
     @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
     def countdown(n: i32) -> i32:
         acc = llvm.ir.const_int(i32, 0)
         for i in range_(n, 0, -1):
@@ -626,6 +640,7 @@ def test_early_return_inside_while_raises():
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="early `return`"):
             @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
                 acc = llvm.ir.const_int(i32, 0)
                 while acc.ne(n):
@@ -642,6 +657,7 @@ def test_early_return_inside_for_raises():
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="early `return`"):
             @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
                 acc = llvm.ir.const_int(i32, 0)
                 for i in range_(0, n):
@@ -679,6 +695,7 @@ def test_while_loop_verifies_cleanly():
         i32 = llvm.types.i32(ctx)
 
         @llvm.dsl.function(module=mod)
+        @canonicalize(using=LLVMCanonicalizer())
         def sum_to(n: i32) -> i32:
             acc = llvm.ir.const_int(i32, 0)
             i = llvm.ir.const_int(i32, 0)
@@ -699,6 +716,7 @@ def test_for_loop_verifies_cleanly():
         i32 = llvm.types.i32(ctx)
 
         @llvm.dsl.function(module=mod)
+        @canonicalize(using=LLVMCanonicalizer())
         def total(n: i32) -> i32:
             acc = llvm.ir.const_int(i32, 0)
             for i in range_(0, n):
