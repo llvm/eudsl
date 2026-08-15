@@ -6,6 +6,8 @@ len(), negative/bounds-checked indexing, slicing, and iteration, computed on
 demand. Covers every Sequence<T> instantiation."""
 from textwrap import dedent
 
+import gc
+
 import pytest
 
 import llvm
@@ -42,6 +44,16 @@ def test_lazy_sequence_views():
         assert [x.name for x in fns[::-1]] == ["g", "f"]  # negative step
         with pytest.raises(IndexError):
             _ = fns[9]
+        with pytest.raises(IndexError):
+            _ = fns[-100]  # still out of range after the negative-index adjustment
+        with pytest.raises(TypeError):
+            _ = fns["nope"]  # non-integer, non-slice index
+
+        g = mod.get_function("g")
+        assert len(g.args) == 0  # empty view
+        assert list(g.args) == []
+        with pytest.raises(IndexError):
+            _ = g.args[0]
 
         f = mod.get_function("f")
 
@@ -64,6 +76,10 @@ def test_lazy_sequence_views():
         assert type(ops).__name__ == "ValueSequence"
         assert len(ops) == 2 and isinstance(ops[0], llvm.Value)
         assert ops[0] == args[0]
+        assert ops[1] == args[1]
+        # Distinct operands compare unequal -- not an identity-collapsed tautology.
+        assert ops[0] != ops[1]
+        assert ops[0] != add
 
         users = args[0].users  # UserSequence
         assert type(users).__name__ == "UserSequence"
@@ -76,5 +92,38 @@ def test_lazy_sequence_views():
         with pytest.raises(IndexError):
             _ = uses[5]
 
-        del f, fns, bbs, args, insts, add, ops, users, uses, mod
+        del f, g, fns, bbs, args, insts, add, ops, users, uses, mod
+    assert_no_leaks()
+
+
+def test_view_reflects_live_mutation():
+    # "Lazy" behaviorally: a view created before a mutation reflects it, so it
+    # is a live computed-on-demand window, not an eager snapshot.
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        fn = llvm.Function.create(llvm.types.function(i32, [i32]), "f", mod)
+        bb = fn.append_basic_block("entry")
+        insts = bb.instructions  # view taken while the block is empty
+        assert len(insts) == 0
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb):
+            b.ret(fn.arg(0))
+        assert len(insts) == 1  # same view now sees the appended instruction
+        assert isinstance(insts[0], llvm.ReturnInst)
+        del b, fn, bb, insts, mod
+    assert_no_leaks()
+
+
+def test_container_view_keeps_module_alive():
+    # Module.functions' parent IS the owning module, so holding only the view
+    # keeps the module alive; dropping it releases the module.
+    with llvm.Context() as ctx:
+        fns = llvm.parse_assembly(_SRC, ctx, "m").functions  # sole handle
+        gc.collect()
+        assert llvm.Context._get_live_module_count() == 1
+        assert len(fns) == 2  # still usable with no other reference to the module
+        del fns
+        gc.collect()
+        assert llvm.Context._get_live_module_count() == 0
     assert_no_leaks()

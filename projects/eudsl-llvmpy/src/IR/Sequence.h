@@ -44,6 +44,8 @@ template <typename T> void bindSequence(nb::module_ &m, const char *name) {
           }
           return out;
         }
+        if (!nb::isinstance<nb::int_>(index))
+          throw nb::type_error("sequence indices must be integers or slices");
         Py_ssize_t i = nb::cast<Py_ssize_t>(index);
         if (i < 0)
           i += n;
