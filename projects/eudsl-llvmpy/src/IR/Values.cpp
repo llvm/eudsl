@@ -167,7 +167,8 @@ void populate_values(nb::module_ &m) {
           [](llvm::User &self) {
             return nb::make_iterator<nb::rv_policy::reference>(
                 nb::type<llvm::User>(), "OperandIterator",
-                self.value_op_begin(), self.value_op_end());
+                self.value_op_begin(), self.value_op_end(),
+                nb::keep_alive<0, 1>());
           },
           nb::keep_alive<0, 1>());
 
@@ -253,7 +254,7 @@ void populate_values(nb::module_ &m) {
           [](llvm::BasicBlock &self) {
             return nb::make_iterator<nb::rv_policy::reference>(
                 nb::type<llvm::BasicBlock>(), "InstructionIterator",
-                self.begin(), self.end());
+                self.begin(), self.end(), nb::keep_alive<0, 1>());
           },
           nb::keep_alive<0, 1>());
 
@@ -324,7 +325,7 @@ void populate_values(nb::module_ &m) {
           [](llvm::Function &self) {
             return nb::make_iterator<nb::rv_policy::reference>(
                 nb::type<llvm::Function>(), "BasicBlockIterator", self.begin(),
-                self.end());
+                self.end(), nb::keep_alive<0, 1>());
           },
           nb::keep_alive<0, 1>())
       .def_prop_ro(
@@ -348,7 +349,8 @@ void populate_values(nb::module_ &m) {
             // the LLVM analogue of MLIR's op.walk() over a single region.
             return nb::make_iterator<nb::rv_policy::reference>(
                 nb::type<llvm::Function>(), "WalkIterator",
-                llvm::inst_begin(self), llvm::inst_end(self));
+                llvm::inst_begin(self), llvm::inst_end(self),
+                nb::keep_alive<0, 1>());
           },
           nb::keep_alive<0, 1>())
       .def_prop_rw("linkage", &llvm::Function::getLinkage,

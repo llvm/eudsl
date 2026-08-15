@@ -141,7 +141,7 @@ void populate_context(nb::module_ &m) {
           [](eudsl::Module &self) {
             return nb::make_iterator<nb::rv_policy::reference>(
                 nb::type<eudsl::Module>(), "FunctionIterator",
-                self.get().begin(), self.get().end());
+                self.get().begin(), self.get().end(), nb::keep_alive<0, 1>());
           },
           nb::keep_alive<0, 1>())
       .def(
@@ -149,13 +149,13 @@ void populate_context(nb::module_ &m) {
           [](eudsl::Module &self, const std::string &name) {
             return self.get().getFunction(name);
           },
-          "name"_a, nb::rv_policy::reference)
+          "name"_a, nb::rv_policy::reference_internal)
       .def(
           "get_global_variable",
           [](eudsl::Module &self, const std::string &name) {
             return self.get().getNamedGlobal(name);
           },
-          "name"_a, nb::rv_policy::reference)
+          "name"_a, nb::rv_policy::reference_internal)
       .def(
           "add_named_metadata",
           [](eudsl::Module &self, const std::string &name, llvm::MDNode *node) {
