@@ -28,9 +28,10 @@
 #include <vector>
 
 /// The Python wrapper of the module that owns `v`'s storage, or none when `v`
-/// has no owning module (a context-owned value such as a constant) or its
-/// module has no live wrapper. A sub-object view stores this so holding the
-/// view keeps the owning module alive.
+/// has no owning module (a context-owned value such as a constant) or when no
+/// live wrapper for that module can be resolved. A sub-object view stores this
+/// so holding the view -- or an element it yields -- keeps the owning module
+/// alive.
 static nb::object ownerObjectFor(const llvm::Value *v) {
   const llvm::Module *m = nullptr;
   if (auto *inst = llvm::dyn_cast<llvm::Instruction>(v))
@@ -77,6 +78,7 @@ void populate_values(nb::module_ &m) {
               return *it;
             };
             seq.owner = ownerObjectFor(v);
+            seq.ownerOf = [](llvm::User *e) { return ownerObjectFor(e); };
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -94,6 +96,11 @@ void populate_values(nb::module_ &m) {
               return &*it;
             };
             seq.owner = ownerObjectFor(v);
+            // A Use lives in its User's operand list, so it is owned by the
+            // User's module.
+            seq.ownerOf = [](llvm::Use *e) {
+              return ownerObjectFor(e->getUser());
+            };
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -143,6 +150,7 @@ void populate_values(nb::module_ &m) {
               return u->getOperand(static_cast<unsigned>(i));
             };
             seq.owner = ownerObjectFor(u);
+            seq.ownerOf = [](llvm::Value *e) { return ownerObjectFor(e); };
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -232,6 +240,7 @@ void populate_values(nb::module_ &m) {
               return &*it;
             };
             seq.owner = ownerObjectFor(b);
+            seq.ownerOf = [](llvm::Instruction *e) { return ownerObjectFor(e); };
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -288,6 +297,7 @@ void populate_values(nb::module_ &m) {
               return f->getArg(static_cast<unsigned>(i));
             };
             seq.owner = ownerObjectFor(f);
+            seq.ownerOf = [](llvm::Argument *e) { return ownerObjectFor(e); };
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -303,6 +313,7 @@ void populate_values(nb::module_ &m) {
               return &*it;
             };
             seq.owner = ownerObjectFor(f);
+            seq.ownerOf = [](llvm::BasicBlock *e) { return ownerObjectFor(e); };
             return seq;
           },
           nb::keep_alive<0, 1>())
