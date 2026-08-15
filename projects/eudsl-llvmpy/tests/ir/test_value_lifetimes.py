@@ -123,3 +123,15 @@ def test_iterator_element_pins_module(make):
         gc.collect()
         assert llvm.ir.Context._get_live_module_count() == 0
     assert_no_leaks()
+
+
+def test_no_module_owner_view_is_safe():
+    # A context-owned value (a constant) has no owning module, so its views get
+    # a none owner (nothing to pin). Accessing them must not crash; it simply
+    # isn't module-pinned. Exercises ownerObjectFor's no-module fold.
+    with llvm.ir.Context() as ctx:
+        c = llvm.ir.const_int(llvm.types.i32(ctx), 5)
+        assert len(c.users) == 0
+        assert len(c.uses) == 0
+        del c
+    assert_no_leaks()

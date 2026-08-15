@@ -27,9 +27,10 @@
 #include <algorithm>
 #include <vector>
 
-/// The Python wrapper of the module that owns `v`'s storage (or none for a
-/// context-owned value with no module, e.g. a constant). A sub-object view
-/// stores this so holding the view keeps the owning module alive.
+/// The Python wrapper of the module that owns `v`'s storage, or none when `v`
+/// has no owning module (a context-owned value such as a constant) or its
+/// module has no live wrapper. A sub-object view stores this so holding the
+/// view keeps the owning module alive.
 static nb::object ownerObjectFor(const llvm::Value *v) {
   const llvm::Module *m = nullptr;
   if (auto *inst = llvm::dyn_cast<llvm::Instruction>(v))
@@ -40,12 +41,10 @@ static nb::object ownerObjectFor(const llvm::Value *v) {
     m = gv->getParent();
   else if (auto *bb = llvm::dyn_cast<llvm::BasicBlock>(v))
     m = bb->getModule();
-  if (!m)
-    return nb::none();
+  // moduleWrapperFor(nullptr) is null, so a value with no module folds to a
+  // none owner without a separate branch.
   eudsl::Module *wrapper = eudsl::moduleWrapperFor(m);
-  if (!wrapper)
-    return nb::none();
-  nb::object obj = nb::find(*wrapper);
+  nb::object obj = wrapper ? nb::find(*wrapper) : nb::none();
   return obj.is_valid() ? obj : nb::none();
 }
 
