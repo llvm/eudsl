@@ -133,6 +133,9 @@ def test_concrete_type_accessors():
         sv = llvm.types.vector(llvm.types.f32(ctx), 8, scalable=True)
         assert sv.is_scalable
         assert sv.min_num_elements == 8
+        # A scalable vector has no fixed element count, so the FixedVectorType
+        # accessor is absent on the ScalableVectorType downcast.
+        assert not hasattr(sv, "num_elements")
         s = llvm.types.struct([llvm.types.i32(ctx), llvm.types.f64(ctx)], context=ctx)
         assert s.num_elements == 2
         assert s.element_type(1) == llvm.types.f64(ctx)
