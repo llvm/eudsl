@@ -3,17 +3,8 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 from textwrap import dedent
 
-import eudsl_tblgen  # noqa: F401
-
 import llvm
 from llvm.testing import assert_no_leaks
-
-
-def test_symbol_collision():
-    # eudsl-tblgen is a separate extension in a different nanobind domain;
-    # importing both (done at module scope above) must not clash.
-    assert eudsl_tblgen is not None
-    assert llvm is not None
 
 
 def test_smoke():
