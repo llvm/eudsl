@@ -26,17 +26,17 @@ def test_current_context_is_thread_local():
     # parent thread is invisible to a child thread, and the child cannot
     # corrupt the parent's stack. Without thread-locality the child would see
     # `parent` (or clobber it), so this pins the documented guarantee.
-    with llvm.Context() as parent:
-        assert llvm.Context.current() is parent
+    with llvm.ir.Context() as parent:
+        assert llvm.ir.Context.current() is parent
         seen = []
         error = []
 
         def child():
             try:
-                seen.append(llvm.Context.current())
-                with llvm.Context() as own:
-                    seen.append(llvm.Context.current() is own)
-                seen.append(llvm.Context.current())
+                seen.append(llvm.ir.Context.current())
+                with llvm.ir.Context() as own:
+                    seen.append(llvm.ir.Context.current() is own)
+                seen.append(llvm.ir.Context.current())
             except Exception as e:  # surface failures on the main thread
                 error.append(e)
 
@@ -48,35 +48,35 @@ def test_current_context_is_thread_local():
         # None again after it exits.
         assert seen == [None, True, None]
         # The child never perturbed the parent thread's current context.
-        assert llvm.Context.current() is parent
-    assert llvm.Context.current() is None
+        assert llvm.ir.Context.current() is parent
+    assert llvm.ir.Context.current() is None
     assert_no_leaks()
 
 
 def test_exit_restores_current_on_exception():
     # An exception propagating out of the `with` body must still pop the stack
     # (guards against a regression where __exit__ only ran on the happy path).
-    assert llvm.Context.current() is None
-    with llvm.Context() as outer:
+    assert llvm.ir.Context.current() is None
+    with llvm.ir.Context() as outer:
         with pytest.raises(ValueError, match="boom"):
-            with llvm.Context() as inner:
-                assert llvm.Context.current() is inner
+            with llvm.ir.Context() as inner:
+                assert llvm.ir.Context.current() is inner
                 raise ValueError("boom")
         # inner.__exit__ popped despite the exception.
-        assert llvm.Context.current() is outer
-    assert llvm.Context.current() is None
+        assert llvm.ir.Context.current() is outer
+    assert llvm.ir.Context.current() is None
     assert_no_leaks()
 
 
 def test_same_context_reentered():
     # Re-entering the *same* Context nests two pushes of one object; each exit
     # pops one, so the stack unwinds cleanly and the live count returns to 0.
-    with llvm.Context() as a:
-        assert llvm.Context.current() is a
+    with llvm.ir.Context() as a:
+        assert llvm.ir.Context.current() is a
         with a:
-            assert llvm.Context.current() is a  # pushed a second time
-        assert llvm.Context.current() is a  # one pop, still a
-    assert llvm.Context.current() is None
+            assert llvm.ir.Context.current() is a  # pushed a second time
+        assert llvm.ir.Context.current() is a  # one pop, still a
+    assert llvm.ir.Context.current() is None
     assert_no_leaks()
 
 
