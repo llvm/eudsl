@@ -99,18 +99,18 @@ def test_lazy_sequence_views():
 def test_view_reflects_live_mutation():
     # "Lazy" behaviorally: a view created before a mutation reflects it, so it
     # is a live computed-on-demand window, not an eager snapshot.
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        fn = llvm.Function.create(llvm.types.function(i32, [i32]), "f", mod)
+        fn = llvm.ir.Function.create(llvm.types.function(i32, [i32]), "f", mod)
         bb = fn.append_basic_block("entry")
         insts = bb.instructions  # view taken while the block is empty
         assert len(insts) == 0
-        b = llvm.IRBuilder(ctx)
+        b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb):
             b.ret(fn.arg(0))
         assert len(insts) == 1  # same view now sees the appended instruction
-        assert isinstance(insts[0], llvm.ReturnInst)
+        assert isinstance(insts[0], llvm.ir.ReturnInst)
         del b, fn, bb, insts, mod
     assert_no_leaks()
 
@@ -118,12 +118,12 @@ def test_view_reflects_live_mutation():
 def test_container_view_keeps_module_alive():
     # Module.functions' parent IS the owning module, so holding only the view
     # keeps the module alive; dropping it releases the module.
-    with llvm.Context() as ctx:
-        fns = llvm.parse_assembly(_SRC, ctx, "m").functions  # sole handle
+    with llvm.ir.Context() as ctx:
+        fns = llvm.ir.parse_assembly(_SRC, ctx, "m").functions  # sole handle
         gc.collect()
-        assert llvm.Context._get_live_module_count() == 1
+        assert llvm.ir.Context._get_live_module_count() == 1
         assert len(fns) == 2  # still usable with no other reference to the module
         del fns
         gc.collect()
-        assert llvm.Context._get_live_module_count() == 0
+        assert llvm.ir.Context._get_live_module_count() == 0
     assert_no_leaks()
