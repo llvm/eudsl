@@ -5,12 +5,27 @@
 #include "IR/Ownership.h"
 
 #include <stdexcept>
+#include <unordered_map>
 #include <vector>
 
 namespace eudsl {
 
 static int64_t gLiveContexts = 0;
 static int64_t gLiveModules = 0;
+
+/// Maps each live llvm::Module to its owning eudsl::Module wrapper, so a view
+/// built from a bare llvm::Value can find the wrapper (and pin its Python
+/// object) via moduleWrapperFor.
+static std::unordered_map<const llvm::Module *, Module *> &liveModuleMap() {
+  static std::unordered_map<const llvm::Module *, Module *> map;
+  return map;
+}
+
+Module *moduleWrapperFor(const llvm::Module *m) {
+  auto &map = liveModuleMap();
+  auto it = map.find(m);
+  return it == map.end() ? nullptr : it->second;
+}
 
 Context::Context() : ctx(std::make_shared<llvm::LLVMContext>()) {
   ++gLiveContexts;
@@ -49,15 +64,23 @@ llvm::LLVMContext &Context::get() const {
 Module::Module(const std::string &name, Context &ctx)
     : ctxKeepAlive(ctx.shared()),
       mod(std::make_unique<llvm::Module>(name, ctx.get())), owner(&ctx) {
+  keyMod = mod.get();
+  liveModuleMap()[keyMod] = this;
   ++gLiveModules;
 }
 
 Module::Module(std::unique_ptr<llvm::Module> m, Context &ctx)
     : ctxKeepAlive(ctx.shared()), mod(std::move(m)), owner(&ctx) {
+  keyMod = mod.get();
+  liveModuleMap()[keyMod] = this;
   ++gLiveModules;
 }
 
-Module::~Module() { --gLiveModules; }
+Module::~Module() {
+  if (keyMod)
+    liveModuleMap().erase(keyMod);
+  --gLiveModules;
+}
 
 int64_t Module::liveCount() { return gLiveModules; }
 

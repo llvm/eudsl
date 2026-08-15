@@ -117,6 +117,8 @@ void populate_context(nb::module_ &m) {
               std::advance(it, i);
               return &*it;
             };
+            // Pin the module itself: it owns the functions' storage.
+            seq.owner = nb::find(self);
             return seq;
           },
           nb::keep_alive<0, 1>())

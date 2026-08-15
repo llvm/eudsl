@@ -27,6 +27,28 @@
 #include <algorithm>
 #include <vector>
 
+/// The Python wrapper of the module that owns `v`'s storage (or none for a
+/// context-owned value with no module, e.g. a constant). A sub-object view
+/// stores this so holding the view keeps the owning module alive.
+static nb::object ownerObjectFor(const llvm::Value *v) {
+  const llvm::Module *m = nullptr;
+  if (auto *inst = llvm::dyn_cast<llvm::Instruction>(v))
+    m = inst->getModule();
+  else if (auto *arg = llvm::dyn_cast<llvm::Argument>(v))
+    m = arg->getParent() ? arg->getParent()->getParent() : nullptr;
+  else if (auto *gv = llvm::dyn_cast<llvm::GlobalValue>(v))
+    m = gv->getParent();
+  else if (auto *bb = llvm::dyn_cast<llvm::BasicBlock>(v))
+    m = bb->getModule();
+  if (!m)
+    return nb::none();
+  eudsl::Module *wrapper = eudsl::moduleWrapperFor(m);
+  if (!wrapper)
+    return nb::none();
+  nb::object obj = nb::find(*wrapper);
+  return obj.is_valid() ? obj : nb::none();
+}
+
 void populate_values(nb::module_ &m) {
   // A def-use edge: which User uses a value, and at which operand index.
   nb::class_<llvm::Use>(m, "Use")
@@ -55,6 +77,7 @@ void populate_values(nb::module_ &m) {
               std::advance(it, i);
               return *it;
             };
+            seq.owner = ownerObjectFor(v);
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -71,6 +94,7 @@ void populate_values(nb::module_ &m) {
               std::advance(it, i);
               return &*it;
             };
+            seq.owner = ownerObjectFor(v);
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -119,6 +143,7 @@ void populate_values(nb::module_ &m) {
             seq.at = [u](std::size_t i) {
               return u->getOperand(static_cast<unsigned>(i));
             };
+            seq.owner = ownerObjectFor(u);
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -206,6 +231,7 @@ void populate_values(nb::module_ &m) {
               std::advance(it, i);
               return &*it;
             };
+            seq.owner = ownerObjectFor(b);
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -261,6 +287,7 @@ void populate_values(nb::module_ &m) {
             seq.at = [f](std::size_t i) {
               return f->getArg(static_cast<unsigned>(i));
             };
+            seq.owner = ownerObjectFor(f);
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -275,6 +302,7 @@ void populate_values(nb::module_ &m) {
               std::advance(it, i);
               return &*it;
             };
+            seq.owner = ownerObjectFor(f);
             return seq;
           },
           nb::keep_alive<0, 1>())
