@@ -6,7 +6,7 @@ from textwrap import dedent
 import pytest
 
 import llvm
-from llvm.testing import assert_no_leaks
+from llvm.testing import assert_no_leaks, filecheck_with_comments
 
 _SRC = dedent(
     """\
@@ -24,9 +24,10 @@ def test_instcombine_removes_add_zero():
         mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         assert "add i32 %x, 0" in str(mod)
         llvm.passmanager.run_passes(mod, "instcombine")
-        printed = str(mod)
-        assert "add i32 %x, 0" not in printed
-        assert "ret i32 %x" in printed
+        # instcombine folds `add %x, 0` away -> the function returns %x directly.
+        # CHECK-NOT: add i32 %x, 0
+        # CHECK: ret i32 %x
+        filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
 
@@ -63,9 +64,9 @@ def test_default_pipeline_o2():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         llvm.passmanager.run_default_pipeline(mod, llvm.passmanager.OptLevel.O2)
-        printed = str(mod)
-        assert "add i32 %x, 0" not in printed
-        assert "ret i32 %x" in printed
+        # CHECK-NOT: add i32 %x, 0
+        # CHECK: ret i32 %x
+        filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
 
@@ -86,9 +87,9 @@ def test_default_pipeline_with_tuning():
         pto.loop_vectorization = False
         pto.slp_vectorization = False
         llvm.passmanager.run_default_pipeline(mod, llvm.passmanager.OptLevel.O2, tuning=pto)
-        printed = str(mod)
-        assert "add i32 %x, 0" not in printed
-        assert "ret i32 %x" in printed
+        # CHECK-NOT: add i32 %x, 0
+        # CHECK: ret i32 %x
+        filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
 
@@ -106,7 +107,8 @@ def test_run_passes_with_debug(capsys):
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         llvm.passmanager.run_passes(mod, "instcombine", debug=True)
-        assert "add i32 %x, 0" not in str(mod)
+        # CHECK-NOT: add i32 %x, 0
+        filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
 
@@ -115,7 +117,8 @@ def test_run_passes_with_verify_each():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         llvm.passmanager.run_passes(mod, "instcombine", verify_each=True)
-        assert "ret i32 %x" in str(mod)
+        # CHECK: ret i32 %x
+        filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
 

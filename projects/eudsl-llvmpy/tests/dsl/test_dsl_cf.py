@@ -2,7 +2,6 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import ctypes
-import re
 
 import pytest
 
@@ -10,7 +9,7 @@ import llvm
 from llvm.dsl.values import with_element_type
 from llvm.ast.canonicalize import canonicalize
 from llvm.dsl.cf import LLVMCanonicalizer
-from llvm.testing import assert_no_leaks
+from llvm.testing import assert_no_leaks, filecheck_with_comments
 
 
 def test_if_else_produces_phi():
@@ -27,13 +26,17 @@ def test_if_else_produces_phi():
                 r = yield b
             return r
 
-        printed = str(mod)
-        assert "br i1" in printed
-        assert "phi i32" in printed
-        assert "add i32" in printed
-        # Verify the phi has exactly 2 incoming edges [value, %pred].
-        phi_line = [l for l in printed.splitlines() if "phi i32" in l][0]
-        assert len(re.findall(r"\[.*?,\s*%[\w.]+\s*\]", phi_line)) == 2
+        # The if/else with `yield` lowers to a conditional branch and a 2-input
+        # phi that merges the then/else values -- ordered and SSA-bound, which a
+        # substring or edge-count regex cannot express.
+        # CHECK: define i32 @pick(i1 %[[C:.*]], i32 %[[A:.*]], i32 %[[B:.*]])
+        # CHECK: br i1 %[[C]], label %if.then, label %if.else
+        # CHECK: if.then:
+        # CHECK: %[[ADD:.*]] = add i32 %[[A]], 1
+        # CHECK: if.end:
+        # CHECK: %[[PHI:.*]] = phi i32 [ %[[ADD]], %if.then ], [ %[[B]], %if.else ]
+        # CHECK: ret i32 %[[PHI]]
+        filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
 
@@ -683,10 +686,10 @@ def test_if_else_phi_has_correct_incomings():
             return r
 
         mod.verify()
-        printed = str(mod)
-        assert printed.count("phi i32") == 1
-        phi_line = [l for l in printed.splitlines() if "phi i32" in l][0]
-        assert len(re.findall(r"\[.*?,\s*%[\w.]+\s*\]", phi_line)) == 2
+        # Exactly one phi, with two incoming edges from the then/else preds.
+        assert str(mod).count("phi i32") == 1
+        # CHECK: %{{.*}} = phi i32 [ {{.*}}, %if.then ], [ {{.*}}, %if.else ]
+        filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
 def test_while_loop_verifies_cleanly():

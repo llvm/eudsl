@@ -19,7 +19,7 @@ file exercises those bindings and checks their results.
 from textwrap import dedent
 
 import llvm
-from llvm.testing import assert_no_leaks
+from llvm.testing import assert_no_leaks, filecheck_with_comments
 
 _SRC = dedent(
     """\
@@ -69,8 +69,9 @@ def test_replace_all_uses_with():
         zero = llvm.ir.const_int(llvm.types.i32(ctx), 0)
         add.replace_all_uses_with(zero)
         # The ret now returns the constant; the (dead) add is untouched.
-        assert "ret i32 0" in str(mod)
-        assert "%sum = add" in str(mod)
+        # CHECK: %sum = add i32 %x, %y
+        # CHECK: ret i32 0
+        filecheck_with_comments(mod)
         del f, add, zero, mod
     assert_no_leaks()
 
@@ -254,7 +255,8 @@ def test_value_name_setter_and_instruction_props():
         assert add.parent == entry  # Instruction.parent
         add.name = "renamed"  # Value.name setter
         assert add.name == "renamed"
-        assert "%renamed = add" in str(mod)
+        # CHECK: %renamed = add i32 %x, %y
+        filecheck_with_comments(mod)
         del f, entry, add, ret, mod
     assert_no_leaks()
 
@@ -286,6 +288,8 @@ def test_instruction_set_successor():
         c_block = next(b for b in f.basic_blocks if b.name == "c")
         br.set_successor(0, c_block)  # redirect the true edge from a to c
         assert br.successor(0).name == "c"
-        assert "br i1 %cond, label %c, label %b" in str(mod)
+        # The true edge now targets %c; the false edge is unchanged.
+        # CHECK: br i1 %cond, label %c, label %b
+        filecheck_with_comments(mod)
         del f, br, c_block, mod
     assert_no_leaks()

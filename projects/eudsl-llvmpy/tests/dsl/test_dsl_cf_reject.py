@@ -7,7 +7,7 @@ import pytest
 import llvm
 from llvm.ast.canonicalize import canonicalize
 from llvm.dsl.cf import LLVMCanonicalizer
-from llvm.testing import assert_no_leaks
+from llvm.testing import assert_no_leaks, filecheck_with_comments
 
 
 def test_break_raises():
@@ -96,6 +96,8 @@ def test_trailing_return_is_allowed():
                 r = yield b
             return r
 
-        assert "phi i32" in str(mod)
+        # The trailing return produces a merge phi rather than being rejected.
+        # CHECK: %{{.*}} = phi i32 [ {{.*}}, %if.then ], [ {{.*}}, %if.else ]
+        filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
