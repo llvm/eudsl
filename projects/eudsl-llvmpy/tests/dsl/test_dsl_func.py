@@ -6,8 +6,9 @@ import ctypes
 import pytest
 
 import llvm
+from llvm.dsl.func import _resolve
 from llvm.dsl.values import with_element_type
-from llvm.testing import assert_no_leaks
+from llvm.testing import assert_no_leaks, filecheck_with_comments
 from llvm.types import (
     ArrayType,
     FunctionType,
@@ -298,7 +299,9 @@ def test_generic_integer_annotation():
         def f(x: IntegerType[32]) -> IntegerType[32]:
             return x
 
-        assert "define i32 @f(i32" in str(mod)
+        # CHECK: define i32 @f(i32 %[[X:.*]])
+        # CHECK: ret i32 %[[X]]
+        filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
 
@@ -311,7 +314,9 @@ def test_generic_pointer_annotation():
         def f(p: PTR) -> PTR:
             return p
 
-        assert "define ptr @f(ptr" in str(mod)
+        # CHECK: define ptr @f(ptr %[[P:.*]])
+        # CHECK: ret ptr %[[P]]
+        filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
 
@@ -377,10 +382,10 @@ def test_generic_struct_annotation():
     assert_no_leaks()
 
 
-def test_generic_nested_function_type_via_pointer():
-    # FunctionType[...] itself isn't a valid by-value parameter type, but it is
-    # a first-class deferred type; verify it evaluates and round-trips through a
-    # declared function's own signature.
+def test_generic_multiple_deferred_annotations_in_one_signature():
+    # Two deferred alias params (PTR, I64) plus a deferred return (I32) in a
+    # single signature all evaluate against module.context at emit time. (Real
+    # FunctionType deferral is covered by test_generic_function_type_resolves.)
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
 
@@ -464,11 +469,52 @@ def test_generic_function_type_resolves():
     # FunctionType isn't a valid by-value parameter type, so it can't be a
     # @function annotation; resolve it directly to cover the deferred
     # evaluation of a nested params list (FunctionType[ret, [a, b]]).
-    from llvm.dsl.func import _resolve
-
     with llvm.ir.Context() as ctx:
         t = _resolve(
             FunctionType[IntegerType[32], [PointerType[0], IntegerType[64]]], ctx
         )
         assert str(t) == "i32 (ptr, i64)"
+    assert_no_leaks()
+
+
+def test_generic_nested_bare_factory_arg():
+    # A bare primitive factory (llvm.types.i32) used as a *nested* subscript arg
+    # is evaluated via _evaluate_alias_arg's callable branch, mirroring the
+    # top-level bare-factory path.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+
+        @llvm.dsl.function(module=mod)
+        def f(a: ArrayType[llvm.types.i32, 4]) -> I32: ...
+
+        assert "declare i32 @f([4 x i32])" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_bare_integer_annotation_missing_bits_raises():
+    # Bare `IntegerType` as an annotation forwards to IntegerType.get(context=)
+    # with no bits -> a clean TypeError, not a half-built type.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        with pytest.raises(TypeError):
+
+            @llvm.dsl.function(module=mod)
+            def f(x: IntegerType) -> I32: ...
+
+        del mod
+    assert_no_leaks()
+
+
+def test_missing_annotation_raises_clear_typeerror():
+    # An unannotated parameter hits _resolve's empty-sentinel guard and reports
+    # a clear message rather than a cryptic `_empty() takes no arguments`.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        with pytest.raises(TypeError, match="missing type annotation"):
+
+            @llvm.dsl.function(module=mod)
+            def f(x) -> I32: ...
+
+        del mod
     assert_no_leaks()

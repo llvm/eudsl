@@ -31,6 +31,10 @@ def _evaluate_alias_arg(arg, ctx):
         return type(arg)(_evaluate_alias_arg(a, ctx) for a in arg)
     if isinstance(arg, type) and issubclass(arg, Type):
         return arg.get(context=ctx)
+    if callable(arg):
+        # A bare factory (e.g. `llvm.types.i32`) used as a nested subscript arg,
+        # mirroring _resolve's callable branch for top-level annotations.
+        return arg(context=ctx)
     return arg
 
 
@@ -64,6 +68,10 @@ def _resolve(annotation, ctx):
     The GenericAlias and bare-class cases must precede the callable case: both
     are themselves callable and would otherwise hit the wrong branch.
     """
+    if annotation is inspect.Parameter.empty:
+        raise TypeError(
+            "missing type annotation; annotate every parameter and the return type"
+        )
     if isinstance(annotation, Type):
         return annotation
     if type(annotation) is types.GenericAlias:

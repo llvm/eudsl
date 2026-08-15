@@ -84,9 +84,14 @@ void populate_types(nb::module_ &m) {
 
   // Parametric type classes carry nb::is_generic() so `IntegerType[32]`,
   // `PointerType[0]`, `FunctionType[ret, [args]]`, etc. produce an unevaluated
-  // types.GenericAlias -- a type annotation that needs no live context. The
-  // matching `.get(...)` classmethod (which the alias forwards to at emit time)
-  // resolves the context via currentOr, so context stays optional here too.
+  // types.GenericAlias -- a type annotation that needs no live context. Each
+  // class also gets a `.get(...)` classmethod that the alias forwards to at
+  // emit time. IntegerType/PointerType/StructType.get resolve the context via
+  // currentOr, so it stays optional there. The element-deriving gets
+  // (ArrayType/VectorType/FunctionType and the concrete vector subtypes) take
+  // their context from the element or return type instead; they still accept
+  // `context` for uniform dispatch and reject it only when it names a different
+  // context.
   nb::class_<llvm::IntegerType, llvm::Type>(m, "IntegerType", nb::is_generic())
       .EUDSL_CAST_CTOR(llvm::IntegerType, llvm::Type)
       .def_static(
@@ -143,9 +148,13 @@ void populate_types(nb::module_ &m) {
       .def_static(
           "get",
           [](llvm::Type *elt, uint64_t n, nb::handle context) -> llvm::ArrayType * {
-            // The element type already pins the context; `context` is accepted
-            // only so the deferred-annotation evaluator can pass it uniformly.
-            (void)context;
+            // The element type already pins the context; a passed `context` is
+            // accepted for uniform dispatch but must not name a different one.
+            if (!context.is_none() &&
+                &elt->getContext() != &eudsl::currentOr(context).get()) {
+              throw nb::value_error(
+                  "element type belongs to a different context");
+            }
             return llvm::ArrayType::get(elt, n);
           },
           "element_type"_a, "num_elements"_a, "context"_a = nb::none(),
@@ -160,7 +169,11 @@ void populate_types(nb::module_ &m) {
           "get",
           [](llvm::Type *elt, unsigned n, bool scalable,
              nb::handle context) -> llvm::VectorType * {
-            (void)context;
+            if (!context.is_none() &&
+                &elt->getContext() != &eudsl::currentOr(context).get()) {
+              throw nb::value_error(
+                  "element type belongs to a different context");
+            }
             return llvm::VectorType::get(elt, n, scalable);
           },
           "element_type"_a, "num_elements"_a, "scalable"_a = false,
@@ -177,12 +190,42 @@ void populate_types(nb::module_ &m) {
       .def_prop_ro("element_type", &llvm::VectorType::getElementType,
                    nb::rv_policy::reference);
 
+  // FixedVectorType/ScalableVectorType inherit VectorType's __class_getitem__,
+  // so they are subscriptable regardless; give each its own `.get` (returning
+  // the concrete subtype) so `FixedVectorType[i32, 4]` resolves correctly
+  // instead of hitting a missing classmethod.
   nb::class_<llvm::FixedVectorType, llvm::VectorType>(m, "FixedVectorType",
                                                       nb::is_generic())
+      .def_static(
+          "get",
+          [](llvm::Type *elt, unsigned n,
+             nb::handle context) -> llvm::FixedVectorType * {
+            if (!context.is_none() &&
+                &elt->getContext() != &eudsl::currentOr(context).get()) {
+              throw nb::value_error(
+                  "element type belongs to a different context");
+            }
+            return llvm::FixedVectorType::get(elt, n);
+          },
+          "element_type"_a, "num_elements"_a, "context"_a = nb::none(),
+          nb::rv_policy::reference, nb::keep_alive<0, 1>())
       .def_prop_ro("num_elements", &llvm::FixedVectorType::getNumElements);
 
   nb::class_<llvm::ScalableVectorType, llvm::VectorType>(m, "ScalableVectorType",
                                                          nb::is_generic())
+      .def_static(
+          "get",
+          [](llvm::Type *elt, unsigned n,
+             nb::handle context) -> llvm::ScalableVectorType * {
+            if (!context.is_none() &&
+                &elt->getContext() != &eudsl::currentOr(context).get()) {
+              throw nb::value_error(
+                  "element type belongs to a different context");
+            }
+            return llvm::ScalableVectorType::get(elt, n);
+          },
+          "element_type"_a, "num_elements"_a, "context"_a = nb::none(),
+          nb::rv_policy::reference, nb::keep_alive<0, 1>())
       .def_prop_ro("min_num_elements",
                    &llvm::ScalableVectorType::getMinNumElements);
 
@@ -192,7 +235,19 @@ void populate_types(nb::module_ &m) {
           "get",
           [](llvm::Type *ret, std::vector<llvm::Type *> params, bool varArg,
              nb::handle context) -> llvm::FunctionType * {
-            (void)context;
+            if (!context.is_none()) {
+              llvm::LLVMContext *c = &eudsl::currentOr(context).get();
+              if (&ret->getContext() != c) {
+                throw nb::value_error(
+                    "return type belongs to a different context");
+              }
+              for (llvm::Type *p : params) {
+                if (&p->getContext() != c) {
+                  throw nb::value_error(
+                      "parameter type belongs to a different context");
+                }
+              }
+            }
             return llvm::FunctionType::get(ret, params, varArg);
           },
           "return_type"_a, "params"_a, "var_arg"_a = false,
