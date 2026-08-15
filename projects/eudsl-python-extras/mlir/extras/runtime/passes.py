@@ -6494,7 +6494,7 @@ class Pipeline(Pipeline):
 
         Args:
             func_name: The name of the newly generated member function with body matching the input function.
-            class_name_format: Format string for the generated class name where '{}' is replaced with the function name.
+            class_name_format: Format string for the generated class name where the function name placeholder '{}' is optional.
         """
         self.add_pass(
             "wrap-emitc-func-in-class",
