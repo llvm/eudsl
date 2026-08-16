@@ -396,6 +396,10 @@ jobs:
 
           python -m pip install pytest pytest-cov
           python -m pip install eudsl-llvmpy eudsl-tblgen -f wheelhouse
+          # mlir-native-tools installs the FileCheck binary into sys.prefix/bin,
+          # which llvm.testing.filecheck_with_comments locates.
+          python -m pip install mlir-native-tools \
+            -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
 
       - name: "Test eudsl-llvmpy"
         run: |
@@ -478,6 +482,12 @@ jobs:
             "nanobind==2.12.0" ninja "scikit-build-core==0.10.7" \
             typing_extensions numpy pytest pytest-cov
           $python3_command -m pip install eudsl-tblgen -f wheelhouse
+          # mlir-native-tools installs the FileCheck binary into sys.prefix/bin,
+          # which llvm.testing.filecheck_with_comments locates. Needed here too
+          # (not just the Test job) since this job's pytest run exercises the
+          # FileCheck-based tests as part of C++ coverage.
+          $python3_command -m pip install mlir-native-tools \
+            -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
 
           export CMAKE_PREFIX_PATH="$PWD/llvm-install"
           # llvm-cov/llvm-profdata must match the clang that instruments the
