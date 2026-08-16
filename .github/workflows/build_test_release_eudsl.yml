@@ -394,14 +394,90 @@ jobs:
       - name: "Install eudsl-llvmpy"
         run: |
 
-          python -m pip install pytest
+          python -m pip install pytest pytest-cov
           python -m pip install eudsl-llvmpy eudsl-tblgen -f wheelhouse
 
       - name: "Test eudsl-llvmpy"
         run: |
-          
+
           export TESTS_DIR="$PWD/projects/eudsl-llvmpy/tests"
           python -m pytest -rA --capture=tee-sys $TESTS_DIR
+
+  coverage-eudsl-llvmpy:
+
+    if: github.event_name == 'pull_request'
+
+    needs: [build-eudsl]
+
+    # Must run on macOS. The coverage build instruments eudslllvm_ext with
+    # -fcoverage-mapping, but nanobind strips the module at link time. On Linux
+    # that strip is -Wl,-s (--strip-all), which removes the non-allocated
+    # __llvm_covmap/__llvm_covfun metadata, so llvm-cov reports "no coverage data
+    # found" -- the runtime __llvm_prf_* counters are SHF_ALLOC and survive, so
+    # .profraw still generates and merges, but the export finds no mapping. macOS
+    # strips via -Wl,-dead_strip, which preserves the __LLVM_COV segment, so the
+    # mapping is retained. Keep this job on macos-*.
+    runs-on: "macos-14"
+
+    name: "Coverage llvmpy macos_arm64"
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      cache-key: eudsl_macos_arm64_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
+
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: false
+
+      - name: "Setup base"
+        uses: ./.github/actions/setup_base
+        with:
+          cache-key: ${{ env.cache-key }}
+          restore-key: "eudsl_macos_arm64_clang"
+          os: "macos"
+          host-arch: "arm64"
+          target-arch: "arm64"
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: eudsl_macos_arm64_artifact
+          path: wheelhouse
+
+      - name: "Fetch LLVM distro (ships llvm-cov/llvm-profdata)"
+        run: |
+
+          pip download mlir-wheel -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
+          unzip -q mlir_wheel*.whl
+          mv mlir_wheel llvm-install
+
+      - name: "C++ coverage (llvm-cov, threshold 100%)"
+        run: |
+
+          # Build deps for the --no-build-isolation instrumented build, plus the
+          # eudsl-tblgen build dependency and the test runner.
+          $python3_command -m pip install \
+            "nanobind==2.12.0" ninja "scikit-build-core==0.10.7" \
+            typing_extensions numpy pytest pytest-cov
+          $python3_command -m pip install eudsl-tblgen -f wheelhouse
+
+          export CMAKE_PREFIX_PATH="$PWD/llvm-install"
+          # llvm-cov/llvm-profdata must match the clang that instruments the
+          # build (macOS setup_base uses /usr/bin/clang = Apple clang), not the
+          # mlir-wheel distro -- raw .profraw formats are version-locked, so a
+          # mismatched llvm-profdata fails to merge ("no profile can be merged").
+          # Apple clang's tools live in the Xcode toolchain, not /usr/bin, so
+          # resolve them via xcrun. The distro stays on CMAKE_PREFIX_PATH only to
+          # build the extension.
+          export LLVM_BINDIR="$(dirname "$(xcrun -f llvm-cov)")"
+          export PYTHON="$python3_command"
+          export COVERAGE_THRESHOLD=100
+          bash projects/eudsl-llvmpy/scripts/cpp_coverage.sh
 
   release-eudsl:
 
