@@ -92,8 +92,24 @@ def test_target_machine_bad_triple_raises():
 
 def test_linker_conflicting_symbols_raises():
     with llvm.ir.Context() as ctx:
-        a = llvm.ir.parse_assembly("define i32 @dup() {\n ret i32 1\n}\n", ctx, "a")
-        b = llvm.ir.parse_assembly("define i32 @dup() {\n ret i32 2\n}\n", ctx, "b")
+        a = llvm.ir.parse_assembly(
+            dedent("""\
+                define i32 @dup() {
+                 ret i32 1
+                }
+                """),
+            ctx,
+            "a",
+        )
+        b = llvm.ir.parse_assembly(
+            dedent("""\
+                define i32 @dup() {
+                 ret i32 2
+                }
+                """),
+            ctx,
+            "b",
+        )
         with pytest.raises(RuntimeError, match="linkModules failed"):
             llvm.jit.link_into(a, b)
         del a, b
@@ -204,7 +220,15 @@ def test_callinst_arg_operand_and_gep_source_type():
 
 def test_jit_lookup_missing_symbol_raises():
     ctx = llvm.ir.Context()
-    mod = llvm.ir.parse_assembly("define i32 @present() {\n ret i32 0\n}\n", ctx, "m")
+    mod = llvm.ir.parse_assembly(
+        dedent("""\
+            define i32 @present() {
+             ret i32 0
+            }
+            """),
+        ctx,
+        "m",
+    )
     jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     with pytest.raises(RuntimeError, match="Symbols not found"):

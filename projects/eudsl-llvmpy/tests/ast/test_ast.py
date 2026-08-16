@@ -3,6 +3,7 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import ast
 import sys
+from textwrap import dedent
 
 from llvm.ast import canonicalize, util
 from llvm.ast import cf_transformers as T
@@ -22,7 +23,13 @@ def _rewrite(src):
 
 
 def test_if_becomes_with_if_ctx_manager():
-    src = "def f():\n" "    if c:\n" "        x = a\n" "    else:\n" "        x = b\n"
+    src = dedent("""\
+        def f():
+            if c:
+                x = a
+            else:
+                x = b
+        """)
     out = _rewrite(src)
     assert "if_ctx_manager" in out
     assert "else_ctx_manager" in out
@@ -92,7 +99,13 @@ def test_canonicalize_module_imports_clean():
 
 
 def test_if_rewrite_preserves_linenos():
-    src = "def f():\n" "    if c:\n" "        x = a\n" "    else:\n" "        x = b\n"
+    src = dedent("""\
+        def f():
+            if c:
+                x = a
+            else:
+                x = b
+        """)
     tree = ast.parse(src)
     node = tree.body[0]
     for ctor in (
@@ -194,7 +207,13 @@ def test_replace_yield_with_llvm_yield_preserves_lineno():
 
 
 def test_rewrite_produces_expected_ast_structure():
-    src = "def f():\n" "    if c:\n" "        x = a\n" "    else:\n" "        x = b\n"
+    src = dedent("""\
+        def f():
+            if c:
+                x = a
+            else:
+                x = b
+        """)
     tree = ast.parse(src)
     node = tree.body[0]
     for ctor in (
