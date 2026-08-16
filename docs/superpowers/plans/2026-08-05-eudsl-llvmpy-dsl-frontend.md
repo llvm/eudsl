@@ -3868,10 +3868,48 @@ every Phase B commit lands on the stacked branch:
 cd $EUDSL && gh stack add users/makslevental/eudsl-llvmpy-dsl
 ```
 
-The DSL emits into a *current builder*. Task 22 introduces that mechanism; the
-arithmetic/comparison/GEP dunders are Python functions attached to the bound
-`llvm.Value` class. nanobind classes are heap types, so assigning
-`llvm.Value.__add__ = fn` from Python installs the number slot correctly.
+The DSL emits into a *current builder*. Task 22 introduces that mechanism.
+
+### Design note: value-caster subclasses vs. base-class dunders
+
+**Chosen approach (implemented): MLIR-style value casters.** The DSL defines an
+`ArithValue(llvm.Value)` subclass that carries the arithmetic/comparison
+operators, and registers it — via a `register_value_caster(TypeID, ...)`
+registry mirroring MLIR's `register_value_caster` / `PyValue::maybeDownCast` —
+for the integer and floating-point type kinds. Values of those kinds are
+re-wrapped as `ArithValue` by `maybe_downcast(v, parent)` (used by `@function`
+on incoming args, and internally so operator results stay typed). Mechanics:
+
+- C++ exposes one stateless primitive, `_wrap_value_as(value, py_type, parent)`,
+  which calls `nb::inst_reference` to bind an existing `Value*` into a chosen
+  Python (sub)type with its lifetime tied to `parent`. This is the only way to
+  wrap an already-owned pointer as a Python subclass — a nanobind subclass has
+  "no constructor defined" and cannot be built around an existing instance.
+- The caster registry lives in Python (`llvm/dsl/casters.py`), keyed on the
+  `TypeID` enum (added to `Type.type_id`). It is *not* a C++ static.
+- `Type` exposes a `TypeID` nb::enum_ and `type_id` property.
+
+**Rejected alternative: monkeypatch dunders onto the base `llvm.Value`.** Because
+nanobind classes are heap types, `llvm.Value.__add__ = fn` does install the
+number slot, so this works mechanically and needs no caster machinery. It was
+rejected for two reasons: (1) it puts `__add__`/`__lt__`/etc. on *every* value
+including pointers, labels, and void, so a nonsensical `ptr + x` fails only when
+the builder rejects the operands rather than being absent; and (2) it diverges
+from `eudsl-python-extras`, whose `ArithValue` is a registered value-caster
+subclass — matching that keeps the two DSLs' typed-value model identical and
+leaves room for user-registered casters (e.g. a downstream tensor value type).
+
+**Rejected variant: hold the caster registry in a C++ `static`
+`unordered_map<unsigned, nb::object>`.** Simpler wiring, but it retains Python
+type references at static-storage duration, which triggers nanobind's
+"leaked function ..." diagnostics (and risks a crash) at interpreter shutdown.
+Keeping the registry in Python avoids holding any Python reference past
+finalization.
+
+This replaces the earlier plan text below (which specified base-class
+`install_value_dunders`); the tasks are otherwise unchanged in scope. The DSL
+still emits into a *current builder*; the operators now live on `ArithValue`.
+
 
 ### Task 22: Arithmetic dunders with integer/float dispatch and constant coercion
 
