@@ -5,6 +5,7 @@
 #pragma once
 
 #include <llvm/IR/CallingConv.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 
@@ -51,6 +52,15 @@ enum class CallingConvEnum : unsigned {
   FAST = llvm::CallingConv::Fast,
   COLD = llvm::CallingConv::Cold,
 };
+
+#define EUDSL_CAST_CTOR(Derived, Base)                                         \
+  def(nb::new_([](Base *v) -> Derived * {                                      \
+        if (auto *d = llvm::dyn_cast_or_null<Derived>(v))                      \
+          return d;                                                            \
+        throw nb::value_error("value is not a " #Derived);                     \
+      }),                                                                      \
+      nb::arg("value").none(), nb::rv_policy::reference,                       \
+      nb::keep_alive<0, 1>())
 
 // Pulled in here so every translation unit that returns an llvm::Type* or
 // llvm::Value* sees the downcasting type_hook specializations. Without this a

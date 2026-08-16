@@ -83,12 +83,15 @@ void populate_types(nb::module_ &m) {
 #undef EUDSL_PRIMITIVE_TYPE
 
   nb::class_<llvm::IntegerType, llvm::Type>(m, "IntegerType")
+      .EUDSL_CAST_CTOR(llvm::IntegerType, llvm::Type)
       .def_prop_ro("bit_width", &llvm::IntegerType::getBitWidth);
 
   nb::class_<llvm::PointerType, llvm::Type>(m, "PointerType")
+      .EUDSL_CAST_CTOR(llvm::PointerType, llvm::Type)
       .def_prop_ro("address_space", &llvm::PointerType::getAddressSpace);
 
   nb::class_<llvm::StructType, llvm::Type>(m, "StructType")
+      .EUDSL_CAST_CTOR(llvm::StructType, llvm::Type)
       .def_prop_ro("name",
                    [](llvm::StructType &self) -> std::optional<std::string> {
                      if (!self.hasName())
@@ -107,11 +110,13 @@ void populate_types(nb::module_ &m) {
           "element_types"_a, "packed"_a = false);
 
   nb::class_<llvm::ArrayType, llvm::Type>(m, "ArrayType")
+      .EUDSL_CAST_CTOR(llvm::ArrayType, llvm::Type)
       .def_prop_ro("num_elements", &llvm::ArrayType::getNumElements)
       .def_prop_ro("element_type", &llvm::ArrayType::getElementType,
                    nb::rv_policy::reference);
 
   nb::class_<llvm::VectorType, llvm::Type>(m, "VectorType")
+      .EUDSL_CAST_CTOR(llvm::VectorType, llvm::Type)
       .def_prop_ro("min_num_elements",
                    [](llvm::VectorType &self) {
                      return self.getElementCount().getKnownMinValue();
@@ -131,6 +136,7 @@ void populate_types(nb::module_ &m) {
                    &llvm::ScalableVectorType::getMinNumElements);
 
   nb::class_<llvm::FunctionType, llvm::Type>(m, "FunctionType")
+      .EUDSL_CAST_CTOR(llvm::FunctionType, llvm::Type)
       .def_prop_ro("return_type", &llvm::FunctionType::getReturnType,
                    nb::rv_policy::reference)
       .def_prop_ro("num_params", &llvm::FunctionType::getNumParams)

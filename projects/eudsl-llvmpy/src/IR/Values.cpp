@@ -49,6 +49,7 @@ void populate_values(nb::module_ &m) {
       });
 
   nb::class_<llvm::User, llvm::Value>(m, "User")
+      .EUDSL_CAST_CTOR(llvm::User, llvm::Value)
       .def_prop_ro("num_operands", &llvm::User::getNumOperands)
       .def("operand", &llvm::User::getOperand, "index"_a,
            nb::rv_policy::reference_internal)
@@ -68,6 +69,7 @@ void populate_values(nb::module_ &m) {
   nb::class_<llvm::GlobalObject, llvm::GlobalValue>(m, "GlobalObject");
 
   nb::class_<llvm::Instruction, llvm::User>(m, "Instruction")
+      .EUDSL_CAST_CTOR(llvm::Instruction, llvm::Value)
       .def_prop_ro("num_successors",
                    [](llvm::Instruction &self) {
                      return self.getNumSuccessors();
@@ -83,12 +85,14 @@ void populate_values(nb::module_ &m) {
           nb::rv_policy::reference_internal);
 
   nb::class_<llvm::Argument, llvm::Value>(m, "Argument")
+      .EUDSL_CAST_CTOR(llvm::Argument, llvm::Value)
       .def_prop_ro("arg_no", &llvm::Argument::getArgNo)
       .def_prop_ro(
           "parent", [](llvm::Argument &self) { return self.getParent(); },
           nb::rv_policy::reference_internal);
 
   nb::class_<llvm::BasicBlock, llvm::Value>(m, "BasicBlock")
+      .EUDSL_CAST_CTOR(llvm::BasicBlock, llvm::Value)
       .def_static(
           "create",
           [](eudsl::Context &ctx, const std::string &name,
@@ -112,6 +116,7 @@ void populate_values(nb::module_ &m) {
       });
 
   nb::class_<llvm::Function, llvm::GlobalObject>(m, "Function")
+      .EUDSL_CAST_CTOR(llvm::Function, llvm::Value)
       .def_static(
           "create",
           [](llvm::FunctionType *ft, const std::string &name,
