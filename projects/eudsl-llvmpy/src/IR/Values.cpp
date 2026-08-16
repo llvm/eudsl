@@ -19,6 +19,8 @@
 #include <llvm/IR/User.h>
 #include <llvm/IR/Value.h>
 
+#include <nanobind/make_iterator.h>
+
 #include <vector>
 
 void populate_values(nb::module_ &m) {
@@ -58,7 +60,30 @@ void populate_values(nb::module_ &m) {
         for (unsigned i = 0, n = self.getNumOperands(); i < n; ++i)
           out.push_back(self.getOperand(i));
         return out;
-      });
+      })
+      .def("__len__",
+           [](llvm::User &self) {
+             return static_cast<Py_ssize_t>(self.getNumOperands());
+           })
+      .def(
+          "__getitem__",
+          [](llvm::User &self, Py_ssize_t i) -> llvm::Value * {
+            Py_ssize_t n = static_cast<Py_ssize_t>(self.getNumOperands());
+            if (i < 0)
+              i += n;
+            if (i < 0 || i >= n)
+              throw nb::index_error("index out of range");
+            return self.getOperand(static_cast<unsigned>(i));
+          },
+          nb::rv_policy::reference_internal)
+      .def(
+          "__iter__",
+          [](llvm::User &self) {
+            return nb::make_iterator<nb::rv_policy::reference>(
+                nb::type<llvm::User>(), "OperandIterator",
+                self.value_op_begin(), self.value_op_end());
+          },
+          nb::keep_alive<0, 1>());
 
   // Structural spine of the Value hierarchy. These base classes are registered
   // bare so the concrete subclasses bound in Instructions.cpp / Constants.cpp
@@ -113,7 +138,28 @@ void populate_values(nb::module_ &m) {
         for (llvm::Instruction &i : self)
           out.push_back(&i);
         return out;
-      });
+      })
+      .def("__len__",
+           [](llvm::BasicBlock &self) {
+             return static_cast<Py_ssize_t>(self.size());
+           })
+      .def(
+          "__getitem__",
+          [](llvm::BasicBlock &self, Py_ssize_t i) {
+            std::vector<llvm::Instruction *> out;
+            for (llvm::Instruction &inst : self)
+              out.push_back(&inst);
+            return eudsl::nthOrThrow(out, i);
+          },
+          nb::rv_policy::reference_internal)
+      .def(
+          "__iter__",
+          [](llvm::BasicBlock &self) {
+            return nb::make_iterator<nb::rv_policy::reference>(
+                nb::type<llvm::BasicBlock>(), "InstructionIterator",
+                self.begin(), self.end());
+          },
+          nb::keep_alive<0, 1>());
 
   nb::class_<llvm::Function, llvm::GlobalObject>(m, "Function")
       .EUDSL_CAST_CTOR(llvm::Function, llvm::Value)
@@ -148,6 +194,27 @@ void populate_values(nb::module_ &m) {
                        out.push_back(&b);
                      return out;
                    })
+      .def("__len__",
+           [](llvm::Function &self) {
+             return static_cast<Py_ssize_t>(self.size());
+           })
+      .def(
+          "__getitem__",
+          [](llvm::Function &self, Py_ssize_t i) {
+            std::vector<llvm::BasicBlock *> out;
+            for (llvm::BasicBlock &b : self)
+              out.push_back(&b);
+            return eudsl::nthOrThrow(out, i);
+          },
+          nb::rv_policy::reference_internal)
+      .def(
+          "__iter__",
+          [](llvm::Function &self) {
+            return nb::make_iterator<nb::rv_policy::reference>(
+                nb::type<llvm::Function>(), "BasicBlockIterator", self.begin(),
+                self.end());
+          },
+          nb::keep_alive<0, 1>())
       .def_prop_ro(
           "entry_block",
           [](llvm::Function &self) -> llvm::BasicBlock * {
