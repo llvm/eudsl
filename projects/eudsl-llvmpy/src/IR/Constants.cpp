@@ -88,6 +88,12 @@ void populate_constants(nb::module_ &m) {
         return std::string(self.getOpcodeName());
       });
   nb::class_<llvm::BlockAddress, llvm::Constant>(m, "BlockAddress")
+      .def_static(
+          "get",
+          [](llvm::Function *f, llvm::BasicBlock *bb) -> llvm::Constant * {
+            return llvm::BlockAddress::get(f, bb);
+          },
+          "function"_a, "basic_block"_a, nb::rv_policy::reference)
       .def_prop_ro(
           "function",
           [](llvm::BlockAddress &self) { return self.getFunction(); },

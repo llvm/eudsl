@@ -7,6 +7,8 @@
 
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/Intrinsics.h>
 
 #include <iterator>
 #include <vector>
@@ -125,8 +127,57 @@ void populate_builder(nb::module_ &m) {
       EUDSL_BIN("sdiv", CreateSDiv)
       EUDSL_BIN("udiv", CreateUDiv)
       EUDSL_BIN("fdiv", CreateFDiv)
+      EUDSL_BIN("srem", CreateSRem)
+      EUDSL_BIN("urem", CreateURem)
+      EUDSL_BIN("frem", CreateFRem)
+      EUDSL_BIN("shl", CreateShl)
+      EUDSL_BIN("lshr", CreateLShr)
+      EUDSL_BIN("ashr", CreateAShr)
+      EUDSL_BIN("and_", CreateAnd)
+      EUDSL_BIN("or_", CreateOr)
+      EUDSL_BIN("xor", CreateXor)
       // clang-format on
 #undef EUDSL_BIN
+      // Unary ops: (value, name) -> value.
+#define EUDSL_UNARY(pyName, method)                                            \
+  .def(                                                                        \
+      pyName,                                                                  \
+      [](B &self, llvm::Value *v, const std::string &name) -> llvm::Value * {  \
+        return self.method(v, name);                                           \
+      },                                                                       \
+      "value"_a, "name"_a = "", nb::rv_policy::reference_internal)
+      // clang-format off
+      EUDSL_UNARY("neg", CreateNeg)
+      EUDSL_UNARY("fneg", CreateFNeg)
+      EUDSL_UNARY("not_", CreateNot)
+      EUDSL_UNARY("ptrtoaddr", CreatePtrToAddr)
+      // clang-format on
+#undef EUDSL_UNARY
+      // Casts: (value, dest_type, name) -> value.
+#define EUDSL_CAST(pyName, method)                                             \
+  .def(                                                                        \
+      pyName,                                                                  \
+      [](B &self, llvm::Value *v, llvm::Type *ty,                              \
+         const std::string &name) -> llvm::Value * {                          \
+        return self.method(v, ty, name);                                       \
+      },                                                                       \
+      "value"_a, "dest_type"_a, "name"_a = "", nb::rv_policy::reference_internal)
+      // clang-format off
+      EUDSL_CAST("trunc", CreateTrunc)
+      EUDSL_CAST("zext", CreateZExt)
+      EUDSL_CAST("sext", CreateSExt)
+      EUDSL_CAST("fptoui", CreateFPToUI)
+      EUDSL_CAST("fptosi", CreateFPToSI)
+      EUDSL_CAST("uitofp", CreateUIToFP)
+      EUDSL_CAST("sitofp", CreateSIToFP)
+      EUDSL_CAST("fptrunc", CreateFPTrunc)
+      EUDSL_CAST("fpext", CreateFPExt)
+      EUDSL_CAST("ptrtoint", CreatePtrToInt)
+      EUDSL_CAST("inttoptr", CreateIntToPtr)
+      EUDSL_CAST("bitcast", CreateBitCast)
+      EUDSL_CAST("addrspacecast", CreateAddrSpaceCast)
+      // clang-format on
+#undef EUDSL_CAST
       .def(
           "icmp",
           [](B &self, llvm::CmpInst::Predicate p, llvm::Value *l, llvm::Value *r,
@@ -207,6 +258,149 @@ void populate_builder(nb::module_ &m) {
             return self.CreateInsertValue(agg, val, {idx}, name);
           },
           "aggregate"_a, "value"_a, "index"_a, "name"_a = "",
+          nb::rv_policy::reference_internal)
+      .def(
+          "select",
+          [](B &self, llvm::Value *cond, llvm::Value *t, llvm::Value *f,
+             const std::string &name) -> llvm::Value * {
+            return self.CreateSelect(cond, t, f, name);
+          },
+          "cond"_a, "true_value"_a, "false_value"_a, "name"_a = "",
+          nb::rv_policy::reference_internal)
+      .def(
+          "freeze",
+          [](B &self, llvm::Value *v, const std::string &name) -> llvm::Value * {
+            return self.CreateFreeze(v, name);
+          },
+          "value"_a, "name"_a = "", nb::rv_policy::reference_internal)
+      .def(
+          "extract_element",
+          [](B &self, llvm::Value *vec, llvm::Value *idx,
+             const std::string &name) -> llvm::Value * {
+            return self.CreateExtractElement(vec, idx, name);
+          },
+          "vector"_a, "index"_a, "name"_a = "", nb::rv_policy::reference_internal)
+      .def(
+          "insert_element",
+          [](B &self, llvm::Value *vec, llvm::Value *elt, llvm::Value *idx,
+             const std::string &name) -> llvm::Value * {
+            return self.CreateInsertElement(vec, elt, idx, name);
+          },
+          "vector"_a, "element"_a, "index"_a, "name"_a = "",
+          nb::rv_policy::reference_internal)
+      .def(
+          "shuffle_vector",
+          [](B &self, llvm::Value *v1, llvm::Value *v2, std::vector<int> mask,
+             const std::string &name) -> llvm::Value * {
+            return self.CreateShuffleVector(v1, v2, mask, name);
+          },
+          "v1"_a, "v2"_a, "mask"_a, "name"_a = "",
+          nb::rv_policy::reference_internal)
+      .def(
+          "va_arg",
+          [](B &self, llvm::Value *list, llvm::Type *ty,
+             const std::string &name) -> llvm::Value * {
+            return self.CreateVAArg(list, ty, name);
+          },
+          "arg_list"_a, "type"_a, "name"_a = "",
+          nb::rv_policy::reference_internal)
+      .def(
+          "unreachable",
+          [](B &self) -> llvm::Value * { return self.CreateUnreachable(); },
+          nb::rv_policy::reference_internal)
+      .def(
+          "switch_",
+          [](B &self, llvm::Value *v, llvm::BasicBlock *dest,
+             unsigned num_cases) -> llvm::SwitchInst * {
+            return self.CreateSwitch(v, dest, num_cases);
+          },
+          "value"_a, "default_dest"_a, "num_cases"_a = 10,
+          nb::rv_policy::reference_internal)
+      .def(
+          "indirect_br",
+          [](B &self, llvm::Value *addr,
+             unsigned num_dests) -> llvm::IndirectBrInst * {
+            return self.CreateIndirectBr(addr, num_dests);
+          },
+          "address"_a, "num_dests"_a = 10, nb::rv_policy::reference_internal)
+      .def(
+          "resume",
+          [](B &self, llvm::Value *exn) -> llvm::Value * {
+            return self.CreateResume(exn);
+          },
+          "exn"_a, nb::rv_policy::reference_internal)
+      .def(
+          "fence",
+          [](B &self, llvm::AtomicOrdering ordering,
+             bool single_thread) -> llvm::Value * {
+            // FenceInst is void-typed, so (unlike the neighboring atomic
+            // emitters, which produce a named value) there is no result to name.
+            llvm::SyncScope::ID ssid = single_thread
+                                           ? llvm::SyncScope::SingleThread
+                                           : llvm::SyncScope::System;
+            return self.CreateFence(ordering, ssid);
+          },
+          "ordering"_a, "single_thread"_a = false,
+          nb::rv_policy::reference_internal)
+      .def(
+          "atomic_rmw",
+          [](B &self, llvm::AtomicRMWInst::BinOp op, llvm::Value *ptr,
+             llvm::Value *val, llvm::AtomicOrdering ordering, bool single_thread,
+             const std::string &name) -> llvm::Value * {
+            llvm::SyncScope::ID ssid = single_thread
+                                           ? llvm::SyncScope::SingleThread
+                                           : llvm::SyncScope::System;
+            // MaybeAlign() -> IRBuilder derives the natural alignment.
+            llvm::Value *v = self.CreateAtomicRMW(op, ptr, val,
+                                                  llvm::MaybeAlign(), ordering,
+                                                  ssid);
+            if (!name.empty())
+              v->setName(name);
+            return v;
+          },
+          "op"_a, "ptr"_a, "value"_a, "ordering"_a, "single_thread"_a = false,
+          "name"_a = "", nb::rv_policy::reference_internal)
+      .def(
+          "atomic_cmpxchg",
+          [](B &self, llvm::Value *ptr, llvm::Value *cmp, llvm::Value *new_value,
+             llvm::AtomicOrdering success, llvm::AtomicOrdering failure,
+             bool single_thread, const std::string &name) -> llvm::Value * {
+            // The AtomicCmpXchgInst ctor asserts these; check first so a bad
+            // ordering raises a catchable Python error instead of aborting.
+            if (!llvm::AtomicCmpXchgInst::isValidSuccessOrdering(success)) {
+              throw nb::value_error(
+                  "invalid cmpxchg success ordering (must not be NotAtomic or "
+                  "Unordered)");
+            }
+            if (!llvm::AtomicCmpXchgInst::isValidFailureOrdering(failure)) {
+              throw nb::value_error(
+                  "invalid cmpxchg failure ordering (must not be NotAtomic, "
+                  "Unordered, Release, or AcquireRelease)");
+            }
+            llvm::SyncScope::ID ssid = single_thread
+                                           ? llvm::SyncScope::SingleThread
+                                           : llvm::SyncScope::System;
+            llvm::Value *v = self.CreateAtomicCmpXchg(
+                ptr, cmp, new_value, llvm::MaybeAlign(), success, failure, ssid);
+            if (!name.empty())
+              v->setName(name);
+            return v;
+          },
+          "ptr"_a, "cmp"_a, "new_value"_a, "success_ordering"_a,
+          "failure_ordering"_a, "single_thread"_a = false, "name"_a = "",
+          nb::rv_policy::reference_internal)
+      .def(
+          "call_intrinsic",
+          [](B &self, unsigned intrinsic_id, std::vector<llvm::Type *> types,
+             std::vector<llvm::Value *> args,
+             const std::string &name) -> llvm::Value * {
+            llvm::Value *v = self.CreateIntrinsic(
+                static_cast<llvm::Intrinsic::ID>(intrinsic_id), types, args);
+            if (!name.empty())
+              v->setName(name);
+            return v;
+          },
+          "intrinsic_id"_a, "overload_types"_a, "args"_a, "name"_a = "",
           nb::rv_policy::reference_internal);
 
   // --- DSL current-builder/function state + MLIR-style InsertPoint ---
