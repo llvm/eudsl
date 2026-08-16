@@ -8,6 +8,7 @@ from textwrap import dedent
 import pytest
 
 import llvm
+from llvm.ir import InsertPoint
 from llvm.testing import assert_no_leaks
 
 _SRC = dedent(
@@ -117,7 +118,7 @@ def test_builder_fcmp_gep_call():
         )
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             b.fcmp(llvm.ir.FCmpPredicate.OLT, fn.arg(0), fn.arg(1), "lt")
             # Runtime operand so the icmp isn't constant-folded away.
             b.icmp(llvm.ir.ICmpPredicate.EQ, fn.arg(3), b.i32_const(2), "e")

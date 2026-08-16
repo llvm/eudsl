@@ -13,7 +13,7 @@ from ..eudslllvm_ext.types import StructType, Type
 from ..eudslllvm_ext.types import function as function_t
 from ..ast.util import get_module_cst
 from .casters import maybe_downcast
-from .context import building, current_builder
+from ..eudslllvm_ext.ir import InsertPoint, current_builder
 
 
 def _evaluate_alias_arg(arg, ctx):
@@ -141,7 +141,7 @@ def function(
         entry = fn.append_basic_block("entry")
         builder = IRBuilder(ctx)
 
-        with builder.at_end_of(entry), building(builder, fn):
+        with InsertPoint(entry, builder=builder):
             args = [maybe_downcast(fn.arg(i), fn) for i in range(len(param_types))]
             result = f(*args)
             if result is not None:

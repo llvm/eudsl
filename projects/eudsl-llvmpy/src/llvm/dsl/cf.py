@@ -35,7 +35,7 @@ from ..eudslllvm_ext.ir import Value, const_int
 from ..ast.canonicalize import Canonicalizer, FunctionPatcher
 from ..ast import cf_transformers as _T
 from .casters import maybe_downcast
-from .context import current_builder, current_function
+from ..eudslllvm_ext.ir import current_builder, current_function
 
 
 def placeholder_opaque_t():
