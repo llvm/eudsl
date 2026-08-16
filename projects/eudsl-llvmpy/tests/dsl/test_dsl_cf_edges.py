@@ -12,6 +12,7 @@ from llvm.ast.canonicalize import canonicalize
 from llvm.dsl.cf import LLVMCanonicalizer
 from llvm.dsl.cf import range_
 from llvm.dsl.values import with_element_type
+from llvm.ir import InsertPoint
 from llvm.testing import assert_no_leaks
 
 
@@ -53,7 +54,7 @@ def test_for_side_effect_bare_yield():
         return n
 
     printed = str(mod)
-    assert "while.header" in printed and "store i32" in printed
+    assert "for.header" in printed and "store i32" in printed
     del mod, ctx, fill, i32
     assert_no_leaks()
 
@@ -174,13 +175,6 @@ def test_elif_multiple_carried_results():
     assert_no_leaks()
 
 
-def test_range_runtime_callable():
-    # range_ is a marker consumed by the transform, but also runtime-callable.
-    assert range_(3) == (0, 3, 1)
-    assert range_(1, 4) == (1, 4, 1)
-    assert range_(1, 10, 2) == (1, 10, 2)
-
-
 def test_for_over_python_list_unrolls():
     # A non-range_ `for` is left as a Python loop and unrolls at trace time.
     ctx = llvm.ir.Context()
@@ -236,4 +230,20 @@ def test_nested_if_in_then_branch():
     assert fn(True, False, 10, 20) == 20
     assert fn(False, True, 10, 20) == 20
     del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+def test_loop_body_exception_propagates():
+    # If the loop body raises, _Loop.__exit__ propagates it rather than trying
+    # to finalize the loop (wire phis / reposition the builder).
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        fn = llvm.ir.Function.create(llvm.types.function(i32, [i32]), "f", mod)
+        b = llvm.ir.IRBuilder(ctx)
+        with InsertPoint(fn.append_basic_block("entry"), builder=b):
+            with pytest.raises(RuntimeError, match="boom"):
+                with range_(0, fn.arg(0)):
+                    raise RuntimeError("boom")
+        del b, fn, mod
     assert_no_leaks()

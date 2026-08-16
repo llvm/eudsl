@@ -137,7 +137,7 @@ def test_for_range_sum_jits():
         return acc
 
     printed = str(mod)
-    assert "while.header" in printed
+    assert "for.header" in printed
     jit = llvm.jit.LLJIT()
     jit.add_module(mod)
     fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("total"))
@@ -434,23 +434,69 @@ def test_loop_yield_non_name_raises():
     assert_no_leaks()
 
 
-def test_nested_control_flow_inside_loop_raises():
-    with llvm.ir.Context() as ctx:
-        mod = llvm.ir.Module("m", ctx)
-        i32 = llvm.types.i32(ctx)
-        with pytest.raises(NotImplementedError, match="not supported"):
+def test_nested_if_inside_for_loop_jits():
+    # An `if` nested inside a loop body now lowers to real control flow: the
+    # body stays inline, so the if/else passes reach it. The if yields a value
+    # (a phi) that feeds the loop-carried accumulator.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
 
-            @llvm.dsl.function(module=mod)
-            @canonicalize(using=LLVMCanonicalizer())
-            def f(n: i32, c: llvm.types.i1) -> i32:
-                i = llvm.ir.const_int(i32, 0)
-                while i.ne(n):
-                    if c:
-                        i = i + 1
-                    yield i
-                return i
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def sum_selected(n: i32, c: llvm.types.i1) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        for i in range_(0, n):
+            if c:
+                r = yield i
+            else:
+                r = yield i + i
+            acc = acc + r
+            yield acc
+        return acc
 
-        del mod
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_bool)(
+        jit.lookup("sum_selected")
+    )
+    assert fn(5, True) == 0 + 1 + 2 + 3 + 4
+    assert fn(5, False) == 2 * (0 + 1 + 2 + 3 + 4)
+    del jit, mod, ctx, sum_selected, i32, fn
+    assert_no_leaks()
+
+
+def test_for_loop_nested_inside_if_jits():
+    # The dual: a loop nested inside an `if` branch. The loop's blocks are
+    # emitted inside the then-branch and the branch's yielded value is the
+    # loop result (a header phi valid at the loop exit).
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def maybe_sum(n: i32, c: llvm.types.i1) -> i32:
+        if c:
+            acc = llvm.ir.const_int(i32, 0)
+            for i in range_(0, n):
+                acc = acc + i
+                yield acc
+            r = yield acc
+        else:
+            r = yield llvm.ir.const_int(i32, -1, signed=True)
+        return r
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_bool)(
+        jit.lookup("maybe_sum")
+    )
+    assert fn(5, True) == 0 + 1 + 2 + 3 + 4
+    assert fn(5, False) == -1
+    del jit, mod, ctx, maybe_sum, i32, fn
     assert_no_leaks()
 
 
@@ -472,12 +518,724 @@ def test_while_loop_bare_yield_has_no_carried_values():
     assert_no_leaks()
 
 
-def test_range_marker_is_callable_directly():
-    from llvm.dsl.cf import range_
+def test_if_within_if_within_for_jits():
+    # ifs nested inside ifs, inside a loop body.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
 
-    assert range_(5) == (0, 5, 1)
-    assert range_(2, 5) == (2, 5, 1)
-    assert range_(2, 5, 3) == (2, 5, 3)
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def f(n: i32, c: llvm.types.i1, d: llvm.types.i1) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        for i in range_(0, n):
+            if c:
+                if d:
+                    r = yield i
+                else:
+                    r = yield i + i
+            else:
+                r = yield llvm.ir.const_int(i32, 0)
+            acc = acc + r
+            yield acc
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_bool, ctypes.c_bool)(
+        jit.lookup("f")
+    )
+    assert fn(5, True, True) == 0 + 1 + 2 + 3 + 4
+    assert fn(5, True, False) == 2 * (0 + 1 + 2 + 3 + 4)
+    assert fn(5, False, False) == 0
+    del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+def test_nested_for_loops_jits():
+    # A loop directly nested in another loop (both carry `acc`): acc += 1 for
+    # each (i, j) pair -> n*n. Exercises the inner loop's result feeding the
+    # outer loop-carried phi via the back-edge.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def grid(n: i32) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        for i in range_(0, n):
+            for j in range_(0, n):
+                acc = acc + llvm.ir.const_int(i32, 1)
+                yield acc
+            yield acc
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("grid"))
+    assert fn(3) == 9
+    assert fn(0) == 0  # zero iterations: result is the initial carried value
+    del jit, mod, ctx, grid, i32, fn
+    assert_no_leaks()
+
+
+def test_nested_loops_inside_if_jits():
+    # Loop-in-loop nested inside an `if` branch; the branch yields the loop
+    # result, which must be a header phi valid at the branch merge.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def f(n: i32, c: llvm.types.i1) -> i32:
+        if c:
+            acc = llvm.ir.const_int(i32, 0)
+            for i in range_(0, n):
+                for j in range_(0, n):
+                    acc = acc + llvm.ir.const_int(i32, 1)
+                    yield acc
+                yield acc
+            r = yield acc
+        else:
+            r = yield llvm.ir.const_int(i32, -1, signed=True)
+        return r
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_bool)(
+        jit.lookup("f")
+    )
+    assert fn(3, True) == 9
+    assert fn(3, False) == -1
+    del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+def test_while_nested_inside_for_jits():
+    # Mixed loop kinds: a `while` nested in a `for` body (inner while runs `i`
+    # times on outer iteration i -> total sum(0..n-1)).
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def f(n: i32) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        for i in range_(0, n):
+            j = llvm.ir.const_int(i32, 0)
+            while j.ne(i):
+                acc = acc + llvm.ir.const_int(i32, 1)
+                j = j + llvm.ir.const_int(i32, 1)
+                yield acc, j
+            yield acc
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("f"))
+    assert fn(4) == 0 + 1 + 2 + 3
+    del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+def test_for_nested_inside_while_jits():
+    # Mixed loop kinds: a `for` nested in a `while` body.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def f(n: i32) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        i = llvm.ir.const_int(i32, 0)
+        while i.ne(n):
+            for k in range_(0, i):
+                acc = acc + llvm.ir.const_int(i32, 1)
+                yield acc
+            i = i + llvm.ir.const_int(i32, 1)
+            yield acc, i
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("f"))
+    assert fn(4) == 0 + 1 + 2 + 3
+    del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+def test_triple_nested_loops_jits():
+    # Three levels of loop nesting: acc += 1 per (i, j, k) -> n**3.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def cube(n: i32) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        for i in range_(0, n):
+            for j in range_(0, n):
+                for k in range_(0, n):
+                    acc = acc + llvm.ir.const_int(i32, 1)
+                    yield acc
+                yield acc
+            yield acc
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("cube"))
+    assert fn(2) == 8
+    assert fn(3) == 27
+    del jit, mod, ctx, cube, i32, fn
+    assert_no_leaks()
+
+
+def test_elif_chain_inside_loop_jits():
+    # An elif chain nested inside a loop body.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def bucket(n: i32) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        for i in range_(0, n):
+            if i < llvm.ir.const_int(i32, 2):
+                r = yield i
+            elif i < llvm.ir.const_int(i32, 4):
+                r = yield i + llvm.ir.const_int(i32, 10)
+            else:
+                r = yield i + llvm.ir.const_int(i32, 100)
+            acc = acc + r
+            yield acc
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("bucket"))
+    # i: 0->0, 1->1, 2->12, 3->13, 4->104, 5->105
+    assert fn(6) == 0 + 1 + 12 + 13 + 104 + 105
+    del jit, mod, ctx, bucket, i32, fn
+    assert_no_leaks()
+
+
+def test_while_with_nested_if_jits():
+    # `while` (not `for`) carrying values, with an `if` in its body whose phi
+    # feeds the loop-carried accumulator.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def cond_sum(n: i32, c: llvm.types.i1) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        i = llvm.ir.const_int(i32, 0)
+        while i.ne(n):
+            if c:
+                r = yield acc + i
+            else:
+                r = yield acc
+            acc = r
+            i = i + llvm.ir.const_int(i32, 1)
+            yield acc, i
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_bool)(
+        jit.lookup("cond_sum")
+    )
+    assert fn(5, True) == 0 + 1 + 2 + 3 + 4
+    assert fn(5, False) == 0
+    del jit, mod, ctx, cond_sum, i32, fn
+    assert_no_leaks()
+
+
+def test_loop_carried_plain_int_init_jits():
+    # The loop-carried init is a plain Python int (not const_int); the loop
+    # coerces it to a constant of the inferred type.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def total(n: i32) -> i32:
+        acc = 0  # plain int, not llvm.ir.const_int(...)
+        for i in range_(0, n):
+            acc = acc + i
+            yield acc
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("total"))
+    assert fn(5) == 0 + 1 + 2 + 3 + 4
+    del jit, mod, ctx, total, i32, fn
+    assert_no_leaks()
+
+
+@pytest.mark.xfail(
+    reason="branch-reassignment leakage: both if branches are traced in the same "
+    "Python frame, so a variable reassigned in the then-branch leaks into the "
+    "else-branch. Pre-existing if-lowering limitation; see README Limitations.",
+    strict=True,
+)
+def test_branch_reassign_read_in_else_unsupported():
+    # Catch the VerifyError, clean up, then fail via assert -- so the xfail's
+    # traceback pins nothing live (a raised VerifyError would keep the module
+    # alive past the per-test leak gate).
+    verified = False
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.dsl.function(module=mod)
+        @canonicalize(using=LLVMCanonicalizer())
+        def f(c: llvm.types.i1, a: i32, b: i32) -> i32:
+            acc = a
+            if c:
+                acc = acc + b  # reassigned in then; leaks into else's `acc`
+                r = yield acc
+            else:
+                r = yield acc
+            return r
+
+        try:
+            mod.verify()  # invalid IR: else's acc references the then value
+            verified = True
+        except llvm.ir.VerifyError:
+            verified = False
+        del mod, i32, f
+    assert verified
+
+
+def test_branch_divergence_via_yield_jits():
+    # The supported way to express the above: each branch yields its own value
+    # (distinct names), so nothing reassigned in then is read in else.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def f(c: llvm.types.i1, a: i32, b: i32) -> i32:
+        if c:
+            r = yield a + b
+        else:
+            r = yield a
+        return r
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(
+        ctypes.c_int32, ctypes.c_bool, ctypes.c_int32, ctypes.c_int32
+    )(jit.lookup("f"))
+    assert fn(True, 10, 3) == 13
+    assert fn(False, 10, 3) == 10
+    del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+@pytest.mark.xfail(
+    reason="branch-reassignment leakage: the then-branch's inner loop reassigns "
+    "the outer carried `acc`, which leaks into the else-branch. Pre-existing "
+    "if-lowering limitation; see README Limitations.",
+    strict=True,
+)
+def test_loop_in_if_in_loop_reassign_unsupported():
+    verified = False
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.dsl.function(module=mod)
+        @canonicalize(using=LLVMCanonicalizer())
+        def f(n: i32, c: llvm.types.i1) -> i32:
+            acc = llvm.ir.const_int(i32, 0)
+            for i in range_(0, n):
+                if c:
+                    for j in range_(0, i):
+                        acc = acc + llvm.ir.const_int(i32, 1)
+                        yield acc
+                    r = yield acc  # then: acc is the inner loop result
+                else:
+                    r = yield acc  # else reads acc -> leaked then value
+                acc = r
+                yield acc
+            return acc
+
+        try:
+            mod.verify()
+            verified = True
+        except llvm.ir.VerifyError:
+            verified = False
+        del mod, i32, f
+    assert verified
+
+
+def test_loop_in_if_in_loop_distinct_names_jits():
+    # Same shape as the xfail above, written correctly: the then-branch's inner
+    # loop accumulates into a distinct name (`inner`), so the outer carried
+    # `acc` is never reassigned inside a branch.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def f(n: i32, c: llvm.types.i1) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        for i in range_(0, n):
+            if c:
+                inner = acc
+                for j in range_(0, i):
+                    inner = inner + llvm.ir.const_int(i32, 1)
+                    yield inner
+                r = yield inner
+            else:
+                r = yield acc
+            acc = r
+            yield acc
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_bool)(
+        jit.lookup("f")
+    )
+    assert fn(4, True) == 0 + 1 + 2 + 3
+    assert fn(5, True) == 0 + 1 + 2 + 3 + 4
+    assert fn(4, False) == 0
+    del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+def test_nested_while_loops_jits():
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def f(n: i32) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        i = llvm.ir.const_int(i32, 0)
+        while i.ne(n):
+            j = llvm.ir.const_int(i32, 0)
+            while j.ne(i):
+                acc = acc + llvm.ir.const_int(i32, 1)
+                j = j + llvm.ir.const_int(i32, 1)
+                yield acc, j
+            i = i + llvm.ir.const_int(i32, 1)
+            yield acc, i
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("f"))
+    assert fn(4) == 0 + 1 + 2 + 3
+    del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+def test_if_with_loops_in_both_branches_jits():
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def f(n: i32, c: llvm.types.i1) -> i32:
+        if c:
+            acc = llvm.ir.const_int(i32, 0)
+            for i in range_(0, n):
+                acc = acc + i
+                yield acc
+            r = yield acc
+        else:
+            acc = llvm.ir.const_int(i32, 0)
+            for i in range_(0, n):
+                acc = acc + llvm.ir.const_int(i32, 1)
+                yield acc
+            r = yield acc
+        return r
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_bool)(
+        jit.lookup("f")
+    )
+    assert fn(4, True) == 0 + 1 + 2 + 3
+    assert fn(4, False) == 4
+    del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+def test_multi_carried_updated_in_nested_if_jits():
+    # Two carried values (acc, cnt); acc is updated via a phi produced by a
+    # nested if inside the loop body -- an if-merge phi feeding a loop phi.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def f(n: i32, c: llvm.types.i1) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        cnt = llvm.ir.const_int(i32, 0)
+        for i in range_(0, n):
+            if c:
+                a2 = yield acc + i
+            else:
+                a2 = yield acc
+            acc = a2
+            cnt = cnt + llvm.ir.const_int(i32, 1)
+            yield acc, cnt
+        return acc + cnt
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_bool)(
+        jit.lookup("f")
+    )
+    assert fn(5, True) == (0 + 1 + 2 + 3 + 4) + 5
+    assert fn(5, False) == 0 + 5
+    del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+def test_if_nested_in_while_jits():
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def f(n: i32, c: llvm.types.i1) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        i = llvm.ir.const_int(i32, 0)
+        while i.ne(n):
+            if c:
+                r = yield acc + i
+            else:
+                r = yield acc + llvm.ir.const_int(i32, 1)
+            acc = r
+            i = i + llvm.ir.const_int(i32, 1)
+            yield acc, i
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_bool)(
+        jit.lookup("f")
+    )
+    assert fn(5, True) == 0 + 1 + 2 + 3 + 4
+    assert fn(5, False) == 5
+    del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+@pytest.mark.xfail(
+    reason="branch-reassignment leakage: the then-branch's inner loop reassigns "
+    "`acc`, which leaks into the else-branch's `yield acc`. Pre-existing "
+    "if-lowering limitation; see README Limitations.",
+    strict=True,
+)
+def test_four_level_for_if_for_if_reassign_unsupported():
+    verified = False
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.dsl.function(module=mod)
+        @canonicalize(using=LLVMCanonicalizer())
+        def f(n: i32, c: llvm.types.i1) -> i32:
+            acc = llvm.ir.const_int(i32, 0)
+            for i in range_(0, n):
+                if c:
+                    for j in range_(0, n):
+                        if j < i:
+                            r = yield llvm.ir.const_int(i32, 1)
+                        else:
+                            r = yield llvm.ir.const_int(i32, 0)
+                        acc = acc + r
+                        yield acc
+                    s = yield acc  # then: acc reassigned by the inner loop
+                else:
+                    s = yield acc  # else reads acc -> leaked
+                acc = s
+                yield acc
+            return acc
+
+        try:
+            mod.verify()
+            verified = True
+        except llvm.ir.VerifyError:
+            verified = False
+        del mod, i32, f
+    assert verified
+
+
+def test_four_level_for_if_for_if_distinct_names_jits():
+    # Four levels (for > if > for > if), written correctly with a distinct
+    # inner accumulator so the outer carried `acc` is not reassigned in a branch.
+    ctx = llvm.ir.Context()
+    mod = llvm.ir.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.dsl.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def f(n: i32, c: llvm.types.i1) -> i32:
+        acc = llvm.ir.const_int(i32, 0)
+        for i in range_(0, n):
+            if c:
+                inner = acc
+                for j in range_(0, n):
+                    if j < i:
+                        r = yield llvm.ir.const_int(i32, 1)
+                    else:
+                        r = yield llvm.ir.const_int(i32, 0)
+                    inner = inner + r
+                    yield inner
+                s = yield inner
+            else:
+                s = yield acc
+            acc = s
+            yield acc
+        return acc
+
+    mod.verify()
+    jit = llvm.jit.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_bool)(
+        jit.lookup("f")
+    )
+    # c=True: inner adds `i` per outer iteration -> sum(0..n-1)
+    assert fn(4, True) == 0 + 1 + 2 + 3
+    assert fn(5, True) == 0 + 1 + 2 + 3 + 4
+    assert fn(4, False) == 0
+    del jit, mod, ctx, f, i32, fn
+    assert_no_leaks()
+
+
+def test_fully_constant_loop_needs_a_value_raises():
+    # A loop with only Python-int bounds and carries (no Value anywhere) has no
+    # type to infer for its phis; it is rejected with a clear error.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        with pytest.raises(NotImplementedError, match="at least one Value"):
+
+            @llvm.dsl.function(module=mod)
+            @canonicalize(using=LLVMCanonicalizer())
+            def f() -> i32:
+                acc = 0
+                for i in range_(0, 3):
+                    acc = acc + i
+                    yield acc
+                return acc
+
+        del mod
+    assert_no_leaks()
+
+
+def test_if_in_for_ir_structure():
+    # Pin the nested IR shape: the if-merge phi (if.end) feeds the loop-carried
+    # header phi through the loop back-edge -- the core if-inside-loop interaction
+    # that a substring check cannot express.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.dsl.function(module=mod)
+        @canonicalize(using=LLVMCanonicalizer())
+        def nest(n: i32, c: llvm.types.i1) -> i32:
+            acc = llvm.ir.const_int(i32, 0)
+            for i in range_(0, n):
+                if c:
+                    r = yield i
+                else:
+                    r = yield i + i
+                acc = acc + r
+                yield acc
+            return acc
+
+        # CHECK: define i32 @nest(i32 %[[N:.*]], i1 %[[C:.*]])
+        # CHECK: for.header:
+        # CHECK: %[[IV:.*]] = phi i32 [ 0, %entry ], [ {{.*}}, %if.end ]
+        # CHECK: %[[ACC:.*]] = phi i32 [ 0, %entry ], [ {{.*}}, %if.end ]
+        # CHECK: br i1 {{.*}}, label %for.body, label %for.end
+        # CHECK: for.body:
+        # CHECK: br i1 %[[C]], label %if.then, label %if.else
+        # CHECK: for.end:
+        # CHECK: ret i32 %[[ACC]]
+        # CHECK: if.end:
+        # CHECK: %[[PHI:.*]] = phi i32 [ %[[IV]], %if.then ], [ {{.*}}, %if.else ]
+        # CHECK: add i32 %[[ACC]], %[[PHI]]
+        # CHECK: br label %for.header
+        filecheck_with_comments(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_nested_loops_ir_structure():
+    # Two loop headers: the inner carried phi is seeded from the outer carried
+    # phi, and its value flows back through the outer loop's back-edge.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+
+        @llvm.dsl.function(module=mod)
+        @canonicalize(using=LLVMCanonicalizer())
+        def grid(n: i32) -> i32:
+            acc = llvm.ir.const_int(i32, 0)
+            for i in range_(0, n):
+                for j in range_(0, n):
+                    acc = acc + llvm.ir.const_int(i32, 1)
+                    yield acc
+                yield acc
+            return acc
+
+        # CHECK: define i32 @grid(i32 %[[N:.*]])
+        # CHECK: for.header:
+        # CHECK: phi i32 [ 0, %entry ], [ {{.*}}, %for.end3 ]
+        # CHECK: %[[OACC:.*]] = phi i32 [ 0, %entry ], [ %[[INNER:.*]], %for.end3 ]
+        # CHECK: br i1 {{.*}}, label %for.body, label %for.end
+        # CHECK: for.body:
+        # CHECK: br label %for.header1
+        # CHECK: for.end:
+        # CHECK: ret i32 %[[OACC]]
+        # CHECK: for.header1:
+        # CHECK: %[[INNER]] = phi i32 [ %[[OACC]], %for.body ], [ {{.*}}, %for.body2 ]
+        # CHECK: for.end3:
+        # CHECK: br label %for.header
+        filecheck_with_comments(mod)
+        del mod
+    assert_no_leaks()
 
 
 def test_for_negative_step_countdown_jits():

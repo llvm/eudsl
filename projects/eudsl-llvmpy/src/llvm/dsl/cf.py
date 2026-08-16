@@ -27,6 +27,12 @@ repoints that false edge to a fresh else block; and the values passed to
 executes in the else branch last, the else-branch `yield_` is the one that
 builds the phis (both incoming edges are then known) and returns them, so `r`
 binds to the phi that `return r` uses.
+
+Loops follow the same "keep the body inline, thread carried values as phis"
+idea (see `_Loop`): `for i in range_(...)` / `while COND` become a `with`
+statement over a loop object whose header phis carry the loop-carried values.
+Because the body stays inline (not lifted into a function), control flow nested
+inside a loop body -- and loops nested inside `if` branches -- lower normally.
 """
 
 from contextlib import contextmanager
@@ -159,77 +165,30 @@ class _InjectCFGlobals(FunctionPatcher):
         g["if_ctx_manager"] = if_ctx_manager
         g["else_ctx_manager"] = else_ctx_manager
         g["placeholder_opaque_t"] = placeholder_opaque_t
-        g["while_loop"] = while_loop
-        g["for_loop"] = for_loop
+        g["loop_yield"] = loop_yield
         g["range_"] = range_
+        g["while_"] = while_
         return f
 
 
 class LLVMCanonicalizer(Canonicalizer):
     cst_transformers = [
-        # Reject unsupported jumps first, on the original AST, before the loop
-        # transforms synthesize their own returns.
+        # Reject unsupported jumps first, on the original AST: break/continue and
+        # early `return` inside control flow are still not modeled.
         _T.RejectUnsupportedJumps,
-        # Loops next: they lift the loop body into nested cond/body functions
-        # before the if/else transformers rewrite yields, so a loop's trailing
-        # `yield` is consumed as its carried-value list rather than becoming an
-        # scf-style yield_().
-        _T.WhileToWhileLoop,
-        _T.ForToForLoop,
+        # Loops next, so a loop's trailing `yield` is consumed as its carried
+        # values (rewritten to loop_yield) before the if/else passes turn any
+        # remaining yields into scf-style yield_(). The loop body stays inline
+        # (in a `with` block), so control flow nested in it is lowered by the
+        # passes below and any nested loop by these two passes.
+        _T.ForToInline,
+        _T.WhileToInline,
         _T.CanonicalizeElIfs,
         _T.InsertEmptyYield,
         _T.ReplaceYieldWithLLVMYield,
         _T.ReplaceIfWithWith,
     ]
     function_patchers = [_InjectCFGlobals]
-
-
-def while_loop(cond_fn, body_fn, inits):
-    """Phi-based while loop.
-
-    cond_fn(*carried) -> i1 and body_fn(*carried) -> next-carried-tuple are both
-    parameterized by the loop-carried values, so the runtime can pass header
-    phis as those arguments -- no closure rebinding needed. Structure:
-
-        preheader: br header
-        header:    <phis> = phi [init, preheader], [next, body]
-                   br cond_fn(phis), body, exit
-        body:      next = body_fn(phis); br header
-        exit:      (phis are the loop results)
-    """
-    b = current_builder()
-    fn = current_function()
-    inits = list(inits)
-
-    preheader = b.insert_block
-    header = fn.append_basic_block("while.header")
-    body_bb = fn.append_basic_block("while.body")
-    exit_bb = fn.append_basic_block("while.end")
-
-    b.br(header)
-
-    b.set_insert_point(header)
-    raw_phis = []
-    carried = []
-    for idx, init in enumerate(inits):
-        phi = b.phi(init.type, f"while.{idx}")
-        phi.add_incoming(init, preheader)
-        raw_phis.append(phi)  # keep the PHINode for add_incoming wiring
-        carried.append(maybe_downcast(phi, fn))  # typed view for the body
-    cond = cond_fn(*carried)
-    b.cond_br(cond, body_bb, exit_bb)
-
-    b.set_insert_point(body_bb)
-    nexts = body_fn(*carried)  # body_fn returns a tuple of next carried values
-    body_end = b.insert_block  # nested control flow may have moved us
-    b.br(header)
-    for phi, nxt in zip(raw_phis, nexts):
-        phi.add_incoming(nxt, body_end)
-
-    b.set_insert_point(exit_bb)
-    # Always return a tuple; the AST transform binds `(names,) = while_loop(...)`
-    # and direct callers unpack. (Single-element tuple for one carried value.)
-    return tuple(carried)
 
 
 def _as_value(x, like):
@@ -239,48 +198,132 @@ def _as_value(x, like):
     return const_int(like.type, int(x), signed=True)
 
 
-def for_loop(start, stop, step, body_fn, inits):
-    """Counted loop built on while_loop, with an induction variable.
+_loop_stack = []
 
-        for i in range_(start, stop, step):
-            BODY
-            yield carried
-        # lowered to a while_loop over (i, *carried):
-        #   cond: i < stop (ascending) or i > stop (descending)
-        #   body: (i + step, *body_fn(i, *carried))
 
-    body_fn(i, *carried) -> next-carried-tuple. Returns the final carried
-    values (the induction variable is internal).
+class _Loop:
+    """A lowered for/while loop: preheader -> header(phis) -> body -> exit.
+
+    Built on ``__enter__``, which appends the blocks, seeds the header phis from
+    the preheader, emits the entry condition, and leaves the persistent builder
+    inside the body block. ``__exit__`` adds the back-edge phi incomings from
+    whatever block the body actually ended in (so nested control flow that moved
+    the builder is handled, just like `_IfOp`), then parks the builder at the
+    exit block. The loop-carried values are the header phis; they are exposed as
+    ``.results`` (valid at the exit block) so post-loop code binds to the loop
+    result rather than the body's last recomputed value.
+
+    The body is left inline in the caller's frame (the AST transform wraps it in
+    ``with``), so `if`/`while`/`for` nested in a loop body lower normally.
     """
-    stop_v = stop
-    start_v = _as_value(start, stop_v if not isinstance(stop, int) else start)
-    inits = [_as_value(v, start_v) for v in inits]
 
-    # Pick comparator based on step sign (negative step → descending).
-    step_negative = step < 0 if isinstance(step, int) else False
+    def __init__(
+        self, kind, *, start=None, stop=None, step=None, cond_fn=None, iter_args=()
+    ):
+        self.kind = kind
+        self.start = start
+        self.stop = stop
+        self.step = step
+        self.cond_fn = cond_fn
+        self.iter_args = list(iter_args)
+        self.next_carried = []
+        self.results = ()
 
-    def cond(iv, *carried):
-        return iv > stop_v if step_negative else iv < stop_v
+    def __enter__(self):
+        b = current_builder()
+        fn = current_function()
+        self.builder = b
+        preheader = b.insert_block
+        self.header = fn.append_basic_block(f"{self.kind}.header")
+        body = fn.append_basic_block(f"{self.kind}.body")
+        self.exit_block = fn.append_basic_block(f"{self.kind}.end")
+        b.br(self.header)
 
-    def body(iv, *carried):
-        # body_fn is the lifted loop body; it returns a tuple of next carried
-        # values (empty for a side-effecting loop with a bare yield).
-        nxt = body_fn(iv, *carried)
-        return (iv + step, *nxt)
+        b.set_insert_point(self.header)
+        # Coerce any Python-int bounds/carried inits to constants. The type
+        # witness is the first Value among the bounds and carried inits; a loop
+        # with an int to coerce but no Value anywhere has no type to infer.
+        witness_candidates = list(self.iter_args)
+        if self.kind == "for":
+            witness_candidates = [self.start, self.stop] + witness_candidates
+        witness = next((c for c in witness_candidates if isinstance(c, Value)), None)
 
-    res = while_loop(cond, body, (start_v, *inits))
-    # while_loop returns a tuple; drop the induction variable and return the
-    # remaining carried values as a tuple (the AST transform tuple-unpacks it).
-    carried = res[1:]
-    return tuple(carried)
+        def coerce(x):
+            if witness is None and not isinstance(x, Value):
+                raise NotImplementedError(
+                    "a DSL loop needs at least one Value bound or loop-carried "
+                    "value to infer the IR type"
+                )
+            return _as_value(x, witness)
+
+        self.iter_args = [coerce(a) for a in self.iter_args]
+
+        self.iv_phi = None
+        iv_typed = None
+        if self.kind == "for":
+            start = coerce(self.start)
+            stop = coerce(self.stop)
+            self.stop = stop
+            self.iv_phi = b.phi(start.type, "for.iv")
+            self.iv_phi.add_incoming(start, preheader)
+            iv_typed = maybe_downcast(self.iv_phi, fn)
+        self.carried_phis = []
+        for k, a in enumerate(self.iter_args):
+            p = b.phi(a.type, f"{self.kind}.{k}")
+            p.add_incoming(a, preheader)
+            self.carried_phis.append(p)
+        carried_typed = tuple(maybe_downcast(p, fn) for p in self.carried_phis)
+        self._iv_typed = iv_typed
+
+        if self.kind == "for":
+            descending = isinstance(self.step, int) and self.step < 0
+            cond = iv_typed > self.stop if descending else iv_typed < self.stop
+        else:
+            cond = self.cond_fn(*carried_typed)
+        b.cond_br(cond, body, self.exit_block)
+
+        b.set_insert_point(body)
+        _loop_stack.append(self)
+        if self.kind == "for":
+            return (iv_typed, carried_typed) if carried_typed else iv_typed
+        return carried_typed
+
+    def __exit__(self, exc_type, exc, tb):
+        _loop_stack.pop()
+        if exc_type is not None:
+            return False
+        b = self.builder
+        body_end = b.insert_block  # nested control flow may have moved us
+        next_iv = self._iv_typed + self.step if self.kind == "for" else None
+        b.br(self.header)
+        if self.kind == "for":
+            self.iv_phi.add_incoming(next_iv, body_end)
+        for phi, nxt in zip(self.carried_phis, self.next_carried):
+            phi.add_incoming(nxt, body_end)
+        b.set_insert_point(self.exit_block)
+        # The header phis hold the final carried values on the exit edge and the
+        # header dominates the exit block, so they are the loop's live-out result.
+        self.results = tuple(
+            maybe_downcast(p, current_function()) for p in self.carried_phis
+        )
+        return False
 
 
-def range_(start, stop=None, step=1):
-    """Marker for `for i in range_(...)`; the AST transform reads its args.
+def loop_yield(*values):
+    """Record this iteration's updated carried values (the loop analogue of
+    yield_). Read by `_Loop.__exit__` to wire the back-edge phi incomings."""
+    _loop_stack[-1].next_carried = list(values)
 
-    Also callable at runtime (returns the (start, stop, step) triple) so the
-    name resolves even outside a transformed function.
-    """
+
+def range_(start, stop=None, step=1, *, iter_args=()):
+    """`for i in range_(...)` loop builder. The AST transform supplies
+    `iter_args` (the loop-carried values) and iterates this via `with`."""
     if stop is None:
         start, stop = 0, start
-    return (start, stop, step)
+    return _Loop("for", start=start, stop=stop, step=step, iter_args=iter_args)
+
+
+def while_(cond_fn, *, iter_args=()):
+    """`while COND` loop builder. The AST transform lifts COND into `cond_fn`
+    (evaluated in the header against the carried phis) and supplies iter_args."""
+    return _Loop("while", cond_fn=cond_fn, iter_args=iter_args)
