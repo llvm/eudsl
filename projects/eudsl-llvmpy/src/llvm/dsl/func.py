@@ -5,23 +5,79 @@
 
 import ast
 import inspect
+import types
+from typing import get_args
 
 from ..eudslllvm_ext.ir import Function, IRBuilder
-from ..eudslllvm_ext.types import Type
+from ..eudslllvm_ext.types import StructType, Type
 from ..eudslllvm_ext.types import function as function_t
 from ..ast.util import get_module_cst
 from .casters import maybe_downcast
 from .context import building, current_builder
 
 
+def _evaluate_alias_arg(arg, ctx):
+    """Recursively turn one subscript argument into a value `.get(...)` accepts.
+
+    A nested alias (`ArrayType[IntegerType[32], 4]`) or bare type class becomes a
+    real Type; a list/tuple is mapped element-wise (e.g. the params list in
+    `FunctionType[ret, [a, b]]`); scalars (ints, bools) pass through unchanged.
+    """
+    if isinstance(arg, Type):
+        return arg
+    if type(arg) is types.GenericAlias:
+        return _evaluate_alias(arg, ctx)
+    if isinstance(arg, (list, tuple)):
+        return type(arg)(_evaluate_alias_arg(a, ctx) for a in arg)
+    if isinstance(arg, type) and issubclass(arg, Type):
+        return arg.get(context=ctx)
+    if callable(arg):
+        # A bare factory (e.g. `llvm.types.i32`) used as a nested subscript arg,
+        # mirroring _resolve's callable branch for top-level annotations.
+        return arg(context=ctx)
+    return arg
+
+
+def _evaluate_alias(alias, ctx):
+    """Evaluate a types.GenericAlias (e.g. `IntegerType[32]`) into an llvm.Type
+    by forwarding its evaluated subscript args to the origin's `.get(...)`.
+
+    `StructType` is variadic in its subscript (`StructType[i32, f64]`), so its
+    element args are collected into the single list `StructType.get` expects;
+    every other origin forwards its args positionally (e.g.
+    `FunctionType[ret, [a, b]]` -> `FunctionType.get(ret, [a, b])`).
+    """
+    origin = alias.__origin__
+    args = [_evaluate_alias_arg(a, ctx) for a in get_args(alias)]
+    if origin is StructType:
+        return origin.get(list(args), context=ctx)
+    return origin.get(*args, context=ctx)
+
+
 def _resolve(annotation, ctx):
     """Resolve a parameter/return annotation to an llvm.Type.
 
-    Accepts a Type instance directly, or a callable `ctx -> Type` (e.g. the
-    `llvm.types.i32` factory used bare as an annotation).
+    Accepts, in order:
+      - a Type instance directly;
+      - a deferred `types.GenericAlias` (`IntegerType[32]`, `PointerType[0]`,
+        `FunctionType[ret, [args]]`, ...) evaluated against `ctx` -- these need
+        no live context to be written as annotations;
+      - a bare parametric type class (`PointerType`) -> `.get(context=ctx)`;
+      - a callable `ctx -> Type` (e.g. the `llvm.types.i32` factory used bare).
+
+    The GenericAlias and bare-class cases must precede the callable case: both
+    are themselves callable and would otherwise hit the wrong branch.
     """
+    if annotation is inspect.Parameter.empty:
+        raise TypeError(
+            "missing type annotation; annotate every parameter and the return type"
+        )
     if isinstance(annotation, Type):
         return annotation
+    if type(annotation) is types.GenericAlias:
+        return _evaluate_alias(annotation, ctx)
+    if isinstance(annotation, type) and issubclass(annotation, Type):
+        return annotation.get(context=ctx)
     if callable(annotation):
         return annotation(context=ctx)
     raise TypeError(f"cannot resolve type annotation {annotation!r}")

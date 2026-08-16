@@ -82,16 +82,50 @@ void populate_types(nb::module_ &m) {
   EUDSL_PRIMITIVE_TYPE("f64", getDoubleTy);
 #undef EUDSL_PRIMITIVE_TYPE
 
-  nb::class_<llvm::IntegerType, llvm::Type>(m, "IntegerType")
+  // Parametric type classes carry nb::is_generic() so `IntegerType[32]`,
+  // `PointerType[0]`, `FunctionType[ret, [args]]`, etc. produce an unevaluated
+  // types.GenericAlias -- a type annotation that needs no live context. Each
+  // class also gets a `.get(...)` classmethod that the alias forwards to at
+  // emit time. IntegerType/PointerType/StructType.get resolve the context via
+  // currentOr, so it stays optional there. The element-deriving gets
+  // (ArrayType/VectorType/FunctionType and the concrete vector subtypes) take
+  // their context from the element or return type instead; they still accept
+  // `context` for uniform dispatch and reject it only when it names a different
+  // context.
+  nb::class_<llvm::IntegerType, llvm::Type>(m, "IntegerType", nb::is_generic())
       .EUDSL_CAST_CTOR(llvm::IntegerType, llvm::Type)
+      .def_static(
+          "get",
+          [](unsigned bits, nb::handle context) -> llvm::IntegerType * {
+            return llvm::IntegerType::get(eudsl::currentOr(context).get(), bits);
+          },
+          "bits"_a, "context"_a = nb::none(), nb::rv_policy::reference,
+          nb::keep_alive<0, 2>())
       .def_prop_ro("bit_width", &llvm::IntegerType::getBitWidth);
 
-  nb::class_<llvm::PointerType, llvm::Type>(m, "PointerType")
+  nb::class_<llvm::PointerType, llvm::Type>(m, "PointerType", nb::is_generic())
       .EUDSL_CAST_CTOR(llvm::PointerType, llvm::Type)
+      .def_static(
+          "get",
+          [](unsigned addressSpace, nb::handle context) -> llvm::PointerType * {
+            return llvm::PointerType::get(eudsl::currentOr(context).get(),
+                                          addressSpace);
+          },
+          "address_space"_a = 0, "context"_a = nb::none(),
+          nb::rv_policy::reference, nb::keep_alive<0, 2>())
       .def_prop_ro("address_space", &llvm::PointerType::getAddressSpace);
 
-  nb::class_<llvm::StructType, llvm::Type>(m, "StructType")
+  nb::class_<llvm::StructType, llvm::Type>(m, "StructType", nb::is_generic())
       .EUDSL_CAST_CTOR(llvm::StructType, llvm::Type)
+      .def_static(
+          "get",
+          [](std::vector<llvm::Type *> elts, bool packed,
+             nb::handle context) -> llvm::StructType * {
+            return llvm::StructType::get(eudsl::currentOr(context).get(), elts,
+                                         packed);
+          },
+          "element_types"_a, "packed"_a = false, "context"_a = nb::none(),
+          nb::rv_policy::reference, nb::keep_alive<0, 3>())
       .def_prop_ro("name",
                    [](llvm::StructType &self) -> std::optional<std::string> {
                      if (!self.hasName())
@@ -109,14 +143,42 @@ void populate_types(nb::module_ &m) {
              bool packed) { self.setBody(elts, packed); },
           "element_types"_a, "packed"_a = false);
 
-  nb::class_<llvm::ArrayType, llvm::Type>(m, "ArrayType")
+  nb::class_<llvm::ArrayType, llvm::Type>(m, "ArrayType", nb::is_generic())
       .EUDSL_CAST_CTOR(llvm::ArrayType, llvm::Type)
+      .def_static(
+          "get",
+          [](llvm::Type *elt, uint64_t n, nb::handle context) -> llvm::ArrayType * {
+            // The element type already pins the context; a passed `context` is
+            // accepted for uniform dispatch but must not name a different one.
+            if (!context.is_none() &&
+                &elt->getContext() != &eudsl::currentOr(context).get()) {
+              throw nb::value_error(
+                  "element type belongs to a different context");
+            }
+            return llvm::ArrayType::get(elt, n);
+          },
+          "element_type"_a, "num_elements"_a, "context"_a = nb::none(),
+          nb::rv_policy::reference, nb::keep_alive<0, 1>())
       .def_prop_ro("num_elements", &llvm::ArrayType::getNumElements)
       .def_prop_ro("element_type", &llvm::ArrayType::getElementType,
                    nb::rv_policy::reference);
 
-  nb::class_<llvm::VectorType, llvm::Type>(m, "VectorType")
+  nb::class_<llvm::VectorType, llvm::Type>(m, "VectorType", nb::is_generic())
       .EUDSL_CAST_CTOR(llvm::VectorType, llvm::Type)
+      .def_static(
+          "get",
+          [](llvm::Type *elt, unsigned n, bool scalable,
+             nb::handle context) -> llvm::VectorType * {
+            if (!context.is_none() &&
+                &elt->getContext() != &eudsl::currentOr(context).get()) {
+              throw nb::value_error(
+                  "element type belongs to a different context");
+            }
+            return llvm::VectorType::get(elt, n, scalable);
+          },
+          "element_type"_a, "num_elements"_a, "scalable"_a = false,
+          "context"_a = nb::none(), nb::rv_policy::reference,
+          nb::keep_alive<0, 1>())
       .def_prop_ro("min_num_elements",
                    [](llvm::VectorType &self) {
                      return self.getElementCount().getKnownMinValue();
@@ -128,15 +190,69 @@ void populate_types(nb::module_ &m) {
       .def_prop_ro("element_type", &llvm::VectorType::getElementType,
                    nb::rv_policy::reference);
 
-  nb::class_<llvm::FixedVectorType, llvm::VectorType>(m, "FixedVectorType")
+  // FixedVectorType/ScalableVectorType inherit VectorType's __class_getitem__,
+  // so they are subscriptable regardless; give each its own `.get` (returning
+  // the concrete subtype) so `FixedVectorType[i32, 4]` resolves correctly
+  // instead of hitting a missing classmethod.
+  nb::class_<llvm::FixedVectorType, llvm::VectorType>(m, "FixedVectorType",
+                                                      nb::is_generic())
+      .def_static(
+          "get",
+          [](llvm::Type *elt, unsigned n,
+             nb::handle context) -> llvm::FixedVectorType * {
+            if (!context.is_none() &&
+                &elt->getContext() != &eudsl::currentOr(context).get()) {
+              throw nb::value_error(
+                  "element type belongs to a different context");
+            }
+            return llvm::FixedVectorType::get(elt, n);
+          },
+          "element_type"_a, "num_elements"_a, "context"_a = nb::none(),
+          nb::rv_policy::reference, nb::keep_alive<0, 1>())
       .def_prop_ro("num_elements", &llvm::FixedVectorType::getNumElements);
 
-  nb::class_<llvm::ScalableVectorType, llvm::VectorType>(m, "ScalableVectorType")
+  nb::class_<llvm::ScalableVectorType, llvm::VectorType>(m, "ScalableVectorType",
+                                                         nb::is_generic())
+      .def_static(
+          "get",
+          [](llvm::Type *elt, unsigned n,
+             nb::handle context) -> llvm::ScalableVectorType * {
+            if (!context.is_none() &&
+                &elt->getContext() != &eudsl::currentOr(context).get()) {
+              throw nb::value_error(
+                  "element type belongs to a different context");
+            }
+            return llvm::ScalableVectorType::get(elt, n);
+          },
+          "element_type"_a, "num_elements"_a, "context"_a = nb::none(),
+          nb::rv_policy::reference, nb::keep_alive<0, 1>())
       .def_prop_ro("min_num_elements",
                    &llvm::ScalableVectorType::getMinNumElements);
 
-  nb::class_<llvm::FunctionType, llvm::Type>(m, "FunctionType")
+  nb::class_<llvm::FunctionType, llvm::Type>(m, "FunctionType", nb::is_generic())
       .EUDSL_CAST_CTOR(llvm::FunctionType, llvm::Type)
+      .def_static(
+          "get",
+          [](llvm::Type *ret, std::vector<llvm::Type *> params, bool varArg,
+             nb::handle context) -> llvm::FunctionType * {
+            if (!context.is_none()) {
+              llvm::LLVMContext *c = &eudsl::currentOr(context).get();
+              if (&ret->getContext() != c) {
+                throw nb::value_error(
+                    "return type belongs to a different context");
+              }
+              for (llvm::Type *p : params) {
+                if (&p->getContext() != c) {
+                  throw nb::value_error(
+                      "parameter type belongs to a different context");
+                }
+              }
+            }
+            return llvm::FunctionType::get(ret, params, varArg);
+          },
+          "return_type"_a, "params"_a, "var_arg"_a = false,
+          "context"_a = nb::none(), nb::rv_policy::reference,
+          nb::keep_alive<0, 1>())
       .def_prop_ro("return_type", &llvm::FunctionType::getReturnType,
                    nb::rv_policy::reference)
       .def_prop_ro("num_params", &llvm::FunctionType::getNumParams)
