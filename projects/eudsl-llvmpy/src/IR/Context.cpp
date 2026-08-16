@@ -17,6 +17,7 @@
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
+#include <llvm/Target/TargetMachine.h>
 
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
@@ -126,7 +127,13 @@ void populate_context(nb::module_ &m) {
         llvm::WriteBitcodeToFile(self.get(), os);
         os.flush();
         return nb::bytes(buf.data(), buf.size());
-      });
+      })
+      .def(
+          "set_data_layout_from",
+          [](eudsl::Module &self, llvm::TargetMachine &tm) {
+            self.get().setDataLayout(tm.createDataLayout());
+          },
+          "target_machine"_a);
 
   m.def(
       "parse_assembly",
