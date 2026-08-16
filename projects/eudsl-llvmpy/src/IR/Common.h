@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <llvm/IR/CallingConv.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 
@@ -44,6 +45,12 @@ inline void unwrap(llvm::Error &&e) {
 }
 
 } // namespace eudsl
+
+enum class CallingConvEnum : unsigned {
+  C = llvm::CallingConv::C,
+  FAST = llvm::CallingConv::Fast,
+  COLD = llvm::CallingConv::Cold,
+};
 
 // Pulled in here so every translation unit that returns an llvm::Type* or
 // llvm::Value* sees the downcasting type_hook specializations. Without this a

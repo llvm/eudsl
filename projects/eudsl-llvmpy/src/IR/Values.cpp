@@ -6,6 +6,7 @@
 #include "IR/Ownership.h"
 
 #include <llvm/IR/Argument.h>
+#include <llvm/IR/Attributes.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constant.h>
 #include <llvm/IR/Constants.h>
@@ -166,5 +167,35 @@ void populate_values(nb::module_ &m) {
           [](llvm::Function &self, const std::string &name) {
             return llvm::BasicBlock::Create(self.getContext(), name, &self);
           },
-          "name"_a = "", nb::rv_policy::reference_internal);
+          "name"_a = "", nb::rv_policy::reference_internal)
+      .def_prop_rw("linkage", &llvm::Function::getLinkage,
+                   &llvm::Function::setLinkage)
+      .def_prop_rw("visibility", &llvm::Function::getVisibility,
+                   &llvm::Function::setVisibility)
+      .def_prop_rw(
+          "calling_conv",
+          [](llvm::Function &self) {
+            return static_cast<CallingConvEnum>(self.getCallingConv());
+          },
+          [](llvm::Function &self, CallingConvEnum cc) {
+            self.setCallingConv(
+                static_cast<llvm::CallingConv::ID>(cc));
+          })
+      .def(
+          "add_fn_attr",
+          [](llvm::Function &self, const std::string &name,
+             const std::string &value) { self.addFnAttr(name, value); },
+          "name"_a, "value"_a = "")
+      .def(
+          "has_fn_attr",
+          [](llvm::Function &self, const std::string &name) {
+            return self.hasFnAttribute(name);
+          },
+          "name"_a)
+      .def(
+          "fn_attr_value",
+          [](llvm::Function &self, const std::string &name) {
+            return self.getFnAttribute(name).getValueAsString().str();
+          },
+          "name"_a);
 }
