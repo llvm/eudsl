@@ -4,6 +4,7 @@
 
 #include "IR/Common.h"
 #include "IR/Ownership.h"
+#include "IR/Sequence.h"
 
 #include <llvm/IR/Argument.h>
 #include <llvm/IR/Attributes.h>
@@ -41,18 +42,38 @@ void populate_values(nb::module_ &m) {
       .def_prop_ro("type", &llvm::Value::getType, nb::rv_policy::reference_internal)
       .def_prop_ro("num_uses",
                    [](llvm::Value &self) { return self.getNumUses(); })
-      .def_prop_ro("users",
-                   [](llvm::Value &self) {
-                     return std::vector<llvm::User *>(self.user_begin(),
-                                                      self.user_end());
-                   })
-      .def_prop_ro("uses",
-                   [](llvm::Value &self) {
-                     std::vector<llvm::Use *> out;
-                     for (llvm::Use &u : self.uses())
-                       out.push_back(&u);
-                     return out;
-                   })
+      .def_prop_ro(
+          "users",
+          [](llvm::Value &self) {
+            llvm::Value *v = &self;
+            eudsl::Sequence<llvm::User> seq;
+            seq.length = [v] {
+              return static_cast<std::size_t>(v->getNumUses());
+            };
+            seq.at = [v](std::size_t i) {
+              auto it = v->user_begin();
+              std::advance(it, i);
+              return *it;
+            };
+            return seq;
+          },
+          nb::keep_alive<0, 1>())
+      .def_prop_ro(
+          "uses",
+          [](llvm::Value &self) {
+            llvm::Value *v = &self;
+            eudsl::Sequence<llvm::Use> seq;
+            seq.length = [v] {
+              return static_cast<std::size_t>(v->getNumUses());
+            };
+            seq.at = [v](std::size_t i) {
+              auto it = v->use_begin();
+              std::advance(it, i);
+              return &*it;
+            };
+            return seq;
+          },
+          nb::keep_alive<0, 1>())
       .def("replace_all_uses_with", &llvm::Value::replaceAllUsesWith, "value"_a)
       .def(
           "replace_all_uses_except",
@@ -87,12 +108,20 @@ void populate_values(nb::module_ &m) {
       .def_prop_ro("num_operands", &llvm::User::getNumOperands)
       .def("operand", &llvm::User::getOperand, "index"_a,
            nb::rv_policy::reference_internal)
-      .def_prop_ro("operands", [](llvm::User &self) {
-        std::vector<llvm::Value *> out;
-        for (unsigned i = 0, n = self.getNumOperands(); i < n; ++i)
-          out.push_back(self.getOperand(i));
-        return out;
-      })
+      .def_prop_ro(
+          "operands",
+          [](llvm::User &self) {
+            llvm::User *u = &self;
+            eudsl::Sequence<llvm::Value> seq;
+            seq.length = [u] {
+              return static_cast<std::size_t>(u->getNumOperands());
+            };
+            seq.at = [u](std::size_t i) {
+              return u->getOperand(static_cast<unsigned>(i));
+            };
+            return seq;
+          },
+          nb::keep_alive<0, 1>())
       .def("__len__",
            [](llvm::User &self) {
              return static_cast<Py_ssize_t>(self.getNumOperands());
@@ -165,12 +194,20 @@ void populate_values(nb::module_ &m) {
           "terminator",
           [](llvm::BasicBlock &self) { return self.getTerminatorOrNull(); },
           nb::rv_policy::reference_internal)
-      .def_prop_ro("instructions", [](llvm::BasicBlock &self) {
-        std::vector<llvm::Instruction *> out;
-        for (llvm::Instruction &i : self)
-          out.push_back(&i);
-        return out;
-      })
+      .def_prop_ro(
+          "instructions",
+          [](llvm::BasicBlock &self) {
+            llvm::BasicBlock *b = &self;
+            eudsl::Sequence<llvm::Instruction> seq;
+            seq.length = [b] { return static_cast<std::size_t>(b->size()); };
+            seq.at = [b](std::size_t i) {
+              auto it = b->begin();
+              std::advance(it, i);
+              return &*it;
+            };
+            return seq;
+          },
+          nb::keep_alive<0, 1>())
       .def("__len__",
            [](llvm::BasicBlock &self) {
              return static_cast<Py_ssize_t>(self.size());
@@ -212,20 +249,34 @@ void populate_values(nb::module_ &m) {
       .def_prop_ro("is_declaration", &llvm::Function::isDeclaration)
       .def_prop_ro("num_args", &llvm::Function::arg_size)
       .def("arg", &llvm::Function::getArg, "index"_a, nb::rv_policy::reference_internal)
-      .def_prop_ro("args",
-                   [](llvm::Function &self) {
-                     std::vector<llvm::Argument *> out;
-                     for (llvm::Argument &a : self.args())
-                       out.push_back(&a);
-                     return out;
-                   })
-      .def_prop_ro("basic_blocks",
-                   [](llvm::Function &self) {
-                     std::vector<llvm::BasicBlock *> out;
-                     for (llvm::BasicBlock &b : self)
-                       out.push_back(&b);
-                     return out;
-                   })
+      .def_prop_ro(
+          "args",
+          [](llvm::Function &self) {
+            llvm::Function *f = &self;
+            eudsl::Sequence<llvm::Argument> seq;
+            seq.length = [f] {
+              return static_cast<std::size_t>(f->arg_size());
+            };
+            seq.at = [f](std::size_t i) {
+              return f->getArg(static_cast<unsigned>(i));
+            };
+            return seq;
+          },
+          nb::keep_alive<0, 1>())
+      .def_prop_ro(
+          "basic_blocks",
+          [](llvm::Function &self) {
+            llvm::Function *f = &self;
+            eudsl::Sequence<llvm::BasicBlock> seq;
+            seq.length = [f] { return static_cast<std::size_t>(f->size()); };
+            seq.at = [f](std::size_t i) {
+              auto it = f->begin();
+              std::advance(it, i);
+              return &*it;
+            };
+            return seq;
+          },
+          nb::keep_alive<0, 1>())
       .def("__len__",
            [](llvm::Function &self) {
              return static_cast<Py_ssize_t>(self.size());

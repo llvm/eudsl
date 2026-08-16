@@ -112,6 +112,7 @@ nanobind_add_module(eudslllvm_ext
   src/IR/Types.cpp
   src/IR/Kinds.cpp
   src/IR/Values.cpp
+  src/IR/Sequence.cpp
   src/IR/Instructions.cpp
   src/IR/Constants.cpp
   src/IR/Builder.cpp
