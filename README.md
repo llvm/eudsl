@@ -11,7 +11,7 @@ embedded DSLs, in arbitrary languages, for targeting [MLIR](https://mlir.llvm.or
 
 FYI: this project is currently "alpha" quality.
 
-Currently, there are six components:
+Currently, there are seven components:
 
 1. [eudsl-tblgen](./projects/eudsl-tblgen): Python bindings to [LLVM's TableGen library](https://github.com/llvm/llvm-project/tree/659192b1843c4af180700783caca4cdc7afa3eab/llvm/lib/TableGen);
 2. [eudsl-nbgen](./projects/eudsl-nbgen): A source-to-source translator that translates MLIR headers[^1] into direct `nanobind` bindings;
@@ -35,6 +35,10 @@ Currently, there are six components:
 6. [mlir-python-mcp](./projects/mlir-python-mcp): An [MCP](https://modelcontextprotocol.io) server exposing a persistent MLIR Python REPL, so that a coding agent can build and transform IR through the bindings rather than by editing MLIR text;
    * Available via `pip install mlir-python-mcp -f https://llvm.github.io/eudsl`.
    * See [projects/mlir-python-mcp/README.md](./projects/mlir-python-mcp/README.md) for the `.mcp.json` snippet and the list of tools.
+7. [eudsl-llvmpy](./projects/eudsl-llvmpy): Python bindings for LLVM IR, plus a small DSL for authoring IR from Python;
+   * The bindings are a hand-written `nanobind` wrapper over the LLVM C++ API, so the Python class hierarchy mirrors `llvm::`; the DSL lowers a decorated Python function (with ordinary arithmetic and `if`/`while`/`for`) to a compiled `llvm::Function`.
+   * Available via `pip install eudsl-llvmpy -f https://llvm.github.io/eudsl`.
+   * See [projects/eudsl-llvmpy/README.md](./projects/eudsl-llvmpy/README.md) and [projects/eudsl-llvmpy/tests](./projects/eudsl-llvmpy/tests).
 
 ## Wasm Playground
 
