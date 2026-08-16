@@ -16,6 +16,7 @@ void populate_instructions(nb::module_ &m);
 void populate_constants(nb::module_ &m);
 void populate_metadata(nb::module_ &m);
 void populate_builder(nb::module_ &m);
+void populate_passes(nb::module_ &m);
 
 NB_MODULE(eudslllvm_ext, m) {
   m.doc() = "Hand-written nanobind bindings over the LLVM C++ IR API.";
@@ -29,4 +30,5 @@ NB_MODULE(eudslllvm_ext, m) {
   populate_constants(m);
   populate_metadata(m);
   populate_builder(m);
+  populate_passes(m);
 }
