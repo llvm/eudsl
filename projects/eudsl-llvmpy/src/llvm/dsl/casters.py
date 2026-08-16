@@ -23,7 +23,7 @@ def register_value_caster(type_id, caster=None):
     """
 
     def decorator(c):
-        _register(type_id.value if hasattr(type_id, 'value') else int(type_id), c)
+        _register(type_id.value if hasattr(type_id, "value") else int(type_id), c)
         return c
 
     if caster is not None:

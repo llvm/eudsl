@@ -4,6 +4,7 @@
 """The traversal accessors return lazy sequence views (not materialized lists):
 len(), negative/bounds-checked indexing, slicing, and iteration, computed on
 demand. Covers every Sequence<T> instantiation."""
+
 from textwrap import dedent
 
 import gc
@@ -14,8 +15,7 @@ import llvm
 from llvm.ir import InsertPoint
 from llvm.testing import assert_no_leaks
 
-_SRC = dedent(
-    """\
+_SRC = dedent("""\
     define i32 @f(i32 %x, i32 %y) {
     entry:
       %s = add i32 %x, %y
@@ -25,8 +25,7 @@ _SRC = dedent(
     entry:
       ret void
     }
-    """
-)
+    """)
 
 
 def test_lazy_sequence_views():

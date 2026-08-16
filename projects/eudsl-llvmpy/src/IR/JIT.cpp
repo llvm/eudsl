@@ -19,8 +19,8 @@
 void populate_jit(nb::module_ &m) {
   nb::class_<llvm::orc::LLJIT>(m, "LLJIT")
       .def(nb::new_([]() -> llvm::orc::LLJIT * {
-             return eudsl::unwrap(llvm::orc::LLJITBuilder().create()).release();
-           }))
+        return eudsl::unwrap(llvm::orc::LLJITBuilder().create()).release();
+      }))
       .def(
           "add_module",
           [](llvm::orc::LLJIT &self, eudsl::Module &mod) {

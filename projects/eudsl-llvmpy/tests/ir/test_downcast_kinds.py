@@ -10,6 +10,7 @@ nor function coverage forces a test to ever obtain one. A wrong entry in the
 dispatch (or a missing registration) would go unnoticed. These tests construct
 IR of each kind and assert the downcast produces the expected concrete class.
 """
+
 from textwrap import dedent
 
 import llvm
@@ -122,6 +123,7 @@ _SOURCES = {
     """,
 }
 
+
 def _leaf_instruction_classes():
     """Derive the set of leaf Instruction subclasses from the bindings."""
     instr = llvm.ir.Instruction
@@ -157,12 +159,27 @@ def test_instruction_kinds_downcast():
     # the two files must cover every leaf. Anything missing here means a new
     # source snippet is needed.
     covered_by_opcode_sweep = {
-        "BinaryOperator", "FPBinaryOperator",
-        "TruncInst", "ZExtInst", "SIToFPInst", "FPToSIInst",
-        "BitCastInst", "PtrToIntInst", "IntToPtrInst",
-        "ICmpInst", "FCmpInst", "SelectInst",
-        "AllocaInst", "StoreInst", "LoadInst", "GetElementPtrInst",
-        "CallInst", "UncondBrInst", "CondBrInst", "PHINode", "ReturnInst",
+        "BinaryOperator",
+        "FPBinaryOperator",
+        "TruncInst",
+        "ZExtInst",
+        "SIToFPInst",
+        "FPToSIInst",
+        "BitCastInst",
+        "PtrToIntInst",
+        "IntToPtrInst",
+        "ICmpInst",
+        "FCmpInst",
+        "SelectInst",
+        "AllocaInst",
+        "StoreInst",
+        "LoadInst",
+        "GetElementPtrInst",
+        "CallInst",
+        "UncondBrInst",
+        "CondBrInst",
+        "PHINode",
+        "ReturnInst",
     }
     missing = expected - seen - covered_by_opcode_sweep
     assert not missing, f"instruction kinds not downcast: {sorted(missing)}"
@@ -230,9 +247,14 @@ def test_constant_and_global_kinds_downcast():
         # Constant kinds obtained as initializers.
         inits = {v[1] for v in by_name.values()}
         expected = {
-            "ConstantArray", "ConstantStruct", "ConstantDataArray",
-            "ConstantAggregateZero", "ConstantVector", "ConstantDataVector",
-            "ConstantExpr", "BlockAddress",
+            "ConstantArray",
+            "ConstantStruct",
+            "ConstantDataArray",
+            "ConstantAggregateZero",
+            "ConstantVector",
+            "ConstantDataVector",
+            "ConstantExpr",
+            "BlockAddress",
         }
         assert expected <= inits, f"missing: {sorted(expected - inits)}"
         # ConstantTokenNone is the `within none` operand of the cleanup pad.

@@ -11,6 +11,7 @@ the case a context-only, in-body check cannot: `Context.__exit__` drops the
 context count to zero even while a leaked Module keeps its LLVMContext alive,
 so the Module count (tied to actual destruction) is what makes a leak visible.
 """
+
 import gc
 
 import pytest

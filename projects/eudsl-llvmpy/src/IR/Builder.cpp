@@ -16,23 +16,24 @@
 namespace {
 using RawIP = llvm::IRBuilderBase::InsertPoint;
 
-// MLIR-style insertion point (cf. PyInsertionPoint in MLIR's IRCore.cpp), adapted
-// for LLVM's builder. Wraps the raw llvm insert point (block + iterator) plus an
-// optional explicit builder; `with InsertPoint(bb, builder=b):` positions `b`
-// there and restores it on exit. When `builder` is omitted the current builder
-// is resolved from the thread-local stack (an enclosing `with builder:` or the
-// enclosing InsertPoint's builder).
+// MLIR-style insertion point (cf. PyInsertionPoint in MLIR's IRCore.cpp),
+// adapted for LLVM's builder. Wraps the raw llvm insert point (block +
+// iterator) plus an optional explicit builder; `with InsertPoint(bb,
+// builder=b):` positions `b` there and restores it on exit. When `builder` is
+// omitted the current builder is resolved from the thread-local stack (an
+// enclosing `with builder:` or the enclosing InsertPoint's builder).
 struct InsertPoint {
   RawIP ip;
   nb::object builder; // explicit builder, or None -> resolve the current one
 };
 
 // One entry on the thread-local stack, mirroring MLIR's PyThreadContextEntry.
-// A `with builder:` pushes a builder-only entry; `with InsertPoint(...):` pushes
-// an entry that also records the InsertPoint object and the builder's prior
-// insert point (restored on exit). current_builder() / InsertPoint.current walk
-// the stack for the innermost entry of each kind (cf. getDefault* in MLIR).
-// (eudsl::Context's LLVMContext current-stack is separate; see Ownership.cpp.)
+// A `with builder:` pushes a builder-only entry; `with InsertPoint(...):`
+// pushes an entry that also records the InsertPoint object and the builder's
+// prior insert point (restored on exit). current_builder() /
+// InsertPoint.current walk the stack for the innermost entry of each kind (cf.
+// getDefault* in MLIR). (eudsl::Context's LLVMContext current-stack is
+// separate; see Ownership.cpp.)
 struct ThreadContextEntry {
   nb::object builder;
   nb::object insertPoint; // none for a bare `with builder:` entry
@@ -133,9 +134,9 @@ void populate_builder(nb::module_ &m) {
       EUDSL_BIN("and_", CreateAnd)
       EUDSL_BIN("or_", CreateOr)
       EUDSL_BIN("xor", CreateXor)
-      // clang-format on
+  // clang-format on
 #undef EUDSL_BIN
-      // Unary ops: (value, name) -> value.
+  // Unary ops: (value, name) -> value.
 #define EUDSL_UNARY(pyName, method)                                            \
   .def(                                                                        \
       pyName,                                                                  \
@@ -148,17 +149,16 @@ void populate_builder(nb::module_ &m) {
       EUDSL_UNARY("fneg", CreateFNeg)
       EUDSL_UNARY("not_", CreateNot)
       EUDSL_UNARY("ptrtoaddr", CreatePtrToAddr)
-      // clang-format on
+  // clang-format on
 #undef EUDSL_UNARY
-      // Casts: (value, dest_type, name) -> value.
+  // Casts: (value, dest_type, name) -> value.
 #define EUDSL_CAST(pyName, method)                                             \
   .def(                                                                        \
       pyName,                                                                  \
-      [](B &self, llvm::Value *v, llvm::Type *ty,                              \
-         const std::string &name) -> llvm::Value * {                          \
-        return self.method(v, ty, name);                                       \
-      },                                                                       \
-      "value"_a, "dest_type"_a, "name"_a = "", nb::rv_policy::reference_internal)
+      [](B &self, llvm::Value *v, llvm::Type *ty, const std::string &name)     \
+          -> llvm::Value * { return self.method(v, ty, name); },               \
+      "value"_a, "dest_type"_a, "name"_a = "",                                 \
+      nb::rv_policy::reference_internal)
       // clang-format off
       EUDSL_CAST("trunc", CreateTrunc)
       EUDSL_CAST("zext", CreateZExt)
@@ -173,7 +173,7 @@ void populate_builder(nb::module_ &m) {
       EUDSL_CAST("inttoptr", CreateIntToPtr)
       EUDSL_CAST("bitcast", CreateBitCast)
       EUDSL_CAST("addrspacecast", CreateAddrSpaceCast)
-      // clang-format on
+  // clang-format on
 #undef EUDSL_CAST
       .def(
           "icmp",
@@ -327,7 +327,8 @@ void populate_builder(nb::module_ &m) {
           [](B &self, llvm::AtomicOrdering ordering,
              bool singleThread) -> llvm::Value * {
             // FenceInst is void-typed, so (unlike the neighboring atomic
-            // emitters, which produce a named value) there is no result to name.
+            // emitters, which produce a named value) there is no result to
+            // name.
             llvm::SyncScope::ID ssid = singleThread
                                            ? llvm::SyncScope::SingleThread
                                            : llvm::SyncScope::System;
@@ -344,9 +345,8 @@ void populate_builder(nb::module_ &m) {
                                            ? llvm::SyncScope::SingleThread
                                            : llvm::SyncScope::System;
             // MaybeAlign() -> IRBuilder derives the natural alignment.
-            llvm::Value *v = self.CreateAtomicRMW(op, ptr, val,
-                                                  llvm::MaybeAlign(), ordering,
-                                                  ssid);
+            llvm::Value *v = self.CreateAtomicRMW(
+                op, ptr, val, llvm::MaybeAlign(), ordering, ssid);
             if (!name.empty())
               v->setName(name);
             return v;
@@ -429,8 +429,9 @@ void populate_builder(nb::module_ &m) {
       nb::rv_policy::reference,
       "The function containing the current builder's insertion block.");
 
-  // MLIR-style InsertPoint (see PyInsertionPoint in MLIR's IRCore.cpp). Wraps the
-  // llvm insert point (block + iterator) plus an optional explicit builder; on
+  // MLIR-style InsertPoint (see PyInsertionPoint in MLIR's IRCore.cpp). Wraps
+  // the llvm insert point (block + iterator) plus an optional explicit builder;
+  // on
   // __enter__ it positions that builder here (resolving the current one when
   // omitted) and restores it on __exit__.
   nb::class_<InsertPoint>(m, "InsertPoint")
@@ -442,8 +443,9 @@ void populate_builder(nb::module_ &m) {
             if (nb::try_cast(blockOrBefore, bb)) {
               new (self) InsertPoint{RawIP(bb, bb->end()), std::move(builder)};
             } else if (nb::try_cast(blockOrBefore, inst)) {
-              new (self) InsertPoint{RawIP(inst->getParent(), inst->getIterator()),
-                                     std::move(builder)};
+              new (self)
+                  InsertPoint{RawIP(inst->getParent(), inst->getIterator()),
+                              std::move(builder)};
             } else {
               throw nb::type_error(
                   "InsertPoint expects a BasicBlock (insert at end) or an "
@@ -473,9 +475,9 @@ void populate_builder(nb::module_ &m) {
       .def_static(
           "after",
           [](llvm::Instruction *inst, nb::object builder) {
-            return InsertPoint{RawIP(inst->getParent(),
-                                     std::next(inst->getIterator())),
-                               std::move(builder)};
+            return InsertPoint{
+                RawIP(inst->getParent(), std::next(inst->getIterator())),
+                std::move(builder)};
           },
           "instruction"_a, "builder"_a = nb::none(),
           "Insert immediately after an instruction.")

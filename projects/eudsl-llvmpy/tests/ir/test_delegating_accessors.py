@@ -16,20 +16,19 @@ The C++ coverage gate now also enforces FUNCTION coverage (each lambda is its
 own function), so a binding whose body is never called fails the gate. This
 file exercises those bindings and checks their results.
 """
+
 from textwrap import dedent
 
 import llvm
 from llvm.testing import assert_no_leaks, filecheck_with_comments
 
-_SRC = dedent(
-    """\
+_SRC = dedent("""\
     define i32 @f(i32 %x, i32 %y) {
     entry:
       %sum = add i32 %x, %y
       ret i32 %sum
     }
-    """
-)
+    """)
 
 
 def test_type_is_pointer_and_is_label():
@@ -47,7 +46,9 @@ def test_type_is_pointer_and_is_label():
 
 def test_vector_type_element_type():
     with llvm.ir.Context() as ctx:
-        assert llvm.types.vector(llvm.types.f32(ctx), 8).element_type == llvm.types.f32(ctx)
+        assert llvm.types.vector(llvm.types.f32(ctx), 8).element_type == llvm.types.f32(
+            ctx
+        )
     assert_no_leaks()
 
 
@@ -79,8 +80,7 @@ def test_replace_all_uses_with():
 def test_instruction_successor():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(
-            dedent(
-                """\
+            dedent("""\
                 define void @f(i1 %c) {
                 entry:
                   br i1 %c, label %a, label %b
@@ -89,8 +89,7 @@ def test_instruction_successor():
                 b:
                   ret void
                 }
-                """
-            ),
+                """),
             ctx,
             "m",
         )
@@ -105,14 +104,12 @@ def test_instruction_successor():
 def test_function_type_and_var_arg():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(
-            dedent(
-                """\
+            dedent("""\
                 declare i32 @printf(ptr, ...)
                 define i32 @f(i32 %x) {
                   ret i32 %x
                 }
-                """
-            ),
+                """),
             ctx,
             "m",
         )
@@ -139,8 +136,7 @@ def test_function_visibility_roundtrip():
 def test_global_variable_is_constant():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(
-            dedent(
-                """\
+            dedent("""\
                 @c = constant i32 5
                 @v = global i32 0
                 define i32 @f() {
@@ -149,16 +145,13 @@ def test_global_variable_is_constant():
                   %b = load i32, ptr @v
                   ret i32 %a
                 }
-                """
-            ),
+                """),
             ctx,
             "m",
         )
         f = mod.get_function("f")
         loads = [
-            i
-            for i in f.entry_block.instructions
-            if type(i).__name__ == "LoadInst"
+            i for i in f.entry_block.instructions if type(i).__name__ == "LoadInst"
         ]
         assert loads[0].pointer_operand.is_constant  # @c
         assert not loads[1].pointer_operand.is_constant  # @v
@@ -190,8 +183,17 @@ def test_builder_binary_ops_and_insert_point():
         b.fdiv(fa, fb)
         b.ret(ia)
         printed = str(mod)
-        for op in ("add i32", "sub i32", "mul i32", "sdiv i32", "udiv i32",
-                   "fadd float", "fsub float", "fmul float", "fdiv float"):
+        for op in (
+            "add i32",
+            "sub i32",
+            "mul i32",
+            "sdiv i32",
+            "udiv i32",
+            "fadd float",
+            "fsub float",
+            "fmul float",
+            "fdiv float",
+        ):
             assert op in printed, op
         del b, bb, fn, ia, ib, fa, fb, mod
     assert_no_leaks()
@@ -200,8 +202,7 @@ def test_builder_binary_ops_and_insert_point():
 def test_instruction_accessors():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(
-            dedent(
-                """\
+            dedent("""\
                 declare i32 @g(i32)
                 define i32 @f(i1 %c, ptr %p) {
                 entry:
@@ -215,8 +216,7 @@ def test_instruction_accessors():
                 b:
                   ret i32 %r
                 }
-                """
-            ),
+                """),
             ctx,
             "m",
         )
@@ -266,8 +266,7 @@ def test_instruction_set_successor():
     # indirectly by the elif JIT tests; assert it directly here too.
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(
-            dedent(
-                """\
+            dedent("""\
                 define void @f(i1 %cond) {
                 entry:
                   br i1 %cond, label %a, label %b
@@ -278,8 +277,7 @@ def test_instruction_set_successor():
                 c:
                   ret void
                 }
-                """
-            ),
+                """),
             ctx,
             "m",
         )

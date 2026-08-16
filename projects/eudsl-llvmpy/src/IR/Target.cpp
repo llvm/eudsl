@@ -24,9 +24,9 @@ std::string emit(llvm::TargetMachine &self, eudsl::Module &mod,
   llvm::buffer_ostream bos(os);
   llvm::legacy::PassManager pm;
   if (self.addPassesToEmitFile(pm, bos, nullptr, type)) {
-    throw std::runtime_error(  // LCOV_EXCL_LINE
-        "target cannot emit this file type");  // LCOV_EXCL_LINE
-  }  // LCOV_EXCL_LINE
+    throw std::runtime_error(                 // LCOV_EXCL_LINE
+        "target cannot emit this file type"); // LCOV_EXCL_LINE
+  } // LCOV_EXCL_LINE
   pm.run(mod.get());
   return buf;
 }
@@ -36,40 +36,38 @@ void populate_target(nb::module_ &m) {
   m.def("host_triple", []() { return llvm::sys::getDefaultTargetTriple(); });
 
   nb::class_<llvm::TargetMachine>(m, "TargetMachine")
-      .def(
-          nb::new_(
-              [](std::optional<std::string> triple,
-                 std::optional<std::string> cpu,
-                 std::optional<std::vector<std::string>> features)
-                  -> llvm::TargetMachine * {
-                std::string tripleStr =
-                    triple.value_or(llvm::sys::getDefaultTargetTriple());
-                std::string cpuStr = cpu.value_or("");
-                std::string featStr;
-                if (features) {
-                  for (size_t i = 0; i < features->size(); ++i) {
-                    if (i > 0)
-                      featStr += ",";
-                    featStr += (*features)[i];
-                  }
-                }
-                llvm::Triple tt(tripleStr);
-                std::string err;
-                const llvm::Target *target =
-                    llvm::TargetRegistry::lookupTarget(tt, err);
-                if (!target)
-                  throw std::runtime_error(err);
-                llvm::TargetOptions opts;
-                llvm::TargetMachine *tm = target->createTargetMachine(
-                    tt, cpuStr, featStr, opts, std::nullopt);
-                if (!tm) {
-                  throw std::runtime_error(  // LCOV_EXCL_LINE
-                      "could not create TargetMachine for " + tripleStr);  // LCOV_EXCL_LINE
-                }  // LCOV_EXCL_LINE
-                return tm;
-              }),
-          "triple"_a = nb::none(), "cpu"_a = nb::none(),
-          "features"_a = nb::none())
+      .def(nb::new_([](std::optional<std::string> triple,
+                       std::optional<std::string> cpu,
+                       std::optional<std::vector<std::string>> features)
+                        -> llvm::TargetMachine * {
+             std::string tripleStr =
+                 triple.value_or(llvm::sys::getDefaultTargetTriple());
+             std::string cpuStr = cpu.value_or("");
+             std::string featStr;
+             if (features) {
+               for (size_t i = 0; i < features->size(); ++i) {
+                 if (i > 0)
+                   featStr += ",";
+                 featStr += (*features)[i];
+               }
+             }
+             llvm::Triple tt(tripleStr);
+             std::string err;
+             const llvm::Target *target =
+                 llvm::TargetRegistry::lookupTarget(tt, err);
+             if (!target)
+               throw std::runtime_error(err);
+             llvm::TargetOptions opts;
+             llvm::TargetMachine *tm = target->createTargetMachine(
+                 tt, cpuStr, featStr, opts, std::nullopt);
+             if (!tm) { // LCOV_EXCL_START
+               throw std::runtime_error("could not create TargetMachine for " +
+                                        tripleStr);
+             } // LCOV_EXCL_STOP
+             return tm;
+           }),
+           "triple"_a = nb::none(), "cpu"_a = nb::none(),
+           "features"_a = nb::none())
       .def_prop_ro("triple",
                    [](llvm::TargetMachine &self) {
                      return self.getTargetTriple().str();

@@ -2,6 +2,7 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """Edge cases and error branches of the DSL control-flow lowering."""
+
 import ctypes
 
 import pytest
@@ -85,7 +86,7 @@ def test_for_non_name_target_raises():
             @canonicalize(using=LLVMCanonicalizer())
             def bad(n: i32) -> i32:
                 acc = llvm.ir.const_int(i32, 0)
-                for (i, j) in range_(0, n):
+                for i, j in range_(0, n):
                     acc = acc + acc
                     yield acc
                 return acc

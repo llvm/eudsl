@@ -7,6 +7,7 @@ Module iterates its functions, Function its basic blocks, BasicBlock its
 instructions, and User its operands. Each supports len(), negative and
 bounds-checked __getitem__ (IndexError past the ends), and iteration.
 """
+
 from textwrap import dedent
 
 import pytest
@@ -14,8 +15,7 @@ import pytest
 import llvm
 from llvm.testing import assert_no_leaks
 
-_SRC = dedent(
-    """\
+_SRC = dedent("""\
     declare i32 @ext(i32)
     define i32 @f(i32 %x, i32 %y) {
     entry:
@@ -26,8 +26,7 @@ _SRC = dedent(
     entry:
       ret void
     }
-    """
-)
+    """)
 
 
 def test_iteration_and_indexing():

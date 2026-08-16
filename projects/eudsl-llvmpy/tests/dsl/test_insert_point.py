@@ -6,6 +6,7 @@ for the block, positioned at the target, and restore it on exit. Nested
 InsertPoints omit `builder` to reuse the current one. Also the at_block_begin /
 at_block_terminator / after factories, InsertPoint.current, and current_builder /
 current_function derived from the active InsertPoint."""
+
 import pytest
 
 import llvm
@@ -15,9 +16,7 @@ from llvm.testing import assert_no_leaks, filecheck_with_comments
 
 def _fn(ctx, name="f"):
     mod = llvm.ir.Module("m", ctx)
-    fn = llvm.ir.Function.create(
-        llvm.types.function(llvm.types.void(), []), name, mod
-    )
+    fn = llvm.ir.Function.create(llvm.types.function(llvm.types.void(), []), name, mod)
     return mod, fn
 
 

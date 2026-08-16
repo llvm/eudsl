@@ -10,26 +10,22 @@ import pytest
 import llvm
 from llvm.testing import assert_no_leaks
 
-_SRC = dedent(
-    """\
+_SRC = dedent("""\
     define i32 @add(i32 %a, i32 %b) {
     entry:
       %s = add i32 %a, %b
       ret i32 %s
     }
-    """
-)
+    """)
 
 # Same symbol name @add, different body, so any difference in emitted assembly
 # comes from codegen of the body rather than the symbol/label text.
-_SRC_CONST = dedent(
-    """\
+_SRC_CONST = dedent("""\
     define i32 @add(i32 %a, i32 %b) {
     entry:
       ret i32 12345
     }
-    """
-)
+    """)
 
 
 def test_host_triple_is_nonempty():

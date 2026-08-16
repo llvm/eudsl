@@ -3,6 +3,7 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """MLIR-parity use-def APIs: Value.uses (Use edges), replace_all_uses_except,
 and Function.walk()."""
+
 from textwrap import dedent
 
 import pytest
@@ -15,8 +16,7 @@ _EDGE_SRC = (
     "entry:\n  %sum = add i32 %x, %y\n  ret i32 %sum\n}\n"
 )
 
-_RAUW_SRC = dedent(
-    """\
+_RAUW_SRC = dedent("""\
     define i32 @f(i32 %x) {
     entry:
       %a = add i32 %x, 1
@@ -24,8 +24,7 @@ _RAUW_SRC = dedent(
       %c = add i32 %a, 3
       ret i32 %b
     }
-    """
-)
+    """)
 
 
 def test_use_edges():
@@ -132,8 +131,7 @@ def test_replace_all_uses_except_type_mismatch_raises():
 def test_function_walk():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(
-            dedent(
-                """\
+            dedent("""\
                 define i32 @f(i32 %x) {
                 entry:
                   %a = add i32 %x, 1
@@ -142,8 +140,7 @@ def test_function_walk():
                   %b = mul i32 %a, 2
                   ret i32 %b
                 }
-                """
-            ),
+                """),
             ctx,
             "m",
         )

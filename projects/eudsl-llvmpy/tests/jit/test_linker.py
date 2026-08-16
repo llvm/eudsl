@@ -13,13 +13,11 @@ def test_link_two_modules():
     with llvm.ir.Context() as ctx:
         dest = llvm.ir.parse_assembly("declare i32 @a()\n", ctx, "dest")
         src = llvm.ir.parse_assembly(
-            dedent(
-                """\
+            dedent("""\
                 define i32 @a() {
                   ret i32 7
                 }
-                """
-            ),
+                """),
             ctx,
             "src",
         )
@@ -36,13 +34,11 @@ def test_consumed_source_cannot_be_linked_again():
     with llvm.ir.Context() as ctx:
         dest = llvm.ir.parse_assembly("declare i32 @a()\n", ctx, "dest")
         src = llvm.ir.parse_assembly(
-            dedent(
-                """\
+            dedent("""\
                 define i32 @a() {
                   ret i32 7
                 }
-                """
-            ),
+                """),
             ctx,
             "src",
         )

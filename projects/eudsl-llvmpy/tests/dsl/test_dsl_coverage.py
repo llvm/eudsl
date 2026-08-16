@@ -2,6 +2,7 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """Exercises DSL API surface and error paths for coverage + correctness."""
+
 import ctypes
 
 import pytest
@@ -31,8 +32,8 @@ def test_all_binary_dunders():
             _ = a - b
             _ = a * b
             _ = a / b
-            _ = 3 + a       # __radd__
-            _ = 3 * a       # __rmul__
+            _ = 3 + a  # __radd__
+            _ = 3 * a  # __rmul__
             bld.ret(a + b)
         p = str(mod)
         assert "sub i32" in p and "mul i32" in p and "sdiv i32" in p
@@ -151,7 +152,11 @@ def test_typed_pointer_setitem_with_value_index():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         fn = llvm.ir.Function.create(
-            llvm.types.function(llvm.types.void(ctx), [llvm.types.ptr(context=ctx), i32]), "f", mod
+            llvm.types.function(
+                llvm.types.void(ctx), [llvm.types.ptr(context=ctx), i32]
+            ),
+            "f",
+            mod,
         )
         bb = fn.append_basic_block("entry")
         bld = llvm.ir.IRBuilder(ctx)
@@ -172,7 +177,9 @@ def test_maybe_downcast_no_caster_passthrough():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
         # A void-typed value has no registered caster: returned unchanged.
-        fn = llvm.ir.Function.create(llvm.types.function(llvm.types.void(ctx), []), "f", mod)
+        fn = llvm.ir.Function.create(
+            llvm.types.function(llvm.types.void(ctx), []), "f", mod
+        )
         v = maybe_downcast(fn, fn)  # Function's type kind has no caster
         assert not isinstance(v, ArithValue)
         del fn, mod

@@ -54,8 +54,7 @@ void populate_types(nb::module_ &m) {
              return &self == o;
            })
       .def("__hash__", [](llvm::Type &self) {
-        return static_cast<Py_ssize_t>(
-            reinterpret_cast<std::uintptr_t>(&self));
+        return static_cast<Py_ssize_t>(reinterpret_cast<std::uintptr_t>(&self));
       });
 
   // Primitive type factories. The context is optional: when omitted, the
@@ -97,7 +96,8 @@ void populate_types(nb::module_ &m) {
       .def_static(
           "get",
           [](unsigned bits, eudsl::Context *context) -> llvm::IntegerType * {
-            return llvm::IntegerType::get(eudsl::currentOr(context).get(), bits);
+            return llvm::IntegerType::get(eudsl::currentOr(context).get(),
+                                          bits);
           },
           "bits"_a, "context"_a.none() = nb::none(), nb::rv_policy::reference,
           nb::keep_alive<0, 2>())
@@ -323,4 +323,3 @@ void populate_types(nb::module_ &m) {
       "return_type"_a, "params"_a, "var_arg"_a = false,
       nb::rv_policy::reference, nb::keep_alive<0, 1>());
 }
-

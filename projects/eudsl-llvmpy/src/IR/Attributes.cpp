@@ -10,7 +10,8 @@ void populate_attributes(nb::module_ &m) {
   nb::enum_<llvm::GlobalValue::VisibilityTypes>(m, "Visibility")
       .value("DEFAULT", llvm::GlobalValue::VisibilityTypes::DefaultVisibility)
       .value("HIDDEN", llvm::GlobalValue::VisibilityTypes::HiddenVisibility)
-      .value("PROTECTED", llvm::GlobalValue::VisibilityTypes::ProtectedVisibility);
+      .value("PROTECTED",
+             llvm::GlobalValue::VisibilityTypes::ProtectedVisibility);
 
   nb::enum_<CallingConvEnum>(m, "CallingConv")
       .value("C", CallingConvEnum::C)

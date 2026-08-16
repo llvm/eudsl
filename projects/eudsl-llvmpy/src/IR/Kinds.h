@@ -9,9 +9,9 @@
 //
 // INVARIANT: every std::type_info returned here must name a class registered
 // with nanobind, otherwise the conversion raises "Unable to convert function
-// return value to a Python type". valueTypeInfo() guards each return with pick()
-// so a not-yet-registered class falls back to base Value, keeping every commit
-// green while later tasks register the leaves.
+// return value to a Python type". valueTypeInfo() guards each return with
+// pick() so a not-yet-registered class falls back to base Value, keeping every
+// commit green while later tasks register the leaves.
 
 #pragma once
 

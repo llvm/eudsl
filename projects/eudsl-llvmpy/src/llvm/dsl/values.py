@@ -58,9 +58,7 @@ class ArithValue(Value):
             raise TypeError(f"mismatched types: {self.type} and {other.type}")
         b = current_builder()
         if self.type.is_floating_point:
-            return self._wrap(
-                b.fcmp(getattr(FCmpPredicate, fcmp_pred), self, other)
-            )
+            return self._wrap(b.fcmp(getattr(FCmpPredicate, fcmp_pred), self, other))
         return self._wrap(b.icmp(getattr(ICmpPredicate, icmp_pred), self, other))
 
     def __add__(self, other):
@@ -176,6 +174,4 @@ def extract(aggregate, index):
     Returned as its registered caster subclass when applicable (e.g. an
     integer/float field becomes an ArithValue).
     """
-    return maybe_downcast(
-        current_builder().extract_value(aggregate, index), aggregate
-    )
+    return maybe_downcast(current_builder().extract_value(aggregate, index), aggregate)

@@ -26,16 +26,15 @@ void populate_passes(nb::module_ &m) {
       .def_rw("slp_vectorization",
               &llvm::PipelineTuningOptions::SLPVectorization)
       .def_rw("loop_unrolling", &llvm::PipelineTuningOptions::LoopUnrolling)
-      .def_rw("merge_functions",
-              &llvm::PipelineTuningOptions::MergeFunctions);
+      .def_rw("merge_functions", &llvm::PipelineTuningOptions::MergeFunctions);
 
   m.def(
       "run_passes",
       [](eudsl::Module &mod, const std::string &pipeline,
          std::optional<llvm::PipelineTuningOptions> pto, bool debug,
          bool verifyEach) {
-        llvm::PipelineTuningOptions opts = pto.value_or(
-            llvm::PipelineTuningOptions());
+        llvm::PipelineTuningOptions opts =
+            pto.value_or(llvm::PipelineTuningOptions());
         llvm::PassInstrumentationCallbacks pic;
         llvm::StandardInstrumentations si(mod.get().getContext(), debug,
                                           verifyEach);
@@ -65,8 +64,8 @@ void populate_passes(nb::module_ &m) {
       [](eudsl::Module &mod, llvm::OptimizationLevel level,
          std::optional<llvm::PipelineTuningOptions> pto, bool debug,
          bool verifyEach) {
-        llvm::PipelineTuningOptions opts = pto.value_or(
-            llvm::PipelineTuningOptions());
+        llvm::PipelineTuningOptions opts =
+            pto.value_or(llvm::PipelineTuningOptions());
         llvm::PassInstrumentationCallbacks pic;
         llvm::StandardInstrumentations si(mod.get().getContext(), debug,
                                           verifyEach);

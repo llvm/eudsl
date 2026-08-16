@@ -3,6 +3,7 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """MLIR-style implicit current context: `with Context():` sets Context.current,
 so the primitive type factories can be called without an explicit context."""
+
 import threading
 
 import pytest

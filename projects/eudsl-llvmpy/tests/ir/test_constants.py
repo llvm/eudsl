@@ -8,24 +8,20 @@ import pytest
 import llvm
 from llvm.testing import assert_no_leaks
 
-_GLOBALS_SRC = dedent(
-    """\
+_GLOBALS_SRC = dedent("""\
     @g_const  = constant i32 42
     @g_var    = global i32 7
     @g_noinit = external global i32
-    """
-)
+    """)
 
-_AGGREGATE_SRC = dedent(
-    """\
+_AGGREGATE_SRC = dedent("""\
     @g_var  = global i32 7
     @arr    = constant [6 x i8] c"hello\\00"
     @zero   = constant [4 x i32] zeroinitializer
     @vec    = constant <4 x i32> <i32 1, i32 2, i32 3, i32 4>
     @strukt = constant { i32, float } { i32 1, float 2.0 }
     @expr   = constant i32* getelementptr (i32, i32* @g_var, i32 1)
-    """
-)
+    """)
 
 
 def test_const_int():
@@ -70,7 +66,10 @@ def test_undef_poison_null():
     with llvm.ir.Context() as ctx:
         assert type(llvm.ir.undef(llvm.types.i32(ctx))).__name__ == "UndefValue"
         assert type(llvm.ir.poison(llvm.types.i32(ctx))).__name__ == "PoisonValue"
-        assert type(llvm.ir.null(llvm.types.ptr(context=ctx))).__name__ == "ConstantPointerNull"
+        assert (
+            type(llvm.ir.null(llvm.types.ptr(context=ctx))).__name__
+            == "ConstantPointerNull"
+        )
         assert llvm.ir.null is llvm.ir.const_null
         assert str(llvm.ir.undef(llvm.types.i32(ctx))) == "i32 undef"
     assert_no_leaks()

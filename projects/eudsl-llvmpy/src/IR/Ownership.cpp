@@ -19,13 +19,13 @@ static int64_t gLiveModules = 0;
 /// llvm::Module pointer captured at construction; the entry is inserted by the
 /// ctors and removed by the dtor, so it tracks *wrapper* lifetime. take() does
 /// not update it: after a module is consumed the wrapper stays registered under
-/// its (now-dangling) former key until the wrapper is destroyed -- moduleWrapperFor
-/// only hashes/compares the pointer and never dereferences it, so a stale key is
-/// not itself unsafe (see the guarded erase in ~Module).
+/// its (now-dangling) former key until the wrapper is destroyed --
+/// moduleWrapperFor only hashes/compares the pointer and never dereferences it,
+/// so a stale key is not itself unsafe (see the guarded erase in ~Module).
 ///
 /// Not synchronized: like the gLiveContexts/gLiveModules counters below, this
-/// map assumes the GIL and is not safe under free-threading (the module is built
-/// Py_MOD_GIL_NOT_USED but thread-safety is not verified).
+/// map assumes the GIL and is not safe under free-threading (the module is
+/// built Py_MOD_GIL_NOT_USED but thread-safety is not verified).
 static std::unordered_map<const llvm::Module *, Module *> &liveModuleMap() {
   static std::unordered_map<const llvm::Module *, Module *> map;
   return map;
@@ -88,10 +88,10 @@ Module::Module(std::unique_ptr<llvm::Module> m, Context &ctx)
 
 Module::~Module() {
   // Guard the erase: only remove the entry if it still maps to *this*. After
-  // take() frees the llvm::Module and a new one is allocated at the same address
-  // and wrapped by a different Module, the map key collides; an unconditional
-  // erase(keyMod) would clobber the newer wrapper's entry (ABA), unpinning its
-  // views back into a use-after-free.
+  // take() frees the llvm::Module and a new one is allocated at the same
+  // address and wrapped by a different Module, the map key collides; an
+  // unconditional erase(keyMod) would clobber the newer wrapper's entry (ABA),
+  // unpinning its views back into a use-after-free.
   if (keyMod) {
     auto &map = liveModuleMap();
     auto it = map.find(keyMod);

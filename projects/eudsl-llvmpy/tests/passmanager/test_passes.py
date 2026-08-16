@@ -8,15 +8,13 @@ import pytest
 import llvm
 from llvm.testing import assert_no_leaks, filecheck_with_comments
 
-_SRC = dedent(
-    """\
+_SRC = dedent("""\
     define i32 @f(i32 %x) {
     entry:
       %a = add i32 %x, 0
       ret i32 %a
     }
-    """
-)
+    """)
 
 
 def test_instcombine_removes_add_zero():
@@ -86,7 +84,9 @@ def test_default_pipeline_with_tuning():
         pto = llvm.passmanager.PipelineTuningOptions()
         pto.loop_vectorization = False
         pto.slp_vectorization = False
-        llvm.passmanager.run_default_pipeline(mod, llvm.passmanager.OptLevel.O2, tuning=pto)
+        llvm.passmanager.run_default_pipeline(
+            mod, llvm.passmanager.OptLevel.O2, tuning=pto
+        )
         # CHECK-NOT: add i32 %x, 0
         # CHECK: ret i32 %x
         filecheck_with_comments(mod)
@@ -126,7 +126,9 @@ def test_run_passes_with_verify_each():
 def test_default_pipeline_with_debug():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
-        llvm.passmanager.run_default_pipeline(mod, llvm.passmanager.OptLevel.O1, debug=True)
+        llvm.passmanager.run_default_pipeline(
+            mod, llvm.passmanager.OptLevel.O1, debug=True
+        )
         assert "define" in str(mod)
         del mod
     assert_no_leaks()
