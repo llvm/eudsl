@@ -31,7 +31,7 @@ binds to the phi that `return r` uses.
 
 from contextlib import contextmanager
 
-from ..eudslllvm_ext import Value, const_int
+from ..eudslllvm_ext.ir import Value, const_int
 from ..ast.canonicalize import Canonicalizer, FunctionPatcher
 from ..ast import cf_transformers as _T
 from .casters import maybe_downcast
@@ -134,8 +134,6 @@ def else_ctx_manager(op):
     op.else_block = fn.append_basic_block("if.else")
     # Repoint the entry conditional branch's false edge to the else block.
     op.cond_br.set_successor(1, op.else_block)
-    # Switch to else-branch state so yield_ builds phis (both edges known)
-    # rather than just recording then-branch values.
     op.active = "else"
     _if_stack.append(op)
     b.set_insert_point(op.else_block)

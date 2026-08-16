@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 
-from . import Context
+from .ir import Context
 
 
 def assert_no_leaks():

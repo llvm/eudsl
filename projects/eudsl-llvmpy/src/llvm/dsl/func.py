@@ -6,7 +6,7 @@
 import ast
 import inspect
 
-from .. import Function, IRBuilder
+from ..eudslllvm_ext.ir import Function, IRBuilder
 from ..eudslllvm_ext.types import Type
 from ..eudslllvm_ext.types import function as function_t
 from ..ast.util import get_module_cst

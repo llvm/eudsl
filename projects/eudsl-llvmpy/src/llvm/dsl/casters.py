@@ -8,7 +8,7 @@ C++ class. This layer adds a user-extensible second step: re-wrapping the same
 Value* as a Python subclass (e.g. ArithValue) keyed on LLVM Type::TypeID.
 """
 
-from ..eudslllvm_ext import (
+from ..eudslllvm_ext.ir import (
     register_value_caster as _register,
     maybe_downcast,
     Value,
