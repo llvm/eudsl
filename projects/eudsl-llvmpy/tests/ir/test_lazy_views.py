@@ -11,6 +11,7 @@ import gc
 import pytest
 
 import llvm
+from llvm.ir import InsertPoint
 from llvm.testing import assert_no_leaks
 
 _SRC = dedent(
@@ -107,7 +108,7 @@ def test_view_reflects_live_mutation():
         insts = bb.instructions  # view taken while the block is empty
         assert len(insts) == 0
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             b.ret(fn.arg(0))
         assert len(insts) == 1  # same view now sees the appended instruction
         assert isinstance(insts[0], llvm.ir.ReturnInst)

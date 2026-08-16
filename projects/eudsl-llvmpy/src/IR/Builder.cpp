@@ -8,29 +8,51 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
 
+#include <iterator>
 #include <vector>
 
 namespace {
-// Owns a saved insertion point so `with builder.at_end_of(bb)` positions the
-// builder on __enter__ (restoring is unnecessary for the DSL's usage, which
-// always sets a fresh insertion point per block).
-struct InsertGuard {
-  llvm::IRBuilder<> *builder;
-  llvm::BasicBlock *block;
+using RawIP = llvm::IRBuilderBase::InsertPoint;
+
+// MLIR-style insertion point (cf. PyInsertionPoint in MLIR's IRCore.cpp), adapted
+// for LLVM's builder. Wraps the raw llvm insert point (block + iterator) plus an
+// optional explicit builder; `with InsertPoint(bb, builder=b):` positions `b`
+// there and restores it on exit. When `builder` is omitted the current builder
+// is resolved from the thread-local stack (an enclosing `with builder:` or the
+// enclosing InsertPoint's builder).
+struct InsertPoint {
+  RawIP ip;
+  nb::object builder; // explicit builder, or None -> resolve the current one
 };
+
+// One entry on the thread-local stack, mirroring MLIR's PyThreadContextEntry.
+// A `with builder:` pushes a builder-only entry; `with InsertPoint(...):` pushes
+// an entry that also records the InsertPoint object and the builder's prior
+// insert point (restored on exit). current_builder() / InsertPoint.current walk
+// the stack for the innermost entry of each kind (cf. getDefault* in MLIR).
+// (eudsl::Context's LLVMContext current-stack is separate; see Ownership.cpp.)
+struct ThreadContextEntry {
+  nb::object builder;
+  nb::object insertPoint; // none for a bare `with builder:` entry
+  RawIP previous;         // the builder's insert point to restore (InsertPoint)
+};
+
+static std::vector<ThreadContextEntry> &threadContextStack() {
+  static thread_local std::vector<ThreadContextEntry> stack;
+  return stack;
+}
+
+// The innermost builder on the stack (an enclosing `with builder:` or the
+// builder an enclosing InsertPoint repositioned), or none. Every entry (both
+// kinds) records a builder, so the innermost is simply the top of the stack.
+static nb::object defaultBuilder() {
+  auto &stack = threadContextStack();
+  return stack.empty() ? nb::none() : stack.back().builder;
+}
 } // namespace
 
 void populate_builder(nb::module_ &m) {
   using B = llvm::IRBuilder<>;
-
-  nb::class_<InsertGuard>(m, "_InsertGuard")
-      .def("__enter__",
-           [](InsertGuard &g) { g.builder->SetInsertPoint(g.block); })
-      .def(
-          "__exit__",
-          [](InsertGuard &, nb::object, nb::object, nb::object) {},
-          nb::arg("exc_type").none(), nb::arg("exc_value").none(),
-          nb::arg("traceback").none());
 
   nb::class_<B>(m, "IRBuilder")
       .def(
@@ -43,10 +65,27 @@ void populate_builder(nb::module_ &m) {
           "set_insert_point",
           [](B &self, llvm::BasicBlock *bb) { self.SetInsertPoint(bb); },
           "block"_a)
+      .def("__enter__",
+           [](nb::object self) -> nb::object {
+             // Make this builder the current one; InsertPoint(...) without an
+             // explicit builder resolves it from here.
+             threadContextStack().push_back({self, nb::none(), RawIP()});
+             return self;
+           })
       .def(
-          "at_end_of",
-          [](B &self, llvm::BasicBlock *bb) { return InsertGuard{&self, bb}; },
-          "block"_a, nb::keep_alive<0, 1>())
+          "__exit__",
+          [](nb::object self, nb::handle, nb::handle, nb::handle) {
+            // Symmetric with InsertPoint.__exit__: the top must be this
+            // builder's own frame (a builder frame has no insertPoint).
+            auto &stack = threadContextStack();
+            if (stack.empty() || !stack.back().insertPoint.is_none() ||
+                !stack.back().builder.is(self)) {
+              throw nb::value_error("unbalanced IRBuilder enter/exit");
+            }
+            stack.pop_back();
+          },
+          nb::arg("exc_type").none(), nb::arg("exc_value").none(),
+          nb::arg("traceback").none())
       .def_prop_ro(
           "insert_block", [](B &self) { return self.GetInsertBlock(); },
           nb::rv_policy::reference_internal)
@@ -169,4 +208,129 @@ void populate_builder(nb::module_ &m) {
           },
           "aggregate"_a, "value"_a, "index"_a, "name"_a = "",
           nb::rv_policy::reference_internal);
+
+  // --- DSL current-builder/function state + MLIR-style InsertPoint ---
+  // The current builder is the innermost one on the thread-local stack (an
+  // enclosing `with builder:` or the builder an InsertPoint repositioned).
+  // current_function derives from where that builder is positioned (an insert
+  // point lives in a block, which belongs to a function), so no separate
+  // function state is tracked.
+
+  m.def(
+      "current_builder",
+      []() -> nb::object {
+        nb::object b = defaultBuilder();
+        if (b.is_none()) {
+          throw std::runtime_error(
+              "no current IRBuilder; use `with builder:` or "
+              "`with InsertPoint(block, builder=b):`");
+        }
+        return b;
+      },
+      "The innermost builder on the thread-local stack.");
+  m.def(
+      "current_function",
+      []() -> llvm::Function * {
+        nb::object b = defaultBuilder();
+        llvm::BasicBlock *bb =
+            b.is_none() ? nullptr : nb::cast<B *>(b)->GetInsertBlock();
+        llvm::Function *fn = bb ? bb->getParent() : nullptr;
+        if (!fn)
+          throw std::runtime_error("no current function");
+        return fn;
+      },
+      nb::rv_policy::reference,
+      "The function containing the current builder's insertion block.");
+
+  // MLIR-style InsertPoint (see PyInsertionPoint in MLIR's IRCore.cpp). Wraps the
+  // llvm insert point (block + iterator) plus an optional explicit builder; on
+  // __enter__ it positions that builder here (resolving the current one when
+  // omitted) and restores it on __exit__.
+  nb::class_<InsertPoint>(m, "InsertPoint")
+      .def(
+          "__init__",
+          [](InsertPoint *self, nb::handle block_or_before, nb::object builder) {
+            llvm::BasicBlock *bb;
+            llvm::Instruction *inst;
+            if (nb::try_cast(block_or_before, bb)) {
+              new (self) InsertPoint{RawIP(bb, bb->end()), std::move(builder)};
+            } else if (nb::try_cast(block_or_before, inst)) {
+              new (self) InsertPoint{RawIP(inst->getParent(), inst->getIterator()),
+                                     std::move(builder)};
+            } else {
+              throw nb::type_error(
+                  "InsertPoint expects a BasicBlock (insert at end) or an "
+                  "Instruction (insert before it)");
+            }
+          },
+          "block_or_before"_a, "builder"_a = nb::none())
+      .def_static(
+          "at_block_begin",
+          [](llvm::BasicBlock *bb, nb::object builder) {
+            return InsertPoint{RawIP(bb, bb->getFirstInsertionPt()),
+                               std::move(builder)};
+          },
+          "block"_a, "builder"_a = nb::none(),
+          "Insert at the start of a block (after any phis).")
+      .def_static(
+          "at_block_terminator",
+          [](llvm::BasicBlock *bb, nb::object builder) {
+            llvm::Instruction *term = bb->getTerminatorOrNull();
+            if (!term)
+              throw nb::value_error("block has no terminator");
+            return InsertPoint{RawIP(bb, term->getIterator()),
+                               std::move(builder)};
+          },
+          "block"_a, "builder"_a = nb::none(),
+          "Insert before a block's terminator.")
+      .def_static(
+          "after",
+          [](llvm::Instruction *inst, nb::object builder) {
+            return InsertPoint{RawIP(inst->getParent(),
+                                     std::next(inst->getIterator())),
+                               std::move(builder)};
+          },
+          "instruction"_a, "builder"_a = nb::none(),
+          "Insert immediately after an instruction.")
+      .def_prop_ro(
+          "block", [](InsertPoint &self) { return self.ip.getBlock(); },
+          nb::rv_policy::reference_internal)
+      .def_prop_ro("is_set", [](InsertPoint &self) { return self.ip.isSet(); })
+      .def("__enter__",
+           [](nb::object self) -> nb::object {
+             InsertPoint &ipObj = nb::cast<InsertPoint &>(self);
+             nb::object builderObj =
+                 ipObj.builder.is_none() ? defaultBuilder() : ipObj.builder;
+             if (builderObj.is_none()) {
+               throw nb::value_error(
+                   "no current IRBuilder; pass builder= or enter a builder "
+                   "(`with builder:`) first");
+             }
+             B *b = nb::cast<B *>(builderObj);
+             threadContextStack().push_back({builderObj, self, b->saveIP()});
+             b->restoreIP(ipObj.ip);
+             return self;
+           })
+      .def(
+          "__exit__",
+          [](nb::object self, nb::handle, nb::handle, nb::handle) {
+            auto &stack = threadContextStack();
+            if (stack.empty() || !stack.back().insertPoint.is(self))
+              throw nb::value_error("unbalanced InsertPoint enter/exit");
+            ThreadContextEntry frame = stack.back();
+            stack.pop_back();
+            nb::cast<B *>(frame.builder)->restoreIP(frame.previous);
+          },
+          nb::arg("exc_type").none(), nb::arg("exc_value").none(),
+          nb::arg("traceback").none())
+      .def_prop_ro_static(
+          "current",
+          [](nb::handle) -> nb::object {
+            auto &stack = threadContextStack();
+            for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
+              if (!it->insertPoint.is_none())
+                return it->insertPoint;
+            }
+            throw nb::value_error("no current InsertPoint");
+          });
 }

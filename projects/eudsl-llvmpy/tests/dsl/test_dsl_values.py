@@ -5,7 +5,7 @@ import pytest
 
 import llvm
 from llvm.dsl.casters import maybe_downcast, register_value_caster
-from llvm.dsl.context import building, current_builder, current_function
+from llvm.ir import InsertPoint, current_builder, current_function
 from llvm.dsl.values import ArithValue, extract, with_element_type
 from llvm.testing import assert_no_leaks, filecheck_with_comments
 
@@ -34,7 +34,7 @@ def test_integer_add_and_mul():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             r = args[0] * args[1] + 1
             assert isinstance(r, ArithValue)  # result stays typed
             b.ret(r)
@@ -52,7 +52,7 @@ def test_float_add_uses_fadd():
         f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] + args[1])
         # CHECK: %[[R:.*]] = fadd float %0, %1
         # CHECK: ret float %[[R]]
@@ -67,7 +67,7 @@ def test_float_sub_uses_fsub():
         f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] - args[1])
         # CHECK: %[[R:.*]] = fsub float %0, %1
         # CHECK: ret float %[[R]]
@@ -82,7 +82,7 @@ def test_float_mul_uses_fmul():
         f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] * args[1])
         # CHECK: %[[R:.*]] = fmul float %0, %1
         # CHECK: ret float %[[R]]
@@ -97,7 +97,7 @@ def test_float_div_uses_fdiv():
         f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] / args[1])
         # CHECK: %[[R:.*]] = fdiv float %0, %1
         # CHECK: ret float %[[R]]
@@ -112,7 +112,7 @@ def test_float_scalar_coercion():
         f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, f32, [f32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] + 1.5)
         # CHECK: %[[R:.*]] = fadd float %0, 1.500000e+00
         # CHECK: ret float %[[R]]
@@ -127,7 +127,7 @@ def test_scalar_coercion():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] + 7)
         # CHECK: %[[R:.*]] = add i32 %0, 7
         # CHECK: ret i32 %[[R]]
@@ -142,7 +142,7 @@ def test_integer_sub():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] - args[1])
         # CHECK: %[[R:.*]] = sub i32 %0, %1
         # CHECK: ret i32 %[[R]]
@@ -157,7 +157,7 @@ def test_integer_div_uses_sdiv():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] / args[1])
         # CHECK: %[[R:.*]] = sdiv i32 %0, %1
         # CHECK: ret i32 %[[R]]
@@ -172,7 +172,7 @@ def test_integer_radd():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(7 + args[0])
         # CHECK: %[[R:.*]] = add i32 %0, 7
         # CHECK: ret i32 %[[R]]
@@ -187,7 +187,7 @@ def test_integer_rmul():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(7 * args[0])
         # CHECK: %[[R:.*]] = mul i32 %0, 7
         # CHECK: ret i32 %[[R]]
@@ -202,7 +202,7 @@ def test_integer_rsub():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(7 - args[0])
         # CHECK: %[[R:.*]] = sub i32 7, %0
         # CHECK: ret i32 %[[R]]
@@ -217,7 +217,7 @@ def test_integer_rdiv():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(7 / args[0])
         # CHECK: %[[R:.*]] = sdiv i32 7, %0
         # CHECK: ret i32 %[[R]]
@@ -233,7 +233,7 @@ def test_mismatched_types_raises_typeerror():
         f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, i32, [i32, f32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             with pytest.raises(TypeError, match="mismatched types"):
                 args[0] + args[1]
             with pytest.raises(TypeError, match="mismatched types"):
@@ -248,7 +248,7 @@ def test_le_uses_sle():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] <= args[1])
         # CHECK: %[[R:.*]] = icmp sle i32 %0, %1
         # CHECK: ret i1 %[[R]]
@@ -263,7 +263,7 @@ def test_ge_uses_sge():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] >= args[1])
         # CHECK: %[[R:.*]] = icmp sge i32 %0, %1
         # CHECK: ret i1 %[[R]]
@@ -278,7 +278,7 @@ def test_ne_named_method():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0].ne(args[1]))
         # CHECK: %[[R:.*]] = icmp ne i32 %0, %1
         # CHECK: ret i1 %[[R]]
@@ -293,7 +293,7 @@ def test_integer_comparison_signed():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] < args[1])
         # CHECK: %[[R:.*]] = icmp slt i32 %0, %1
         # CHECK: ret i1 %[[R]]
@@ -308,7 +308,7 @@ def test_float_comparison_ordered():
         f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [f32, f32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] > args[1])
         # CHECK: %[[R:.*]] = fcmp ogt float %0, %1
         # CHECK: ret i1 %[[R]]
@@ -324,7 +324,7 @@ def test_integer_gt_uses_sgt():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] > args[1])
         # CHECK: %[[R:.*]] = icmp sgt i32 %0, %1
         # CHECK: ret i1 %[[R]]
@@ -340,7 +340,7 @@ def test_float_lt_uses_olt():
         f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [f32, f32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0] < args[1])
         # CHECK: %[[R:.*]] = fcmp olt float %0, %1
         # CHECK: ret i1 %[[R]]
@@ -356,7 +356,7 @@ def test_double_is_arithvalue():
         mod = llvm.ir.Module("m", ctx)
         fn, bb, args = _entry(ctx, mod, f64, [f64, f64])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             assert isinstance(args[0], ArithValue)
             b.ret(args[0] + args[1])
         # CHECK: %[[R:.*]] = fadd double %0, %1
@@ -373,7 +373,7 @@ def test_half_is_arithvalue():
         mod = llvm.ir.Module("m", ctx)
         fn, bb, args = _entry(ctx, mod, f16, [f16, f16])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             assert isinstance(args[0], ArithValue)
             b.ret(args[0] + args[1])
         # CHECK: %[[R:.*]] = fadd half %0, %1
@@ -389,7 +389,7 @@ def test_eq_ne_named_methods():
         i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             b.ret(args[0].eq(args[1]))
         # CHECK: %[[R:.*]] = icmp eq i32 %0, %1
         # CHECK: ret i1 %[[R]]
@@ -409,7 +409,7 @@ def test_gep_load_store_via_alloca():
         fn = llvm.ir.Function.create(llvm.types.function(i32, []), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             slot = b.alloca(i32, "slot")
             p = with_element_type(slot, i32)
             p[0] = llvm.ir.const_int(i32, 5)
@@ -432,7 +432,7 @@ def test_pointer_subscript_returns_arithvalue():
         fn = llvm.ir.Function.create(llvm.types.function(i32, [llvm.types.ptr()]), "g", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             p = with_element_type(fn.arg(0), i32)
             v = p[2]
             assert isinstance(v, ArithValue)
@@ -453,7 +453,7 @@ def test_pointer_subscript_accepts_value_index():
         fn = llvm.ir.Function.create(llvm.types.function(i32, [llvm.types.ptr()]), "g", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             p = with_element_type(fn.arg(0), i32)
             # An already-built index Value takes the pass-through branch of
             # TypedPointer._idx instead of the python-int -> i64_const branch.
@@ -477,7 +477,7 @@ def test_extract_value_from_struct_arg():
         fn = llvm.ir.Function.create(llvm.types.function(i32, [st]), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b):
+        with InsertPoint(bb, builder=b):
             first = extract(fn.arg(0), 0)
             assert isinstance(first, ArithValue)
             b.ret(first + 1)
@@ -499,7 +499,7 @@ def test_insert_value_into_struct():
         fn = llvm.ir.Function.create(llvm.types.function(st, [st, i32]), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             updated = b.insert_value(fn.arg(0), fn.arg(1), 1)
             b.ret(updated)
         # CHECK: %[[R:.*]] = insertvalue { i32, i32 } %0, i32 %1, 1
@@ -546,14 +546,15 @@ def test_current_function_raises_without_context():
         current_function()
 
 
-def test_building_sets_current_function():
+def test_current_function_derives_from_insert_point():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32()
         fn = llvm.ir.Function.create(llvm.types.function(i32, []), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb), building(b, function=fn):
+        with InsertPoint(bb, builder=b):
+            # current_function() is derived from the current builder's block.
             assert current_function() is fn
         with pytest.raises(RuntimeError, match="no current function"):
             current_function()

@@ -4,6 +4,7 @@
 import pytest
 
 import llvm
+from llvm.ir import InsertPoint
 from llvm.testing import assert_no_leaks, filecheck_with_comments
 
 
@@ -14,7 +15,7 @@ def test_build_add_function():
         fn = llvm.ir.Function.create(llvm.types.function(i32, [i32, i32]), "add2", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             s = b.add(fn.arg(0), fn.arg(1), "s")
             b.ret(s)
         # CHECK: define i32 @add2(i32 %0, i32 %1)
@@ -36,13 +37,13 @@ def test_build_conditional_with_phi():
         b_ = fn.append_basic_block("b")
         join = fn.append_basic_block("join")
         bld = llvm.ir.IRBuilder(ctx)
-        with bld.at_end_of(entry):
+        with InsertPoint(entry, builder=bld):
             bld.cond_br(fn.arg(0), a, b_)
-        with bld.at_end_of(a):
+        with InsertPoint(a, builder=bld):
             bld.br(join)
-        with bld.at_end_of(b_):
+        with InsertPoint(b_, builder=bld):
             bld.br(join)
-        with bld.at_end_of(join):
+        with InsertPoint(join, builder=bld):
             p = bld.phi(i32, "p")
             p.add_incoming(llvm.ir.const_int(i32, 1), a)
             p.add_incoming(llvm.ir.const_int(i32, 2), b_)
@@ -62,7 +63,7 @@ def test_alloca_load_store():
         fn = llvm.ir.Function.create(llvm.types.function(i32, []), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             slot = b.alloca(i32, "slot")
             b.store(llvm.ir.const_int(i32, 5), slot)
             loaded = b.load(i32, slot, "loaded")
@@ -82,7 +83,7 @@ def test_void_ret():
         fn = llvm.ir.Function.create(llvm.types.function(void, []), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             b.ret()
         printed = str(mod)
         assert "ret void" in printed
@@ -100,7 +101,7 @@ def test_binary_ops_int():
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
         x, y = fn.arg(0), fn.arg(1)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             r_sub = b.sub(x, y, "r_sub")
             r_mul = b.mul(x, y, "r_mul")
             r_sdiv = b.sdiv(x, y, "r_sdiv")
@@ -125,7 +126,7 @@ def test_binary_ops_float():
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
         x, y = fn.arg(0), fn.arg(1)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             r_fadd = b.fadd(x, y, "r_fadd")
             r_fsub = b.fsub(x, y, "r_fsub")
             r_fmul = b.fmul(x, y, "r_fmul")
@@ -150,7 +151,7 @@ def test_icmp():
         )
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             result = b.icmp(llvm.ir.CmpPredicate.SLT, fn.arg(0), fn.arg(1), "lt")
             b.ret(result)
         printed = str(mod)
@@ -170,7 +171,7 @@ def test_fcmp():
         )
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             result = b.fcmp(llvm.ir.CmpPredicate.OGT, fn.arg(0), fn.arg(1), "gt")
             b.ret(result)
         printed = str(mod)
@@ -190,7 +191,7 @@ def test_gep():
         )
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             result = b.gep(i32, fn.arg(0), [fn.arg(1)], "elem")
             b.ret(result)
         printed = str(mod)
@@ -212,7 +213,7 @@ def test_call():
         )
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             result = b.call(callee, [fn.arg(0)], "r")
             b.ret(result)
         printed = str(mod)
@@ -231,7 +232,7 @@ def test_i32_const_and_i64_const():
         )
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb):
+        with InsertPoint(bb, builder=b):
             c32 = b.i32_const(42)
             c64 = b.i64_const(100)
             b.ret(c64)
@@ -258,7 +259,7 @@ def test_set_insert_point():
     assert_no_leaks()
 
 
-def test_context_manager_does_not_restore():
+def test_insert_point_restores_builder_position():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
         void = llvm.types.void(ctx)
@@ -268,9 +269,10 @@ def test_context_manager_does_not_restore():
         b = llvm.ir.IRBuilder(ctx)
         b.set_insert_point(outer)
         assert b.insert_block is outer
-        with b.at_end_of(inner):
+        with InsertPoint(inner, builder=b):
             assert b.insert_block is inner
-        assert b.insert_block is inner
+        # On exit the builder is restored to where it was before entering.
+        assert b.insert_block is outer
         del b, fn, outer, inner, mod
     assert_no_leaks()
 
@@ -283,20 +285,21 @@ def test_context_manager_propagates_exceptions():
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
         with pytest.raises(ValueError, match="test error"):
-            with b.at_end_of(bb):
+            with InsertPoint(bb, builder=b):
                 raise ValueError("test error")
         del b, fn, bb, mod
     assert_no_leaks()
 
 
-def test_context_manager_enter_returns_none():
+def test_insert_point_enter_returns_self_and_positions():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
         void = llvm.types.void(ctx)
         fn = llvm.ir.Function.create(llvm.types.function(void, []), "f", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(bb) as guard:
-            assert guard is None
+        with InsertPoint(bb, builder=b) as ip:
+            assert ip.block == bb
+            assert b.insert_block == bb
         del b, fn, bb, mod
     assert_no_leaks()

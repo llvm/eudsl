@@ -21,7 +21,7 @@ from ..eudslllvm_ext.ir import (
 )
 from ..eudslllvm_ext.types import TypeID
 from .casters import register_value_caster, maybe_downcast
-from .context import current_builder
+from ..eudslllvm_ext.ir import current_builder
 
 
 class ArithValue(Value):

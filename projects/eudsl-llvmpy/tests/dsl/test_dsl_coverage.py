@@ -9,7 +9,7 @@ import pytest
 import llvm
 from llvm.dsl import casters as _c
 from llvm.dsl.casters import maybe_downcast, register_value_caster
-from llvm.dsl.context import building, current_builder, current_function
+from llvm.ir import InsertPoint, current_builder, current_function
 from llvm.dsl.values import ArithValue, with_element_type, extract
 from llvm.testing import assert_no_leaks, filecheck_with_comments
 
@@ -27,7 +27,7 @@ def test_all_binary_dunders():
         i32, f32 = llvm.types.i32(ctx), llvm.types.f32(ctx)
         fn, bb, (a, b) = _entry(ctx, mod, i32, [i32, i32])
         bld = llvm.ir.IRBuilder(ctx)
-        with bld.at_end_of(bb), building(bld):
+        with InsertPoint(bb, builder=bld):
             _ = a - b
             _ = a * b
             _ = a / b
@@ -46,7 +46,7 @@ def test_float_binary_and_compare():
         f32 = llvm.types.f32(ctx)
         fn, bb, (a, b) = _entry(ctx, mod, f32, [f32, f32])
         bld = llvm.ir.IRBuilder(ctx)
-        with bld.at_end_of(bb), building(bld):
+        with InsertPoint(bb, builder=bld):
             _ = a - b
             _ = a * b
             _ = a / b
@@ -69,7 +69,7 @@ def test_int_le_ge_eq_ne():
         i32 = llvm.types.i32(ctx)
         fn, bb, (a, b) = _entry(ctx, mod, llvm.types.i1(ctx), [i32, i32])
         bld = llvm.ir.IRBuilder(ctx)
-        with bld.at_end_of(bb), building(bld):
+        with InsertPoint(bb, builder=bld):
             _ = a <= b
             _ = a >= b
             _ = a.ne(b)
@@ -87,7 +87,7 @@ def test_float_scalar_coercion():
         f32 = llvm.types.f32(ctx)
         fn, bb, (a,) = _entry(ctx, mod, f32, [f32])
         bld = llvm.ir.IRBuilder(ctx)
-        with bld.at_end_of(bb), building(bld):
+        with InsertPoint(bb, builder=bld):
             bld.ret(a + 1.5)  # float ArithValue + Python float -> const_fp
         # CHECK: %[[R:.*]] = fadd float %0, 1.500000e+00
         # CHECK: ret float %[[R]]
@@ -104,7 +104,7 @@ def test_insert_value_and_extract():
         fn = llvm.ir.Function.create(llvm.types.function(st, [st, i32]), "f", mod)
         bb = fn.append_basic_block("entry")
         bld = llvm.ir.IRBuilder(ctx)
-        with bld.at_end_of(bb), building(bld):
+        with InsertPoint(bb, builder=bld):
             agg = fn.arg(0)
             v = maybe_downcast(fn.arg(1), fn)
             agg2 = bld.insert_value(agg, v, 1)
@@ -128,7 +128,7 @@ def test_insert_extract_value_index_via_jit():
     def build(name, idx):
         fn = llvm.ir.Function.create(llvm.types.function(i32, [i32, i32]), name, mod)
         b = llvm.ir.IRBuilder(ctx)
-        with b.at_end_of(fn.append_basic_block("entry")):
+        with InsertPoint(fn.append_basic_block("entry"), builder=b):
             agg = llvm.ir.undef(st)
             agg = b.insert_value(agg, fn.arg(0), 0)
             agg = b.insert_value(agg, fn.arg(1), 1)
@@ -155,7 +155,7 @@ def test_typed_pointer_setitem_with_value_index():
         )
         bb = fn.append_basic_block("entry")
         bld = llvm.ir.IRBuilder(ctx)
-        with bld.at_end_of(bb), building(bld):
+        with InsertPoint(bb, builder=bld):
             tp = with_element_type(fn.arg(0), i32)
             idx = maybe_downcast(fn.arg(1), fn)
             tp[idx] = llvm.ir.const_int(i32, 9)  # Value index (not int)
