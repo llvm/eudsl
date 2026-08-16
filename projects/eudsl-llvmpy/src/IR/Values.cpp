@@ -181,11 +181,12 @@ void populate_values(nb::module_ &m) {
       .EUDSL_CAST_CTOR(llvm::BasicBlock, llvm::Value)
       .def_static(
           "create",
-          [](eudsl::Context &ctx, const std::string &name,
-             llvm::Function *parent) {
-            return llvm::BasicBlock::Create(ctx.get(), name, parent);
+          [](const std::string &name, llvm::Function *parent,
+             nb::handle context) {
+            return llvm::BasicBlock::Create(eudsl::currentOr(context).get(),
+                                            name, parent);
           },
-          "context"_a, "name"_a = "", "parent"_a = nullptr,
+          "name"_a = "", "parent"_a = nullptr, "context"_a = nb::none(),
           nb::rv_policy::reference)
       .def_prop_ro(
           "parent", [](llvm::BasicBlock &self) { return self.getParent(); },

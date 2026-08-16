@@ -5,6 +5,7 @@
 #include "IR/Ownership.h"
 
 #include <stdexcept>
+#include <vector>
 
 namespace eudsl {
 
@@ -25,6 +26,19 @@ void Context::release() {
 }
 
 int64_t Context::liveCount() { return gLiveContexts; }
+
+static thread_local std::vector<Context *> gContextStack;
+
+void Context::pushCurrent() { gContextStack.push_back(this); }
+
+void Context::popCurrent() {
+  if (!gContextStack.empty())
+    gContextStack.pop_back();
+}
+
+Context *Context::current() {
+  return gContextStack.empty() ? nullptr : gContextStack.back();
+}
 
 llvm::LLVMContext &Context::get() const {
   if (!ctx)

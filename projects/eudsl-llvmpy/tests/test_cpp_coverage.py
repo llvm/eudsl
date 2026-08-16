@@ -44,18 +44,18 @@ def test_type_eq_and_anonymous_struct_name():
         i32 = llvm.types.i32(ctx)
         assert (i32 == "not a type") is False
         # A literal (anonymous) struct has no name.
-        lit = llvm.types.struct(ctx, [i32, i32])
+        lit = llvm.types.struct([i32, i32], context=ctx)
         assert lit.name is None
         # A named struct reports its name.
-        named = llvm.types.named_struct(ctx, "S")
+        named = llvm.types.named_struct("S", context=ctx)
         assert named.name == "S"
     assert_no_leaks()
 
 
 def test_mdnode_operand_accessor():
     with llvm.Context() as ctx:
-        s = llvm.md_string(ctx, "x")
-        node = llvm.md_node(ctx, [s])
+        s = llvm.md_string("x", context=ctx)
+        node = llvm.md_node([s], context=ctx)
         assert node.num_operands == 1
         assert node.operand(0).string == "x"
     assert_no_leaks()
@@ -70,7 +70,7 @@ def test_basic_block_create_static_and_empty_entry_block():
         # A declaration (no blocks) has no entry block.
         assert fn.entry_block is None
         # BasicBlock.create with an explicit parent.
-        bb = llvm.BasicBlock.create(ctx, "entry", fn)
+        bb = llvm.BasicBlock.create("entry", fn, context=ctx)
         assert bb.name == "entry"
         assert fn.entry_block == bb
         del fn, bb, mod
@@ -111,7 +111,7 @@ def test_builder_fcmp_gep_call():
         i32 = llvm.types.i32(ctx)
         callee = llvm.Function.create(llvm.types.function(i32, [i32]), "callee", mod)
         fn = llvm.Function.create(
-            llvm.types.function(llvm.types.i1(ctx), [f32, f32, llvm.types.ptr(ctx), i32]),
+            llvm.types.function(llvm.types.i1(ctx), [f32, f32, llvm.types.ptr(context=ctx), i32]),
             "f",
             mod,
         )
@@ -325,6 +325,6 @@ def test_valuetypeinfo_downcasts_constant_kinds():
         assert type(llvm.const_fp(llvm.types.f32(ctx), 1.0)).__name__ == "ConstantFP"
         assert type(llvm.undef(i32)).__name__ == "UndefValue"
         assert type(llvm.poison(i32)).__name__ == "PoisonValue"
-        assert type(llvm.null(llvm.types.ptr(ctx))).__name__ == "ConstantPointerNull"
+        assert type(llvm.null(llvm.types.ptr(context=ctx))).__name__ == "ConstantPointerNull"
         assert type(llvm.null(i32)).__name__ == "ConstantInt"  # zero int
     assert_no_leaks()

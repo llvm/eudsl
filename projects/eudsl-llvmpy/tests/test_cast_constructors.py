@@ -50,10 +50,14 @@ def test_type_cast_constructors():
         # concrete object, not just an object that compares equal).
         cases = [
             (llvm.types.IntegerType, llvm.types.i32(ctx), lambda t: t.bit_width == 32),
-            (llvm.types.PointerType, llvm.types.ptr(ctx), lambda t: t.address_space == 0),
+            (
+                llvm.types.PointerType,
+                llvm.types.ptr(context=ctx),
+                lambda t: t.address_space == 0,
+            ),
             (
                 llvm.types.StructType,
-                llvm.types.struct(ctx, [llvm.types.i32(ctx)]),
+                llvm.types.struct([llvm.types.i32(ctx)], context=ctx),
                 lambda t: t.num_elements == 1,
             ),
             (
@@ -80,7 +84,7 @@ def test_type_cast_constructors():
         # Wrong kind within the Type hierarchy raises ValueError (shared throw
         # path for every cast ctor). A no-op `return v` ctor would NOT raise.
         with pytest.raises(ValueError, match="is not a"):
-            llvm.types.IntegerType(llvm.types.ptr(ctx))
+            llvm.types.IntegerType(llvm.types.ptr(context=ctx))
         with pytest.raises(ValueError, match="is not a"):
             llvm.types.VectorType(llvm.types.array(llvm.types.i32(ctx), 2))
         # None reaches the dyn_cast_or_null null branch -> ValueError, not a

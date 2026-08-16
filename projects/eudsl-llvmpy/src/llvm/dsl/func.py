@@ -23,7 +23,7 @@ def _resolve(annotation, ctx):
     if isinstance(annotation, Type):
         return annotation
     if callable(annotation):
-        return annotation(ctx)
+        return annotation(context=ctx)
     raise TypeError(f"cannot resolve type annotation {annotation!r}")
 
 

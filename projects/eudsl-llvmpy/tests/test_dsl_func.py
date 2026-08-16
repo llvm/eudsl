@@ -99,7 +99,7 @@ def test_varargs_declaration():
         i32 = llvm.types.i32(ctx)
 
         @llvm.function(module=mod, var_arg=True)
-        def printf_like(fmt: llvm.types.ptr(ctx)) -> i32: ...
+        def printf_like(fmt: llvm.types.ptr(context=ctx)) -> i32: ...
 
         assert "declare i32 @printf_like(ptr, ...)" in str(mod)
         del mod
@@ -140,7 +140,7 @@ def test_void_return_no_explicit_return():
         i32 = llvm.types.i32(ctx)
 
         @llvm.function(module=mod)
-        def store_it(p: llvm.types.ptr(ctx), v: i32) -> llvm.types.void:
+        def store_it(p: llvm.types.ptr(context=ctx), v: i32) -> llvm.types.void:
             from llvm.dsl.values import with_element_type
 
             tp = with_element_type(p, i32)

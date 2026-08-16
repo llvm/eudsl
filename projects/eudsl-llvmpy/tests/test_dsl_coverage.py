@@ -101,7 +101,7 @@ def test_insert_value_and_extract():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        st = llvm.types.struct(ctx, [i32, i32])
+        st = llvm.types.struct([i32, i32], context=ctx)
         fn = llvm.Function.create(llvm.types.function(st, [st, i32]), "f", mod)
         bb = fn.append_basic_block("entry")
         bld = llvm.IRBuilder(ctx)
@@ -124,7 +124,7 @@ def test_insert_extract_value_index_via_jit():
     ctx = llvm.Context()
     mod = llvm.Module("m", ctx)
     i32 = llvm.types.i32(ctx)
-    st = llvm.types.struct(ctx, [i32, i32])
+    st = llvm.types.struct([i32, i32], context=ctx)
 
     def build(name, idx):
         fn = llvm.Function.create(llvm.types.function(i32, [i32, i32]), name, mod)
@@ -152,7 +152,7 @@ def test_typed_pointer_setitem_with_value_index():
         mod = llvm.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         fn = llvm.Function.create(
-            llvm.types.function(llvm.types.void(ctx), [llvm.types.ptr(ctx), i32]), "f", mod
+            llvm.types.function(llvm.types.void(ctx), [llvm.types.ptr(context=ctx), i32]), "f", mod
         )
         bb = fn.append_basic_block("entry")
         bld = llvm.IRBuilder(ctx)
