@@ -10,21 +10,7 @@ from llvm.ast.canonicalize import (
     StrictTransformer,
     find_func_in_code_object,
 )
-
-
-class _NoOpPatcher(FunctionPatcher):
-    def patch_function(self, original_f):
-        return original_f
-
-
-class _NoOpCanonicalizer(Canonicalizer):
-    @property
-    def cst_transformers(self):
-        return [StrictTransformer]
-
-    @property
-    def function_patchers(self):
-        return [_NoOpPatcher]
+from llvm.dsl.cf import LLVMCanonicalizer
 
 
 def test_canonicalize_accepts_a_sequence_of_canonicalizers():
@@ -33,7 +19,7 @@ def test_canonicalize_accepts_a_sequence_of_canonicalizers():
     def f(x):
         return x
 
-    g = canonicalize(using=[_NoOpCanonicalizer()])(f)
+    g = canonicalize(using=[LLVMCanonicalizer()])(f)
     assert g(5) == 5
 
 
@@ -47,7 +33,7 @@ def test_canonicalize_accepts_a_single_canonicalizer_and_skips_nested_defs():
 
         return helper(x)
 
-    g = canonicalize(using=_NoOpCanonicalizer())(f)
+    g = canonicalize(using=LLVMCanonicalizer())(f)
     assert g(3) == 6
 
 
@@ -62,7 +48,7 @@ def test_transform_ast_handles_closures():
 
     inner = outer()
     assert inner.__closure__ is not None
-    g = canonicalize(using=_NoOpCanonicalizer())(inner)
+    g = canonicalize(using=LLVMCanonicalizer())(inner)
     assert g(1) == 43
 
 

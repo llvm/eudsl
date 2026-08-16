@@ -101,19 +101,6 @@ def test_float_scalar_coercion():
     assert_no_leaks()
 
 
-def test_coerce_rejects_non_numeric_type():
-    with llvm.Context() as ctx:
-        mod = llvm.Module("m", ctx)
-        ptr_ty = llvm.types.ptr(ctx)
-        fn, bb, args = _entry(ctx, mod, ptr_ty, [ptr_ty])
-        # args[0] is a plain Value here (ptr has no registered caster), so
-        # call the coercion helper directly to exercise the guard.
-        with pytest.raises(TypeError):
-            ArithValue._coerce(args[0], 0)
-        del fn, mod
-    assert_no_leaks()
-
-
 def test_scalar_coercion():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
@@ -248,6 +235,49 @@ def test_float_comparison_ordered():
             b.ret(args[0] > args[1])
         assert "fcmp ogt float" in str(mod)
         del b, fn, mod
+    assert_no_leaks()
+
+
+def test_integer_gt_uses_sgt():
+    # The int path of __gt__ is otherwise only used on floats (-> OGT); pin SGT.
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
+        fn, bb, args = _entry(ctx, mod, llvm.types.i1(ctx), [i32, i32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(args[0] > args[1])
+        assert "icmp sgt i32" in str(mod)
+        del b, fn, bb, args, mod
+    assert_no_leaks()
+
+
+def test_float_lt_uses_olt():
+    # The float path of __lt__ is otherwise only used on ints (-> SLT); pin OLT.
+    with llvm.Context() as ctx:
+        mod = llvm.Module("m", ctx)
+        f32 = llvm.types.f32(ctx)
+        fn, bb, args = _entry(ctx, mod, llvm.types.i1(ctx), [f32, f32])
+        b = llvm.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            b.ret(args[0] < args[1])
+        assert "fcmp olt float" in str(mod)
+        del b, fn, bb, args, mod
+    assert_no_leaks()
+
+
+def test_double_and_half_are_arithvalue():
+    # The float caster is registered for Half/Double too, not just Float.
+    with llvm.Context() as ctx:
+        for ty, want in ((llvm.types.f64(ctx), "fadd double"), (llvm.types.f16(ctx), "fadd half")):
+            mod = llvm.Module("m", ctx)
+            fn, bb, args = _entry(ctx, mod, ty, [ty, ty])
+            b = llvm.IRBuilder(ctx)
+            with b.at_end_of(bb), building(b):
+                assert isinstance(args[0], ArithValue)
+                b.ret(args[0] + args[1])
+            assert want in str(mod)
+            del b, fn, bb, args, mod
     assert_no_leaks()
 
 

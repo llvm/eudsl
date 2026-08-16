@@ -70,10 +70,11 @@ class _IfOp:
         self.active = "then"
 
     def _terminate_current(self):
+        # A branch body never self-terminates (its trailing yield_ is what calls
+        # this), so the current block always needs the branch to merge.
         b = self.builder
         pred = b.insert_block
-        if b.insert_block.terminator is None:
-            b.br(self.merge_block)
+        b.br(self.merge_block)
         return pred
 
     def record_and_maybe_phi(self, values):
@@ -147,8 +148,9 @@ def else_ctx_manager(op):
 
 
 def yield_(*values):
-    if not _if_stack:
-        return values[0] if len(values) == 1 else values
+    # Only ever runs inside if_ctx_manager/else_ctx_manager (the if transform
+    # rewrites branch yields to yield_(); loop yields are consumed by the loop
+    # transforms), so an if-op is always on the stack.
     return _if_stack[-1].record_and_maybe_phi(values)
 
 
@@ -220,9 +222,7 @@ def while_loop(cond_fn, body_fn, inits):
     b.cond_br(cond, body_bb, exit_bb)
 
     b.set_insert_point(body_bb)
-    nexts = body_fn(*carried)
-    if not isinstance(nexts, tuple):
-        nexts = (nexts,)
+    nexts = body_fn(*carried)  # body_fn returns a tuple of next carried values
     body_end = b.insert_block  # nested control flow may have moved us
     b.br(header)
     for phi, nxt in zip(raw_phis, nexts):
@@ -265,11 +265,9 @@ def for_loop(start, stop, step, body_fn, inits):
         return iv > stop_v if step_negative else iv < stop_v
 
     def body(iv, *carried):
+        # body_fn is the lifted loop body; it returns a tuple of next carried
+        # values (empty for a side-effecting loop with a bare yield).
         nxt = body_fn(iv, *carried)
-        if nxt is None:
-            nxt = ()
-        elif not isinstance(nxt, tuple):
-            nxt = (nxt,)
         return (iv + step, *nxt)
 
     res = while_loop(cond, body, (start_v, *inits))

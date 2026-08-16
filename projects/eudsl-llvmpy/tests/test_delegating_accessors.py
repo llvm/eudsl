@@ -257,3 +257,35 @@ def test_value_name_setter_and_instruction_props():
         assert "%renamed = add" in str(mod)
         del f, entry, add, ret, mod
     assert_no_leaks()
+
+
+def test_instruction_set_successor():
+    # set_successor is used by the DSL elif lowering (dsl/cf.py) and validated
+    # indirectly by the elif JIT tests; assert it directly here too.
+    with llvm.Context() as ctx:
+        mod = llvm.parse_assembly(
+            dedent(
+                """\
+                define void @f(i1 %cond) {
+                entry:
+                  br i1 %cond, label %a, label %b
+                a:
+                  ret void
+                b:
+                  ret void
+                c:
+                  ret void
+                }
+                """
+            ),
+            ctx,
+            "m",
+        )
+        f = mod.get_function("f")
+        br = f.entry_block.terminator
+        c_block = next(b for b in f.basic_blocks if b.name == "c")
+        br.set_successor(0, c_block)  # redirect the true edge from a to c
+        assert br.successor(0).name == "c"
+        assert "br i1 %cond, label %c, label %b" in str(mod)
+        del f, br, c_block, mod
+    assert_no_leaks()

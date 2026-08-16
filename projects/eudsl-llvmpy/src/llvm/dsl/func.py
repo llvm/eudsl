@@ -90,7 +90,9 @@ def function(
             result = f(*args)
             if result is not None:
                 builder.ret(result)
-            elif builder.insert_block.terminator is None:
+            else:
+                # No DSL `return`: the current block (entry, or a loop/if exit)
+                # is never already terminated here, so close it with `ret void`.
                 builder.ret(None)
         return DSLFunction(fn)
 
