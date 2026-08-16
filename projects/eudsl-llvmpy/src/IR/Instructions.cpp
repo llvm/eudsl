@@ -4,6 +4,7 @@
 
 #include "IR/Common.h"
 
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/Instructions.h>
 
@@ -32,6 +33,42 @@ void populate_instructions(nb::module_ &m) {
       .value("UNE", llvm::CmpInst::FCMP_UNE);
   m.attr("ICmpPredicate") = m.attr("CmpPredicate");
   m.attr("FCmpPredicate") = m.attr("CmpPredicate");
+
+  // Memory-ordering + atomicrmw operation enums, used by the IRBuilder
+  // fence/atomic_rmw/atomic_cmpxchg emitters.
+  nb::enum_<llvm::AtomicOrdering>(m, "AtomicOrdering")
+      .value("NotAtomic", llvm::AtomicOrdering::NotAtomic)
+      .value("Unordered", llvm::AtomicOrdering::Unordered)
+      .value("Monotonic", llvm::AtomicOrdering::Monotonic)
+      .value("Acquire", llvm::AtomicOrdering::Acquire)
+      .value("Release", llvm::AtomicOrdering::Release)
+      .value("AcquireRelease", llvm::AtomicOrdering::AcquireRelease)
+      .value("SequentiallyConsistent",
+             llvm::AtomicOrdering::SequentiallyConsistent);
+  nb::enum_<llvm::AtomicRMWInst::BinOp>(m, "AtomicRMWBinOp")
+      .value("Xchg", llvm::AtomicRMWInst::Xchg)
+      .value("Add", llvm::AtomicRMWInst::Add)
+      .value("Sub", llvm::AtomicRMWInst::Sub)
+      .value("And", llvm::AtomicRMWInst::And)
+      .value("Nand", llvm::AtomicRMWInst::Nand)
+      .value("Or", llvm::AtomicRMWInst::Or)
+      .value("Xor", llvm::AtomicRMWInst::Xor)
+      .value("Max", llvm::AtomicRMWInst::Max)
+      .value("Min", llvm::AtomicRMWInst::Min)
+      .value("UMax", llvm::AtomicRMWInst::UMax)
+      .value("UMin", llvm::AtomicRMWInst::UMin)
+      .value("FAdd", llvm::AtomicRMWInst::FAdd)
+      .value("FSub", llvm::AtomicRMWInst::FSub)
+      .value("FMax", llvm::AtomicRMWInst::FMax)
+      .value("FMin", llvm::AtomicRMWInst::FMin)
+      .value("FMaximum", llvm::AtomicRMWInst::FMaximum)
+      .value("FMinimum", llvm::AtomicRMWInst::FMinimum)
+      .value("FMaximumNum", llvm::AtomicRMWInst::FMaximumNum)
+      .value("FMinimumNum", llvm::AtomicRMWInst::FMinimumNum)
+      .value("UIncWrap", llvm::AtomicRMWInst::UIncWrap)
+      .value("UDecWrap", llvm::AtomicRMWInst::UDecWrap)
+      .value("USubCond", llvm::AtomicRMWInst::USubCond)
+      .value("USubSat", llvm::AtomicRMWInst::USubSat);
 
   // Intermediate bases (the Value type_hook never names these, but leaf classes
   // need them registered as their nanobind base).
@@ -131,8 +168,10 @@ void populate_instructions(nb::module_ &m) {
           "condition",
           [](llvm::CondBrInst &self) { return self.getCondition(); },
           nb::rv_policy::reference_internal);
-  nb::class_<llvm::SwitchInst, llvm::Instruction>(m, "SwitchInst");
-  nb::class_<llvm::IndirectBrInst, llvm::Instruction>(m, "IndirectBrInst");
+  nb::class_<llvm::SwitchInst, llvm::Instruction>(m, "SwitchInst")
+      .def("add_case", &llvm::SwitchInst::addCase, "on_value"_a, "dest"_a);
+  nb::class_<llvm::IndirectBrInst, llvm::Instruction>(m, "IndirectBrInst")
+      .def("add_destination", &llvm::IndirectBrInst::addDestination, "dest"_a);
   nb::class_<llvm::ResumeInst, llvm::Instruction>(m, "ResumeInst");
   nb::class_<llvm::UnreachableInst, llvm::Instruction>(m, "UnreachableInst");
   nb::class_<llvm::SelectInst, llvm::Instruction>(m, "SelectInst");
