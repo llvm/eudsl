@@ -42,13 +42,60 @@ void populate_constants(nb::module_ &m) {
   nb::class_<llvm::ConstantStruct, llvm::ConstantAggregate>(m, "ConstantStruct");
   nb::class_<llvm::ConstantVector, llvm::ConstantAggregate>(m, "ConstantVector");
   nb::class_<llvm::ConstantDataSequential, llvm::ConstantData>(
-      m, "ConstantDataSequential");
+      m, "ConstantDataSequential")
+      .def_prop_ro("num_elements", &llvm::ConstantDataSequential::getNumElements)
+      .def("get_element_as_int",
+           [](llvm::ConstantDataSequential &self, Py_ssize_t i) {
+             // getElementAsInteger asserts (aborts the process) on a bad index
+             // or a non-integer element type; surface both as catchable Python
+             // errors instead.
+             Py_ssize_t n = static_cast<Py_ssize_t>(self.getNumElements());
+             if (i < 0 || i >= n)
+               throw nb::index_error("element index out of range");
+             if (!self.getElementType()->isIntegerTy())
+               throw nb::value_error("element type is not an integer");
+             return self.getElementAsInteger(static_cast<unsigned>(i));
+           },
+           "index"_a)
+      .def("get_element_as_double",
+           [](llvm::ConstantDataSequential &self, Py_ssize_t i) {
+             // getElementAsDouble likewise asserts on a bad index or a
+             // non-double element type.
+             Py_ssize_t n = static_cast<Py_ssize_t>(self.getNumElements());
+             if (i < 0 || i >= n)
+               throw nb::index_error("element index out of range");
+             if (!self.getElementType()->isDoubleTy())
+               throw nb::value_error("element type is not double");
+             return self.getElementAsDouble(static_cast<unsigned>(i));
+           },
+           "index"_a)
+      .def_prop_ro("is_string",
+                   [](llvm::ConstantDataSequential &self) {
+                     return self.isString();
+                   })
+      .def_prop_ro("as_string",
+                   [](llvm::ConstantDataSequential &self) -> std::string {
+                     if (!self.isString())
+                       throw nb::value_error("not a string constant");
+                     return self.getAsString().str();
+                   });
   nb::class_<llvm::ConstantDataArray, llvm::ConstantDataSequential>(
       m, "ConstantDataArray");
   nb::class_<llvm::ConstantDataVector, llvm::ConstantDataSequential>(
       m, "ConstantDataVector");
-  nb::class_<llvm::ConstantExpr, llvm::Constant>(m, "ConstantExpr");
-  nb::class_<llvm::BlockAddress, llvm::Constant>(m, "BlockAddress");
+  nb::class_<llvm::ConstantExpr, llvm::Constant>(m, "ConstantExpr")
+      .def_prop_ro("opcode_name", [](llvm::ConstantExpr &self) {
+        return std::string(self.getOpcodeName());
+      });
+  nb::class_<llvm::BlockAddress, llvm::Constant>(m, "BlockAddress")
+      .def_prop_ro(
+          "function",
+          [](llvm::BlockAddress &self) { return self.getFunction(); },
+          nb::rv_policy::reference_internal)
+      .def_prop_ro(
+          "basic_block",
+          [](llvm::BlockAddress &self) { return self.getBasicBlock(); },
+          nb::rv_policy::reference_internal);
 
   nb::class_<llvm::GlobalVariable, llvm::GlobalObject>(m, "GlobalVariable")
       .EUDSL_CAST_CTOR(llvm::GlobalVariable, llvm::Value)
@@ -59,8 +106,20 @@ void populate_constants(nb::module_ &m) {
             return self.hasInitializer() ? self.getInitializer() : nullptr;
           },
           nb::rv_policy::reference_internal);
-  nb::class_<llvm::GlobalAlias, llvm::GlobalValue>(m, "GlobalAlias");
-  nb::class_<llvm::GlobalIFunc, llvm::GlobalObject>(m, "GlobalIFunc");
+  nb::class_<llvm::GlobalAlias, llvm::GlobalValue>(m, "GlobalAlias")
+      .def_prop_ro(
+          "aliasee",
+          [](llvm::GlobalAlias &self) -> llvm::Constant * {
+            return self.getAliasee();
+          },
+          nb::rv_policy::reference_internal);
+  nb::class_<llvm::GlobalIFunc, llvm::GlobalObject>(m, "GlobalIFunc")
+      .def_prop_ro(
+          "resolver",
+          [](llvm::GlobalIFunc &self) -> llvm::Constant * {
+            return self.getResolver();
+          },
+          nb::rv_policy::reference_internal);
 
   m.def(
       "const_int",
