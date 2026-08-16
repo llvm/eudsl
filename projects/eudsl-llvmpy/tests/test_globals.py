@@ -10,7 +10,7 @@ def test_add_global_with_initializer():
         mod = llvm.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         g = mod.add_global(i32, "counter", llvm.const_int(i32, 7))
-        assert type(g).__name__ == "GlobalVariable"
+        assert isinstance(g, llvm.GlobalVariable)
         assert g.name == "counter"
         assert "@counter = global i32 7" in str(mod)
         assert mod.get_global("counter") == g
