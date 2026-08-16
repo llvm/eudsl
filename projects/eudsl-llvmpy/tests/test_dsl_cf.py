@@ -2,12 +2,14 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import ctypes
+import re
 
 import pytest
 
 import llvm
 from llvm.ast.canonicalize import canonicalize
 from llvm.dsl.cf import LLVMCanonicalizer
+from llvm.dsl.values import with_element_type
 from llvm.testing import assert_no_leaks
 
 
@@ -140,12 +142,19 @@ def test_for_range_sum_jits():
 
 
 def test_function_void_no_explicit_return():
+    # A non-empty body (an empty/pass/docstring-only body is a declaration,
+    # not a definition) that falls off the end without a DSL `return` still
+    # needs the entry block terminated with `ret void`.
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
+        i32 = llvm.types.i32(ctx)
 
         @llvm.function(module=mod)
-        def noop() -> llvm.types.void:
-            pass
+        def store_and_fall_through(p: llvm.types.ptr) -> llvm.types.void:
+            from llvm.dsl.values import with_element_type
+
+            tp = with_element_type(p, i32)
+            tp[0] = llvm.const_int(i32, 0)
 
         assert "ret void" in str(mod)
         del mod
@@ -547,6 +556,158 @@ def test_for_negative_step_countdown_jits():
     del jit, mod, fn_ptr, ctx
 
 
+def test_if_no_else_side_effect_only():
+    # A single-branch if with no yielded result: side effect via store.
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def clamp0(c: llvm.types.i1, p: llvm.types.ptr) -> i32:
+        tp = with_element_type(p, i32)
+        if c:
+            tp[0] = llvm.const_int(i32, 0)
+        return tp[0]
+
+    printed = str(mod)
+    assert "br i1" in printed
+    assert "store i32 0" in printed
+    mod.verify()
+    del mod, ctx, clamp0, i32
+    assert_no_leaks()
+
+
+def test_elif_elif_three_way():
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def sign(x: i32) -> i32:
+        if x < 0:
+            r = yield llvm.const_int(i32, -1, signed=True)
+        elif x.eq(llvm.const_int(i32, 0)):
+            r = yield llvm.const_int(i32, 0)
+        elif x < 10:
+            r = yield llvm.const_int(i32, 1)
+        else:
+            r = yield llvm.const_int(i32, 2)
+        return r
+
+    jit = llvm.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("sign"))
+    assert fn(-4) == -1
+    assert fn(0) == 0
+    assert fn(5) == 1
+    assert fn(99) == 2
+    del jit, mod, ctx, sign, i32, fn
+    assert_no_leaks()
+
+
+def test_while_two_carried_values():
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    # Fibonacci-ish: iterate n times advancing (a, b) -> (b, a+b).
+    @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def fib(n: i32) -> i32:
+        a = llvm.const_int(i32, 0)
+        b = llvm.const_int(i32, 1)
+        i = llvm.const_int(i32, 0)
+        while i.ne(n):
+            a, b = b, a + b
+            i = i + 1
+            yield a, b, i
+        return a
+
+    jit = llvm.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("fib"))
+    assert fn(0) == 0
+    assert fn(1) == 1
+    assert fn(7) == 13  # 0,1,1,2,3,5,8,13
+    del jit, mod, ctx, fib, i32, fn
+    assert_no_leaks()
+
+
+def test_for_with_step_and_two_carried():
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    # Sum every other value in [0, n) and count how many; step 2.
+    @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def strided(n: i32) -> i32:
+        acc = llvm.const_int(i32, 0)
+        cnt = llvm.const_int(i32, 0)
+        for i in range_(0, n, 2):
+            acc = acc + i
+            cnt = cnt + 1
+            yield acc, cnt
+        return acc
+
+    jit = llvm.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("strided"))
+    assert fn(10) == 0 + 2 + 4 + 6 + 8
+    assert fn(1) == 0
+    del jit, mod, ctx, strided, i32, fn
+    assert_no_leaks()
+
+
+def test_for_result_used_after_loop():
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def total_plus_one(n: i32) -> i32:
+        acc = llvm.const_int(i32, 0)
+        for i in range_(0, n):
+            acc = acc + i
+            yield acc
+        return acc + 1
+
+    jit = llvm.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(jit.lookup("total_plus_one"))
+    assert fn(5) == (0 + 1 + 2 + 3 + 4) + 1
+    del jit, mod, ctx, total_plus_one, i32, fn
+    assert_no_leaks()
+
+
+def test_for_mixed_start_stop():
+    ctx = llvm.Context()
+    mod = llvm.Module("m", ctx)
+    i32 = llvm.types.i32(ctx)
+
+    @llvm.function(module=mod)
+    @canonicalize(using=LLVMCanonicalizer())
+    def sum_range(lo: i32, hi: i32) -> i32:
+        acc = llvm.const_int(i32, 0)
+        for i in range_(lo, hi):
+            acc = acc + i
+            yield acc
+        return acc
+
+    jit = llvm.LLJIT()
+    jit.add_module(mod)
+    fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_int32)(
+        jit.lookup("sum_range")
+    )
+    assert fn(2, 5) == 2 + 3 + 4
+    assert fn(5, 5) == 0
+    del jit, mod, ctx, sum_range, i32, fn
+    assert_no_leaks()
+
+
 def test_early_return_inside_while_raises():
     with llvm.Context() as ctx:
         mod = llvm.Module("m", ctx)
@@ -598,11 +759,9 @@ def test_if_else_phi_has_correct_incomings():
 
         mod.verify()
         printed = str(mod)
-        # phi must have exactly 2 incoming edges (then and else branches).
         assert printed.count("phi i32") == 1
-        # Each incoming is [value, %block_label]; there should be 2 of them.
         phi_line = [l for l in printed.splitlines() if "phi i32" in l][0]
-        assert phi_line.count("[") == 2
+        assert len(re.findall(r"\[.*?,\s*%[\w.]+\s*\]", phi_line)) == 2
         del mod
     assert_no_leaks()
 
