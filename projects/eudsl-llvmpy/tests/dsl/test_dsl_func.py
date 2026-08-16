@@ -225,8 +225,10 @@ def test_real_body_is_not_treated_as_empty():
         def f(x: i32) -> i32:
             return x + 1
 
-        assert "define i32 @f" in str(mod)
-        assert "add i32" in str(mod)
+        # CHECK: define i32 @f(i32 %[[X:.*]])
+        # CHECK: %[[R:.*]] = add i32 %[[X]], 1
+        # CHECK: ret i32 %[[R]]
+        filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
 
@@ -247,9 +249,12 @@ def test_call_declared_extern_from_function_body():
     def caller(x: i32) -> i32:
         return add_one(extern(x))
 
-    printed = str(mod)
-    assert "call i32 @extern" in printed
-    assert "call i32 @add_one" in printed
+    # The nesting add_one(extern(x)) threads extern's result into add_one, in
+    # that order -- an SSA-bound, ordered check a substring cannot express.
+    # CHECK: %[[E:.*]] = call i32 @extern(i32 %0)
+    # CHECK: %[[A:.*]] = call i32 @add_one(i32 %[[E]])
+    # CHECK: ret i32 %[[A]]
+    filecheck_with_comments(mod)
     del mod, ctx, add_one, extern, caller, i32
     assert_no_leaks()
 

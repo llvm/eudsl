@@ -7,7 +7,7 @@ import llvm
 from llvm.dsl.casters import maybe_downcast, register_value_caster
 from llvm.dsl.context import building, current_builder, current_function
 from llvm.dsl.values import ArithValue, extract, with_element_type
-from llvm.testing import assert_no_leaks
+from llvm.testing import assert_no_leaks, filecheck_with_comments
 
 
 def _entry(ctx, mod, ret_ty, arg_tys, name="f"):
@@ -38,9 +38,10 @@ def test_integer_add_and_mul():
             r = args[0] * args[1] + 1
             assert isinstance(r, ArithValue)  # result stays typed
             b.ret(r)
-        printed = str(mod)
-        assert "mul i32" in printed
-        assert "add i32" in printed
+        # CHECK: %[[M:.*]] = mul i32 %0, %1
+        # CHECK: %[[A:.*]] = add i32 %[[M]], 1
+        # CHECK: ret i32 %[[A]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -53,37 +54,54 @@ def test_float_add_uses_fadd():
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] + args[1])
-        assert "fadd float" in str(mod)
+        # CHECK: %[[R:.*]] = fadd float %0, %1
+        # CHECK: ret float %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
 
-def test_float_remaining_arithmetic():
+def test_float_sub_uses_fsub():
     with llvm.ir.Context() as ctx:
-        f32 = llvm.types.f32()
-        
         mod = llvm.ir.Module("m", ctx)
+        f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] - args[1])
-        assert "fsub float" in str(mod)
+        # CHECK: %[[R:.*]] = fsub float %0, %1
+        # CHECK: ret float %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
+    assert_no_leaks()
 
-        mod = llvm.ir.Module("m2", ctx)
+
+def test_float_mul_uses_fmul():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] * args[1])
-        assert "fmul float" in str(mod)
+        # CHECK: %[[R:.*]] = fmul float %0, %1
+        # CHECK: ret float %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
+    assert_no_leaks()
 
-        mod = llvm.ir.Module("m3", ctx)
+
+def test_float_div_uses_fdiv():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        f32 = llvm.types.f32()
         fn, bb, args = _entry(ctx, mod, f32, [f32, f32])
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] / args[1])
-        assert "fdiv float" in str(mod)
+        # CHECK: %[[R:.*]] = fdiv float %0, %1
+        # CHECK: ret float %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -96,7 +114,9 @@ def test_float_scalar_coercion():
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] + 1.5)
-        assert "fadd float %0, 1.500000e+00" in str(mod)
+        # CHECK: %[[R:.*]] = fadd float %0, 1.500000e+00
+        # CHECK: ret float %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -109,12 +129,14 @@ def test_scalar_coercion():
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] + 7)
-        assert "add i32 %0, 7" in str(mod)
+        # CHECK: %[[R:.*]] = add i32 %0, 7
+        # CHECK: ret i32 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
 
-def test_remaining_arithmetic_dunders():
+def test_integer_sub():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32()
@@ -122,47 +144,84 @@ def test_remaining_arithmetic_dunders():
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] - args[1])
-        assert "sub i32" in str(mod)
+        # CHECK: %[[R:.*]] = sub i32 %0, %1
+        # CHECK: ret i32 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
+    assert_no_leaks()
 
-        mod = llvm.ir.Module("m2", ctx)
+
+def test_integer_div_uses_sdiv():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] / args[1])
-        assert "sdiv i32" in str(mod)
+        # CHECK: %[[R:.*]] = sdiv i32 %0, %1
+        # CHECK: ret i32 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
+    assert_no_leaks()
 
-        mod = llvm.ir.Module("m3", ctx)
+
+def test_integer_radd():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32])
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(7 + args[0])
-        assert "add i32 %0, 7" in str(mod)
+        # CHECK: %[[R:.*]] = add i32 %0, 7
+        # CHECK: ret i32 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
+    assert_no_leaks()
 
-        mod = llvm.ir.Module("m4", ctx)
+
+def test_integer_rmul():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32])
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(7 * args[0])
-        assert "mul i32 %0, 7" in str(mod)
+        # CHECK: %[[R:.*]] = mul i32 %0, 7
+        # CHECK: ret i32 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
+    assert_no_leaks()
 
-        mod = llvm.ir.Module("m5", ctx)
+
+def test_integer_rsub():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32])
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(7 - args[0])
-        assert "sub i32 7, %0" in str(mod)
+        # CHECK: %[[R:.*]] = sub i32 7, %0
+        # CHECK: ret i32 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
+    assert_no_leaks()
 
-        mod = llvm.ir.Module("m6", ctx)
+
+def test_integer_rdiv():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, i32, [i32])
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(7 / args[0])
-        assert "sdiv i32 7, %0" in str(mod)
+        # CHECK: %[[R:.*]] = sdiv i32 7, %0
+        # CHECK: ret i32 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -183,7 +242,7 @@ def test_mismatched_types_raises_typeerror():
     assert_no_leaks()
 
 
-def test_le_ge_ne_comparisons():
+def test_le_uses_sle():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32()
@@ -191,23 +250,39 @@ def test_le_ge_ne_comparisons():
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] <= args[1])
-        assert "icmp sle i32" in str(mod)
+        # CHECK: %[[R:.*]] = icmp sle i32 %0, %1
+        # CHECK: ret i1 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
+    assert_no_leaks()
 
-        mod = llvm.ir.Module("m2", ctx)
+
+def test_ge_uses_sge():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] >= args[1])
-        assert "icmp sge i32" in str(mod)
+        # CHECK: %[[R:.*]] = icmp sge i32 %0, %1
+        # CHECK: ret i1 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
+    assert_no_leaks()
 
-        mod = llvm.ir.Module("m3", ctx)
+
+def test_ne_named_method():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.Module("m", ctx)
+        i32 = llvm.types.i32()
         fn, bb, args = _entry(ctx, mod, llvm.types.i1(), [i32, i32])
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0].ne(args[1]))
-        assert "icmp ne i32" in str(mod)
+        # CHECK: %[[R:.*]] = icmp ne i32 %0, %1
+        # CHECK: ret i1 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -220,7 +295,9 @@ def test_integer_comparison_signed():
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] < args[1])
-        assert "icmp slt i32" in str(mod)
+        # CHECK: %[[R:.*]] = icmp slt i32 %0, %1
+        # CHECK: ret i1 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -233,7 +310,9 @@ def test_float_comparison_ordered():
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] > args[1])
-        assert "fcmp ogt float" in str(mod)
+        # CHECK: %[[R:.*]] = fcmp ogt float %0, %1
+        # CHECK: ret i1 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -247,7 +326,9 @@ def test_integer_gt_uses_sgt():
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] > args[1])
-        assert "icmp sgt i32" in str(mod)
+        # CHECK: %[[R:.*]] = icmp sgt i32 %0, %1
+        # CHECK: ret i1 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, bb, args, mod
     assert_no_leaks()
 
@@ -261,23 +342,44 @@ def test_float_lt_uses_olt():
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0] < args[1])
-        assert "fcmp olt float" in str(mod)
+        # CHECK: %[[R:.*]] = fcmp olt float %0, %1
+        # CHECK: ret i1 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, bb, args, mod
     assert_no_leaks()
 
 
-def test_double_and_half_are_arithvalue():
-    # The float caster is registered for Half/Double too, not just Float.
+def test_double_is_arithvalue():
+    # The float caster is registered for Double too, not just Float.
     with llvm.ir.Context() as ctx:
-        for ty, want in ((llvm.types.f64(), "fadd double"), (llvm.types.f16(), "fadd half")):
-            mod = llvm.ir.Module("m", ctx)
-            fn, bb, args = _entry(ctx, mod, ty, [ty, ty])
-            b = llvm.ir.IRBuilder(ctx)
-            with b.at_end_of(bb), building(b):
-                assert isinstance(args[0], ArithValue)
-                b.ret(args[0] + args[1])
-            assert want in str(mod)
-            del b, fn, bb, args, mod
+        f64 = llvm.types.f64()
+        mod = llvm.ir.Module("m", ctx)
+        fn, bb, args = _entry(ctx, mod, f64, [f64, f64])
+        b = llvm.ir.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            assert isinstance(args[0], ArithValue)
+            b.ret(args[0] + args[1])
+        # CHECK: %[[R:.*]] = fadd double %0, %1
+        # CHECK: ret double %[[R]]
+        filecheck_with_comments(mod)
+        del b, fn, bb, args, mod
+    assert_no_leaks()
+
+
+def test_half_is_arithvalue():
+    # The float caster is registered for Half too, not just Float.
+    with llvm.ir.Context() as ctx:
+        f16 = llvm.types.f16()
+        mod = llvm.ir.Module("m", ctx)
+        fn, bb, args = _entry(ctx, mod, f16, [f16, f16])
+        b = llvm.ir.IRBuilder(ctx)
+        with b.at_end_of(bb), building(b):
+            assert isinstance(args[0], ArithValue)
+            b.ret(args[0] + args[1])
+        # CHECK: %[[R:.*]] = fadd half %0, %1
+        # CHECK: ret half %[[R]]
+        filecheck_with_comments(mod)
+        del b, fn, bb, args, mod
     assert_no_leaks()
 
 
@@ -289,7 +391,9 @@ def test_eq_ne_named_methods():
         b = llvm.ir.IRBuilder(ctx)
         with b.at_end_of(bb), building(b):
             b.ret(args[0].eq(args[1]))
-        assert "icmp eq i32" in str(mod)
+        # CHECK: %[[R:.*]] = icmp eq i32 %0, %1
+        # CHECK: ret i1 %[[R]]
+        filecheck_with_comments(mod)
         # __eq__ stays identity so the value is still hashable.
         assert type(args[0] == args[0]) is bool
         assert args[0] == args[0]
@@ -311,10 +415,12 @@ def test_gep_load_store_via_alloca():
             p[0] = llvm.ir.const_int(i32, 5)
             v = p[0]
             b.ret(v)
-        printed = str(mod)
-        assert "getelementptr i32" in printed
-        assert "store i32 5" in printed
-        assert "load i32" in printed
+        # CHECK: %[[P0:.*]] = getelementptr i32, ptr %slot, i64 0
+        # CHECK: store i32 5, ptr %[[P0]]
+        # CHECK: %[[P1:.*]] = getelementptr i32, ptr %slot, i64 0
+        # CHECK: %[[V:.*]] = load i32, ptr %[[P1]]
+        # CHECK: ret i32 %[[V]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -331,9 +437,11 @@ def test_pointer_subscript_returns_arithvalue():
             v = p[2]
             assert isinstance(v, ArithValue)
             b.ret(v + 1)  # typed chaining works off the loaded value
-        printed = str(mod)
-        assert "getelementptr i32" in printed
-        assert "load i32" in printed
+        # CHECK: %[[P:.*]] = getelementptr i32, ptr %0, i64 2
+        # CHECK: %[[V:.*]] = load i32, ptr %[[P]]
+        # CHECK: %[[R:.*]] = add i32 %[[V]], 1
+        # CHECK: ret i32 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -353,8 +461,10 @@ def test_pointer_subscript_accepts_value_index():
             v = p[idx]
             assert isinstance(v, ArithValue)
             b.ret(v)
-        printed = str(mod)
-        assert "getelementptr i32" in printed
+        # CHECK: %[[P:.*]] = getelementptr i32, ptr %0, i64 2
+        # CHECK: %[[V:.*]] = load i32, ptr %[[P]]
+        # CHECK: ret i32 %[[V]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -371,7 +481,10 @@ def test_extract_value_from_struct_arg():
             first = extract(fn.arg(0), 0)
             assert isinstance(first, ArithValue)
             b.ret(first + 1)
-        assert "extractvalue { i32, i32 }" in str(mod)
+        # CHECK: %[[E:.*]] = extractvalue { i32, i32 } %0, 0
+        # CHECK: %[[R:.*]] = add i32 %[[E]], 1
+        # CHECK: ret i32 %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 
@@ -389,7 +502,9 @@ def test_insert_value_into_struct():
         with b.at_end_of(bb):
             updated = b.insert_value(fn.arg(0), fn.arg(1), 1)
             b.ret(updated)
-        assert "insertvalue { i32, i32 }" in str(mod)
+        # CHECK: %[[R:.*]] = insertvalue { i32, i32 } %0, i32 %1, 1
+        # CHECK: ret { i32, i32 } %[[R]]
+        filecheck_with_comments(mod)
         del b, fn, mod
     assert_no_leaks()
 

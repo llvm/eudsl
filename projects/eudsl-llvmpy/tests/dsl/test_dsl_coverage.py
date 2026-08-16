@@ -11,7 +11,7 @@ from llvm.dsl import casters as _c
 from llvm.dsl.casters import maybe_downcast, register_value_caster
 from llvm.dsl.context import building, current_builder, current_function
 from llvm.dsl.values import ArithValue, with_element_type, extract
-from llvm.testing import assert_no_leaks
+from llvm.testing import assert_no_leaks, filecheck_with_comments
 
 
 def _entry(ctx, mod, ret_ty, arg_tys, name="f"):
@@ -89,7 +89,9 @@ def test_float_scalar_coercion():
         bld = llvm.ir.IRBuilder(ctx)
         with bld.at_end_of(bb), building(bld):
             bld.ret(a + 1.5)  # float ArithValue + Python float -> const_fp
-        assert "fadd float" in str(mod)
+        # CHECK: %[[R:.*]] = fadd float %0, 1.500000e+00
+        # CHECK: ret float %[[R]]
+        filecheck_with_comments(mod)
         del bld, fn, mod
     assert_no_leaks()
 
@@ -158,7 +160,10 @@ def test_typed_pointer_setitem_with_value_index():
             idx = maybe_downcast(fn.arg(1), fn)
             tp[idx] = llvm.ir.const_int(i32, 9)  # Value index (not int)
             bld.ret(None)
-        assert "getelementptr" in str(mod)
+        # A Value (not python-int) index threads straight into the gep operand.
+        # CHECK: %[[P:.*]] = getelementptr i32, ptr %0, i32 %1
+        # CHECK: store i32 9, ptr %[[P]]
+        filecheck_with_comments(mod)
         del bld, fn, mod
     assert_no_leaks()
 
