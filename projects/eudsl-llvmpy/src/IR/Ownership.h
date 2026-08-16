@@ -47,6 +47,9 @@ class Module {
 public:
   Module(const std::string &name, Context &ctx);
   Module(std::unique_ptr<llvm::Module> mod, Context &ctx);
+  ~Module();
+  Module(const Module &) = delete;
+  Module &operator=(const Module &) = delete;
 
   llvm::Module &get() const;
   /// Relinquish ownership. Every later get() throws.
@@ -54,6 +57,12 @@ public:
   bool isConsumed() const { return mod == nullptr; }
 
   Context &context() const { return *owner; }
+
+  /// Number of live Module wrappers. Unlike Context::liveCount (which drops on
+  /// release()/__exit__), this is tied to actual object destruction, so a
+  /// leaked Module — including one keeping its LLVMContext alive past the
+  /// context manager — is observable. Mirrors mlir's _get_live_module_count.
+  static int64_t liveCount();
 
 private:
   std::shared_ptr<llvm::LLVMContext> ctxKeepAlive;

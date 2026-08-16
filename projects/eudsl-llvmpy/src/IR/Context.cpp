@@ -36,7 +36,8 @@ void populate_context(nb::module_ &m) {
           },
           nb::arg("exc_type").none(), nb::arg("exc_value").none(),
           nb::arg("traceback").none())
-      .def_static("_get_live_count", &eudsl::Context::liveCount);
+      .def_static("_get_live_count", &eudsl::Context::liveCount)
+      .def_static("_get_live_module_count", &eudsl::Module::liveCount);
 
   nb::class_<eudsl::Module>(m, "Module")
       .def(nb::init<const std::string &, eudsl::Context &>(), "name"_a,
