@@ -109,6 +109,7 @@ nanobind_add_module(eudslllvm_ext
   src/IR/Errors.cpp
   src/IR/Passes.cpp
   src/IR/Target.cpp
+  src/IR/Linker.cpp
 )
 
 set(eudslllvm_ext_libs
@@ -122,6 +123,7 @@ set(eudslllvm_ext_libs
   LLVMScalarOpts
   LLVMInstCombine
   LLVMAsmPrinter
+  LLVMLinker
   LLVMSupport
   LLVMTarget
   LLVMMC
