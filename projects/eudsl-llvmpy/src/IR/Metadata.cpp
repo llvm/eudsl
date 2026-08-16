@@ -29,17 +29,17 @@ void populate_metadata(nb::module_ &m) {
 
   m.def(
       "md_string",
-      [](const std::string &s, nb::handle context) -> llvm::MDString * {
+      [](const std::string &s, eudsl::Context *context) -> llvm::MDString * {
         return llvm::MDString::get(eudsl::currentOr(context).get(), s);
       },
-      "value"_a, "context"_a = nb::none(), nb::rv_policy::reference,
+      "value"_a, "context"_a.none() = nb::none(), nb::rv_policy::reference,
       nb::keep_alive<0, 2>());
   m.def(
       "md_node",
       [](std::vector<llvm::Metadata *> ops,
-         nb::handle context) -> llvm::MDNode * {
+         eudsl::Context *context) -> llvm::MDNode * {
         return llvm::MDNode::get(eudsl::currentOr(context).get(), ops);
       },
-      "operands"_a, "context"_a = nb::none(), nb::rv_policy::reference,
+      "operands"_a, "context"_a.none() = nb::none(), nb::rv_policy::reference,
       nb::keep_alive<0, 2>());
 }

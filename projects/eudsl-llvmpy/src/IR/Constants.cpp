@@ -138,22 +138,23 @@ void populate_constants(nb::module_ &m) {
         // out-of-range value surfaces as a catchable Python exception.
         bool fits = isSigned ? llvm::isIntN(bitWidth, value)
                               : llvm::isUIntN(bitWidth, uvalue);
-        if (!fits)
+        if (!fits) {
           throw nb::value_error(
               ("value " + std::to_string(value) + " does not fit in a " +
                std::to_string(bitWidth) + "-bit " +
                (isSigned ? "signed" : "unsigned") + " integer")
                   .c_str());
+        }
         return llvm::ConstantInt::get(ity, uvalue, isSigned);
       },
       "type"_a, "value"_a, "signed"_a = false, nb::rv_policy::reference,
       nb::keep_alive<0, 1>());
   m.def(
       "const_bool",
-      [](bool b, nb::handle context) -> llvm::Constant * {
+      [](bool b, eudsl::Context *context) -> llvm::Constant * {
         return llvm::ConstantInt::getBool(eudsl::currentOr(context).get(), b);
       },
-      "value"_a, "context"_a = nb::none(), nb::rv_policy::reference,
+      "value"_a, "context"_a.none() = nb::none(), nb::rv_policy::reference,
       nb::keep_alive<0, 2>());
   m.def(
       "const_fp",
