@@ -27,6 +27,28 @@
 #include <algorithm>
 #include <vector>
 
+/// The Python wrapper of the module that owns `v`'s storage, or none when `v`
+/// has no owning module (a context-owned value such as a constant) or when no
+/// live wrapper for that module can be resolved. A sub-object view stores this
+/// so holding the view -- or an element it yields -- keeps the owning module
+/// alive.
+static nb::object ownerObjectFor(const llvm::Value *v) {
+  const llvm::Module *m = nullptr;
+  if (auto *inst = llvm::dyn_cast<llvm::Instruction>(v))
+    m = inst->getModule();
+  else if (auto *arg = llvm::dyn_cast<llvm::Argument>(v))
+    m = arg->getParent() ? arg->getParent()->getParent() : nullptr;
+  else if (auto *gv = llvm::dyn_cast<llvm::GlobalValue>(v))
+    m = gv->getParent();
+  else if (auto *bb = llvm::dyn_cast<llvm::BasicBlock>(v))
+    m = bb->getModule();
+  // moduleWrapperFor(nullptr) is null, so a value with no module folds to a
+  // none owner without a separate branch.
+  eudsl::Module *wrapper = eudsl::moduleWrapperFor(m);
+  nb::object obj = wrapper ? nb::find(*wrapper) : nb::none();
+  return obj.is_valid() ? obj : nb::none();
+}
+
 void populate_values(nb::module_ &m) {
   // A def-use edge: which User uses a value, and at which operand index.
   nb::class_<llvm::Use>(m, "Use")
@@ -55,6 +77,8 @@ void populate_values(nb::module_ &m) {
               std::advance(it, i);
               return *it;
             };
+            seq.owner = ownerObjectFor(v);
+            seq.ownerOf = [](llvm::User *e) { return ownerObjectFor(e); };
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -70,6 +94,12 @@ void populate_values(nb::module_ &m) {
               auto it = v->use_begin();
               std::advance(it, i);
               return &*it;
+            };
+            seq.owner = ownerObjectFor(v);
+            // A Use lives in its User's operand list, so it is owned by the
+            // User's module.
+            seq.ownerOf = [](llvm::Use *e) {
+              return ownerObjectFor(e->getUser());
             };
             return seq;
           },
@@ -119,6 +149,8 @@ void populate_values(nb::module_ &m) {
             seq.at = [u](std::size_t i) {
               return u->getOperand(static_cast<unsigned>(i));
             };
+            seq.owner = ownerObjectFor(u);
+            seq.ownerOf = [](llvm::Value *e) { return ownerObjectFor(e); };
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -142,7 +174,8 @@ void populate_values(nb::module_ &m) {
           [](llvm::User &self) {
             return nb::make_iterator<nb::rv_policy::reference>(
                 nb::type<llvm::User>(), "OperandIterator",
-                self.value_op_begin(), self.value_op_end());
+                self.value_op_begin(), self.value_op_end(),
+                nb::keep_alive<0, 1>());
           },
           nb::keep_alive<0, 1>());
 
@@ -206,6 +239,8 @@ void populate_values(nb::module_ &m) {
               std::advance(it, i);
               return &*it;
             };
+            seq.owner = ownerObjectFor(b);
+            seq.ownerOf = [](llvm::Instruction *e) { return ownerObjectFor(e); };
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -227,7 +262,7 @@ void populate_values(nb::module_ &m) {
           [](llvm::BasicBlock &self) {
             return nb::make_iterator<nb::rv_policy::reference>(
                 nb::type<llvm::BasicBlock>(), "InstructionIterator",
-                self.begin(), self.end());
+                self.begin(), self.end(), nb::keep_alive<0, 1>());
           },
           nb::keep_alive<0, 1>());
 
@@ -261,6 +296,8 @@ void populate_values(nb::module_ &m) {
             seq.at = [f](std::size_t i) {
               return f->getArg(static_cast<unsigned>(i));
             };
+            seq.owner = ownerObjectFor(f);
+            seq.ownerOf = [](llvm::Argument *e) { return ownerObjectFor(e); };
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -275,6 +312,8 @@ void populate_values(nb::module_ &m) {
               std::advance(it, i);
               return &*it;
             };
+            seq.owner = ownerObjectFor(f);
+            seq.ownerOf = [](llvm::BasicBlock *e) { return ownerObjectFor(e); };
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -296,7 +335,7 @@ void populate_values(nb::module_ &m) {
           [](llvm::Function &self) {
             return nb::make_iterator<nb::rv_policy::reference>(
                 nb::type<llvm::Function>(), "BasicBlockIterator", self.begin(),
-                self.end());
+                self.end(), nb::keep_alive<0, 1>());
           },
           nb::keep_alive<0, 1>())
       .def_prop_ro(
@@ -320,7 +359,8 @@ void populate_values(nb::module_ &m) {
             // the LLVM analogue of MLIR's op.walk() over a single region.
             return nb::make_iterator<nb::rv_policy::reference>(
                 nb::type<llvm::Function>(), "WalkIterator",
-                llvm::inst_begin(self), llvm::inst_end(self));
+                llvm::inst_begin(self), llvm::inst_end(self),
+                nb::keep_alive<0, 1>());
           },
           nb::keep_alive<0, 1>())
       .def_prop_rw("linkage", &llvm::Function::getLinkage,

@@ -75,6 +75,16 @@ private:
   std::shared_ptr<llvm::LLVMContext> ctxKeepAlive;
   std::unique_ptr<llvm::Module> mod;
   Context *owner;
+  const llvm::Module *keyMod = nullptr; // registry key; see moduleWrapperFor
 };
+
+/// The eudsl::Module wrapper registered for `m`, or null. Keyed by the
+/// llvm::Module pointer captured when the wrapper was constructed and tracks the
+/// wrapper's lifetime (not the llvm::Module's): after take() consumes the module
+/// the wrapper stays registered under its former key until destroyed. Lets a
+/// sub-object view resolve the owning module from a bare llvm::Value and pin its
+/// Python wrapper alive, so a held view never outlives the module that owns its
+/// storage.
+Module *moduleWrapperFor(const llvm::Module *m);
 
 } // namespace eudsl

@@ -127,3 +127,26 @@ def test_container_view_keeps_module_alive():
         gc.collect()
         assert llvm.ir.Context._get_live_module_count() == 0
     assert_no_leaks()
+
+
+def test_nested_view_outlives_module():
+    # A sub-object view (operands) and an element taken from it each pin the
+    # owning module alive, so touching them after every other handle is dropped
+    # is safe -- previously a use-after-free / segfault.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        add = mod.get_function("f").entry_block.instructions[0]
+        ops = add.operands
+        op0 = ops[0]  # element extracted from the view
+        del add, mod  # only the view and its element still reference the module
+        gc.collect()
+        assert llvm.ir.Context._get_live_module_count() == 1
+        assert len(ops) == 2  # view still valid
+        assert type(op0).__name__ == "Argument"  # element still valid, not freed
+        del ops
+        gc.collect()
+        assert llvm.ir.Context._get_live_module_count() == 1  # element still pins it
+        del op0
+        gc.collect()
+        assert llvm.ir.Context._get_live_module_count() == 0
+    assert_no_leaks()
