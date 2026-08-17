@@ -19,31 +19,83 @@ the callee's parameter type for ``call``. Integer indices to ``gep``,
 type can be inferred (e.g. both operands are numbers), a ``TypeError`` is
 raised; pass an explicit constant in that case.
 """
+
 from .ir import const_fp, const_int, current_builder
 
 __all__ = [
     # terminators
-    "ret", "br", "cond_br", "unreachable", "switch_", "indirect_br", "resume",
+    "ret",
+    "br",
+    "cond_br",
+    "unreachable",
+    "switch_",
+    "indirect_br",
+    "resume",
     # integer / float binary
-    "add", "fadd", "sub", "fsub", "mul", "fmul", "sdiv", "udiv", "fdiv",
-    "srem", "urem", "frem", "shl", "lshr", "ashr", "and_", "or_", "xor",
+    "add",
+    "fadd",
+    "sub",
+    "fsub",
+    "mul",
+    "fmul",
+    "sdiv",
+    "udiv",
+    "fdiv",
+    "srem",
+    "urem",
+    "frem",
+    "shl",
+    "lshr",
+    "ashr",
+    "and_",
+    "or_",
+    "xor",
     # unary
-    "neg", "fneg", "not_",
+    "neg",
+    "fneg",
+    "not_",
     # comparisons
-    "icmp", "fcmp",
+    "icmp",
+    "fcmp",
     # casts
-    "trunc", "zext", "sext", "fptoui", "fptosi", "uitofp", "sitofp",
-    "fptrunc", "fpext", "ptrtoint", "inttoptr", "bitcast", "addrspacecast",
+    "trunc",
+    "zext",
+    "sext",
+    "fptoui",
+    "fptosi",
+    "uitofp",
+    "sitofp",
+    "fptrunc",
+    "fpext",
+    "ptrtoint",
+    "inttoptr",
+    "bitcast",
+    "addrspacecast",
     "ptrtoaddr",
     # memory / atomics
-    "alloca", "load", "store", "gep", "fence", "atomic_rmw", "atomic_cmpxchg",
+    "alloca",
+    "load",
+    "store",
+    "gep",
+    "fence",
+    "atomic_rmw",
+    "atomic_cmpxchg",
     # calls, phis, constants
-    "call", "call_intrinsic", "phi", "i64_const", "i32_const",
+    "call",
+    "call_intrinsic",
+    "phi",
+    "i64_const",
+    "i32_const",
     # aggregates / vectors
-    "extract_value", "insert_value", "extract_element", "insert_element",
+    "extract_value",
+    "insert_value",
+    "extract_element",
+    "insert_element",
     "shuffle_vector",
     # misc
-    "select", "freeze", "va_arg",
+    "select",
+    "freeze",
+    "va_arg",
 ]
 
 
@@ -66,8 +118,7 @@ def _const_of(value, ref_type):
     if ref_type.is_integer:
         if isinstance(value, float):
             raise TypeError(
-                f"cannot use float {value!r} as an integer constant of "
-                f"{ref_type}"
+                f"cannot use float {value!r} as an integer constant of " f"{ref_type}"
             )
         # Interpret negatives as signed and non-negatives as unsigned so the
         # full [-2**(w-1), 2**w) range is accepted (e.g. the mask 0xFF into i8).

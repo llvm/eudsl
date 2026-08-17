@@ -3,6 +3,7 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """The filecheck_with_comments harness itself: it matches ordered # CHECK
 directives against printed IR and fails on a mismatch (unlike substring `in`)."""
+
 import pytest
 
 import llvm

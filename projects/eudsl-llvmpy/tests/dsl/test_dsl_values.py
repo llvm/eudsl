@@ -429,7 +429,9 @@ def test_pointer_subscript_returns_arithvalue():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32()
-        fn = llvm.ir.Function.create(llvm.types.function(i32, [llvm.types.ptr()]), "g", mod)
+        fn = llvm.ir.Function.create(
+            llvm.types.function(i32, [llvm.types.ptr()]), "g", mod
+        )
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
         with InsertPoint(bb, builder=b):
@@ -450,7 +452,9 @@ def test_pointer_subscript_accepts_value_index():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32()
-        fn = llvm.ir.Function.create(llvm.types.function(i32, [llvm.types.ptr()]), "g", mod)
+        fn = llvm.ir.Function.create(
+            llvm.types.function(i32, [llvm.types.ptr()]), "g", mod
+        )
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
         with InsertPoint(bb, builder=b):

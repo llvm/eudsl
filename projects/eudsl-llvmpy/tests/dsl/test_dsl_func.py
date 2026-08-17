@@ -28,7 +28,9 @@ PTR3 = PointerType[3]
 ARR = ArrayType[IntegerType[32], 4]
 VEC = VectorType[IntegerType[32], 4]
 STRUCT = StructType[IntegerType[32], IntegerType[64]]
-NESTED_STRUCT = StructType[StructType[IntegerType[32], IntegerType[64]], IntegerType[32]]
+NESTED_STRUCT = StructType[
+    StructType[IntegerType[32], IntegerType[64]], IntegerType[32]
+]
 
 
 def test_declaration_has_no_body():

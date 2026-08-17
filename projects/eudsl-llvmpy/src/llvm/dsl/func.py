@@ -89,9 +89,7 @@ def _body_is_empty(f) -> bool:
     for stmt in fn_node.body:
         if isinstance(stmt, ast.Pass):
             continue
-        if isinstance(stmt, ast.Expr) and isinstance(
-            stmt.value, ast.Constant
-        ):
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
             # `...` (Ellipsis) or a docstring.
             continue
         return False

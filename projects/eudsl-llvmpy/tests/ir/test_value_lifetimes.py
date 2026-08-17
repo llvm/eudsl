@@ -10,6 +10,7 @@ module (== 0). The count assertion runs before any dereference, so an accessor
 that fails to pin fails cleanly rather than segfaulting. (Consuming the module
 via take()/_take() hands its storage to the JIT and is outside this guarantee;
 see test_take_consumes_module_and_is_outside_pinning_guarantee.)"""
+
 import gc
 
 import pytest
@@ -61,41 +62,115 @@ def _load_ptr(m, name):
 # e.g. name -> ""), which is the `== 1` count assertion that precedes it.
 CASES = [
     ("get_function", lambda m: m.get_function("f"), lambda v: v.name == "f"),
-    ("get_global_variable", lambda m: m.get_global_variable("g"), lambda v: v.name == "g"),
+    (
+        "get_global_variable",
+        lambda m: m.get_global_variable("g"),
+        lambda v: v.name == "g",
+    ),
     ("module_getitem", lambda m: m[0], lambda v: v.name == "f"),
     ("module_functions_view", lambda m: m.functions[0], lambda v: v.name == "f"),
     ("function_arg", lambda m: m.get_function("f").arg(0), lambda v: v.arg_no == 0),
-    ("function_args_view", lambda m: m.get_function("f").args[0], lambda v: v.arg_no == 0),
-    ("function_entry_block", lambda m: m.get_function("f").entry_block, lambda v: v.name == "entry"),
-    ("function_bbs_view", lambda m: m.get_function("f").basic_blocks[0], lambda v: v.name == "entry"),
+    (
+        "function_args_view",
+        lambda m: m.get_function("f").args[0],
+        lambda v: v.arg_no == 0,
+    ),
+    (
+        "function_entry_block",
+        lambda m: m.get_function("f").entry_block,
+        lambda v: v.name == "entry",
+    ),
+    (
+        "function_bbs_view",
+        lambda m: m.get_function("f").basic_blocks[0],
+        lambda v: v.name == "entry",
+    ),
     ("function_getitem", lambda m: m.get_function("f")[0], lambda v: v.name == "entry"),
-    ("bb_parent", lambda m: m.get_function("f").entry_block.parent, lambda v: v.name == "f"),
-    ("bb_terminator", lambda m: m.get_function("f").entry_block.terminator, lambda v: v.is_terminator),
-    ("bb_instructions_view", lambda m: m.get_function("f").entry_block.instructions[0], lambda v: v.name == "gv"),
-    ("bb_getitem", lambda m: m.get_function("f").entry_block[0], lambda v: v.name == "gv"),
+    (
+        "bb_parent",
+        lambda m: m.get_function("f").entry_block.parent,
+        lambda v: v.name == "f",
+    ),
+    (
+        "bb_terminator",
+        lambda m: m.get_function("f").entry_block.terminator,
+        lambda v: v.is_terminator,
+    ),
+    (
+        "bb_instructions_view",
+        lambda m: m.get_function("f").entry_block.instructions[0],
+        lambda v: v.name == "gv",
+    ),
+    (
+        "bb_getitem",
+        lambda m: m.get_function("f").entry_block[0],
+        lambda v: v.name == "gv",
+    ),
     ("inst_parent", lambda m: _add(m).parent, lambda v: v.name == "entry"),
     ("inst_operand", lambda m: _add(m).operand(0), lambda v: v.name == "x"),
     ("inst_operands_view", lambda m: _add(m).operands[0], lambda v: v.name == "x"),
     ("user_getitem", lambda m: _add(m)[0], lambda v: v.name == "x"),
-    ("arg_parent", lambda m: m.get_function("f").arg(0).parent, lambda v: v.name == "f"),
-    ("arg_users_view", lambda m: m.get_function("f").arg(0).users[0], lambda v: v.name == "s"),
-    ("arg_uses_view", lambda m: m.get_function("f").arg(0).uses[0], lambda v: v.operand_number == 0),
-    ("use_user", lambda m: m.get_function("f").arg(0).uses[0].user, lambda v: v.name == "s"),
-    ("gvar_initializer", lambda m: m.get_global_variable("g").initializer, lambda v: str(v) == "i32 7"),
+    (
+        "arg_parent",
+        lambda m: m.get_function("f").arg(0).parent,
+        lambda v: v.name == "f",
+    ),
+    (
+        "arg_users_view",
+        lambda m: m.get_function("f").arg(0).users[0],
+        lambda v: v.name == "s",
+    ),
+    (
+        "arg_uses_view",
+        lambda m: m.get_function("f").arg(0).uses[0],
+        lambda v: v.operand_number == 0,
+    ),
+    (
+        "use_user",
+        lambda m: m.get_function("f").arg(0).uses[0].user,
+        lambda v: v.name == "s",
+    ),
+    (
+        "gvar_initializer",
+        lambda m: m.get_global_variable("g").initializer,
+        lambda v: str(v) == "i32 7",
+    ),
     ("load_pointer_operand", lambda m: _load_ptr(m, "g"), lambda v: v.name == "g"),
-    ("global_alias_aliasee", lambda m: _load_ptr(m, "al").aliasee, lambda v: v.name == "g"),
-    ("global_ifunc_resolver", lambda m: _load_ptr(m, "fp").resolver, lambda v: v.name == "res"),
-    ("block_address_function", lambda m: _load_ptr(m, "ba").initializer.function, lambda v: v.name == "f"),
-    ("block_address_block", lambda m: _load_ptr(m, "ba").initializer.basic_block, lambda v: v.name == "b"),
+    (
+        "global_alias_aliasee",
+        lambda m: _load_ptr(m, "al").aliasee,
+        lambda v: v.name == "g",
+    ),
+    (
+        "global_ifunc_resolver",
+        lambda m: _load_ptr(m, "fp").resolver,
+        lambda v: v.name == "res",
+    ),
+    (
+        "block_address_function",
+        lambda m: _load_ptr(m, "ba").initializer.function,
+        lambda v: v.name == "f",
+    ),
+    (
+        "block_address_block",
+        lambda m: _load_ptr(m, "ba").initializer.basic_block,
+        lambda v: v.name == "b",
+    ),
     # A none-owner container (the ConstantExpr `ptrtoint (ptr @g to i64)`, which
     # has no module) yielding a module-owned element (@g): the element must pin
     # its OWN module, not the container's. Before the per-element owner fix this
     # failed cleanly at count 0.
-    ("const_expr_operand_module_owned", lambda m: m.get_global_variable("ce").initializer.operands[0], lambda v: v.name == "g"),
+    (
+        "const_expr_operand_module_owned",
+        lambda m: m.get_global_variable("ce").initializer.operands[0],
+        lambda v: v.name == "g",
+    ),
 ]
 
 
-@pytest.mark.parametrize("make,touch", [(c[1], c[2]) for c in CASES], ids=[c[0] for c in CASES])
+@pytest.mark.parametrize(
+    "make,touch", [(c[1], c[2]) for c in CASES], ids=[c[0] for c in CASES]
+)
 def test_accessor_result_pins_module(make, touch):
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
@@ -114,9 +189,21 @@ def test_accessor_result_pins_module(make, touch):
 
 _ITER_CASES = [
     ("module_iter", lambda m: next(iter(m)), lambda v: v.name == "f"),  # -> Function
-    ("function_iter", lambda m: next(iter(m.get_function("f"))), lambda v: v.name == "entry"),  # -> BasicBlock
-    ("bb_iter", lambda m: next(iter(m.get_function("f").entry_block)), lambda v: v.name == "gv"),  # -> Instruction
-    ("user_iter", lambda m: next(iter(_add(m))), lambda v: v.name == "x"),  # -> operand Value
+    (
+        "function_iter",
+        lambda m: next(iter(m.get_function("f"))),
+        lambda v: v.name == "entry",
+    ),  # -> BasicBlock
+    (
+        "bb_iter",
+        lambda m: next(iter(m.get_function("f").entry_block)),
+        lambda v: v.name == "gv",
+    ),  # -> Instruction
+    (
+        "user_iter",
+        lambda m: next(iter(_add(m))),
+        lambda v: v.name == "x",
+    ),  # -> operand Value
 ]
 
 

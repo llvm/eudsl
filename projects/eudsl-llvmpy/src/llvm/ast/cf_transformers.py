@@ -248,9 +248,7 @@ class WhileToWhileLoop(StrictTransformer):
                 defaults=[],
             )
 
-        carried_load = ast.Tuple(
-            [ast.Name(n, ast.Load()) for n in carried], ast.Load()
-        )
+        carried_load = ast.Tuple([ast.Name(n, ast.Load()) for n in carried], ast.Load())
         carried_store = ast.Tuple(
             [ast.Name(n, ast.Store()) for n in carried], ast.Store()
         )
@@ -279,9 +277,7 @@ class WhileToWhileLoop(StrictTransformer):
                 args=[
                     ast.Name(cond_name, ast.Load()),
                     ast.Name(body_name, ast.Load()),
-                    ast.Tuple(
-                        [ast.Name(n, ast.Load()) for n in carried], ast.Load()
-                    ),
+                    ast.Tuple([ast.Name(n, ast.Load()) for n in carried], ast.Load()),
                 ],
                 keywords=[],
             ),
@@ -358,9 +354,7 @@ class ForToForLoop(StrictTransformer):
             kwarg=None,
             defaults=[],
         )
-        carried_load = ast.Tuple(
-            [ast.Name(n, ast.Load()) for n in carried], ast.Load()
-        )
+        carried_load = ast.Tuple([ast.Name(n, ast.Load()) for n in carried], ast.Load())
         carried_store = ast.Tuple(
             [ast.Name(n, ast.Store()) for n in carried], ast.Store()
         )
@@ -380,9 +374,7 @@ class ForToForLoop(StrictTransformer):
                     stop,
                     step,
                     ast.Name(body_name, ast.Load()),
-                    ast.Tuple(
-                        [ast.Name(n, ast.Load()) for n in carried], ast.Load()
-                    ),
+                    ast.Tuple([ast.Name(n, ast.Load()) for n in carried], ast.Load()),
                 ],
                 keywords=[],
             ),
@@ -407,14 +399,10 @@ class RejectUnsupportedJumps(StrictTransformer):
     """
 
     def visit_Break(self, node):
-        raise NotImplementedError(
-            "`break` inside DSL control flow is not supported"
-        )
+        raise NotImplementedError("`break` inside DSL control flow is not supported")
 
     def visit_Continue(self, node):
-        raise NotImplementedError(
-            "`continue` inside DSL control flow is not supported"
-        )
+        raise NotImplementedError("`continue` inside DSL control flow is not supported")
 
     def _reject_nested_return(self, node):
         for child in ast.walk(node):

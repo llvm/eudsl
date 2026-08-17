@@ -5,6 +5,7 @@
 ConstantDataArray/Vector element and string access, ConstantExpr.opcode_name,
 BlockAddress.function/basic_block, GlobalAlias.aliasee, GlobalIFunc.resolver.
 """
+
 from textwrap import dedent
 
 import pytest
@@ -12,8 +13,7 @@ import pytest
 import llvm
 from llvm.testing import assert_no_leaks
 
-_SRC = dedent(
-    """\
+_SRC = dedent("""\
     @g = global i32 7
     @darr = global [4 x i8] c"abcd"
     @sbytes = global [2 x i8] c"\\FF\\7F"
@@ -39,8 +39,7 @@ _SRC = dedent(
       %bp = load ptr, ptr @ba
       ret i32 0
     }
-    """
-)
+    """)
 
 
 def _globals(ctx):

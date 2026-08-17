@@ -4,6 +4,7 @@
 """Free-function instruction emitters (llvm.instructions): they delegate to the
 contextual builder (`with builder:` / `with InsertPoint(...):`) when no `builder`
 is passed, or to an explicit `builder=`."""
+
 import pytest
 
 import llvm
@@ -236,7 +237,10 @@ def test_float_rem_and_fneg_free_functions():
 def test_integer_and_pointer_cast_free_functions():
     with llvm.ir.Context() as ctx:
         i64, i32, ptr, f32 = (
-            llvm.types.i64(), llvm.types.i32(), llvm.types.ptr(), llvm.types.f32()
+            llvm.types.i64(),
+            llvm.types.i32(),
+            llvm.types.ptr(),
+            llvm.types.f32(),
         )
         mod, fn = _fn(ctx, i64, [i64, i32, ptr])
         b = IRBuilder(ctx)
@@ -416,9 +420,7 @@ def test_indirect_br_free_function():
         with InsertPoint(t2, builder=b):
             I.ret()
         p = str(mod)
-        assert (
-            "indirectbr ptr blockaddress(@f, %t1), [label %t1, label %t2]" in p
-        )
+        assert "indirectbr ptr blockaddress(@f, %t1), [label %t1, label %t2]" in p
         del b, fn, entry, t1, t2, ibr, mod
     assert_no_leaks()
 
@@ -518,7 +520,11 @@ def test_atomic_cmpxchg_invalid_orderings_raise():
         with InsertPoint(fn.append_basic_block("entry"), builder=b):
             with pytest.raises(ValueError, match="failure ordering"):
                 I.atomic_cmpxchg(
-                    fn.arg(0), fn.arg(1), fn.arg(2), AO.SequentiallyConsistent, AO.Release
+                    fn.arg(0),
+                    fn.arg(1),
+                    fn.arg(2),
+                    AO.SequentiallyConsistent,
+                    AO.Release,
                 )
             with pytest.raises(ValueError, match="success ordering"):
                 I.atomic_cmpxchg(

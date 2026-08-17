@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include <llvm/IR/CallingConv.h>
 #include "IR/Ownership.h"
+#include <llvm/IR/CallingConv.h>
 
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
@@ -26,7 +26,8 @@ using namespace nb::literals;
 namespace eudsl {
 
 /// Render anything with a `print(raw_ostream&)` method to a std::string.
-template <typename T> std::string toString(const T &t) {
+template <typename T>
+std::string toString(const T &t) {
   std::string s;
   llvm::raw_string_ostream os(s);
   t.print(os);
@@ -35,7 +36,8 @@ template <typename T> std::string toString(const T &t) {
 
 /// Unwrap an llvm::Expected, raising RuntimeError on failure. Callers that
 /// need a more specific Python exception catch and re-raise.
-template <typename T> T unwrap(llvm::Expected<T> &&e) {
+template <typename T>
+T unwrap(llvm::Expected<T> &&e) {
   if (!e)
     throw std::runtime_error(llvm::toString(e.takeError()));
   return std::move(*e);

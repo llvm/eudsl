@@ -172,9 +172,11 @@ def test_function_rejects_unresolvable_annotation():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(TypeError, match="cannot resolve type annotation"):
+
             @llvm.dsl.function(module=mod)
             def bad(x: "not a type") -> i32:
                 return x
+
         del mod
     assert_no_leaks()
 
@@ -287,6 +289,7 @@ def test_break_inside_dsl_control_flow_raises():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="`break`"):
+
             @llvm.dsl.function(module=mod)
             @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
@@ -296,6 +299,7 @@ def test_break_inside_dsl_control_flow_raises():
                     i = i + 1
                     yield i
                 return i
+
         del mod
     assert_no_leaks()
 
@@ -305,6 +309,7 @@ def test_continue_inside_dsl_control_flow_raises():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="`continue`"):
+
             @llvm.dsl.function(module=mod)
             @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
@@ -314,6 +319,7 @@ def test_continue_inside_dsl_control_flow_raises():
                     i = i + 1
                     yield i
                 return i
+
         del mod
     assert_no_leaks()
 
@@ -323,6 +329,7 @@ def test_early_return_inside_dsl_control_flow_raises():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="early `return`"):
+
             @llvm.dsl.function(module=mod)
             @canonicalize(using=LLVMCanonicalizer())
             def f(c: llvm.types.i1, a: i32) -> i32:
@@ -330,6 +337,7 @@ def test_early_return_inside_dsl_control_flow_raises():
                     return a
                 r = yield a
                 return r
+
         del mod
     assert_no_leaks()
 
@@ -339,6 +347,7 @@ def test_while_body_without_trailing_yield_raises():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="must end with `yield"):
+
             @llvm.dsl.function(module=mod)
             @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
@@ -346,6 +355,7 @@ def test_while_body_without_trailing_yield_raises():
                 while i.ne(n):
                     i = i + 1
                 return i
+
         del mod
     assert_no_leaks()
 
@@ -355,6 +365,7 @@ def test_for_body_without_trailing_yield_raises():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="must end with `yield"):
+
             @llvm.dsl.function(module=mod)
             @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
@@ -362,6 +373,7 @@ def test_for_body_without_trailing_yield_raises():
                 for i in range_(0, n):
                     acc = acc + i
                 return acc
+
         del mod
     assert_no_leaks()
 
@@ -371,6 +383,7 @@ def test_for_target_must_be_single_name_raises():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="single name"):
+
             @llvm.dsl.function(module=mod)
             @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
@@ -379,6 +392,7 @@ def test_for_target_must_be_single_name_raises():
                     acc = acc + i
                     yield acc
                 return acc
+
         del mod
     assert_no_leaks()
 
@@ -388,6 +402,7 @@ def test_for_range_wrong_arg_count_raises():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="1-3 arguments"):
+
             @llvm.dsl.function(module=mod)
             @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
@@ -396,6 +411,7 @@ def test_for_range_wrong_arg_count_raises():
                     acc = acc + i
                     yield acc
                 return acc
+
         del mod
     assert_no_leaks()
 
@@ -405,6 +421,7 @@ def test_loop_yield_non_name_raises():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="plain loop-carried"):
+
             @llvm.dsl.function(module=mod)
             @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
@@ -412,14 +429,17 @@ def test_loop_yield_non_name_raises():
                 for i in range_(0, n):
                     yield acc + i
                 return acc
+
         del mod
     assert_no_leaks()
+
 
 def test_nested_control_flow_inside_loop_raises():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="not supported"):
+
             @llvm.dsl.function(module=mod)
             @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32, c: llvm.types.i1) -> i32:
@@ -429,6 +449,7 @@ def test_nested_control_flow_inside_loop_raises():
                         i = i + 1
                     yield i
                 return i
+
         del mod
     assert_no_leaks()
 
@@ -642,6 +663,7 @@ def test_early_return_inside_while_raises():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="early `return`"):
+
             @llvm.dsl.function(module=mod)
             @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
@@ -650,6 +672,7 @@ def test_early_return_inside_while_raises():
                     return acc
                     yield acc
                 return acc
+
         del mod
     assert_no_leaks()
 
@@ -659,6 +682,7 @@ def test_early_return_inside_for_raises():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         with pytest.raises(NotImplementedError, match="early `return`"):
+
             @llvm.dsl.function(module=mod)
             @canonicalize(using=LLVMCanonicalizer())
             def f(n: i32) -> i32:
@@ -667,6 +691,7 @@ def test_early_return_inside_for_raises():
                     return acc
                     yield acc
                 return acc
+
         del mod
     assert_no_leaks()
 
@@ -692,6 +717,8 @@ def test_if_else_phi_has_correct_incomings():
         filecheck_with_comments(mod)
         del mod
     assert_no_leaks()
+
+
 def test_while_loop_verifies_cleanly():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)

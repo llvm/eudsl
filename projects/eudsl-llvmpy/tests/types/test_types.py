@@ -62,18 +62,40 @@ def test_derived_types_print():
         assert str(llvm.types.ptr(3, context=ctx)) == "ptr addrspace(3)"
         assert str(llvm.types.array(llvm.types.i32(ctx), 4)) == "[4 x i32]"
         assert str(llvm.types.vector(llvm.types.f32(ctx), 8)) == "<8 x float>"
-        assert str(llvm.types.vector(llvm.types.f32(ctx), 8, scalable=True)) == "<vscale x 8 x float>"
-        assert str(llvm.types.struct([llvm.types.i32(ctx), llvm.types.f64(ctx)], context=ctx)) == "{ i32, double }"
         assert (
-            str(llvm.types.struct([llvm.types.i8(ctx), llvm.types.i32(ctx)], packed=True, context=ctx))
+            str(llvm.types.vector(llvm.types.f32(ctx), 8, scalable=True))
+            == "<vscale x 8 x float>"
+        )
+        assert (
+            str(
+                llvm.types.struct(
+                    [llvm.types.i32(ctx), llvm.types.f64(ctx)], context=ctx
+                )
+            )
+            == "{ i32, double }"
+        )
+        assert (
+            str(
+                llvm.types.struct(
+                    [llvm.types.i8(ctx), llvm.types.i32(ctx)], packed=True, context=ctx
+                )
+            )
             == "<{ i8, i32 }>"
         )
         assert (
-            str(llvm.types.function(llvm.types.i32(ctx), [llvm.types.i32(ctx), llvm.types.f32(ctx)]))
+            str(
+                llvm.types.function(
+                    llvm.types.i32(ctx), [llvm.types.i32(ctx), llvm.types.f32(ctx)]
+                )
+            )
             == "i32 (i32, float)"
         )
         assert (
-            str(llvm.types.function(llvm.types.void(ctx), [llvm.types.ptr(context=ctx)], var_arg=True))
+            str(
+                llvm.types.function(
+                    llvm.types.void(ctx), [llvm.types.ptr(context=ctx)], var_arg=True
+                )
+            )
             == "void (ptr, ...)"
         )
     assert_no_leaks()
@@ -107,9 +129,13 @@ def test_types_downcast_to_concrete_classes():
         assert isinstance(
             llvm.types.vector(llvm.types.i32(ctx), 2), llvm.types.VectorType
         )
-        assert type(llvm.types.struct([llvm.types.i32(ctx)], context=ctx)).__name__ == "StructType"
         assert (
-            type(llvm.types.function(llvm.types.void(ctx), [])).__name__ == "FunctionType"
+            type(llvm.types.struct([llvm.types.i32(ctx)], context=ctx)).__name__
+            == "StructType"
+        )
+        assert (
+            type(llvm.types.function(llvm.types.void(ctx), [])).__name__
+            == "FunctionType"
         )
         # Types with no concrete subclass stay Type.
         assert type(llvm.types.void(ctx)).__name__ == "Type"
@@ -140,8 +166,12 @@ def test_concrete_type_accessors():
         assert s.num_elements == 2
         assert s.element_type(1) == llvm.types.f64(ctx)
         assert not s.is_packed
-        assert llvm.types.struct([llvm.types.i8(ctx)], packed=True, context=ctx).is_packed
-        ft = llvm.types.function(llvm.types.i32(ctx), [llvm.types.i32(ctx), llvm.types.f32(ctx)])
+        assert llvm.types.struct(
+            [llvm.types.i8(ctx)], packed=True, context=ctx
+        ).is_packed
+        ft = llvm.types.function(
+            llvm.types.i32(ctx), [llvm.types.i32(ctx), llvm.types.f32(ctx)]
+        )
         assert ft.return_type == llvm.types.i32(ctx)
         assert ft.num_params == 2
         assert ft.param_type(1) == llvm.types.f32(ctx)

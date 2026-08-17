@@ -8,8 +8,7 @@ from llvm.testing import assert_no_leaks
 
 
 def test_smoke():
-    src = dedent(
-        """\
+    src = dedent("""\
         declare i32 @foo()
         declare i32 @bar()
         define i32 @entry(i32 %argc) {
@@ -27,8 +26,7 @@ def test_smoke():
           %retval.0 = phi i32 [ %call, %if.then ], [ %call1, %if.end ]
           ret i32 %retval.0
         }
-        """
-    )
+        """)
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(src, ctx, "test_smoke")
         assert mod.module_identifier == "test_smoke"

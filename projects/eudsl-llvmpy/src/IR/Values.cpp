@@ -15,8 +15,8 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/GlobalObject.h>
 #include <llvm/IR/GlobalValue.h>
-#include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/InstIterator.h>
+#include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Use.h>
 #include <llvm/IR/User.h>
@@ -130,8 +130,7 @@ void populate_values(nb::module_ &m) {
              return &self == o;
            })
       .def("__hash__", [](llvm::Value &self) {
-        return static_cast<Py_ssize_t>(
-            reinterpret_cast<std::uintptr_t>(&self));
+        return static_cast<Py_ssize_t>(reinterpret_cast<std::uintptr_t>(&self));
       });
 
   nb::class_<llvm::User, llvm::Value>(m, "User")
@@ -190,10 +189,9 @@ void populate_values(nb::module_ &m) {
 
   nb::class_<llvm::Instruction, llvm::User>(m, "Instruction")
       .EUDSL_CAST_CTOR(llvm::Instruction, llvm::Value)
-      .def_prop_ro("num_successors",
-                   [](llvm::Instruction &self) {
-                     return self.getNumSuccessors();
-                   })
+      .def_prop_ro(
+          "num_successors",
+          [](llvm::Instruction &self) { return self.getNumSuccessors(); })
       .def("successor", &llvm::Instruction::getSuccessor, "index"_a,
            nb::rv_policy::reference_internal)
       .def("set_successor", &llvm::Instruction::setSuccessor, "index"_a,
@@ -241,7 +239,9 @@ void populate_values(nb::module_ &m) {
               return &*it;
             };
             seq.owner = ownerObjectFor(b);
-            seq.ownerOf = [](llvm::Instruction *e) { return ownerObjectFor(e); };
+            seq.ownerOf = [](llvm::Instruction *e) {
+              return ownerObjectFor(e);
+            };
             return seq;
           },
           nb::keep_alive<0, 1>())
@@ -375,8 +375,7 @@ void populate_values(nb::module_ &m) {
             return static_cast<CallingConvEnum>(self.getCallingConv());
           },
           [](llvm::Function &self, CallingConvEnum cc) {
-            self.setCallingConv(
-                static_cast<llvm::CallingConv::ID>(cc));
+            self.setCallingConv(static_cast<llvm::CallingConv::ID>(cc));
           })
       .def(
           "add_fn_attr",

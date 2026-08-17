@@ -160,7 +160,8 @@ void populate_instructions(nb::module_ &m) {
           nb::rv_policy::reference_internal);
   nb::class_<llvm::UncondBrInst, llvm::Instruction>(m, "UncondBrInst")
       .EUDSL_CAST_CTOR(llvm::UncondBrInst, llvm::Value)
-      .def_prop_ro("is_conditional", [](llvm::UncondBrInst &) { return false; });
+      .def_prop_ro("is_conditional",
+                   [](llvm::UncondBrInst &) { return false; });
   nb::class_<llvm::CondBrInst, llvm::Instruction>(m, "CondBrInst")
       .EUDSL_CAST_CTOR(llvm::CondBrInst, llvm::Value)
       .def_prop_ro("is_conditional", [](llvm::CondBrInst &) { return true; })
@@ -177,25 +178,25 @@ void populate_instructions(nb::module_ &m) {
   nb::class_<llvm::SelectInst, llvm::Instruction>(m, "SelectInst");
   nb::class_<llvm::VAArgInst, llvm::UnaryInstruction>(m, "VAArgInst");
   nb::class_<llvm::ExtractElementInst, llvm::Instruction>(m,
-                                                         "ExtractElementInst");
+                                                          "ExtractElementInst");
   nb::class_<llvm::InsertElementInst, llvm::Instruction>(m,
-                                                        "InsertElementInst");
+                                                         "InsertElementInst");
   nb::class_<llvm::ShuffleVectorInst, llvm::Instruction>(m,
-                                                        "ShuffleVectorInst");
-  nb::class_<llvm::ExtractValueInst, llvm::UnaryInstruction>(m,
-                                                            "ExtractValueInst");
+                                                         "ShuffleVectorInst");
+  nb::class_<llvm::ExtractValueInst, llvm::UnaryInstruction>(
+      m, "ExtractValueInst");
   nb::class_<llvm::InsertValueInst, llvm::Instruction>(m, "InsertValueInst");
   nb::class_<llvm::LandingPadInst, llvm::Instruction>(m, "LandingPadInst");
   nb::class_<llvm::FreezeInst, llvm::UnaryInstruction>(m, "FreezeInst");
   nb::class_<llvm::FenceInst, llvm::Instruction>(m, "FenceInst");
   nb::class_<llvm::AtomicCmpXchgInst, llvm::Instruction>(m,
-                                                        "AtomicCmpXchgInst");
+                                                         "AtomicCmpXchgInst");
   nb::class_<llvm::AtomicRMWInst, llvm::Instruction>(m, "AtomicRMWInst");
   nb::class_<llvm::CleanupPadInst, llvm::FuncletPadInst>(m, "CleanupPadInst");
   nb::class_<llvm::CatchPadInst, llvm::FuncletPadInst>(m, "CatchPadInst");
   nb::class_<llvm::CatchReturnInst, llvm::Instruction>(m, "CatchReturnInst");
   nb::class_<llvm::CleanupReturnInst, llvm::Instruction>(m,
-                                                        "CleanupReturnInst");
+                                                         "CleanupReturnInst");
   nb::class_<llvm::CatchSwitchInst, llvm::Instruction>(m, "CatchSwitchInst");
   nb::class_<llvm::TruncInst, llvm::CastInst>(m, "TruncInst");
   nb::class_<llvm::ZExtInst, llvm::CastInst>(m, "ZExtInst");
@@ -213,5 +214,5 @@ void populate_instructions(nb::module_ &m) {
   nb::class_<llvm::AddrSpaceCastInst, llvm::CastInst>(m, "AddrSpaceCastInst");
   nb::class_<llvm::FPUnaryOperator, llvm::UnaryOperator>(m, "FPUnaryOperator");
   nb::class_<llvm::FPBinaryOperator, llvm::BinaryOperator>(m,
-                                                          "FPBinaryOperator");
+                                                           "FPBinaryOperator");
 }

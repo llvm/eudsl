@@ -10,6 +10,7 @@ from the other hierarchy entirely (a Value into a Type ctor, or vice versa) is
 rejected by nanobind as a TypeError before the cast body runs. This is the
 parity analogue of MLIR's `IntegerType(t)`.
 """
+
 from textwrap import dedent
 
 import pytest
@@ -17,8 +18,7 @@ import pytest
 import llvm
 from llvm.testing import assert_no_leaks
 
-_SRC = dedent(
-    """\
+_SRC = dedent("""\
     @g = global i32 0
     declare i32 @callee(i32)
     define i32 @f(i1 %c, ptr %p, i32 %x) {
@@ -39,8 +39,7 @@ _SRC = dedent(
       %phi = phi i32 [ %v, %a ], [ %call, %b ]
       ret i32 %phi
     }
-    """
-)
+    """)
 
 
 def test_type_cast_constructors():
@@ -112,12 +111,10 @@ def test_value_cast_constructors():
         gep = by(llvm.ir.GetElementPtrInst)
         cmp = by(llvm.ir.CmpInst)
         call = by(llvm.ir.CallBase)
-        load_v = next(
-            i for i in entry.instructions if isinstance(i, llvm.ir.LoadInst)
-        )
-        gvar = [
-            i for i in entry.instructions if isinstance(i, llvm.ir.LoadInst)
-        ][-1].pointer_operand
+        load_v = next(i for i in entry.instructions if isinstance(i, llvm.ir.LoadInst))
+        gvar = [i for i in entry.instructions if isinstance(i, llvm.ir.LoadInst)][
+            -1
+        ].pointer_operand
         join = next(b for b in f.basic_blocks if b.name == "join")
         phi = next(i for i in join.instructions if isinstance(i, llvm.ir.PHINode))
         ret = join.terminator

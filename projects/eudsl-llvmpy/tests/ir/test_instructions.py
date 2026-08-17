@@ -8,8 +8,7 @@ import pytest
 import llvm
 from llvm.testing import assert_no_leaks
 
-_PHI_SRC = dedent(
-    """\
+_PHI_SRC = dedent("""\
     define i32 @f(i1 %c) {
     entry:
       br i1 %c, label %a, label %b
@@ -22,14 +21,12 @@ _PHI_SRC = dedent(
       %eq = icmp eq i32 %p, 1
       ret i32 %p
     }
-    """
-)
+    """)
 
 # Exercises the memory, call, cast and fcmp accessors that _PHI_SRC does not
 # reach. Several results (%gep, %fc) are intentionally unused; the parser keeps
 # them and that is all these accessor tests need.
-_MEM_SRC = dedent(
-    """\
+_MEM_SRC = dedent("""\
     declare i32 @g(i32, i32)
 
     define i32 @f(i32 %x, ptr %p) {
@@ -42,8 +39,7 @@ _MEM_SRC = dedent(
       %fc = fcmp ogt float 1.0, 2.0
       ret i32 %cl
     }
-    """
-)
+    """)
 
 
 def _insts_by_class(mod, name):

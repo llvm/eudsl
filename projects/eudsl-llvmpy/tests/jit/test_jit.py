@@ -9,15 +9,13 @@ import pytest
 import llvm
 from llvm.testing import assert_no_leaks
 
-_SRC = dedent(
-    """\
+_SRC = dedent("""\
     define i32 @sub(i32 %a, i32 %b) {
     entry:
       %s = sub i32 %a, %b
       ret i32 %s
     }
-    """
-)
+    """)
 
 
 def test_jit_execute():

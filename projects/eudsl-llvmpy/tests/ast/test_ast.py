@@ -3,6 +3,7 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 import ast
 import sys
+from textwrap import dedent
 
 from llvm.ast import canonicalize, util
 from llvm.ast import cf_transformers as T
@@ -22,13 +23,13 @@ def _rewrite(src):
 
 
 def test_if_becomes_with_if_ctx_manager():
-    src = (
-        "def f():\n"
-        "    if c:\n"
-        "        x = a\n"
-        "    else:\n"
-        "        x = b\n"
-    )
+    src = dedent("""\
+        def f():
+            if c:
+                x = a
+            else:
+                x = b
+        """)
     out = _rewrite(src)
     assert "if_ctx_manager" in out
     assert "else_ctx_manager" in out
@@ -98,13 +99,13 @@ def test_canonicalize_module_imports_clean():
 
 
 def test_if_rewrite_preserves_linenos():
-    src = (
-        "def f():\n"
-        "    if c:\n"
-        "        x = a\n"
-        "    else:\n"
-        "        x = b\n"
-    )
+    src = dedent("""\
+        def f():
+            if c:
+                x = a
+            else:
+                x = b
+        """)
     tree = ast.parse(src)
     node = tree.body[0]
     for ctor in (
@@ -128,8 +129,8 @@ def test_if_rewrite_preserves_linenos():
 def test_insert_empty_yield_linenos():
     # InsertEmptyYield appends a synthetic yield at end_lineno of the last stmt.
     src = (
-        "def f():\n"       # line 1
-        "    if c:\n"      # line 2
+        "def f():\n"  # line 1
+        "    if c:\n"  # line 2
         "        x = a\n"  # line 3
     )
     tree = ast.parse(src)
@@ -146,10 +147,10 @@ def test_elif_adjacency_lineno_check():
     # ReplaceIfWithWith detects elif via end_lineno + 1 == orelse[0].lineno.
     # When this adjacency holds, the else-With gets copy_location from the elif.
     src = (
-        "def f():\n"           # line 1
-        "    if c1:\n"         # line 2
+        "def f():\n"  # line 1
+        "    if c1:\n"  # line 2
         "        r = yield 1\n"  # line 3
-        "    elif c2:\n"       # line 4
+        "    elif c2:\n"  # line 4
         "        r = yield 2\n"  # line 5
     )
     tree = ast.parse(src)
@@ -172,11 +173,11 @@ def test_canonicalize_elifs_preserves_forwarded_yield_lineno():
     # last_statement.end_lineno. The forwarded yield should sit at the
     # end_lineno of the last statement in the orelse body.
     src = (
-        "def f():\n"           # line 1
-        "    if outer:\n"      # line 2
+        "def f():\n"  # line 1
+        "    if outer:\n"  # line 2
         "        if inner:\n"  # line 3
         "            r = yield 1\n"  # line 4
-        "        x = 2\n"     # line 5
+        "        x = 2\n"  # line 5
     )
     tree = ast.parse(src)
     node = tree.body[0]
@@ -191,8 +192,8 @@ def test_canonicalize_elifs_preserves_forwarded_yield_lineno():
 def test_replace_yield_with_llvm_yield_preserves_lineno():
     # ReplaceYieldWithLLVMYield uses ast.copy_location from the Yield node.
     src = (
-        "def f():\n"           # line 1
-        "    if c:\n"          # line 2
+        "def f():\n"  # line 1
+        "    if c:\n"  # line 2
         "        r = yield a\n"  # line 3
     )
     tree = ast.parse(src)
@@ -206,13 +207,13 @@ def test_replace_yield_with_llvm_yield_preserves_lineno():
 
 
 def test_rewrite_produces_expected_ast_structure():
-    src = (
-        "def f():\n"
-        "    if c:\n"
-        "        x = a\n"
-        "    else:\n"
-        "        x = b\n"
-    )
+    src = dedent("""\
+        def f():
+            if c:
+                x = a
+            else:
+                x = b
+        """)
     tree = ast.parse(src)
     node = tree.body[0]
     for ctor in (
@@ -239,9 +240,9 @@ def test_while_to_while_loop_preserves_lineno():
     # WhileToWhileLoop replaces the while node with [cond_fn, body_fn, call],
     # each carrying the original while's lineno via ast.copy_location.
     src = (
-        "def f():\n"       # line 1
-        "    x = 0\n"      # line 2
-        "    while x:\n"   # line 3
+        "def f():\n"  # line 1
+        "    x = 0\n"  # line 2
+        "    while x:\n"  # line 3
         "        x = 1\n"  # line 4
         "        yield x\n"  # line 5
     )
@@ -268,8 +269,8 @@ def test_for_to_for_loop_preserves_lineno():
     # ForToForLoop replaces the for node with [body_fn, call], each carrying
     # the original for's lineno via ast.copy_location.
     src = (
-        "def f():\n"         # line 1
-        "    acc = 0\n"      # line 2
+        "def f():\n"  # line 1
+        "    acc = 0\n"  # line 2
         "    for i in range_(0, 10):\n"  # line 3
         "        acc = 1\n"  # line 4
         "        yield acc\n"  # line 5

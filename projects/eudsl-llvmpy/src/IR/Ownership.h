@@ -17,7 +17,8 @@ namespace eudsl {
 /// assert nothing leaked, mirroring mlir/test/python/ir/*.py. The shared_ptr is
 /// so a Module (which holds its own copy) can safely outlive the Python context
 /// manager's __exit__: release() drops this object's reference and the live
-/// count, but the underlying LLVMContext survives until the last Module is gone.
+/// count, but the underlying LLVMContext survives until the last Module is
+/// gone.
 class Context {
 public:
   Context();
@@ -79,12 +80,12 @@ private:
 };
 
 /// The eudsl::Module wrapper registered for `m`, or null. Keyed by the
-/// llvm::Module pointer captured when the wrapper was constructed and tracks the
-/// wrapper's lifetime (not the llvm::Module's): after take() consumes the module
-/// the wrapper stays registered under its former key until destroyed. Lets a
-/// sub-object view resolve the owning module from a bare llvm::Value and pin its
-/// Python wrapper alive, so a held view never outlives the module that owns its
-/// storage.
+/// llvm::Module pointer captured when the wrapper was constructed and tracks
+/// the wrapper's lifetime (not the llvm::Module's): after take() consumes the
+/// module the wrapper stays registered under its former key until destroyed.
+/// Lets a sub-object view resolve the owning module from a bare llvm::Value and
+/// pin its Python wrapper alive, so a held view never outlives the module that
+/// owns its storage.
 Module *moduleWrapperFor(const llvm::Module *m);
 
 } // namespace eudsl

@@ -8,14 +8,12 @@ import pytest
 import llvm
 from llvm.testing import assert_no_leaks
 
-_GOOD = dedent(
-    """\
+_GOOD = dedent("""\
     define i32 @f(i32 %x) {
     entry:
       ret i32 %x
     }
-    """
-)
+    """)
 
 
 def test_verify_accepts_good_module():
@@ -29,8 +27,7 @@ def test_verify_accepts_good_module():
 def test_verify_rejects_bad_module():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(
-            dedent(
-                """\
+            dedent("""\
                 define i32 @f(i32 %x) {
                 entry:
                   br label %body
@@ -40,8 +37,7 @@ def test_verify_rejects_bad_module():
                   %y = add i32 %x, 1
                   br label %body
                 }
-                """
-            ),
+                """),
             ctx,
             "m",
         )

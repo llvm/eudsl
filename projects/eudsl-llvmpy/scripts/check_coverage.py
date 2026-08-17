@@ -177,7 +177,9 @@ def generate_lcov(llvm_cov, profdata, objects):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Check eudsl-llvmpy C++ source coverage")
+    parser = argparse.ArgumentParser(
+        description="Check eudsl-llvmpy C++ source coverage"
+    )
     parser.add_argument("--lcov", default=None, help="Path to LCOV .info file")
     parser.add_argument("--llvm-cov", default=None, help="Path to llvm-cov binary")
     parser.add_argument(
@@ -219,7 +221,9 @@ def main():
     else:
         parser.error("Either --lcov or (--llvm-cov, --profdata, --objects) is required")
 
-    ignore_re = re.compile(args.ignore_filename_regex) if args.ignore_filename_regex else None
+    ignore_re = (
+        re.compile(args.ignore_filename_regex) if args.ignore_filename_regex else None
+    )
 
     file_hits = parse_lcov(lcov_text)
     file_fns = parse_lcov_functions(lcov_text)
@@ -285,8 +289,12 @@ def main():
         else args.threshold
     )
 
-    print(f"eudsl-llvmpy C++ coverage: {covered_lines}/{total_lines} lines ({percent:.2f}%)")
-    print(f"eudsl-llvmpy C++ coverage: {covered_fns}/{total_fns} functions ({fn_percent:.2f}%)")
+    print(
+        f"eudsl-llvmpy C++ coverage: {covered_lines}/{total_lines} lines ({percent:.2f}%)"
+    )
+    print(
+        f"eudsl-llvmpy C++ coverage: {covered_fns}/{total_fns} functions ({fn_percent:.2f}%)"
+    )
 
     # Demangle any missed function names for readable reporting.
     all_missed = [name for s in file_stats.values() for _, name in s["f_missed"]]
@@ -322,7 +330,9 @@ def main():
     fn_ok = fn_percent >= fn_threshold
     if not line_ok or not fn_ok:
         if not line_ok:
-            print(f"\nFAILED: line coverage {percent:.2f}% < threshold {args.threshold:.2f}%")
+            print(
+                f"\nFAILED: line coverage {percent:.2f}% < threshold {args.threshold:.2f}%"
+            )
         if not fn_ok:
             print(
                 f"\nFAILED: function coverage {fn_percent:.2f}% < threshold "

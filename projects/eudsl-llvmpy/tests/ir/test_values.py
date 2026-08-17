@@ -8,15 +8,13 @@ import gc
 import llvm
 from llvm.testing import assert_no_leaks
 
-_SRC = dedent(
-    """\
+_SRC = dedent("""\
     define i32 @f(i32 %x, i32 %y) {
     entry:
       %sum = add i32 %x, %y
       ret i32 %sum
     }
-    """
-)
+    """)
 
 
 def test_value_and_user_registered():

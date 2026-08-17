@@ -12,4 +12,3 @@ from . import ir, types, passmanager, jit, intrinsics, instructions, dsl  # noqa
 from .dsl.values import install_value_casters as _install_value_casters
 
 _install_value_casters()
-

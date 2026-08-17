@@ -3,6 +3,7 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """Exercises C++ binding paths (llvm-cov) not hit by the behavioral tests:
 identity/hash dunders, operand/metadata accessors, and error paths."""
+
 from textwrap import dedent
 
 import pytest
@@ -11,15 +12,13 @@ import llvm
 from llvm.ir import InsertPoint
 from llvm.testing import assert_no_leaks
 
-_SRC = dedent(
-    """\
+_SRC = dedent("""\
     define i32 @f(i32 %x, i32 %y) {
     entry:
       %s = add i32 %x, %y
       ret i32 %s
     }
-    """
-)
+    """)
 
 
 def test_value_eq_hash_and_operands():
@@ -94,10 +93,22 @@ def test_target_machine_bad_triple_raises():
 def test_linker_conflicting_symbols_raises():
     with llvm.ir.Context() as ctx:
         a = llvm.ir.parse_assembly(
-            "define i32 @dup() {\n ret i32 1\n}\n", ctx, "a"
+            dedent("""\
+                define i32 @dup() {
+                 ret i32 1
+                }
+                """),
+            ctx,
+            "a",
         )
         b = llvm.ir.parse_assembly(
-            "define i32 @dup() {\n ret i32 2\n}\n", ctx, "b"
+            dedent("""\
+                define i32 @dup() {
+                 ret i32 2
+                }
+                """),
+            ctx,
+            "b",
         )
         with pytest.raises(RuntimeError, match="linkModules failed"):
             llvm.jit.link_into(a, b)
@@ -112,7 +123,9 @@ def test_builder_fcmp_gep_call():
         i32 = llvm.types.i32(ctx)
         callee = llvm.ir.Function.create(llvm.types.function(i32, [i32]), "callee", mod)
         fn = llvm.ir.Function.create(
-            llvm.types.function(llvm.types.i1(ctx), [f32, f32, llvm.types.ptr(context=ctx), i32]),
+            llvm.types.function(
+                llvm.types.i1(ctx), [f32, f32, llvm.types.ptr(context=ctx), i32]
+            ),
             "f",
             mod,
         )
@@ -134,8 +147,7 @@ def test_builder_fcmp_gep_call():
 
 
 def test_constant_int_zext_and_global_initializer():
-    src = dedent(
-        """\
+    src = dedent("""\
         @g = global i32 5
         @e = external global i32
         define i32 @f() {
@@ -144,8 +156,7 @@ def test_constant_int_zext_and_global_initializer():
           %b = load i32, ptr @e
           ret i32 %a
         }
-        """
-    )
+        """)
     with llvm.ir.Context() as ctx:
         assert llvm.ir.const_int(llvm.types.i32(ctx), 7).zext_value == 7
         mod = llvm.ir.parse_assembly(src, ctx, "m")
@@ -162,7 +173,6 @@ def test_constant_int_zext_and_global_initializer():
         assert e.initializer is None  # @e is external, no initializer
         del loads, g, e, mod
     assert_no_leaks()
-
 
 
 def test_verify_rejects_malformed_module():
@@ -186,8 +196,7 @@ def test_parse_bitcode_garbage_raises():
 
 
 def test_callinst_arg_operand_and_gep_source_type():
-    src = dedent(
-        """\
+    src = dedent("""\
         declare i32 @g(i32)
         define i32 @f(ptr %p) {
         entry:
@@ -195,8 +204,7 @@ def test_callinst_arg_operand_and_gep_source_type():
           %c = call i32 @g(i32 7)
           ret i32 %c
         }
-        """
-    )
+        """)
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(src, ctx, "m")
         f = mod.get_function("f")
@@ -213,7 +221,13 @@ def test_callinst_arg_operand_and_gep_source_type():
 def test_jit_lookup_missing_symbol_raises():
     ctx = llvm.ir.Context()
     mod = llvm.ir.parse_assembly(
-        "define i32 @present() {\n ret i32 0\n}\n", ctx, "m"
+        dedent("""\
+            define i32 @present() {
+             ret i32 0
+            }
+            """),
+        ctx,
+        "m",
     )
     jit = llvm.jit.LLJIT()
     jit.add_module(mod)
@@ -231,8 +245,7 @@ def test_module_context_accessor():
 
 
 def test_valuetypeinfo_downcasts_many_opcodes_and_kinds():
-    src = dedent(
-        """\
+    src = dedent("""\
         @g = global i32 0
         define i32 @f(i32 %x, ptr %p, float %fp) {
         entry:
@@ -262,8 +275,7 @@ def test_valuetypeinfo_downcasts_many_opcodes_and_kinds():
           %ph = phi i32 [ %add, %entry ]
           ret i32 %ph
         }
-        """
-    )
+        """)
     expected_per_name = {
         "add": "BinaryOperator",
         "sub": "BinaryOperator",
@@ -302,16 +314,18 @@ def test_valuetypeinfo_downcasts_many_opcodes_and_kinds():
                 named_insts["__ret__"] = "ReturnInst"
         for name, expected_cls in expected_per_name.items():
             actual = named_insts.get(name)
-            assert actual == expected_cls, (
-                f"%{name}: expected {expected_cls}, got {actual}"
-            )
+            assert (
+                actual == expected_cls
+            ), f"%{name}: expected {expected_cls}, got {actual}"
         assert named_insts.get("__br__") == "UncondBrInst"
         assert named_insts.get("__ret__") == "ReturnInst"
         assert type(f).__name__ == "Function"
         assert type(f.arg(0)).__name__ == "Argument"
         # StoreInst has no name; check it separately.
         store_insts = [
-            inst for bb in f.basic_blocks for inst in bb.instructions
+            inst
+            for bb in f.basic_blocks
+            for inst in bb.instructions
             if type(inst).__name__ == "StoreInst"
         ]
         assert len(store_insts) == 1
@@ -326,6 +340,9 @@ def test_valuetypeinfo_downcasts_constant_kinds():
         assert type(llvm.ir.const_fp(llvm.types.f32(ctx), 1.0)).__name__ == "ConstantFP"
         assert type(llvm.ir.undef(i32)).__name__ == "UndefValue"
         assert type(llvm.ir.poison(i32)).__name__ == "PoisonValue"
-        assert type(llvm.ir.null(llvm.types.ptr(context=ctx))).__name__ == "ConstantPointerNull"
+        assert (
+            type(llvm.ir.null(llvm.types.ptr(context=ctx))).__name__
+            == "ConstantPointerNull"
+        )
         assert type(llvm.ir.null(i32)).__name__ == "ConstantInt"  # zero int
     assert_no_leaks()

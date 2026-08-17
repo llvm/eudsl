@@ -3,6 +3,7 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """Types as nb::is_generic GenericAliases: subscript with no live context, and
 .get(...) factories that evaluate against a context."""
+
 import types
 from typing import get_args
 

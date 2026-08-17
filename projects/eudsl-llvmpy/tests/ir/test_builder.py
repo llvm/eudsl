@@ -146,9 +146,7 @@ def test_icmp():
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
         i1 = llvm.types.i1(ctx)
-        fn = llvm.ir.Function.create(
-            llvm.types.function(i1, [i32, i32]), "cmp", mod
-        )
+        fn = llvm.ir.Function.create(llvm.types.function(i1, [i32, i32]), "cmp", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
         with InsertPoint(bb, builder=b):
@@ -166,9 +164,7 @@ def test_fcmp():
         mod = llvm.ir.Module("m", ctx)
         f64 = llvm.types.f64(ctx)
         i1 = llvm.types.i1(ctx)
-        fn = llvm.ir.Function.create(
-            llvm.types.function(i1, [f64, f64]), "fcmp", mod
-        )
+        fn = llvm.ir.Function.create(llvm.types.function(i1, [f64, f64]), "fcmp", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
         with InsertPoint(bb, builder=b):
@@ -205,12 +201,8 @@ def test_call():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
         i32 = llvm.types.i32(ctx)
-        callee = llvm.ir.Function.create(
-            llvm.types.function(i32, [i32]), "callee", mod
-        )
-        fn = llvm.ir.Function.create(
-            llvm.types.function(i32, [i32]), "caller", mod
-        )
+        callee = llvm.ir.Function.create(llvm.types.function(i32, [i32]), "callee", mod)
+        fn = llvm.ir.Function.create(llvm.types.function(i32, [i32]), "caller", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
         with InsertPoint(bb, builder=b):
@@ -227,9 +219,7 @@ def test_i32_const_and_i64_const():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.Module("m", ctx)
         i64 = llvm.types.i64(ctx)
-        fn = llvm.ir.Function.create(
-            llvm.types.function(i64, []), "consts", mod
-        )
+        fn = llvm.ir.Function.create(llvm.types.function(i64, []), "consts", mod)
         bb = fn.append_basic_block("entry")
         b = llvm.ir.IRBuilder(ctx)
         with InsertPoint(bb, builder=b):
