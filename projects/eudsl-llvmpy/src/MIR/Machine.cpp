@@ -16,6 +16,7 @@
 #include <llvm/CodeGen/MachineOperand.h>
 #include <llvm/CodeGen/MachineRegisterInfo.h>
 #include <llvm/CodeGen/TargetInstrInfo.h>
+#include <llvm/CodeGen/TargetOpcodes.h>
 #include <llvm/CodeGen/TargetPassConfig.h>
 #include <llvm/CodeGen/TargetSubtargetInfo.h>
 #include <llvm/CodeGenTypes/LowLevelType.h>
@@ -25,13 +26,17 @@
 #include <llvm/IR/DiagnosticPrinter.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/GlobalValue.h>
+#include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Target/TargetMachine.h>
 
+#include <nanobind/stl/pair.h>
+
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -493,6 +498,12 @@ void populate_mir(nb::module_ &m) {
             return preds;
           },
           nb::rv_policy::reference_internal)
+      .def(
+          "add_successor",
+          [](llvm::MachineBasicBlock &self, llvm::MachineBasicBlock *succ) {
+            self.addSuccessor(succ);
+          },
+          "successor"_a, "Add a CFG successor edge to another block.")
       .def("__str__",
            [](llvm::MachineBasicBlock &self) { return eudsl::toString(self); });
 
@@ -527,6 +538,15 @@ void populate_mir(nb::module_ &m) {
             return self.getRegInfo().createGenericVirtualRegister(ty);
           },
           "type"_a, "Create a new generic virtual register of the given LLT.")
+      .def(
+          "create_block",
+          [](llvm::MachineFunction &self) -> llvm::MachineBasicBlock * {
+            llvm::MachineBasicBlock *mbb = self.CreateMachineBasicBlock();
+            self.push_back(mbb);
+            return mbb;
+          },
+          nb::rv_policy::reference_internal,
+          "Append a new, empty MachineBasicBlock to the function.")
       .def("__str__",
            [](llvm::MachineFunction &self) { return eudsl::toString(self); });
 
@@ -792,7 +812,58 @@ void populate_mir(nb::module_ &m) {
             requireVRegOfType(self, src, ty, "src");
             return self.buildCopy(ty, src).getReg(0);
           },
-          "type"_a, "src"_a);
+          "type"_a, "src"_a)
+      .def_prop_ro(
+          "insert_block",
+          [](llvm::MachineIRBuilder &self) -> llvm::MachineBasicBlock * {
+            return &self.getMBB();
+          },
+          nb::rv_policy::reference_internal,
+          "The block new instructions are appended to.")
+      .def(
+          "set_block",
+          [](llvm::MachineIRBuilder &self, llvm::MachineBasicBlock *mbb) {
+            self.setMBB(*mbb);
+          },
+          "block"_a, "Insert subsequent instructions at the end of `block`.")
+      .def(
+          "build_icmp",
+          [](llvm::MachineIRBuilder &self, llvm::CmpInst::Predicate pred,
+             llvm::LLT ty, llvm::Register lhs,
+             llvm::Register rhs) -> llvm::Register {
+            return self.buildICmp(pred, ty, lhs, rhs).getReg(0);
+          },
+          "predicate"_a, "type"_a, "lhs"_a, "rhs"_a)
+      .def(
+          "build_br",
+          [](llvm::MachineIRBuilder &self, llvm::MachineBasicBlock *dest) {
+            self.buildBr(*dest);
+          },
+          "dest"_a, "Build an unconditional branch (G_BR) to `dest`.")
+      .def(
+          "build_brcond",
+          [](llvm::MachineIRBuilder &self, llvm::Register cond,
+             llvm::MachineBasicBlock *dest) { self.buildBrCond(cond, *dest); },
+          "cond"_a, "dest"_a,
+          "Build a conditional branch (G_BRCOND) on `cond` to `dest`.")
+      .def(
+          "build_phi",
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty,
+             std::vector<std::pair<llvm::Register, llvm::MachineBasicBlock *>>
+                 incomings) -> llvm::Register {
+            llvm::Register res =
+                self.getMRI()->createGenericVirtualRegister(ty);
+            llvm::MachineInstrBuilder phi =
+                self.buildInstr(llvm::TargetOpcode::G_PHI);
+            phi.addDef(res);
+            for (auto &[reg, mbb] : incomings) {
+              phi.addUse(reg);
+              phi.addMBB(mbb);
+            }
+            return res;
+          },
+          "type"_a, "incomings"_a,
+          "Build a G_PHI from (value, predecessor-block) pairs.");
 
   // The innermost MachineIRBuilder entered as a context manager, mirroring the
   // IR module's current_builder(). Raises when there is none.
