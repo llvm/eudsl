@@ -21,8 +21,9 @@ cond_br.set_successor. The values passed to yield_ become the merge block's
 G_PHIs, built on the else branch (when both incoming edges are known), so
 `r = yield_(...)` binds to the phi that `return r` uses.
 
-Only if/else is lowered here: a for/while in a @machine_function body is
-rejected (MIRCanonicalizer installs no loop transformers).
+Loops (for/while) lower the same way as llvm.dsl.cf._Loop: an inline
+preheader -> header(phis) -> body -> exit shape whose header G_PHIs carry the
+induction variable and loop-carried values.
 """
 
 from contextlib import contextmanager
@@ -152,6 +153,149 @@ def yield_(*values):
     return _if_stack[-1].record_and_maybe_phi(values)
 
 
+def _as_mv(x, witness):
+    """Coerce a Python int to a G_CONSTANT MachineValue of `witness`'s type;
+    pass a MachineValue through."""
+    if isinstance(x, MachineValue):
+        return x
+    reg = current_machine_builder().build_constant(witness.llt, int(x))
+    return MachineValue(reg, witness.llt)
+
+
+_loop_stack = []
+
+
+class _MIRLoop:
+    """A lowered for/while loop: preheader -> header(phis) -> body -> exit.
+
+    Mirrors llvm.dsl.cf._Loop with MIR blocks. The header's induction-variable
+    and loop-carried G_PHIs are built empty at the header top on __enter__ (so
+    they precede the loop condition) and seeded with the preheader incoming;
+    __exit__ adds their back-edge incoming from whatever block the body ended in
+    (nested control flow may have moved the builder) and parks the builder at the
+    exit block. The header phis are the loop-carried live-outs, exposed as
+    `.results`. The body stays inline, so control flow nested in it lowers
+    normally.
+    """
+
+    def __init__(
+        self, kind, *, start=None, stop=None, step=None, cond_fn=None, iter_args=()
+    ):
+        self.kind = kind
+        self.start = start
+        self.stop = stop
+        self.step = step
+        self.cond_fn = cond_fn
+        self.iter_args = list(iter_args)
+        self.next_carried = []
+        self.results = ()
+
+    def __enter__(self):
+        b = current_machine_builder()
+        mf = b.machine_function
+        self.builder = b
+        preheader = b.insert_block
+        self.header = mf.create_block()
+        body = mf.create_block()
+        self.exit_block = mf.create_block()
+        b.build_br(self.header)
+        preheader.add_successor(self.header)
+
+        b.set_block(self.header)
+        # The type witness is the first MachineValue among the bounds/carried
+        # inits; a loop with an int to coerce but no MachineValue has no LLT.
+        witness_candidates = list(self.iter_args)
+        if self.kind == "for":
+            witness_candidates = [self.start, self.stop] + witness_candidates
+        witness = next(
+            (c for c in witness_candidates if isinstance(c, MachineValue)), None
+        )
+
+        def coerce(x):
+            if witness is None and not isinstance(x, MachineValue):
+                raise NotImplementedError(
+                    "a DSL loop needs at least one MachineValue bound or "
+                    "loop-carried value to infer the LLT"
+                )
+            return _as_mv(x, witness)
+
+        self.iter_args = [coerce(a) for a in self.iter_args]
+
+        self.iv_phi = None
+        iv_val = None
+        if self.kind == "for":
+            start = coerce(self.start)
+            self.stop = coerce(self.stop)
+            self.iv_phi = b.build_empty_phi(start.llt)
+            self.iv_phi.add_phi_incoming(start.reg, preheader)
+            iv_val = MachineValue(self.iv_phi.operand(0).reg, start.llt)
+        self.carried_phis = []
+        carried_typed = []
+        for a in self.iter_args:
+            phi = b.build_empty_phi(a.llt)
+            phi.add_phi_incoming(a.reg, preheader)
+            self.carried_phis.append(phi)
+            carried_typed.append(MachineValue(phi.operand(0).reg, a.llt))
+        carried_typed = tuple(carried_typed)
+        self._iv_val = iv_val
+
+        if self.kind == "for":
+            descending = isinstance(self.step, int) and self.step < 0
+            cond = iv_val > self.stop if descending else iv_val < self.stop
+        else:
+            cond = self.cond_fn(*carried_typed)
+        b.build_brcond(cond.reg, body)
+        b.build_br(self.exit_block)
+        self.header.add_successor(body)
+        self.header.add_successor(self.exit_block)
+
+        b.set_block(body)
+        _loop_stack.append(self)
+        if self.kind == "for":
+            return (iv_val, carried_typed) if carried_typed else iv_val
+        return carried_typed
+
+    def __exit__(self, exc_type, exc, tb):
+        _loop_stack.pop()
+        if exc_type is not None:
+            return False
+        b = self.builder
+        body_end = b.insert_block  # nested control flow may have moved us
+        next_iv = self._iv_val + self.step if self.kind == "for" else None
+        b.build_br(self.header)
+        body_end.add_successor(self.header)
+        if self.kind == "for":
+            self.iv_phi.add_phi_incoming(next_iv.reg, body_end)
+        for phi, nxt in zip(self.carried_phis, self.next_carried):
+            phi.add_phi_incoming(nxt.reg, body_end)
+        b.set_block(self.exit_block)
+        self.results = tuple(
+            MachineValue(phi.operand(0).reg, arg.llt)
+            for phi, arg in zip(self.carried_phis, self.iter_args)
+        )
+        return False
+
+
+def loop_yield(*values):
+    """Record this iteration's updated carried values (the loop analogue of
+    yield_), read by _MIRLoop.__exit__ to wire the back-edge phi incomings."""
+    _loop_stack[-1].next_carried = list(values)
+
+
+def range_(start, stop=None, step=1, *, iter_args=()):
+    """`for i in range_(...)` loop builder; the AST transform supplies iter_args
+    and drives this via `with`."""
+    if stop is None:
+        start, stop = 0, start
+    return _MIRLoop("for", start=start, stop=stop, step=step, iter_args=iter_args)
+
+
+def while_(cond_fn, *, iter_args=()):
+    """`while COND` loop builder; the AST transform lifts COND into cond_fn
+    (evaluated in the header against the carried phis)."""
+    return _MIRLoop("while", cond_fn=cond_fn, iter_args=iter_args)
+
+
 class _InjectMIRCFGlobals(FunctionPatcher):
     def patch_function(self, f):
         g = f.__globals__
@@ -159,32 +303,20 @@ class _InjectMIRCFGlobals(FunctionPatcher):
         g["if_ctx_manager"] = if_ctx_manager
         g["else_ctx_manager"] = else_ctx_manager
         g["placeholder_opaque_t"] = placeholder_opaque_t
+        g["loop_yield"] = loop_yield
+        g["range_"] = range_
+        g["while_"] = while_
         return f
 
 
-class _RejectLoops(_T.StrictTransformer):
-    """This runtime lowers only if/else; a for/while would otherwise fall
-    through the canonicalizer untouched and silently unroll (a Python `range`)
-    or hang the trace (a truthy MachineValue condition). Reject it loudly."""
-
-    def visit_For(self, node):
-        raise NotImplementedError(
-            "`for` loops in a @machine_function body are not supported"
-        )
-
-    def visit_While(self, node):
-        raise NotImplementedError(
-            "`while` loops in a @machine_function body are not supported"
-        )
-
-
 class MIRCanonicalizer(Canonicalizer):
-    # if/else lowering; mirrors LLVMCanonicalizer's if/else passes so the
-    # rewritten AST shape is identical. _RejectLoops turns an unsupported
-    # for/while into a clear error instead of silently wrong MIR.
+    # Mirrors LLVMCanonicalizer's pass order: loops first (a loop's trailing
+    # yield becomes its carried values before the if/else passes turn remaining
+    # yields into yield_()), then the if/else lowering.
     cst_transformers = [
         _T.RejectUnsupportedJumps,
-        _RejectLoops,
+        _T.ForToInline,
+        _T.WhileToInline,
         _T.CanonicalizeElIfs,
         _T.InsertEmptyYield,
         _T.ReplaceYieldWithLLVMYield,
