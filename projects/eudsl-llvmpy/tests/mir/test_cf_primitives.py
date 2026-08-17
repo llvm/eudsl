@@ -186,3 +186,14 @@ def test_cross_function_register_rejected():
         with pytest.raises(ValueError):
             bf.build_brcond(foreign, mf.blocks[0])
     assert_no_leaks()
+
+
+def test_set_branch_target_on_non_branch_raises():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        b = mir.MachineIRBuilder(mf)
+        b.build_constant(mir.LLT.scalar(32), 7)
+        const_mi = mf.blocks[0].instructions[0]
+        with pytest.raises(ValueError):
+            const_mi.set_branch_target(mf.create_block())
+    assert_no_leaks()
