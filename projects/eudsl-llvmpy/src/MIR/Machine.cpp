@@ -5,18 +5,23 @@
 #include "IR/Common.h"
 #include "IR/Ownership.h"
 
+#include <llvm/CodeGen/GlobalISel/MachineIRBuilder.h>
 #include <llvm/CodeGen/MIRParser/MIRParser.h>
 #include <llvm/CodeGen/MIRPrinter.h>
 #include <llvm/CodeGen/MachineBasicBlock.h>
 #include <llvm/CodeGen/MachineFunction.h>
 #include <llvm/CodeGen/MachineInstr.h>
+#include <llvm/CodeGen/MachineInstrBuilder.h>
 #include <llvm/CodeGen/MachineModuleInfo.h>
 #include <llvm/CodeGen/MachineOperand.h>
+#include <llvm/CodeGen/MachineRegisterInfo.h>
 #include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetPassConfig.h>
 #include <llvm/CodeGen/TargetSubtargetInfo.h>
 #include <llvm/CodeGenTypes/LowLevelType.h>
+#include <llvm/CodeGenTypes/LowLevelType.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/DiagnosticInfo.h>
 #include <llvm/IR/DiagnosticPrinter.h>
 #include <llvm/IR/Function.h>
@@ -486,6 +491,12 @@ void populate_mir(nb::module_ &m) {
             return &self.getFunction();
           },
           nb::rv_policy::reference_internal)
+      .def(
+          "create_generic_vreg",
+          [](llvm::MachineFunction &self, llvm::LLT ty) -> llvm::Register {
+            return self.getRegInfo().createGenericVirtualRegister(ty);
+          },
+          "type"_a, "Create a new generic virtual register of the given LLT.")
       .def("__str__",
            [](llvm::MachineFunction &self) { return eudsl::toString(self); });
 
@@ -617,4 +628,81 @@ void populate_mir(nb::module_ &m) {
                                      /*pm=*/nullptr, std::move(ownedMmi), mmi};
       },
       "text"_a, "context"_a, "target_machine"_a, nb::keep_alive<0, 3>());
+
+  // Create a fresh, empty MachineFunction to build into: make a void() IR
+  // Function stub named `name` (a MachineFunction must attach to one), get its
+  // MachineFunction from a freshly owned MachineModuleInfo, and give it a
+  // single empty entry block. Consumes the module into the returned wrapper
+  // (like run_codegen_to_mir), which owns everything the MachineFunction
+  // depends on.
+  m.def(
+      "create_machine_function",
+      [](eudsl::Module &mod, llvm::TargetMachine &tm, const std::string &name) {
+        std::shared_ptr<llvm::LLVMContext> ctxKeepAlive =
+            mod.context().shared();
+        std::unique_ptr<llvm::Module> module = mod.take();
+        module->setDataLayout(tm.createDataLayout());
+
+        llvm::FunctionType *fnTy =
+            llvm::FunctionType::get(llvm::Type::getVoidTy(module->getContext()),
+                                    /*isVarArg=*/false);
+        llvm::Function *f = llvm::Function::Create(
+            fnTy, llvm::GlobalValue::ExternalLinkage, name, *module);
+
+        auto ownedMmi = std::make_unique<llvm::MachineModuleInfo>(&tm);
+        llvm::MachineFunction &mf = ownedMmi->getOrCreateMachineFunction(*f);
+        mf.push_back(mf.CreateMachineBasicBlock());
+
+        llvm::MachineModuleInfo *mmi = ownedMmi.get();
+        return new MachineModuleInfo{std::move(ctxKeepAlive), std::move(module),
+                                     /*pm=*/nullptr, std::move(ownedMmi), mmi};
+      },
+      "module"_a, "target_machine"_a, "name"_a, nb::keep_alive<0, 2>());
+
+  // llvm::MachineIRBuilder -- the GlobalISel builder for generic (G_*) MIR. The
+  // typed helpers take the result type as an LLT (a fresh generic vreg is
+  // created for it) and the operands as Registers, returning the def Register
+  // so builds chain. Construction positions the builder at the end of the
+  // function's entry block.
+  nb::class_<llvm::MachineIRBuilder>(m, "MachineIRBuilder")
+      .def(
+          "__init__",
+          [](llvm::MachineIRBuilder *self, llvm::MachineFunction &mf) {
+            new (self) llvm::MachineIRBuilder(mf);
+            self->setMBB(mf.front());
+          },
+          "machine_function"_a, nb::keep_alive<1, 2>())
+      .def(
+          "build_constant",
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty,
+             int64_t value) -> llvm::Register {
+            return self.buildConstant(ty, value).getReg(0);
+          },
+          "type"_a, "value"_a)
+      .def(
+          "build_add",
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
+             llvm::Register rhs) -> llvm::Register {
+            return self.buildAdd(ty, lhs, rhs).getReg(0);
+          },
+          "type"_a, "lhs"_a, "rhs"_a)
+      .def(
+          "build_sub",
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
+             llvm::Register rhs) -> llvm::Register {
+            return self.buildSub(ty, lhs, rhs).getReg(0);
+          },
+          "type"_a, "lhs"_a, "rhs"_a)
+      .def(
+          "build_mul",
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
+             llvm::Register rhs) -> llvm::Register {
+            return self.buildMul(ty, lhs, rhs).getReg(0);
+          },
+          "type"_a, "lhs"_a, "rhs"_a)
+      .def(
+          "build_copy",
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register src)
+              -> llvm::Register { return self.buildCopy(ty, src).getReg(0); },
+          "type"_a, "src"_a);
 }
