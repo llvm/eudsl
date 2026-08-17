@@ -17,6 +17,11 @@ whose control flow is lowered to basic blocks and phi nodes.
 
 The DSL sits on top of the bindings. You can use the bindings alone.
 
+A third surface, `llvm.mir`, reaches one level lower — LLVM's post-instruction-
+selection **Machine IR** — with the same split: hand-written bindings over the
+`MachineFunction`/`MachineInstr` object model plus a `@machine_function` DSL. See
+[Machine IR (MIR)](#machine-ir-mir).
+
 ## Package layout
 
 The API is organized into submodules, MLIR-style; nothing is re-exported at the
@@ -35,6 +40,9 @@ package top level:
 - `llvm.intrinsics` — intrinsic declarations by name.
 - `llvm.dsl` — the `@function` decorator, `range_`, and the control-flow
   machinery.
+- `llvm.mir` — LLVM **Machine IR**: the `MachineFunction`/`MachineBasicBlock`/
+  `MachineInstr` object model, `LLT`, `MachineIRBuilder`, and the
+  `@machine_function` build DSL. See [Machine IR (MIR)](#machine-ir-mir).
 
 ## Object layer
 
@@ -203,6 +211,122 @@ from llvm.dsl.casters import register_value_caster
 @register_value_caster(TypeID.Integer)
 class MyInt(ir.Value):
     ...
+```
+
+## Machine IR (MIR)
+
+`llvm.mir` binds LLVM's **Machine IR** — the target-level representation the
+backend uses after instruction selection — and adds a build DSL on top, mirroring
+the IR layering above. It covers three uses: **inspect** MIR the compiler
+produces, **build** MIR from Python (generic GlobalISel `G_*` or target-specific),
+and **lower** built MIR to native code.
+
+The object model is bound as its own hierarchy (MIR is not part of the `Value`
+hierarchy): `MachineFunction`, `MachineBasicBlock`, `MachineInstr`,
+`MachineOperand`, `Register`, plus `LLT` (the generic low-level type) and
+`MachineFunctionProperty`. `MachineModuleInfo` owns the `MachineFunction`s and
+keeps everything they reference alive.
+
+### Inspecting MIR from the compiler
+
+`run_codegen_to_mir` runs instruction selection on an IR module and hands back the
+`MachineModuleInfo` owning the resulting `MachineFunction`s. Pass
+`global_isel=True` for the GlobalISel pipeline instead of SelectionDAG.
+`to_mir()` prints the `.mir` textual form and `parse_mir` reads it back;
+`MachineFunction.verify()` runs the machine verifier.
+
+```python
+from llvm import ir, jit, mir
+
+with ir.Context() as ctx:
+    mod = ir.parse_assembly(
+        "define i32 @add(i32 %a, i32 %b) {\n"
+        "  %s = add i32 %a, %b\n"
+        "  ret i32 %s\n"
+        "}\n",
+        ctx, "m",
+    )
+    mmi = mir.run_codegen_to_mir(mod, jit.TargetMachine(triple="aarch64-unknown-linux-gnu"))
+    mf = mmi.machine_function("add")
+    print([i.opcode_name for i in mf.blocks[0].instructions])  # COPY, COPY, ADDWrr, COPY, RET_ReallyLR
+    print(mf.verify())                                          # True
+```
+
+### Building generic MIR: `@machine_function`
+
+`@machine_function` mirrors the IR `@function` DSL, one level lower. Parameters
+are annotated with an `LLT`; each arrives as a `MachineValue` over a fresh generic
+virtual register, and `+ - *` and comparisons emit `G_ADD`/`G_SUB`/`G_MUL`/
+`G_ICMP` through a contextual `MachineIRBuilder`. Python ints coerce to
+`G_CONSTANT`s. `if`/`else` and `for`/`while` lower to `MachineBasicBlock`s and
+`G_PHI` nodes, reusing the same `@canonicalize` yield-protocol as the IR DSL — only
+the runtime differs (`MIRCanonicalizer`).
+
+```python
+from llvm import ir, jit, mir
+from llvm.dsl import machine_function
+from llvm.dsl.machine_cf import MIRCanonicalizer
+from llvm.ast.canonicalize import canonicalize
+
+with ir.Context() as ctx:
+    mod = ir.Module("m", ctx)
+    tm = jit.TargetMachine(triple="aarch64-unknown-linux-gnu")
+    s32 = mir.LLT.scalar(32)
+
+    @machine_function(module=mod, target=tm)
+    @canonicalize(using=MIRCanonicalizer())
+    def total(n: s32, acc: s32):
+        for i in range_(n):
+            acc = acc + i
+            yield acc          # loop-carried value -> G_PHI at the header
+        return acc
+
+    print("G_PHI" in total.to_mir())   # True
+```
+
+For lower-level construction, `MachineIRBuilder` exposes the typed `build_*`
+helpers (`build_constant`, `build_add`, `build_br`, `build_brcond`, `build_phi`,
+…) and a generic `build_instr(opcode)` for any opcode; `MachineFunction.opcode`
+looks a target opcode up by mnemonic (the generated opcode enums are not in
+installed LLVM headers, so lookup is by name via `TargetInstrInfo`).
+
+### Building target MIR and lowering to native code
+
+Because GlobalISel's fallback re-runs SelectionDAG *from the IR* — which
+hand-built MIR does not have — the robust way to reach native code is to build
+already-selected **target** MIR directly and run only the back half of codegen.
+`reg_class`/`physreg` resolve register classes and physical registers by name,
+`create_vreg` makes class-constrained vregs, `add_reg` appends operands with the
+full flag set (def/use, implicit, kill, …), and `set_property` marks the function.
+`emit_object()` then runs register allocation and emission (via
+`-start-after=finalize-isel`, so no instruction selection), and `LLJIT.add_object`
+loads the result:
+
+```python
+import ctypes
+from llvm import ir, jit, mir
+
+with ir.Context() as ctx:
+    mod = ir.Module("m", ctx)
+    tm = jit.TargetMachine()                       # host triple, so the object loads in-process
+    mmi = mir.create_machine_function(mod, tm, "add")
+    mf = mmi.machine_function("add")
+    b = mir.MachineIRBuilder(mf)
+    gpr32 = mf.reg_class("GPR32")
+    w0, w1 = mf.physreg("W0"), mf.physreg("W1")
+    mf.blocks[0].add_livein(w0); mf.blocks[0].add_livein(w1)
+    v0, v1, v2 = (mf.create_vreg(gpr32) for _ in range(3))
+    for dst, src in ((v0, w0), (v1, w1)):
+        c = b.build_instr(mf.opcode("COPY")); c.add_reg(dst, is_def=True); c.add_reg(src)
+    a = b.build_instr(mf.opcode("ADDWrr")); a.add_reg(v2, is_def=True); a.add_reg(v0); a.add_reg(v1)
+    c = b.build_instr(mf.opcode("COPY")); c.add_reg(w0, is_def=True); c.add_reg(v2)
+    r = b.build_instr(mf.opcode("RET_ReallyLR")); r.add_reg(w0, implicit=True)
+    for p in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, p))
+
+    j = jit.LLJIT(); j.add_object(mmi.emit_object())
+    add = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_int32)(j.lookup("add"))
+    assert add(2, 3) == 5
 ```
 
 ## Limitations
