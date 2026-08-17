@@ -491,6 +491,34 @@ void populate_mir(nb::module_ &m) {
           },
           "value"_a, "block"_a,
           "Append a (value, predecessor-block) incoming pair to a G_PHI.")
+      .def(
+          "add_def",
+          [](llvm::MachineInstr &self, llvm::Register reg) {
+            self.addOperand(*self.getMF(), llvm::MachineOperand::CreateReg(
+                                               reg, /*isDef=*/true));
+          },
+          "reg"_a, "Append a register def operand.")
+      .def(
+          "add_use",
+          [](llvm::MachineInstr &self, llvm::Register reg) {
+            self.addOperand(*self.getMF(), llvm::MachineOperand::CreateReg(
+                                               reg, /*isDef=*/false));
+          },
+          "reg"_a, "Append a register use operand.")
+      .def(
+          "add_imm",
+          [](llvm::MachineInstr &self, int64_t value) {
+            self.addOperand(*self.getMF(),
+                            llvm::MachineOperand::CreateImm(value));
+          },
+          "value"_a, "Append an immediate operand.")
+      .def(
+          "add_mbb",
+          [](llvm::MachineInstr &self, llvm::MachineBasicBlock *mbb) {
+            self.addOperand(*self.getMF(),
+                            llvm::MachineOperand::CreateMBB(mbb));
+          },
+          "block"_a, "Append a machine-basic-block operand.")
       .def("__str__",
            [](llvm::MachineInstr &self) { return eudsl::toString(self); });
 
@@ -606,6 +634,26 @@ void populate_mir(nb::module_ &m) {
           nb::rv_policy::reference_internal,
           "Append a new, empty MachineBasicBlock to the function, optionally "
           "linked to an IR BasicBlock for debug info/naming.")
+      .def(
+          "opcode",
+          [](llvm::MachineFunction &self, const std::string &name) -> unsigned {
+            const llvm::TargetInstrInfo *tii =
+                self.getSubtarget().getInstrInfo();
+            for (unsigned i = 0, e = tii->getNumOpcodes(); i < e; ++i) {
+              if (tii->getName(i) == name)
+                return i;
+            }
+            throw nb::key_error(
+                ("no target opcode named '" + name + "'").c_str());
+          },
+          "name"_a,
+          "Look up a target opcode number by mnemonic (e.g. \"ADDWrr\").")
+      .def(
+          "opcode_name",
+          [](llvm::MachineFunction &self, unsigned opcode) {
+            return self.getSubtarget().getInstrInfo()->getName(opcode).str();
+          },
+          "opcode"_a, "The mnemonic for a target opcode number.")
       .def("__str__",
            [](llvm::MachineFunction &self) { return eudsl::toString(self); });
 
@@ -952,5 +1000,15 @@ void populate_mir(nb::module_ &m) {
           "type"_a, nb::rv_policy::reference_internal,
           "Build a G_PHI with only its def (of type `type`); add incomings "
           "later "
-          "with MachineInstr.add_phi_incoming. Its def is operand 0.");
+          "with MachineInstr.add_phi_incoming. Its def is operand 0.")
+      .def(
+          "build_instr",
+          [](llvm::MachineIRBuilder &self,
+             unsigned opcode) -> llvm::MachineInstr * {
+            return self.buildInstr(opcode).getInstr();
+          },
+          "opcode"_a, nb::rv_policy::reference_internal,
+          "Build and insert an empty instruction of the given opcode; append "
+          "operands with MachineInstr.add_def/add_use/add_imm/add_mbb. The "
+          "BuildMI analogue for target-specific opcodes.");
 }
