@@ -7,7 +7,16 @@
 # Use llvm.ir.Context, llvm.types.i32, llvm.passmanager.run_passes,
 # llvm.jit.LLJIT, llvm.intrinsics.sqrt, llvm.instructions.load, llvm.dsl.function,
 # etc.
-from . import ir, types, passmanager, jit, intrinsics, instructions, dsl  # noqa: F401
+from . import (
+    ir,
+    types,
+    passmanager,
+    jit,
+    intrinsics,
+    instructions,
+    mir,
+    dsl,
+)  # noqa: F401
 
 from .dsl.values import install_value_casters as _install_value_casters
 
