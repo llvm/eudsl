@@ -13,6 +13,7 @@ Python ints coerce to a G_CONSTANT of the other operand's type.
 
 import inspect
 
+from ..eudslllvm_ext.ir import ICmpPredicate
 from ..eudslllvm_ext.mir import LLT, MachineIRBuilder, create_machine_function
 
 # The active MachineIRBuilder is tracked on a plain module-global stack (not
@@ -93,6 +94,36 @@ class MachineValue:
 
     def __rsub__(self, other):
         return self._binary(other, "build_sub", reflected=True)
+
+    def _cmp(self, other, predicate):
+        """Emit a G_ICMP, producing an i1 (LLT.scalar(1)) MachineValue.
+        Comparisons default to signed-integer predicates."""
+        other = self._coerce(other)
+        i1 = LLT.scalar(1)
+        reg = current_machine_builder().build_icmp(predicate, i1, self.reg, other.reg)
+        return MachineValue(reg, i1)
+
+    def __lt__(self, other):
+        return self._cmp(other, ICmpPredicate.SLT)
+
+    def __le__(self, other):
+        return self._cmp(other, ICmpPredicate.SLE)
+
+    def __gt__(self, other):
+        return self._cmp(other, ICmpPredicate.SGT)
+
+    def __ge__(self, other):
+        return self._cmp(other, ICmpPredicate.SGE)
+
+    # __eq__/__ne__ stay identity (so a MachineValue is hashable and usable in
+    # traversal); value equality is exposed by name, like ArithValue.
+    __hash__ = object.__hash__
+
+    def eq(self, other):
+        return self._cmp(other, ICmpPredicate.EQ)
+
+    def ne(self, other):
+        return self._cmp(other, ICmpPredicate.NE)
 
 
 class DSLMachineFunction:
