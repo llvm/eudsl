@@ -130,7 +130,7 @@ void populate_instructions(nb::module_ &m) {
       .def_prop_ro(
           "allocated_type",
           [](llvm::AllocaInst &self) { return self.getAllocatedType(); },
-          nb::rv_policy::reference_internal);
+          nb::rv_policy::reference);
   nb::class_<llvm::LoadInst, llvm::UnaryInstruction>(m, "LoadInst")
       .EUDSL_CAST_CTOR(llvm::LoadInst, llvm::Value)
       .def_prop_ro(
@@ -150,7 +150,7 @@ void populate_instructions(nb::module_ &m) {
           [](llvm::GetElementPtrInst &self) {
             return self.getSourceElementType();
           },
-          nb::rv_policy::reference_internal);
+          nb::rv_policy::reference);
 
   nb::class_<llvm::ReturnInst, llvm::Instruction>(m, "ReturnInst")
       .EUDSL_CAST_CTOR(llvm::ReturnInst, llvm::Value)

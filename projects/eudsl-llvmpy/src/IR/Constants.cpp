@@ -93,7 +93,8 @@ void populate_constants(nb::module_ &m) {
           [](llvm::Function *f, llvm::BasicBlock *bb) -> llvm::Constant * {
             return llvm::BlockAddress::get(f, bb);
           },
-          "function"_a, "basic_block"_a, nb::rv_policy::reference)
+          "function"_a, "basic_block"_a, nb::rv_policy::reference,
+          nb::keep_alive<0, 1>())
       .def_prop_ro(
           "function",
           [](llvm::BlockAddress &self) { return self.getFunction(); },

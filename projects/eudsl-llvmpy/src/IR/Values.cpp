@@ -61,7 +61,7 @@ void populate_values(nb::module_ &m) {
       .def_prop_rw(
           "name", [](llvm::Value &self) { return self.getName().str(); },
           [](llvm::Value &self, const std::string &n) { self.setName(n); })
-      .def_prop_ro("type", &llvm::Value::getType, nb::rv_policy::reference_internal)
+      .def_prop_ro("type", &llvm::Value::getType, nb::rv_policy::reference)
       .def_prop_ro("num_uses",
                    [](llvm::Value &self) { return self.getNumUses(); })
       .def_prop_ro(
@@ -221,7 +221,7 @@ void populate_values(nb::module_ &m) {
                                             name, parent);
           },
           "name"_a = "", "parent"_a = nullptr, "context"_a.none() = nb::none(),
-          nb::rv_policy::reference)
+          nb::rv_policy::reference, nb::keep_alive<0, 2>())
       .def_prop_ro(
           "parent", [](llvm::BasicBlock &self) { return self.getParent(); },
           nb::rv_policy::reference_internal)
@@ -279,13 +279,14 @@ void populate_values(nb::module_ &m) {
           "linkage"_a = llvm::GlobalValue::LinkageTypes::ExternalLinkage,
           nb::rv_policy::reference, nb::keep_alive<0, 3>())
       .def_prop_ro("function_type", &llvm::Function::getFunctionType,
-                   nb::rv_policy::reference_internal)
+                   nb::rv_policy::reference)
       .def_prop_ro("return_type", &llvm::Function::getReturnType,
-                   nb::rv_policy::reference_internal)
+                   nb::rv_policy::reference)
       .def_prop_ro("is_var_arg", &llvm::Function::isVarArg)
       .def_prop_ro("is_declaration", &llvm::Function::isDeclaration)
       .def_prop_ro("num_args", &llvm::Function::arg_size)
-      .def("arg", &llvm::Function::getArg, "index"_a, nb::rv_policy::reference_internal)
+      .def("arg", &llvm::Function::getArg, "index"_a,
+           nb::rv_policy::reference_internal)
       .def_prop_ro(
           "args",
           [](llvm::Function &self) {
