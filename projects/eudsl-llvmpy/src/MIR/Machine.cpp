@@ -472,6 +472,18 @@ void populate_mir(nb::module_ &m) {
           },
           "block"_a,
           "Repoint a branch's target block (operand 0), e.g. a G_BR.")
+      .def(
+          "add_phi_incoming",
+          [](llvm::MachineInstr &self, llvm::Register reg,
+             llvm::MachineBasicBlock *mbb) {
+            llvm::MachineFunction &mf = *self.getMF();
+            self.addOperand(mf,
+                            llvm::MachineOperand::CreateReg(reg,
+                                                            /*isDef=*/false));
+            self.addOperand(mf, llvm::MachineOperand::CreateMBB(mbb));
+          },
+          "value"_a, "block"_a,
+          "Append a (value, predecessor-block) incoming pair to a G_PHI.")
       .def("__str__",
            [](llvm::MachineInstr &self) { return eudsl::toString(self); });
 
@@ -918,5 +930,20 @@ void populate_mir(nb::module_ &m) {
             return res;
           },
           "type"_a, "incomings"_a,
-          "Build a G_PHI from (value, predecessor-block) pairs.");
+          "Build a G_PHI from (value, predecessor-block) pairs.")
+      .def(
+          "build_empty_phi",
+          [](llvm::MachineIRBuilder &self,
+             llvm::LLT ty) -> llvm::MachineInstr * {
+            llvm::Register res =
+                self.getMRI()->createGenericVirtualRegister(ty);
+            llvm::MachineInstrBuilder phi =
+                self.buildInstr(llvm::TargetOpcode::G_PHI);
+            phi.addDef(res);
+            return phi.getInstr();
+          },
+          "type"_a, nb::rv_policy::reference_internal,
+          "Build a G_PHI with only its def (of type `type`); add incomings "
+          "later "
+          "with MachineInstr.add_phi_incoming. Its def is operand 0.");
 }
