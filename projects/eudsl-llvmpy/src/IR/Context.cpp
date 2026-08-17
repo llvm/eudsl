@@ -237,8 +237,8 @@ void populate_context(nb::module_ &m) {
   m.def(
       "parse_assembly",
       [](const std::string &ir, eudsl::Context *context,
-         const std::string &module_identifier,
-         const std::string &source_filename) {
+         const std::string &moduleIdentifier,
+         const std::string &sourceFilename) {
         eudsl::Context &ctx = eudsl::currentOr(context);
         llvm::SMDiagnostic err;
         std::unique_ptr<llvm::Module> mod =
@@ -246,11 +246,11 @@ void populate_context(nb::module_ &m) {
         if (!mod) {
           std::string msg;
           llvm::raw_string_ostream os(msg);
-          err.print(module_identifier.c_str(), os);
+          err.print(moduleIdentifier.c_str(), os);
           throw eudsl::ParseError(msg);
         }
-        mod->setModuleIdentifier(module_identifier);
-        mod->setSourceFileName(source_filename);
+        mod->setModuleIdentifier(moduleIdentifier);
+        mod->setSourceFileName(sourceFilename);
         return new eudsl::Module(std::move(mod), ctx);
       },
       "ir"_a, "context"_a.none() = nb::none(),

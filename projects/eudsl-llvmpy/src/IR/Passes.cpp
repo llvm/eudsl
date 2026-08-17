@@ -33,12 +33,12 @@ void populate_passes(nb::module_ &m) {
       "run_passes",
       [](eudsl::Module &mod, const std::string &pipeline,
          std::optional<llvm::PipelineTuningOptions> pto, bool debug,
-         bool verify_each) {
+         bool verifyEach) {
         llvm::PipelineTuningOptions opts = pto.value_or(
             llvm::PipelineTuningOptions());
         llvm::PassInstrumentationCallbacks pic;
         llvm::StandardInstrumentations si(mod.get().getContext(), debug,
-                                          verify_each);
+                                          verifyEach);
         si.registerCallbacks(pic);
         llvm::PassBuilder pb(nullptr, opts, std::nullopt, &pic);
         llvm::LoopAnalysisManager lam;
@@ -64,12 +64,12 @@ void populate_passes(nb::module_ &m) {
       "run_default_pipeline",
       [](eudsl::Module &mod, llvm::OptimizationLevel level,
          std::optional<llvm::PipelineTuningOptions> pto, bool debug,
-         bool verify_each) {
+         bool verifyEach) {
         llvm::PipelineTuningOptions opts = pto.value_or(
             llvm::PipelineTuningOptions());
         llvm::PassInstrumentationCallbacks pic;
         llvm::StandardInstrumentations si(mod.get().getContext(), debug,
-                                          verify_each);
+                                          verifyEach);
         si.registerCallbacks(pic);
         llvm::PassBuilder pb(nullptr, opts, std::nullopt, &pic);
         llvm::LoopAnalysisManager lam;

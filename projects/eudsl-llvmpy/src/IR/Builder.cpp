@@ -305,16 +305,16 @@ void populate_builder(nb::module_ &m) {
       .def(
           "switch_",
           [](B &self, llvm::Value *v, llvm::BasicBlock *dest,
-             unsigned num_cases) -> llvm::SwitchInst * {
-            return self.CreateSwitch(v, dest, num_cases);
+             unsigned numCases) -> llvm::SwitchInst * {
+            return self.CreateSwitch(v, dest, numCases);
           },
           "value"_a, "default_dest"_a, "num_cases"_a = 10,
           nb::rv_policy::reference_internal)
       .def(
           "indirect_br",
           [](B &self, llvm::Value *addr,
-             unsigned num_dests) -> llvm::IndirectBrInst * {
-            return self.CreateIndirectBr(addr, num_dests);
+             unsigned numDests) -> llvm::IndirectBrInst * {
+            return self.CreateIndirectBr(addr, numDests);
           },
           "address"_a, "num_dests"_a = 10, nb::rv_policy::reference_internal)
       .def(
@@ -325,10 +325,10 @@ void populate_builder(nb::module_ &m) {
       .def(
           "fence",
           [](B &self, llvm::AtomicOrdering ordering,
-             bool single_thread) -> llvm::Value * {
+             bool singleThread) -> llvm::Value * {
             // FenceInst is void-typed, so (unlike the neighboring atomic
             // emitters, which produce a named value) there is no result to name.
-            llvm::SyncScope::ID ssid = single_thread
+            llvm::SyncScope::ID ssid = singleThread
                                            ? llvm::SyncScope::SingleThread
                                            : llvm::SyncScope::System;
             return self.CreateFence(ordering, ssid);
@@ -338,9 +338,9 @@ void populate_builder(nb::module_ &m) {
       .def(
           "atomic_rmw",
           [](B &self, llvm::AtomicRMWInst::BinOp op, llvm::Value *ptr,
-             llvm::Value *val, llvm::AtomicOrdering ordering,
-             bool single_thread, const std::string &name) -> llvm::Value * {
-            llvm::SyncScope::ID ssid = single_thread
+             llvm::Value *val, llvm::AtomicOrdering ordering, bool singleThread,
+             const std::string &name) -> llvm::Value * {
+            llvm::SyncScope::ID ssid = singleThread
                                            ? llvm::SyncScope::SingleThread
                                            : llvm::SyncScope::System;
             // MaybeAlign() -> IRBuilder derives the natural alignment.
@@ -355,10 +355,9 @@ void populate_builder(nb::module_ &m) {
           "name"_a = "", nb::rv_policy::reference_internal)
       .def(
           "atomic_cmpxchg",
-          [](B &self, llvm::Value *ptr, llvm::Value *cmp,
-             llvm::Value *new_value, llvm::AtomicOrdering success,
-             llvm::AtomicOrdering failure, bool single_thread,
-             const std::string &name) -> llvm::Value * {
+          [](B &self, llvm::Value *ptr, llvm::Value *cmp, llvm::Value *newValue,
+             llvm::AtomicOrdering success, llvm::AtomicOrdering failure,
+             bool singleThread, const std::string &name) -> llvm::Value * {
             // The AtomicCmpXchgInst ctor asserts these; check first so a bad
             // ordering raises a catchable Python error instead of aborting.
             if (!llvm::AtomicCmpXchgInst::isValidSuccessOrdering(success)) {
@@ -371,11 +370,11 @@ void populate_builder(nb::module_ &m) {
                   "invalid cmpxchg failure ordering (must not be NotAtomic, "
                   "Unordered, Release, or AcquireRelease)");
             }
-            llvm::SyncScope::ID ssid = single_thread
+            llvm::SyncScope::ID ssid = singleThread
                                            ? llvm::SyncScope::SingleThread
                                            : llvm::SyncScope::System;
             llvm::Value *v = self.CreateAtomicCmpXchg(
-                ptr, cmp, new_value, llvm::MaybeAlign(), success, failure, ssid);
+                ptr, cmp, newValue, llvm::MaybeAlign(), success, failure, ssid);
             if (!name.empty())
               v->setName(name);
             return v;
@@ -385,11 +384,11 @@ void populate_builder(nb::module_ &m) {
           nb::rv_policy::reference_internal)
       .def(
           "call_intrinsic",
-          [](B &self, unsigned intrinsic_id, std::vector<llvm::Type *> types,
+          [](B &self, unsigned intrinsicId, std::vector<llvm::Type *> types,
              std::vector<llvm::Value *> args,
              const std::string &name) -> llvm::Value * {
             llvm::Value *v = self.CreateIntrinsic(
-                static_cast<llvm::Intrinsic::ID>(intrinsic_id), types, args);
+                static_cast<llvm::Intrinsic::ID>(intrinsicId), types, args);
             if (!name.empty())
               v->setName(name);
             return v;
@@ -437,13 +436,12 @@ void populate_builder(nb::module_ &m) {
   nb::class_<InsertPoint>(m, "InsertPoint")
       .def(
           "__init__",
-          [](InsertPoint *self, nb::handle block_or_before,
-             nb::object builder) {
+          [](InsertPoint *self, nb::handle blockOrBefore, nb::object builder) {
             llvm::BasicBlock *bb;
             llvm::Instruction *inst;
-            if (nb::try_cast(block_or_before, bb)) {
+            if (nb::try_cast(blockOrBefore, bb)) {
               new (self) InsertPoint{RawIP(bb, bb->end()), std::move(builder)};
-            } else if (nb::try_cast(block_or_before, inst)) {
+            } else if (nb::try_cast(blockOrBefore, inst)) {
               new (self) InsertPoint{RawIP(inst->getParent(), inst->getIterator()),
                                      std::move(builder)};
             } else {
