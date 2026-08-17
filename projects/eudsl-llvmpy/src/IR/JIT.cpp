@@ -40,6 +40,19 @@ void populate_jit(nb::module_ &m) {
           },
           "module"_a)
       .def(
+          "add_object",
+          [](llvm::orc::LLJIT &self, nb::bytes obj) {
+            std::unique_ptr<llvm::MemoryBuffer> memBuf =
+                llvm::MemoryBuffer::getMemBufferCopy(
+                    llvm::StringRef(static_cast<const char *>(obj.data()),
+                                    obj.size()),
+                    "<jit-obj>");
+            eudsl::unwrap(self.addObjectFile(std::move(memBuf)));
+          },
+          "obj"_a,
+          "Add a relocatable object file (e.g. from "
+          "MachineModuleInfo.emit_object) to the JIT.")
+      .def(
           "lookup",
           [](llvm::orc::LLJIT &self, const std::string &name) {
             llvm::orc::ExecutorAddr addr = eudsl::unwrap(self.lookup(name));

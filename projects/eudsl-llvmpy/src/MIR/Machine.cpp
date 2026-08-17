@@ -29,9 +29,12 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/GlobalValue.h>
 #include <llvm/IR/InstrTypes.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
+#include <llvm/Support/CommandLine.h>
 #include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
 
@@ -196,21 +199,25 @@ static std::vector<llvm::MachineIRBuilder *> &machineBuilderStack() {
   return stack;
 }
 
-// Owns everything the inspected MachineFunctions transitively depend on, so
-// none of it is freed out from under them: the LLVMContext (pinned by
-// `ctxKeepAlive`), the IR Module (whose Functions the MachineFunctions
-// reference), and the MachineModuleInfo that owns the MachineFunctions. The MMI
-// is owned two ways depending on how it was built: the codegen path
-// (run_codegen_to_mir) leaves it inside a MachineModuleInfoWrapperPass owned by
-// `pm`; the parse path (parse_mir) owns it directly via `ownedMmi`. `mmi` is
-// the query handle either way. The TargetMachine is a separate Python object
-// kept alive by a keep_alive.
+// Owns everything the MachineFunctions transitively depend on, so none of it is
+// freed out from under them: the LLVMContext (pinned by `ctxKeepAlive`), the IR
+// Module (whose Functions the MachineFunctions reference), and the
+// MachineModuleInfo that owns the MachineFunctions. The MMI is owned one of
+// three ways depending on how it was built: run_codegen_to_mir leaves it in a
+// MachineModuleInfoWrapperPass owned by the (already-run) `pm`; parse_mir owns
+// it directly via `ownedMmi`; create_machine_function owns a
+// MachineModuleInfoWrapperPass via `mmiwp` (not yet in a PassManager, so
+// emit_object can hand it to one). `mmi` is the query handle. `tm` is borrowed
+// (kept alive by a keep_alive on the factory).
 struct MachineModuleInfo {
   std::shared_ptr<llvm::LLVMContext> ctxKeepAlive;
   std::unique_ptr<llvm::Module> module;
-  std::unique_ptr<llvm::legacy::PassManager> pm;     // codegen path
+  std::unique_ptr<llvm::legacy::PassManager> pm;     // codegen/emit path
   std::unique_ptr<llvm::MachineModuleInfo> ownedMmi; // parse path
+  std::unique_ptr<llvm::MachineModuleInfoWrapperPass> mmiwp; // build path
   llvm::MachineModuleInfo *mmi;
+  llvm::TargetMachine *tm = nullptr;
+  bool emitted = false; // emit_object runs a pass pipeline once
 
   // Print the whole module as .mir text: the IR block, then each function's
   // machine-level block, matching what `llc -stop-after=finalize-isel` emits. A
@@ -938,7 +945,61 @@ void populate_mir(nb::module_ &m) {
       .def(
           "to_mir", [](MachineModuleInfo &self) { return self.toMIR(); },
           "Serialize the whole module (IR block + machine functions) as .mir "
-          "text.");
+          "text.")
+      .def(
+          "emit_object",
+          [](MachineModuleInfo &self) {
+            if (self.emitted)
+              throw std::runtime_error("object already emitted");
+            if (!self.mmiwp || !self.tm)
+              throw std::runtime_error(
+                  "emit_object requires a module built with "
+                  "create_machine_function");
+            // Run only the back half of codegen (regalloc, prologue/epilogue,
+            // asm/object emission) over the already-selected MachineFunctions:
+            // -start-after=finalize-isel skips instruction selection so the
+            // hand-built MIR is used as-is. The option is process-global (read
+            // by the pass config addPassesToEmitFile builds), so set+restore
+            // it.
+            auto &opts = llvm::cl::getRegisteredOptions();
+            auto it = opts.find("start-after");
+            if (it == opts.end())
+              throw std::runtime_error( // LCOV_EXCL_LINE
+                  "the -start-after option is not registered"); // LCOV_EXCL_LINE
+            auto &startAfter =
+                *static_cast<llvm::cl::opt<std::string> *>(it->second);
+            std::string saved = startAfter;
+            struct Restore {
+              llvm::cl::opt<std::string> &opt;
+              std::string value;
+              ~Restore() { opt = value; }
+            } restore{startAfter, saved};
+            startAfter = "finalize-isel";
+
+            // Write straight into a SmallVector (raw_svector_ostream writes
+            // through, so no deferred flush surprises when `pm` outlives here).
+            llvm::SmallVector<char, 0> buf;
+            llvm::raw_svector_ostream os(buf);
+            self.pm = std::make_unique<llvm::legacy::PassManager>();
+            // addPassesToEmitFile adopts the MMIWrapperPass into `pm` (which we
+            // keep, so `mmi` stays valid); it holds the built MachineFunctions.
+            if (self.tm->addPassesToEmitFile(
+                    *self.pm, os, nullptr, llvm::CodeGenFileType::ObjectFile,
+                    /*DisableVerify=*/true, self.mmiwp.release()))
+              throw std::runtime_error(                 // LCOV_EXCL_LINE
+                  "target cannot emit an object file"); // LCOV_EXCL_LINE
+            // The back half (register allocation) requires reserved registers
+            // to be frozen; the front of the pipeline normally does this, so do
+            // it here for the hand-built MachineFunctions.
+            for (llvm::Function &f : *self.module)
+              if (llvm::MachineFunction *mf = self.mmi->getMachineFunction(f))
+                mf->getRegInfo().freezeReservedRegs();
+            self.pm->run(*self.module);
+            self.emitted = true;
+            return nb::bytes(buf.data(), buf.size());
+          },
+          "Emit a relocatable object file for the built (already-selected) MIR "
+          "by running the back half of codegen (regalloc, emission).");
 
   // Run instruction selection on an IR module and hand back the
   // MachineModuleInfo that owns the resulting MachineFunctions. Consumes the
@@ -1020,9 +1081,10 @@ void populate_mir(nb::module_ &m) {
           }
         }
 
-        return new MachineModuleInfo{std::move(ctxKeepAlive), std::move(module),
-                                     std::move(pm), /*ownedMmi=*/nullptr,
-                                     &mmiwp->getMMI()};
+        return new MachineModuleInfo{
+            std::move(ctxKeepAlive), std::move(module), std::move(pm),
+            /*ownedMmi=*/nullptr,
+            /*mmiwp=*/nullptr,       &mmiwp->getMMI(),  &tm};
       },
       "module"_a, "target_machine"_a, "global_isel"_a = false,
       nb::keep_alive<0, 2>());
@@ -1061,19 +1123,25 @@ void populate_mir(nb::module_ &m) {
               withDetail("failed to parse machine functions", diag));
         }
         llvm::MachineModuleInfo *mmi = ownedMmi.get();
-        return new MachineModuleInfo{std::move(ctxKeepAlive), std::move(module),
-                                     /*pm=*/nullptr, std::move(ownedMmi), mmi};
+        return new MachineModuleInfo{std::move(ctxKeepAlive),
+                                     std::move(module),
+                                     /*pm=*/nullptr,
+                                     std::move(ownedMmi),
+                                     /*mmiwp=*/nullptr,
+                                     mmi,
+                                     &tm};
       },
       "text"_a, "context"_a, "target_machine"_a, nb::keep_alive<0, 3>());
 
-  // Create a fresh, empty MachineFunction to build into: make an IR Function
-  // stub named `name` (a MachineFunction must attach to one), get its
-  // MachineFunction from a freshly owned MachineModuleInfo, and give it a
-  // single empty entry block. The stub's signature and linkage are surfaced as
-  // arguments rather than hardcoded; `function_type` defaults to `void()` (a
-  // MachineFunction anchored purely for building generic MIR never reads the IR
-  // signature). Consumes the module into the returned wrapper (like
-  // run_codegen_to_mir), which owns everything the MachineFunction depends on.
+  // Create a fresh MachineFunction to build into. Make an IR Function stub
+  // named `name` (a MachineFunction must attach to one) with a trivial body so
+  // it is a *definition* -- codegen only processes defined functions, so
+  // emit_object would otherwise skip it. The stub's signature and linkage are
+  // surfaced as arguments rather than hardcoded; `function_type` defaults to
+  // `void()` (a MachineFunction anchored purely for building MIR never reads
+  // the IR signature). Hold the MachineFunction in a
+  // MachineModuleInfoWrapperPass (not yet in a PassManager) so emit_object can
+  // hand it to one. Consumes the module into the returned wrapper.
   m.def(
       "create_machine_function",
       [](eudsl::Module &mod, llvm::TargetMachine &tm, const std::string &name,
@@ -1099,14 +1167,20 @@ void populate_mir(nb::module_ &m) {
               llvm::Type::getVoidTy(module->getContext()), /*isVarArg=*/false);
         llvm::Function *f =
             llvm::Function::Create(fnTy, linkage, name, *module);
+        llvm::ReturnInst::Create(
+            module->getContext(),
+            llvm::BasicBlock::Create(module->getContext(), "entry", f));
 
-        auto ownedMmi = std::make_unique<llvm::MachineModuleInfo>(&tm);
-        llvm::MachineFunction &mf = ownedMmi->getOrCreateMachineFunction(*f);
+        auto mmiwp = std::make_unique<llvm::MachineModuleInfoWrapperPass>(&tm);
+        llvm::MachineFunction &mf =
+            mmiwp->getMMI().getOrCreateMachineFunction(*f);
         mf.push_back(mf.CreateMachineBasicBlock());
 
-        llvm::MachineModuleInfo *mmi = ownedMmi.get();
-        return new MachineModuleInfo{std::move(ctxKeepAlive), std::move(module),
-                                     /*pm=*/nullptr, std::move(ownedMmi), mmi};
+        llvm::MachineModuleInfo *mmi = &mmiwp->getMMI();
+        return new MachineModuleInfo{
+            std::move(ctxKeepAlive), std::move(module),
+            /*pm=*/nullptr,
+            /*ownedMmi=*/nullptr,    std::move(mmiwp),  mmi, &tm};
       },
       "module"_a, "target_machine"_a, "name"_a, "function_type"_a = nullptr,
       "linkage"_a = llvm::GlobalValue::LinkageTypes::ExternalLinkage,
