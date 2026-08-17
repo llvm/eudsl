@@ -111,9 +111,10 @@ void populate_values(nb::module_ &m) {
              std::vector<llvm::User *> exceptions) {
             // replaceUsesWithIf asserts the types match and would otherwise
             // abort the interpreter; reject the mismatch as a Python error.
-            if (newValue->getType() != self.getType())
+            if (newValue->getType() != self.getType()) {
               throw nb::value_error(
                   "replacement value type does not match the value's type");
+            }
             self.replaceUsesWithIf(newValue, [&](llvm::Use &u) {
               return std::find(exceptions.begin(), exceptions.end(),
                                u.getUser()) == exceptions.end();
@@ -215,11 +216,11 @@ void populate_values(nb::module_ &m) {
       .def_static(
           "create",
           [](const std::string &name, llvm::Function *parent,
-             nb::handle context) {
+             eudsl::Context *context) {
             return llvm::BasicBlock::Create(eudsl::currentOr(context).get(),
                                             name, parent);
           },
-          "name"_a = "", "parent"_a = nullptr, "context"_a = nb::none(),
+          "name"_a = "", "parent"_a = nullptr, "context"_a.none() = nb::none(),
           nb::rv_policy::reference)
       .def_prop_ro(
           "parent", [](llvm::BasicBlock &self) { return self.getParent(); },

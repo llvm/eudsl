@@ -23,9 +23,10 @@ std::string emit(llvm::TargetMachine &self, eudsl::Module &mod,
   llvm::raw_string_ostream os(buf);
   llvm::buffer_ostream bos(os);
   llvm::legacy::PassManager pm;
-  if (self.addPassesToEmitFile(pm, bos, nullptr, type))
+  if (self.addPassesToEmitFile(pm, bos, nullptr, type)) {
     throw std::runtime_error(  // LCOV_EXCL_LINE
         "target cannot emit this file type");  // LCOV_EXCL_LINE
+  }  // LCOV_EXCL_LINE
   pm.run(mod.get());
   return buf;
 }
@@ -61,9 +62,10 @@ void populate_target(nb::module_ &m) {
                 llvm::TargetOptions opts;
                 llvm::TargetMachine *tm = target->createTargetMachine(
                     tt, cpuStr, featStr, opts, std::nullopt);
-                if (!tm)
+                if (!tm) {
                   throw std::runtime_error(  // LCOV_EXCL_LINE
                       "could not create TargetMachine for " + tripleStr);  // LCOV_EXCL_LINE
+                }  // LCOV_EXCL_LINE
                 return tm;
               }),
           "triple"_a = nb::none(), "cpu"_a = nb::none(),

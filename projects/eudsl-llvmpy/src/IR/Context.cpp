@@ -62,8 +62,7 @@ void populate_context(nb::module_ &m) {
             self.popCurrent();
             self.release();
           },
-          nb::arg("exc_type").none(), nb::arg("exc_value").none(),
-          nb::arg("traceback").none())
+          "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none())
       .def_static(
           "current",
           []() -> eudsl::Context * { return eudsl::Context::current(); },
@@ -75,10 +74,11 @@ void populate_context(nb::module_ &m) {
   nb::class_<eudsl::Module>(m, "Module")
       .def(
           "__init__",
-          [](eudsl::Module *self, const std::string &name, nb::handle context) {
+          [](eudsl::Module *self, const std::string &name,
+             eudsl::Context *context) {
             new (self) eudsl::Module(name, eudsl::currentOr(context));
           },
-          "name"_a, "context"_a = nb::none(), nb::keep_alive<1, 3>())
+          "name"_a, "context"_a.none() = nb::none(), nb::keep_alive<1, 3>())
       .def_prop_rw(
           "module_identifier",
           [](eudsl::Module &self) { return self.get().getModuleIdentifier(); },
@@ -101,7 +101,9 @@ void populate_context(nb::module_ &m) {
            })
       .def_prop_ro(
           "context",
-          [](eudsl::Module &self) -> eudsl::Context & { return self.context(); },
+          [](eudsl::Module &self) -> eudsl::Context & {
+            return self.context();
+          },
           nb::rv_policy::reference_internal)
       .def_prop_ro(
           "functions",
@@ -166,9 +168,10 @@ void populate_context(nb::module_ &m) {
           "named_metadata",
           [](eudsl::Module &self, const std::string &name) {
             std::vector<llvm::MDNode *> out;
-            if (auto *nmd = self.get().getNamedMetadata(name))
+            if (auto *nmd = self.get().getNamedMetadata(name)) {
               for (llvm::MDNode *op : nmd->operands())
                 out.push_back(op);
+            }
             return out;
           },
           "name"_a)
@@ -186,13 +189,14 @@ void populate_context(nb::module_ &m) {
              if (llvm::verifyModule(self.get(), &os))
                throw eudsl::VerifyError(msg);
            })
-      .def("to_bitcode", [](eudsl::Module &self) {
-        std::string buf;
-        llvm::raw_string_ostream os(buf);
-        llvm::WriteBitcodeToFile(self.get(), os);
-        os.flush();
-        return nb::bytes(buf.data(), buf.size());
-      })
+      .def("to_bitcode",
+           [](eudsl::Module &self) {
+             std::string buf;
+             llvm::raw_string_ostream os(buf);
+             llvm::WriteBitcodeToFile(self.get(), os);
+             os.flush();
+             return nb::bytes(buf.data(), buf.size());
+           })
       .def(
           "set_data_layout_from",
           [](eudsl::Module &self, llvm::TargetMachine &tm) {
@@ -203,7 +207,7 @@ void populate_context(nb::module_ &m) {
           "add_global",
           [](eudsl::Module &self, llvm::Type *ty, const std::string &name,
              llvm::Constant *init, bool isConstant,
-             llvm::GlobalVariable* insertBefore,
+             llvm::GlobalVariable *insertBefore,
              llvm::GlobalValue::LinkageTypes linkage,
              llvm::GlobalValue::ThreadLocalMode tlMode,
              unsigned addressSpace) -> llvm::GlobalVariable * {
@@ -214,7 +218,8 @@ void populate_context(nb::module_ &m) {
           "type"_a, "name"_a, "init"_a = nullptr, "constant"_a = false,
           "insert_before"_a = nullptr,
           "linkage"_a = llvm::GlobalValue::LinkageTypes::ExternalLinkage,
-          "thread_local_mode"_a = llvm::GlobalValue::ThreadLocalMode::NotThreadLocal,
+          "thread_local_mode"_a =
+              llvm::GlobalValue::ThreadLocalMode::NotThreadLocal,
           "address_space"_a = 0, nb::rv_policy::reference_internal)
       .def(
           "get_global",
@@ -231,7 +236,7 @@ void populate_context(nb::module_ &m) {
 
   m.def(
       "parse_assembly",
-      [](const std::string &ir, nb::handle context,
+      [](const std::string &ir, eudsl::Context *context,
          const std::string &module_identifier,
          const std::string &source_filename) {
         eudsl::Context &ctx = eudsl::currentOr(context);
@@ -248,13 +253,13 @@ void populate_context(nb::module_ &m) {
         mod->setSourceFileName(source_filename);
         return new eudsl::Module(std::move(mod), ctx);
       },
-      "ir"_a, "context"_a = nb::none(), "module_identifier"_a = "<string>",
-      "source_filename"_a = "", nb::keep_alive<0, 2>(),
-      "Parse LLVM textual IR into a new Module.");
+      "ir"_a, "context"_a.none() = nb::none(),
+      "module_identifier"_a = "<string>", "source_filename"_a = "",
+      nb::keep_alive<0, 2>(), "Parse LLVM textual IR into a new Module.");
 
   m.def(
       "parse_bitcode",
-      [](nb::bytes data, nb::handle context) {
+      [](nb::bytes data, eudsl::Context *context) {
         eudsl::Context &ctx = eudsl::currentOr(context);
         llvm::StringRef ref(data.c_str(), data.size());
         auto buf = llvm::MemoryBuffer::getMemBuffer(ref, "<bitcode>", false);
@@ -264,7 +269,7 @@ void populate_context(nb::module_ &m) {
           throw eudsl::ParseError(llvm::toString(mod.takeError()));
         return new eudsl::Module(std::move(*mod), ctx);
       },
-      "data"_a, "context"_a = nb::none(), nb::keep_alive<0, 2>(),
+      "data"_a, "context"_a.none() = nb::none(), nb::keep_alive<0, 2>(),
       "Parse an LLVM bitcode buffer into a new Module.");
 
   eudsl::initializeTargets();

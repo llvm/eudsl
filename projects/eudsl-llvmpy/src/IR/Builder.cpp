@@ -59,10 +59,10 @@ void populate_builder(nb::module_ &m) {
   nb::class_<B>(m, "IRBuilder")
       .def(
           "__init__",
-          [](B *self, nb::handle context) {
+          [](B *self, eudsl::Context *context) {
             new (self) B(eudsl::currentOr(context).get());
           },
-          "context"_a = nb::none(), nb::keep_alive<1, 2>())
+          "context"_a.none() = nb::none(), nb::keep_alive<1, 2>())
       .def(
           "set_insert_point",
           [](B &self, llvm::BasicBlock *bb) { self.SetInsertPoint(bb); },
@@ -86,8 +86,7 @@ void populate_builder(nb::module_ &m) {
             }
             stack.pop_back();
           },
-          nb::arg("exc_type").none(), nb::arg("exc_value").none(),
-          nb::arg("traceback").none())
+          "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none())
       .def_prop_ro(
           "insert_block", [](B &self) { return self.GetInsertBlock(); },
           nb::rv_policy::reference_internal)
@@ -105,10 +104,8 @@ void populate_builder(nb::module_ &m) {
           "dest"_a, nb::rv_policy::reference_internal)
       .def(
           "cond_br",
-          [](B &self, llvm::Value *c, llvm::BasicBlock *t,
-             llvm::BasicBlock *f) -> llvm::Value * {
-            return self.CreateCondBr(c, t, f);
-          },
+          [](B &self, llvm::Value *c, llvm::BasicBlock *t, llvm::BasicBlock *f)
+              -> llvm::Value * { return self.CreateCondBr(c, t, f); },
           "cond"_a, "true_dest"_a, "false_dest"_a,
           nb::rv_policy::reference_internal)
 #define EUDSL_BIN(pyName, method)                                              \
@@ -180,32 +177,29 @@ void populate_builder(nb::module_ &m) {
 #undef EUDSL_CAST
       .def(
           "icmp",
-          [](B &self, llvm::CmpInst::Predicate p, llvm::Value *l, llvm::Value *r,
-             const std::string &name) -> llvm::Value * {
+          [](B &self, llvm::CmpInst::Predicate p, llvm::Value *l,
+             llvm::Value *r, const std::string &name) -> llvm::Value * {
             return self.CreateICmp(p, l, r, name);
           },
           "predicate"_a, "lhs"_a, "rhs"_a, "name"_a = "",
           nb::rv_policy::reference_internal)
       .def(
           "fcmp",
-          [](B &self, llvm::CmpInst::Predicate p, llvm::Value *l, llvm::Value *r,
-             const std::string &name) -> llvm::Value * {
+          [](B &self, llvm::CmpInst::Predicate p, llvm::Value *l,
+             llvm::Value *r, const std::string &name) -> llvm::Value * {
             return self.CreateFCmp(p, l, r, name);
           },
           "predicate"_a, "lhs"_a, "rhs"_a, "name"_a = "",
           nb::rv_policy::reference_internal)
       .def(
           "alloca",
-          [](B &self, llvm::Type *ty, const std::string &name) -> llvm::Value * {
-            return self.CreateAlloca(ty, nullptr, name);
-          },
+          [](B &self, llvm::Type *ty, const std::string &name)
+              -> llvm::Value * { return self.CreateAlloca(ty, nullptr, name); },
           "type"_a, "name"_a = "", nb::rv_policy::reference_internal)
       .def(
           "load",
-          [](B &self, llvm::Type *ty, llvm::Value *ptr,
-             const std::string &name) -> llvm::Value * {
-            return self.CreateLoad(ty, ptr, name);
-          },
+          [](B &self, llvm::Type *ty, llvm::Value *ptr, const std::string &name)
+              -> llvm::Value * { return self.CreateLoad(ty, ptr, name); },
           "type"_a, "ptr"_a, "name"_a = "", nb::rv_policy::reference_internal)
       .def(
           "store",
@@ -269,9 +263,8 @@ void populate_builder(nb::module_ &m) {
           nb::rv_policy::reference_internal)
       .def(
           "freeze",
-          [](B &self, llvm::Value *v, const std::string &name) -> llvm::Value * {
-            return self.CreateFreeze(v, name);
-          },
+          [](B &self, llvm::Value *v, const std::string &name)
+              -> llvm::Value * { return self.CreateFreeze(v, name); },
           "value"_a, "name"_a = "", nb::rv_policy::reference_internal)
       .def(
           "extract_element",
@@ -279,7 +272,8 @@ void populate_builder(nb::module_ &m) {
              const std::string &name) -> llvm::Value * {
             return self.CreateExtractElement(vec, idx, name);
           },
-          "vector"_a, "index"_a, "name"_a = "", nb::rv_policy::reference_internal)
+          "vector"_a, "index"_a, "name"_a = "",
+          nb::rv_policy::reference_internal)
       .def(
           "insert_element",
           [](B &self, llvm::Value *vec, llvm::Value *elt, llvm::Value *idx,
@@ -325,9 +319,8 @@ void populate_builder(nb::module_ &m) {
           "address"_a, "num_dests"_a = 10, nb::rv_policy::reference_internal)
       .def(
           "resume",
-          [](B &self, llvm::Value *exn) -> llvm::Value * {
-            return self.CreateResume(exn);
-          },
+          [](B &self, llvm::Value *exn)
+              -> llvm::Value * { return self.CreateResume(exn); },
           "exn"_a, nb::rv_policy::reference_internal)
       .def(
           "fence",
@@ -345,8 +338,8 @@ void populate_builder(nb::module_ &m) {
       .def(
           "atomic_rmw",
           [](B &self, llvm::AtomicRMWInst::BinOp op, llvm::Value *ptr,
-             llvm::Value *val, llvm::AtomicOrdering ordering, bool single_thread,
-             const std::string &name) -> llvm::Value * {
+             llvm::Value *val, llvm::AtomicOrdering ordering,
+             bool single_thread, const std::string &name) -> llvm::Value * {
             llvm::SyncScope::ID ssid = single_thread
                                            ? llvm::SyncScope::SingleThread
                                            : llvm::SyncScope::System;
@@ -362,9 +355,10 @@ void populate_builder(nb::module_ &m) {
           "name"_a = "", nb::rv_policy::reference_internal)
       .def(
           "atomic_cmpxchg",
-          [](B &self, llvm::Value *ptr, llvm::Value *cmp, llvm::Value *new_value,
-             llvm::AtomicOrdering success, llvm::AtomicOrdering failure,
-             bool single_thread, const std::string &name) -> llvm::Value * {
+          [](B &self, llvm::Value *ptr, llvm::Value *cmp,
+             llvm::Value *new_value, llvm::AtomicOrdering success,
+             llvm::AtomicOrdering failure, bool single_thread,
+             const std::string &name) -> llvm::Value * {
             // The AtomicCmpXchgInst ctor asserts these; check first so a bad
             // ordering raises a catchable Python error instead of aborting.
             if (!llvm::AtomicCmpXchgInst::isValidSuccessOrdering(success)) {
@@ -443,7 +437,8 @@ void populate_builder(nb::module_ &m) {
   nb::class_<InsertPoint>(m, "InsertPoint")
       .def(
           "__init__",
-          [](InsertPoint *self, nb::handle block_or_before, nb::object builder) {
+          [](InsertPoint *self, nb::handle block_or_before,
+             nb::object builder) {
             llvm::BasicBlock *bb;
             llvm::Instruction *inst;
             if (nb::try_cast(block_or_before, bb)) {
@@ -515,16 +510,13 @@ void populate_builder(nb::module_ &m) {
             stack.pop_back();
             nb::cast<B *>(frame.builder)->restoreIP(frame.previous);
           },
-          nb::arg("exc_type").none(), nb::arg("exc_value").none(),
-          nb::arg("traceback").none())
-      .def_prop_ro_static(
-          "current",
-          [](nb::handle) -> nb::object {
-            auto &stack = threadContextStack();
-            for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
-              if (!it->insertPoint.is_none())
-                return it->insertPoint;
-            }
-            throw nb::value_error("no current InsertPoint");
-          });
+          "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none())
+      .def_prop_ro_static("current", [](nb::handle) -> nb::object {
+        auto &stack = threadContextStack();
+        for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
+          if (!it->insertPoint.is_none())
+            return it->insertPoint;
+        }
+        throw nb::value_error("no current InsertPoint");
+      });
 }

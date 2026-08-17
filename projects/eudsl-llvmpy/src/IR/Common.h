@@ -62,14 +62,15 @@ T *nthOrThrow(const std::vector<T *> &items, Py_ssize_t i) {
 /// Resolve a factory's optional `context` argument: use the passed Context, or
 /// fall back to the thread-local current one (set by `with Context():`). Raises
 /// if neither is available, mirroring MLIR's implicit-context factories.
-inline Context &currentOr(nb::handle context) {
-  if (!context.is_none())
-    return nb::cast<Context &>(context);
+inline Context &currentOr(Context *context) {
+  if (context)
+    return *context;
   Context *cur = Context::current();
-  if (!cur)
+  if (!cur) {
     throw std::runtime_error(
         "no context given and no current Context; pass context= or enter a "
         "'with Context():' block");
+  }
   return *cur;
 }
 
@@ -96,8 +97,7 @@ enum class CallingConvEnum : unsigned {
           return d;                                                            \
         throw nb::value_error("value is not a " #Derived);                     \
       }),                                                                      \
-      nb::arg("value").none(), nb::rv_policy::reference,                       \
-      nb::keep_alive<0, 1>())
+      "value"_a.none(), nb::rv_policy::reference, nb::keep_alive<0, 1>())
 
 // Pulled in here so every translation unit that returns an llvm::Type* or
 // llvm::Value* sees the downcasting type_hook specializations. Without this a
