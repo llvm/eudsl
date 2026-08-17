@@ -18,6 +18,7 @@
 #include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetOpcodes.h>
 #include <llvm/CodeGen/TargetPassConfig.h>
+#include <llvm/CodeGen/TargetRegisterInfo.h>
 #include <llvm/CodeGen/TargetSubtargetInfo.h>
 #include <llvm/CodeGenTypes/LowLevelType.h>
 #include <llvm/IR/BasicBlock.h>
@@ -281,6 +282,27 @@ void populate_mir(nb::module_ &m) {
         return static_cast<Py_ssize_t>(self.id());
       });
 
+  // A target register class (e.g. AArch64 GPR32), looked up by name via
+  // MachineFunction.reg_class. Opaque handle used when creating typed vregs for
+  // already-selected MIR.
+  nb::class_<llvm::TargetRegisterClass>(m, "TargetRegisterClass");
+
+  // MachineFunctionProperties::Property -- the pipeline-stage flags a
+  // MachineFunction carries (set with MachineFunction.set_property). Building
+  // already-selected MIR by hand means setting these to match what the
+  // corresponding codegen stage would have produced (e.g. IsSSA).
+  nb::enum_<llvm::MachineFunctionProperties::Property>(
+      m, "MachineFunctionProperty")
+      .value("IsSSA", llvm::MachineFunctionProperties::Property::IsSSA)
+      .value("NoPHIs", llvm::MachineFunctionProperties::Property::NoPHIs)
+      .value("TracksLiveness",
+             llvm::MachineFunctionProperties::Property::TracksLiveness)
+      .value("NoVRegs", llvm::MachineFunctionProperties::Property::NoVRegs)
+      .value("Legalized", llvm::MachineFunctionProperties::Property::Legalized)
+      .value("RegBankSelected",
+             llvm::MachineFunctionProperties::Property::RegBankSelected)
+      .value("Selected", llvm::MachineFunctionProperties::Property::Selected);
+
   // llvm::MachineOperand -- one operand of a MachineInstr. is_def/is_use are
   // register-only in LLVM (they assert otherwise), so they are guarded to
   // report false for non-register operands rather than crash.
@@ -533,11 +555,30 @@ void populate_mir(nb::module_ &m) {
           "reg"_a, "Append a register def operand.")
       .def(
           "add_use",
-          [](llvm::MachineInstr &self, llvm::Register reg) {
+          [](llvm::MachineInstr &self, llvm::Register reg, bool implicit) {
             self.addOperand(*self.getMF(), llvm::MachineOperand::CreateReg(
-                                               reg, /*isDef=*/false));
+                                               reg, /*isDef=*/false, implicit));
           },
-          "reg"_a, "Append a register use operand.")
+          "reg"_a, "implicit"_a = false, "Append a register use operand.")
+      .def(
+          "add_reg",
+          [](llvm::MachineInstr &self, llvm::Register reg, bool isDef,
+             bool isImp, bool isKill, bool isDead, bool isUndef,
+             bool isEarlyClobber, unsigned subReg, bool isRenamable) {
+            self.addOperand(*self.getMF(),
+                            llvm::MachineOperand::CreateReg(
+                                reg, isDef, isImp, isKill, isDead, isUndef,
+                                isEarlyClobber, subReg, /*isDebug=*/false,
+                                /*isInternalRead=*/false, isRenamable));
+          },
+          "reg"_a, "is_def"_a = false, "implicit"_a = false,
+          "is_kill"_a = false, "is_dead"_a = false, "is_undef"_a = false,
+          "is_early_clobber"_a = false, "sub_reg"_a = 0,
+          "is_renamable"_a = false,
+          "Append a register operand, exposing the full MachineOperand "
+          "register "
+          "flag set (def/use, implicit, kill, dead, undef, early-clobber, "
+          "sub-register, renamable).")
       .def(
           "add_imm",
           [](llvm::MachineInstr &self, int64_t value) {
@@ -621,6 +662,12 @@ void populate_mir(nb::module_ &m) {
             self.replaceSuccessor(old, replacement);
           },
           "old"_a, "new"_a, "Replace a CFG successor edge with another block.")
+      .def(
+          "add_livein",
+          [](llvm::MachineBasicBlock &self, llvm::Register reg) {
+            self.addLiveIn(reg.asMCReg());
+          },
+          "reg"_a, "Declare a physical register live-in to this block.")
       .def("__str__",
            [](llvm::MachineBasicBlock &self) { return eudsl::toString(self); });
 
@@ -655,6 +702,52 @@ void populate_mir(nb::module_ &m) {
             return self.getRegInfo().createGenericVirtualRegister(ty);
           },
           "type"_a, "Create a new generic virtual register of the given LLT.")
+      .def(
+          "reg_class",
+          [](llvm::MachineFunction &self,
+             const std::string &name) -> const llvm::TargetRegisterClass * {
+            const llvm::TargetRegisterInfo *tri =
+                self.getSubtarget().getRegisterInfo();
+            for (unsigned i = 0, e = tri->getNumRegClasses(); i < e; ++i) {
+              const llvm::TargetRegisterClass *rc = tri->getRegClass(i);
+              if (name == tri->getRegClassName(
+                              &tri->MCRegisterInfo::getRegClass(rc->getID())))
+                return rc;
+            }
+            throw nb::key_error(
+                ("no target register class named '" + name + "'").c_str());
+          },
+          "name"_a, nb::rv_policy::reference_internal,
+          "Look up a target register class by name (e.g. \"GPR32\").")
+      .def(
+          "physreg",
+          [](llvm::MachineFunction &self,
+             const std::string &name) -> llvm::Register {
+            const llvm::TargetRegisterInfo *tri =
+                self.getSubtarget().getRegisterInfo();
+            for (unsigned i = 1, e = tri->getNumRegs(); i < e; ++i) {
+              if (name == tri->getName(i))
+                return llvm::Register(i);
+            }
+            throw nb::key_error(
+                ("no physical register named '" + name + "'").c_str());
+          },
+          "name"_a, "Look up a physical register by name (e.g. \"W0\").")
+      .def(
+          "create_vreg",
+          [](llvm::MachineFunction &self,
+             const llvm::TargetRegisterClass *rc) -> llvm::Register {
+            return self.getRegInfo().createVirtualRegister(rc);
+          },
+          "reg_class"_a,
+          "Create a new virtual register constrained to a register class.")
+      .def(
+          "set_property",
+          [](llvm::MachineFunction &self,
+             llvm::MachineFunctionProperties::Property prop) {
+            self.getProperties().set(prop);
+          },
+          "property"_a, "Set a MachineFunctionProperties flag.")
       .def(
           "create_block",
           [](llvm::MachineFunction &self,
