@@ -172,19 +172,6 @@ class ReplaceIfWithWith(StrictTransformer):
             return then_with
 
 
-def _reject_nested_control_flow(body_stmts, where):
-    """The loop transforms lift the body into a nested function the if/else
-    transformers do not revisit, so control flow nested inside a loop body is
-    not lowered. Detect and refuse rather than miscompile."""
-    for stmt in body_stmts:
-        for child in ast.walk(stmt):
-            if isinstance(child, (ast.If, ast.For, ast.While)):
-                raise NotImplementedError(
-                    f"control flow nested inside a `{where}` loop body is not "
-                    "supported"
-                )
-
-
 def _carried_from_yield(yield_value):
     """Names carried by a trailing `yield a, b` (or `yield a`)."""
     if yield_value is None:
@@ -204,112 +191,79 @@ def _carried_from_yield(yield_value):
     return names
 
 
-class WhileToWhileLoop(StrictTransformer):
-    """Rewrite `while COND: BODY; yield carried` into a while_loop call.
+def _loop_lowering(node, loop_expr, iv, carried):
+    """Shared tail for the for/while transforms. Rewrites the loop into
 
-        while COND:
+        __loop_L = <loop_expr>          # range_(...) / while_(...)
+        with __loop_L as <targets>:
             BODY
-            yield acc, i
-        # ->
-        def __wcond_L__(acc, i): return COND
-        def __wbody_L__(acc, i):
-            BODY
-            return (acc, i)
-        (acc, i) = while_loop(__wcond_L__, __wbody_L__, (acc, i))
+            loop_yield(carried...)
+        (carried,) = __loop_L.results   # only when there are carried values
 
-    The loop-carried variables (from the trailing yield) become the parameters
-    and results of the nested cond/body functions, so the while_loop runtime can
-    feed header phis in and thread body results back as phi incomings without
-    rebinding Python closure variables. Straight-line loop bodies only: control
-    flow nested inside a loop body is not lowered (the nested functions are not
-    revisited by the if/else transformers).
+    keeping BODY inline (in the `with`) so nested control flow lowers, and
+    binding post-loop names to the loop results (header phis) rather than the
+    body's last recomputed values. `iv` is the induction-variable name for a
+    `for` (None for a `while`); `carried` is the list of loop-carried names.
     """
+    loop_var = f"__loop_{node.lineno}__"
+    assign_loop = ast.Assign([ast.Name(loop_var, ast.Store())], loop_expr)
 
-    def visit_While(self, node: ast.While) -> list:
-        node = self.generic_visit(node)
-        line = node.lineno
-        last = node.body[-1]
-        if not (isinstance(last, ast.Expr) and isinstance(last.value, ast.Yield)):
-            raise NotImplementedError(
-                "a DSL `while` body must end with `yield <loop-carried vars>`"
+    carried_store = ast.Tuple([ast.Name(n, ast.Store()) for n in carried], ast.Store())
+    if iv is not None:
+        as_target = (
+            ast.Tuple([ast.Name(iv, ast.Store()), carried_store], ast.Store())
+            if carried
+            else ast.Name(iv, ast.Store())
+        )
+    else:
+        as_target = carried_store if carried else None
+
+    body = list(node.body[:-1]) + [
+        ast.Expr(ast_call("loop_yield", [ast.Name(n, ast.Load()) for n in carried]))
+    ]
+    with_node = ast.With(
+        items=[
+            ast.withitem(
+                context_expr=ast.Name(loop_var, ast.Load()), optional_vars=as_target
             )
-        carried = _carried_from_yield(last.value.value)
-        body_stmts = node.body[:-1]
-        _reject_nested_control_flow(body_stmts, "while")
-
-        def params():
-            return ast.arguments(
-                posonlyargs=[],
-                args=[ast.arg(arg=n) for n in carried],
-                vararg=None,
-                kwonlyargs=[],
-                kw_defaults=[],
-                kwarg=None,
-                defaults=[],
+        ],
+        body=body,
+    )
+    out = [assign_loop, with_node]
+    if carried:
+        out.append(
+            ast.Assign(
+                [ast.Tuple([ast.Name(n, ast.Store()) for n in carried], ast.Store())],
+                ast.Attribute(ast.Name(loop_var, ast.Load()), "results", ast.Load()),
             )
-
-        carried_load = ast.Tuple([ast.Name(n, ast.Load()) for n in carried], ast.Load())
-        carried_store = ast.Tuple(
-            [ast.Name(n, ast.Store()) for n in carried], ast.Store()
         )
-
-        cond_name = f"__wcond_{line}__"
-        body_name = f"__wbody_{line}__"
-
-        cond_fn = ast.FunctionDef(
-            name=cond_name,
-            args=params(),
-            body=[ast.Return(node.test)],
-            decorator_list=[],
-            type_params=[],
-        )
-        body_fn = ast.FunctionDef(
-            name=body_name,
-            args=params(),
-            body=list(body_stmts) + [ast.Return(carried_load)],
-            decorator_list=[],
-            type_params=[],
-        )
-        call = ast.Assign(
-            targets=[carried_store],
-            value=ast.Call(
-                func=ast.Name("while_loop", ast.Load()),
-                args=[
-                    ast.Name(cond_name, ast.Load()),
-                    ast.Name(body_name, ast.Load()),
-                    ast.Tuple([ast.Name(n, ast.Load()) for n in carried], ast.Load()),
-                ],
-                keywords=[],
-            ),
-        )
-        out = [cond_fn, body_fn, call]
-        for n in out:
-            ast.copy_location(n, node)
-            n.end_lineno = n.lineno
-            ast.fix_missing_locations(n)
-        return out
+    for n in out:
+        ast.copy_location(n, node)
+        ast.fix_missing_locations(n)
+    return out
 
 
-class ForToForLoop(StrictTransformer):
-    """Rewrite `for i in range_(...): BODY; yield carried` into a for_loop call.
+class ForToInline(StrictTransformer):
+    """Rewrite `for i in range_(...): BODY; yield carried` into an inline loop.
 
         for i in range_(start, stop, step):
             BODY
             yield acc
         # ->
-        def __fbody_L__(i, acc):
+        __loop_L = range_(start, stop, step, iter_args=(acc,))
+        with __loop_L as (i, (acc,)):
             BODY
-            return (acc,)
-        (acc,) = for_loop(start, stop, step, __fbody_L__, (acc,))
+            loop_yield(acc)
+        (acc,) = __loop_L.results
 
-    Like WhileToWhileLoop, the loop-carried variables come from the trailing
-    yield and become the body function's parameters/results (after the induction
-    variable `i`), so no closure rebinding is needed. Only `range_(...)` iterables
-    are handled; other `for` iterables are left untouched.
+    The body stays inline in the `with`, so control flow nested in it is lowered
+    by the later if/else passes (and any nested loop by this pass, via the
+    postorder generic_visit). Only `range_(...)` iterables are rewritten; other
+    `for` iterables are left as Python loops (unrolled at trace time).
     """
 
     def visit_For(self, node: ast.For) -> object:
-        node = self.generic_visit(node)
+        node = self.generic_visit(node)  # nested loops first (postorder)
         it = node.iter
         if not (
             isinstance(it, ast.Call)
@@ -319,20 +273,7 @@ class ForToForLoop(StrictTransformer):
             return node
         if not isinstance(node.target, ast.Name):
             raise NotImplementedError("for target must be a single name")
-        iv = node.target.id
-        line = node.lineno
-
-        args = list(it.args)
-        if len(args) == 1:
-            start = ast.Constant(0)
-            stop = args[0]
-            step = ast.Constant(1)
-        elif len(args) == 2:
-            start, stop = args
-            step = ast.Constant(1)
-        elif len(args) == 3:
-            start, stop, step = args
-        else:
+        if not 1 <= len(it.args) <= 3:
             raise NotImplementedError("range_ takes 1-3 arguments")
 
         last = node.body[-1]
@@ -341,50 +282,77 @@ class ForToForLoop(StrictTransformer):
                 "a DSL `for` body must end with `yield <loop-carried vars>`"
             )
         carried = _carried_from_yield(last.value.value)
-        body_stmts = node.body[:-1]
-        _reject_nested_control_flow(body_stmts, "for")
 
-        body_name = f"__fbody_{line}__"
-        params = ast.arguments(
-            posonlyargs=[],
-            args=[ast.arg(arg=iv)] + [ast.arg(arg=n) for n in carried],
-            vararg=None,
-            kwonlyargs=[],
-            kw_defaults=[],
-            kwarg=None,
-            defaults=[],
-        )
-        carried_load = ast.Tuple([ast.Name(n, ast.Load()) for n in carried], ast.Load())
-        carried_store = ast.Tuple(
-            [ast.Name(n, ast.Store()) for n in carried], ast.Store()
-        )
-        body_fn = ast.FunctionDef(
-            name=body_name,
-            args=params,
-            body=list(body_stmts) + [ast.Return(carried_load)],
+        # range_(...) -> range_(..., iter_args=(carried,))
+        it.keywords = list(it.keywords) + [
+            ast.keyword(
+                arg="iter_args",
+                value=ast.Tuple([ast.Name(n, ast.Load()) for n in carried], ast.Load()),
+            )
+        ]
+        return _loop_lowering(node, it, node.target.id, carried)
+
+
+class WhileToInline(StrictTransformer):
+    """Rewrite `while COND: BODY; yield carried` into an inline loop.
+
+        while COND:
+            BODY
+            yield acc
+        # ->
+        def __wcond_L__(acc): return COND
+        __loop_L = while_(__wcond_L__, iter_args=(acc,))
+        with __loop_L as (acc,):
+            BODY
+            loop_yield(acc)
+        (acc,) = __loop_L.results
+
+    Only the condition is lifted into a function (a control-flow-free expression
+    evaluated in the header against the carried phis); the body stays inline, so
+    control flow nested in it lowers normally.
+    """
+
+    def visit_While(self, node: ast.While) -> list:
+        node = self.generic_visit(node)  # nested loops first (postorder)
+        line = node.lineno
+        last = node.body[-1]
+        if not (isinstance(last, ast.Expr) and isinstance(last.value, ast.Yield)):
+            raise NotImplementedError(
+                "a DSL `while` body must end with `yield <loop-carried vars>`"
+            )
+        carried = _carried_from_yield(last.value.value)
+
+        cond_name = f"__wcond_{line}__"
+        cond_fn = ast.FunctionDef(
+            name=cond_name,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg=n) for n in carried],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            ),
+            body=[ast.Return(node.test)],
             decorator_list=[],
             type_params=[],
         )
-        call = ast.Assign(
-            targets=[carried_store],
-            value=ast.Call(
-                func=ast.Name("for_loop", ast.Load()),
-                args=[
-                    start,
-                    stop,
-                    step,
-                    ast.Name(body_name, ast.Load()),
-                    ast.Tuple([ast.Name(n, ast.Load()) for n in carried], ast.Load()),
-                ],
-                keywords=[],
-            ),
+        while_expr = ast_call(
+            "while_",
+            [ast.Name(cond_name, ast.Load())],
+            keywords=[
+                ast.keyword(
+                    arg="iter_args",
+                    value=ast.Tuple(
+                        [ast.Name(n, ast.Load()) for n in carried], ast.Load()
+                    ),
+                )
+            ],
         )
-        out = [body_fn, call]
-        for n in out:
-            ast.copy_location(n, node)
-            n.end_lineno = n.lineno
-            ast.fix_missing_locations(n)
-        return out
+        out = _loop_lowering(node, while_expr, None, carried)
+        cond_fn = ast.fix_missing_locations(ast.copy_location(cond_fn, node))
+        return [cond_fn] + out
 
 
 class RejectUnsupportedJumps(StrictTransformer):
@@ -392,10 +360,8 @@ class RejectUnsupportedJumps(StrictTransformer):
 
     break/continue and early `return` inside if/while/for would need edge
     duplication and predecessor bookkeeping the yield-protocol lowering does not
-    do (and the loop transforms lift bodies into nested functions, where a bare
-    return/break/continue would silently mean the wrong thing). Detect and
-    refuse rather than emit wrong IR. Runs before the loop/if transformers, so
-    the constructs are still in their original ast form.
+    do. Detect and refuse rather than emit wrong IR. Runs before the loop/if
+    transformers, so the constructs are still in their original ast form.
     """
 
     def visit_Break(self, node):

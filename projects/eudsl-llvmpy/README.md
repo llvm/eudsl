@@ -208,11 +208,15 @@ class MyInt(ir.Value):
 ## Limitations
 
 - **`break`, `continue`, and early `return` inside DSL control flow are not
-  supported**, and neither is **control flow nested inside a loop body** (an
-  `if` at the top level of a function works; an `if` inside a `while` or `for`
-  body does not). The canonicalizer detects these and raises
-  `NotImplementedError` rather than emitting wrong IR. Nested control flow is
-  the piece most worth revisiting.
+  supported.** They would need edge duplication and predecessor bookkeeping the
+  phi-based yield-protocol lowering does not do; the canonicalizer detects them
+  and raises `NotImplementedError` rather than emitting wrong IR.
+- **`if`/`while`/`for` otherwise compose freely** — an `if` inside a loop, a
+  loop inside an `if` branch, nested loops, etc. — with one caveat: **do not
+  reassign a variable in one `if`/`elif` branch and read it in a sibling
+  branch.** Both branches are traced in the same Python frame, so the
+  reassignment leaks across; `verify()` then rejects the IR. Yield the value out
+  of the region instead (`r = yield x`) or use a distinct name per branch.
 - **The fatal-error path is best-effort.** LLVM's fatal error handler cannot
   return, so where a bad argument would trip it, the bindings validate up front
   and raise. A genuine LLVM fatal error still aborts the process after a warning.
