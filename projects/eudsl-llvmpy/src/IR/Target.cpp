@@ -76,6 +76,12 @@ void populate_target(nb::module_ &m) {
                    [](llvm::TargetMachine &self) {
                      return self.createDataLayout().getStringRepresentation();
                    })
+      .def_prop_ro(
+          "global_isel",
+          [](llvm::TargetMachine &self) -> bool {
+            return self.Options.EnableGlobalISel;
+          },
+          "Whether instruction selection uses GlobalISel (vs SelectionDAG).")
       .def(
           "emit_assembly",
           [](llvm::TargetMachine &self, eudsl::Module &mod) {
