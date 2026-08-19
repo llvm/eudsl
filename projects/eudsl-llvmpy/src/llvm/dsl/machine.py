@@ -15,6 +15,8 @@ import inspect
 
 from ..eudslllvm_ext.mir import LLT, MachineIRBuilder, create_machine_function
 
+# The active MachineIRBuilder is tracked on a plain module-global stack (not
+# thread-local); @machine_function tracing is assumed single-threaded.
 _builder_stack = []
 
 
@@ -33,16 +35,42 @@ class MachineValue:
     def __init__(self, reg, llt):
         self.reg = reg
         self.llt = llt
+        # Anchor to the builder tracing this value's MachineFunction. Unlike the
+        # IR DSL's ArithValue (which reads its type off the binding and rides the
+        # shared C++ InsertPoint stack), MachineValue carries a bare reg + llt
+        # over a Python-only builder stack, so a value that escapes its
+        # @machine_function body could otherwise emit into a different (e.g.
+        # nested) function's builder, referencing vregs it doesn't own.
+        self._builder = _builder_stack[-1] if _builder_stack else None
+
+    def _require_current(self):
+        if self._builder is not current_machine_builder():
+            raise RuntimeError(
+                "MachineValue used outside the @machine_function body that "
+                "created it (it belongs to a different MachineFunction)"
+            )
 
     def _coerce(self, other):
-        """A MachineValue passes through; a Python int becomes a G_CONSTANT."""
+        """A MachineValue passes through; a Python int becomes a G_CONSTANT of
+        this value's LLT. Only an exact int (not bool, not float) is accepted --
+        int(other) would silently truncate a float or parse a str into a
+        wrong-typed constant that survives into the release wheel."""
+        self._require_current()
         if isinstance(other, MachineValue):
+            other._require_current()
             return other
-        reg = current_machine_builder().build_constant(self.llt, int(other))
+        if type(other) is not int:
+            raise TypeError(
+                f"cannot coerce {other!r} to a {self.llt} constant; "
+                "expected a MachineValue or an int"
+            )
+        reg = current_machine_builder().build_constant(self.llt, other)
         return MachineValue(reg, self.llt)
 
     def _binary(self, other, method, *, reflected=False):
         other = self._coerce(other)
+        if self.llt != other.llt:
+            raise TypeError(f"mismatched types: {self.llt} and {other.llt}")
         b = current_machine_builder()
         lhs, rhs = (other, self) if reflected else (self, other)
         reg = getattr(b, method)(self.llt, lhs.reg, rhs.reg)
@@ -71,13 +99,14 @@ class DSLMachineFunction:
     """The result of @machine_function: the built MachineFunction plus the
     MachineModuleInfo that owns it."""
 
-    def __init__(self, mmi, name):
+    def __init__(self, mmi, name, machine_function):
         self.mmi = mmi
         self.name = name
+        self._machine_function = machine_function
 
     @property
     def machine_function(self):
-        return self.mmi.machine_function(self.name)
+        return self._machine_function
 
     def to_mir(self):
         return self.mmi.to_mir()
@@ -94,11 +123,28 @@ def _resolve_llt(annotation):
 def machine_function(*, module, target, name=None):
     """Build a generic-MIR MachineFunction by tracing `f`. Each parameter is
     annotated with an LLT and arrives as a MachineValue over a fresh generic
-    vreg; the body emits instructions through the contextual builder."""
+    vreg; the body emits instructions through the contextual builder.
+
+    The body's return value is not turned into a terminator -- this traces a
+    straight-line generic-MIR fragment, so `return a + b` just ends tracing.
+    If the body raises, the partially-built MachineFunction is left in `mmi`
+    (there is no rollback), but the exception propagates unchanged.
+    """
 
     def decorator(f):
-        sig = inspect.signature(f)
-        param_llts = [_resolve_llt(p.annotation) for p in sig.parameters.values()]
+        params = list(inspect.signature(f).parameters.values())
+        for p in params:
+            if p.kind not in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD):
+                raise TypeError(
+                    f"@machine_function parameter {p.name!r} must be positional; "
+                    "*args, **kwargs, and keyword-only parameters are not supported"
+                )
+            if p.annotation is inspect.Parameter.empty:
+                raise TypeError(
+                    f"@machine_function parameter {p.name!r} is missing an LLT "
+                    "annotation"
+                )
+        param_llts = [_resolve_llt(p.annotation) for p in params]
         fn_name = name or f.__name__
 
         mmi = create_machine_function(module, target, fn_name)
@@ -114,6 +160,6 @@ def machine_function(*, module, target, name=None):
             f(*args)
         finally:
             _builder_stack.pop()
-        return DSLMachineFunction(mmi, fn_name)
+        return DSLMachineFunction(mmi, fn_name, mf)
 
     return decorator
