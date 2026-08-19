@@ -48,6 +48,25 @@ def test_unknown_opcode_name_raises():
     assert_no_leaks()
 
 
+def test_opcode_name_out_of_range_raises():
+    with ir.Context() as ctx:
+        _, mf = _new_function(ctx)
+        # The number->name direction must validate like name->number does, not
+        # index out of bounds into an assert-only (NDEBUG) table.
+        with pytest.raises(IndexError):
+            mf.opcode_name(999999)
+    assert_no_leaks()
+
+
+def test_build_instr_out_of_range_opcode_raises():
+    with ir.Context() as ctx:
+        _, mf = _new_function(ctx)
+        b = mir.MachineIRBuilder(mf)
+        with pytest.raises(IndexError):
+            b.build_instr(999999)
+    assert_no_leaks()
+
+
 def test_build_target_register_instruction():
     with ir.Context() as ctx:
         _, mf = _new_function(ctx)
@@ -62,8 +81,11 @@ def test_build_target_register_instruction():
         mi.add_use(y)
         assert mi.opcode_name == "ADDWrr"
         assert mi.num_operands == 3
-        assert mi.operand(0).is_def
-        assert mi.operand(1).is_use
+        # Operand identity and order: def d, then uses x, y in that order.
+        assert mi.operand(0).is_def and mi.operand(0).reg.id == d.id
+        assert mi.operand(1).is_use and mi.operand(1).reg.id == x.id
+        assert mi.operand(2).is_use and mi.operand(2).reg.id == y.id
+        assert "ADDWrr" in str(mi)
     assert_no_leaks()
 
 
@@ -77,6 +99,7 @@ def test_build_instruction_with_immediate():
         mi.add_def(d)
         mi.add_imm(42)
         assert mi.opcode_name == "MOVi32imm"
+        assert mi.operand(0).is_def and mi.operand(0).reg.id == d.id
         assert mi.operand(1).imm == 42
     assert_no_leaks()
 
@@ -88,6 +111,8 @@ def test_build_branch_with_mbb_operand():
         target = mf.create_block()
         mi = b.build_instr(mf.opcode("B"))  # AArch64 unconditional branch
         mi.add_mbb(target)
+        # Keep the CFG consistent with the terminator so the function verifies.
+        mf.blocks[0].add_successor(target)
         assert mi.opcode_name == "B"
         assert mi.num_operands == 1
     assert_no_leaks()

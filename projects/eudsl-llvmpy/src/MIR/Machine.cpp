@@ -122,6 +122,24 @@ void requireVReg(llvm::MachineIRBuilder &b, llvm::Register reg,
             .c_str());
 }
 
+// getInstrInfo() can be null for a target without one; real backends always
+// have it (these MachineFunctions come from create_machine_function/codegen
+// with a real subtarget), so this is purely defensive.
+const llvm::TargetInstrInfo &requireTII(const llvm::MachineFunction &mf) {
+  const llvm::TargetInstrInfo *tii = mf.getSubtarget().getInstrInfo();
+  if (!tii)
+    throw nb::value_error("target has no TargetInstrInfo"); // LCOV_EXCL_LINE
+  return *tii;
+}
+
+// MCInstrInfo::get/getName index an array bounded only by an assert (compiled
+// out under NDEBUG), so an out-of-range opcode would read out of bounds -- a
+// segfault or, worse, a silently-wrong name. Validate before indexing.
+void requireValidOpcode(const llvm::TargetInstrInfo &tii, unsigned opcode) {
+  if (opcode >= tii.getNumOpcodes())
+    throw nb::index_error("opcode number out of range");
+}
+
 // The "current MachineIRBuilder" is tracked on a thread-local stack, mirroring
 // the IR builder's `with builder:` / current_builder() mechanism (see the
 // thread_local ThreadContextEntry stack in IR/Builder.cpp). `with builder:`
@@ -651,10 +669,9 @@ void populate_mir(nb::module_ &m) {
       .def(
           "opcode",
           [](llvm::MachineFunction &self, const std::string &name) -> unsigned {
-            const llvm::TargetInstrInfo *tii =
-                self.getSubtarget().getInstrInfo();
-            for (unsigned i = 0, e = tii->getNumOpcodes(); i < e; ++i) {
-              if (tii->getName(i) == name)
+            const llvm::TargetInstrInfo &tii = requireTII(self);
+            for (unsigned i = 0, e = tii.getNumOpcodes(); i < e; ++i) {
+              if (tii.getName(i) == name)
                 return i;
             }
             throw nb::key_error(
@@ -665,7 +682,9 @@ void populate_mir(nb::module_ &m) {
       .def(
           "opcode_name",
           [](llvm::MachineFunction &self, unsigned opcode) {
-            return self.getSubtarget().getInstrInfo()->getName(opcode).str();
+            const llvm::TargetInstrInfo &tii = requireTII(self);
+            requireValidOpcode(tii, opcode);
+            return tii.getName(opcode).str();
           },
           "opcode"_a, "The mnemonic for a target opcode number.")
       .def("__str__",
@@ -1046,12 +1065,16 @@ void populate_mir(nb::module_ &m) {
           "build_instr",
           [](llvm::MachineIRBuilder &self,
              unsigned opcode) -> llvm::MachineInstr * {
+            requireValidOpcode(requireTII(self.getMF()), opcode);
             return self.buildInstr(opcode).getInstr();
           },
           "opcode"_a, nb::rv_policy::reference_internal,
           "Build and insert an empty instruction of the given opcode; append "
           "operands with MachineInstr.add_def/add_use/add_imm/add_mbb. The "
-          "BuildMI analogue for target-specific opcodes.");
+          "BuildMI analogue for target-specific opcodes. Like BuildMI, the "
+          "appended operands are not validated against the opcode's "
+          "MCInstrDesc (arity/kind/def-first order are the caller's "
+          "responsibility).");
 
   // The innermost MachineIRBuilder entered as a context manager, mirroring the
   // IR module's current_builder(). Raises when there is none.
