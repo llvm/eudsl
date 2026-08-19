@@ -6272,6 +6272,7 @@ class Pipeline(Pipeline):
         self,
         strict_op_spec_alignment: bool = None,
         allow_invalid_op_datatype_combinations: bool = None,
+        validate_function_signature: bool = None,
     ):
         """Validates TOSA dialect
 
@@ -6281,12 +6282,14 @@ class Pipeline(Pipeline):
         Args:
             strict_op_spec_alignment: Verify if the properties of certain operations align the spec requirement
             allow_invalid_op_datatype_combinations: Disable checks for operations that are determined to be invalid due to their operand/result datatypes not aligning with the 'Supported Data Types' sections of the specifciation
+            validate_function_signature: Verify if the function signature is valid for TOSA dialect, i.e. all function arguments and return types are tosa-conformant tensor types
         """
         self.add_pass(
             "tosa-validate",
             **{
                 "strict-op-spec-alignment": strict_op_spec_alignment,
                 "allow-invalid-op-datatype-combinations": allow_invalid_op_datatype_combinations,
+                "validate-function-signature": validate_function_signature,
             }
         )
         return self
