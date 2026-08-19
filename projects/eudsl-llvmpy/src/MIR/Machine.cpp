@@ -19,7 +19,6 @@
 #include <llvm/CodeGen/TargetPassConfig.h>
 #include <llvm/CodeGen/TargetSubtargetInfo.h>
 #include <llvm/CodeGenTypes/LowLevelType.h>
-#include <llvm/CodeGenTypes/LowLevelType.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/DiagnosticInfo.h>
@@ -76,6 +75,23 @@ std::string withDetail(llvm::StringRef base, const std::string &detail) {
   if (detail.empty())
     return base.str(); // LCOV_EXCL_LINE -- MIRParser always diagnoses on error
   return (base + ": " + detail).str();
+}
+
+// GlobalISel's build helpers validate their operands only with asserts, which
+// are compiled out under NDEBUG (the shipped wheel), so bad input would emit
+// malformed MIR or fault in a later pass instead of raising. Enforce the same
+// preconditions here regardless of build mode: `reg` must be a generic virtual
+// register of `b`'s MachineFunction carrying type `ty`. MachineRegisterInfo::
+// getType returns an invalid LLT{} for a non-virtual, out-of-bounds, or
+// wrong-function register, so a single type compare rejects both a type
+// mismatch and a register minted by a different MachineFunction.
+void requireVRegOfType(llvm::MachineIRBuilder &b, llvm::Register reg,
+                       llvm::LLT ty, const char *role) {
+  if (b.getMF().getRegInfo().getType(reg) != ty)
+    throw nb::value_error((std::string(role) +
+                           " must be a virtual register of this "
+                           "MachineFunction with the result type")
+                              .c_str());
 }
 
 // Owns everything the inspected MachineFunctions transitively depend on, so
@@ -492,7 +508,7 @@ void populate_mir(nb::module_ &m) {
           },
           nb::rv_policy::reference_internal)
       .def(
-          "create_generic_vreg",
+          "create_generic_virtual_register",
           [](llvm::MachineFunction &self, llvm::LLT ty) -> llvm::Register {
             return self.getRegInfo().createGenericVirtualRegister(ty);
           },
@@ -638,6 +654,16 @@ void populate_mir(nb::module_ &m) {
   m.def(
       "create_machine_function",
       [](eudsl::Module &mod, llvm::TargetMachine &tm, const std::string &name) {
+        // Validate before take() so a rejected call leaves the module usable.
+        // Function::Create does not fail on a name collision -- it appends a
+        // numeric suffix (`f` -> `f.1`), which would then make
+        // machine_function(name) throw a confusing "no function named" error.
+        if (name.empty())
+          throw nb::value_error("function name must not be empty");
+        if (mod.get().getFunction(name))
+          throw nb::value_error(
+              ("module already has a function named '" + name + "'").c_str());
+
         std::shared_ptr<llvm::LLVMContext> ctxKeepAlive =
             mod.context().shared();
         std::unique_ptr<llvm::Module> module = mod.take();
@@ -668,6 +694,12 @@ void populate_mir(nb::module_ &m) {
       .def(
           "__init__",
           [](llvm::MachineIRBuilder *self, llvm::MachineFunction &mf) {
+            // setMBB(mf.front()) on a block-less MachineFunction dereferences
+            // the ilist sentinel (UB, no assert). create_machine_function seeds
+            // a block, but this ctor is public and accepts any MachineFunction.
+            if (mf.empty())
+              throw nb::value_error(
+                  "MachineFunction has no basic block to build into");
             new (self) llvm::MachineIRBuilder(mf);
             self->setMBB(mf.front());
           },
@@ -676,6 +708,12 @@ void populate_mir(nb::module_ &m) {
           "build_constant",
           [](llvm::MachineIRBuilder &self, llvm::LLT ty,
              int64_t value) -> llvm::Register {
+            // buildConstant derives the width from ty's scalar size; a pointer,
+            // scalable-vector, or invalid LLT hits asserting accessors that
+            // vanish under NDEBUG and would emit a wrong-width G_CONSTANT.
+            if (!(ty.isScalar() || ty.isFixedVector()))
+              throw nb::value_error("build_constant requires a scalar or "
+                                    "fixed-vector type");
             return self.buildConstant(ty, value).getReg(0);
           },
           "type"_a, "value"_a)
@@ -683,6 +721,8 @@ void populate_mir(nb::module_ &m) {
           "build_add",
           [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
              llvm::Register rhs) -> llvm::Register {
+            requireVRegOfType(self, lhs, ty, "lhs");
+            requireVRegOfType(self, rhs, ty, "rhs");
             return self.buildAdd(ty, lhs, rhs).getReg(0);
           },
           "type"_a, "lhs"_a, "rhs"_a)
@@ -690,6 +730,8 @@ void populate_mir(nb::module_ &m) {
           "build_sub",
           [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
              llvm::Register rhs) -> llvm::Register {
+            requireVRegOfType(self, lhs, ty, "lhs");
+            requireVRegOfType(self, rhs, ty, "rhs");
             return self.buildSub(ty, lhs, rhs).getReg(0);
           },
           "type"_a, "lhs"_a, "rhs"_a)
@@ -697,12 +739,17 @@ void populate_mir(nb::module_ &m) {
           "build_mul",
           [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
              llvm::Register rhs) -> llvm::Register {
+            requireVRegOfType(self, lhs, ty, "lhs");
+            requireVRegOfType(self, rhs, ty, "rhs");
             return self.buildMul(ty, lhs, rhs).getReg(0);
           },
           "type"_a, "lhs"_a, "rhs"_a)
       .def(
           "build_copy",
-          [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register src)
-              -> llvm::Register { return self.buildCopy(ty, src).getReg(0); },
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty,
+             llvm::Register src) -> llvm::Register {
+            requireVRegOfType(self, src, ty, "src");
+            return self.buildCopy(ty, src).getReg(0);
+          },
           "type"_a, "src"_a);
 }
