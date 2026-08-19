@@ -35,8 +35,9 @@ Currently, there are seven components:
 6. [mlir-python-mcp](./projects/mlir-python-mcp): An [MCP](https://modelcontextprotocol.io) server exposing a persistent MLIR Python REPL, so that a coding agent can build and transform IR through the bindings rather than by editing MLIR text;
    * Available via `pip install mlir-python-mcp -f https://llvm.github.io/eudsl`.
    * See [projects/mlir-python-mcp/README.md](./projects/mlir-python-mcp/README.md) for the `.mcp.json` snippet and the list of tools.
-7. [eudsl-llvmpy](./projects/eudsl-llvmpy): Python bindings for LLVM IR, plus a small DSL for authoring IR from Python;
+7. [eudsl-llvmpy](./projects/eudsl-llvmpy): Python bindings for LLVM IR (and Machine IR), plus small DSLs for authoring both from Python;
    * The bindings are a hand-written `nanobind` wrapper over the LLVM C++ API, so the Python class hierarchy mirrors `llvm::`; the DSL lowers a decorated Python function (with ordinary arithmetic and `if`/`while`/`for`) to a compiled `llvm::Function`.
+   * A third surface, `llvm.mir`, reaches one level lower — LLVM's post-instruction-selection Machine IR — with the same split: hand-written bindings over the `MachineFunction`/`MachineInstr` object model plus a `@machine_function` DSL for building generic (GlobalISel) MIR.
    * Available via `pip install eudsl-llvmpy -f https://llvm.github.io/eudsl`.
    * See [projects/eudsl-llvmpy/README.md](./projects/eudsl-llvmpy/README.md) and [projects/eudsl-llvmpy/tests](./projects/eudsl-llvmpy/tests).
 

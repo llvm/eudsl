@@ -175,7 +175,8 @@ def test_machine_function_has_single_entry_block():
 
 def test_instruction_opcode_names():
     with ir.Context() as ctx:
-        block = _add_machine_module(ctx).machine_function("add").blocks[0]
+        mf = _add_machine_module(ctx).machine_function("add")
+        block = mf.blocks[0]
         assert [i.opcode_name for i in block.instructions] == [
             "COPY",
             "COPY",
@@ -183,6 +184,9 @@ def test_instruction_opcode_names():
             "COPY",
             "RET_ReallyLR",
         ]
+        # finalize-isel MIR is well-formed (backs the README example's
+        # `print(mf.verify())  # True`).
+        assert mf.verify() is True
     assert_no_leaks()
 
 
