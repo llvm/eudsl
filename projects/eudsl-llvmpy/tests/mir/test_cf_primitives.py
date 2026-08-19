@@ -226,3 +226,33 @@ def test_replace_successor_rejects_cross_function_block():
         with pytest.raises(ValueError, match="different MachineFunction"):
             entry.replace_successor(a, foreign)
     assert_no_leaks()
+
+
+def test_add_phi_incoming_requires_a_phi():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s32 = mir.LLT.scalar(32)
+        b = mir.MachineIRBuilder(mf)
+        b.build_constant(s32, 1)
+        const_mi = mf.blocks[0].instructions[0]  # a G_CONSTANT, not a G_PHI
+        with pytest.raises(ValueError, match="requires a G_PHI"):
+            const_mi.add_phi_incoming(
+                mf.create_generic_virtual_register(s32), mf.blocks[0]
+            )
+    assert_no_leaks()
+
+
+def test_build_empty_phi_then_add_incomings():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s32 = mir.LLT.scalar(32)
+        b = mir.MachineIRBuilder(mf)
+        pred = mf.blocks[0]
+        v = b.build_constant(s32, 1)
+        phi = b.build_empty_phi(s32)  # def-only
+        assert phi.opcode_name == "G_PHI"
+        assert phi.num_operands == 1  # just the def
+        phi.add_phi_incoming(v, pred)
+        assert phi.num_operands == 3  # def + (value, block)
+        assert phi.operand(1).reg.id == v.id
+    assert_no_leaks()
