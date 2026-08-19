@@ -227,6 +227,12 @@ hierarchy): `MachineFunction`, `MachineBasicBlock`, `MachineInstr`,
 `MachineFunctionProperty`. `MachineModuleInfo` owns the `MachineFunction`s and
 keeps everything they reference alive.
 
+> The examples below use AArch64 opcodes/registers/triples, so they need the
+> AArch64 backend linked (`EUDSL_LLVMPY_TARGETS`); on other hosts
+> `mf.opcode("ADDWrr")` raises `KeyError`. JIT-*executing* the Route B object
+> (the last example's `add(2, 3)`) additionally needs an AArch64 host — as the
+> source tests' `skipif` guards encode.
+
 ### Inspecting MIR from the compiler
 
 `run_codegen_to_mir` runs instruction selection on an IR module and hands back the
@@ -260,7 +266,9 @@ virtual register, and `+ - *` and comparisons emit `G_ADD`/`G_SUB`/`G_MUL`/
 `G_ICMP` through a contextual `MachineIRBuilder`. Python ints coerce to
 `G_CONSTANT`s. `if`/`else` and `for`/`while` lower to `MachineBasicBlock`s and
 `G_PHI` nodes, reusing the same `@canonicalize` yield-protocol as the IR DSL — only
-the runtime differs (`MIRCanonicalizer`).
+the runtime differs (`MIRCanonicalizer`). The canonicalizer injects the loop
+builtins (`range_`, `while_`, …) into the decorated function, so they need no
+import.
 
 ```python
 from llvm import ir, jit, mir
@@ -276,7 +284,7 @@ with ir.Context() as ctx:
     @machine_function(module=mod, target=tm)
     @canonicalize(using=MIRCanonicalizer())
     def total(n: s32, acc: s32):
-        for i in range_(n):
+        for i in range_(0, n):
             acc = acc + i
             yield acc          # loop-carried value -> G_PHI at the header
         return acc
