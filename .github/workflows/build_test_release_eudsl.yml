@@ -463,7 +463,7 @@ jobs:
         if: ${{ inputs.workflow_call }}
         uses: dawidd6/action-download-artifact@v11
         with:
-          name: mlir_wheel_manylinux_x86_64_artifact
+          name: mlir_wheel_macos_arm64_artifact
           path: "./"
           run_id: ${{ inputs.workflow_caller_run_id }}
 
