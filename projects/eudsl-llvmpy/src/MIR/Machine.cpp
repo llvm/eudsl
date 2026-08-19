@@ -476,6 +476,13 @@ void populate_mir(nb::module_ &m) {
           "add_phi_incoming",
           [](llvm::MachineInstr &self, llvm::Register reg,
              llvm::MachineBasicBlock *mbb) {
+            // Appending (value, block) operands only makes sense for a G_PHI;
+            // on any other instruction it silently grows it with junk operands
+            // (malformed MIR, no verifier under NDEBUG).
+            if (self.getOpcode() != llvm::TargetOpcode::G_PHI) {
+              throw nb::value_error(
+                  "add_phi_incoming requires a G_PHI instruction");
+            }
             llvm::MachineFunction &mf = *self.getMF();
             self.addOperand(mf,
                             llvm::MachineOperand::CreateReg(reg,

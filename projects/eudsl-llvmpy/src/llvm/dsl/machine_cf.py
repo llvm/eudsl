@@ -30,6 +30,7 @@ from contextlib import contextmanager
 
 from ..ast import cf_transformers as _T
 from ..ast.canonicalize import Canonicalizer, FunctionPatcher
+from ..eudslllvm_ext.mir import LLT
 from .machine import MachineValue, current_machine_builder
 
 
@@ -173,9 +174,9 @@ class _MIRLoop:
     they precede the loop condition) and seeded with the preheader incoming;
     __exit__ adds their back-edge incoming from whatever block the body ended in
     (nested control flow may have moved the builder) and parks the builder at the
-    exit block. The header phis are the loop-carried live-outs, exposed as
-    `.results`. The body stays inline, so control flow nested in it lowers
-    normally.
+    exit block. The loop-carried phis (not the induction phi) are the live-outs,
+    exposed as `.results`. The body stays inline, so control flow nested in it
+    lowers normally.
     """
 
     def __init__(
@@ -240,10 +241,17 @@ class _MIRLoop:
         self._iv_val = iv_val
 
         if self.kind == "for":
-            descending = isinstance(self.step, int) and self.step < 0
+            # step is validated to be a nonzero int by range_(), so its sign
+            # reliably selects the compare direction.
+            descending = self.step < 0
             cond = iv_val > self.stop if descending else iv_val < self.stop
         else:
             cond = self.cond_fn(*carried_typed)
+            if not isinstance(cond, MachineValue) or cond.llt != LLT.scalar(1):
+                raise TypeError(
+                    "while condition must evaluate to an i1 MachineValue "
+                    "(e.g. a comparison like `a < b`)"
+                )
         b.build_brcond(cond.reg, body)
         b.build_br(self.exit_block)
         self.header.add_successor(body)
@@ -266,6 +274,11 @@ class _MIRLoop:
         body_end.add_successor(self.header)
         if self.kind == "for":
             self.iv_phi.add_phi_incoming(next_iv.reg, body_end)
+        if len(self.next_carried) != len(self.carried_phis):
+            raise ValueError(
+                f"loop body yielded {len(self.next_carried)} carried value(s) "
+                f"but the loop carries {len(self.carried_phis)}"
+            )
         for phi, nxt in zip(self.carried_phis, self.next_carried):
             phi.add_phi_incoming(nxt.reg, body_end)
         b.set_block(self.exit_block)
@@ -279,6 +292,8 @@ class _MIRLoop:
 def loop_yield(*values):
     """Record this iteration's updated carried values (the loop analogue of
     yield_), read by _MIRLoop.__exit__ to wire the back-edge phi incomings."""
+    if not _loop_stack:
+        raise RuntimeError("loop_yield used outside a loop body (no active loop)")
     _loop_stack[-1].next_carried = list(values)
 
 
@@ -287,6 +302,13 @@ def range_(start, stop=None, step=1, *, iter_args=()):
     and drives this via `with`."""
     if stop is None:
         start, stop = 0, start
+    # The step's sign selects the compare direction at trace time, so it must be
+    # a known int -- a MachineValue/float step can't pick a direction (and a
+    # float would silently truncate). A zero step never advances (infinite loop).
+    if not isinstance(step, int):
+        raise TypeError("range_ step must be an int")
+    if step == 0:
+        raise ValueError("range_ step must not be zero")
     return _MIRLoop("for", start=start, stop=stop, step=step, iter_args=iter_args)
 
 
