@@ -23,6 +23,20 @@ for calling convention, visibility, address space, and similar. If a binding
 would silently bake in one choice from a set the LLVM API offers, surface that
 choice as an argument.
 
+## Prefer specific nanobind types over `nb::object`/`nb::handle`
+
+In binding signatures, stored state, and return types, use the most specific
+type nanobind can bind rather than a generic `nb::object`/`nb::handle`. If a
+parameter is really an `llvm::MachineIRBuilder`, bind it as
+`llvm::MachineIRBuilder *`, not `nb::object` — nanobind casts the argument, and
+pointer equality gives a precise identity check. When you need to hand the same
+Python object back (e.g. a context manager's `__enter__`, or a `current_*()`
+accessor), return the pointer with `nb::rv_policy::reference`: nanobind's
+instance registry maps it back to the same Python object, so `is` identity
+holds. Reach for `nb::object`/`nb::handle` only when the value is genuinely an
+arbitrary Python object with no more specific type — e.g. the ignored
+`exc_type`/`exc_value`/`traceback` parameters of `__exit__`.
+
 ## No forward-reference comments
 
 Do not write comments that reference future work, later PRs, or task numbers
