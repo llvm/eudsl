@@ -5,7 +5,7 @@
 
 These pin the bare plumbing of the new `llvm.mir` submodule plus the
 target-independent LowLevelType (LLT), which is the first thing bound because
-it proves the CodeGen/CodeGenTypes libraries actually link into the extension.
+it proves the LLVMCodeGenTypes library actually links into the extension.
 LLT is a value type (not uniqued in a Context), so no `with Context()` is
 needed and there is nothing to leak-check here.
 """
@@ -29,6 +29,15 @@ def test_llt_scalar_predicates():
     assert not s.is_pointer
     assert not s.is_vector
     assert s.is_valid
+    # scalar() yields an ANY_SCALAR (neither INTEGER nor FLOAT kind), so both
+    # kind predicates are False; they exist to mirror the full LLT API.
+    assert not s.is_integer
+    assert not s.is_float
+
+
+def test_llt_scalar_size_in_bits_on_scalar_and_pointer():
+    assert mir.LLT.scalar(32).scalar_size_in_bits == 32
+    assert mir.LLT.pointer(0, 64).scalar_size_in_bits == 64
 
 
 def test_llt_pointer():
@@ -37,6 +46,12 @@ def test_llt_pointer():
     assert not p.is_scalar
     assert p.size_in_bits == 64
     assert p.address_space == 0
+
+
+def test_llt_pointer_nonzero_address_space():
+    p = mir.LLT.pointer(3, 64)
+    assert p.address_space == 3
+    assert str(p) == "p3"
 
 
 def test_llt_fixed_vector():
@@ -50,6 +65,23 @@ def test_llt_fixed_vector():
 def test_llt_equality():
     assert mir.LLT.scalar(32) == mir.LLT.scalar(32)
     assert mir.LLT.scalar(32) != mir.LLT.scalar(64)
+    assert not (mir.LLT.scalar(32) == mir.LLT.scalar(64))
+    assert not (mir.LLT.scalar(32) != mir.LLT.scalar(32))
+
+
+def test_llt_equality_with_non_llt():
+    # Comparing against a non-LLT operand returns False/True rather than raising.
+    assert mir.LLT.scalar(32) != 5
+    assert not (mir.LLT.scalar(32) == 5)
+
+
+def test_llt_hashable():
+    # Equal LLTs hash equal and are usable as set/dict keys.
+    assert hash(mir.LLT.scalar(32)) == hash(mir.LLT.scalar(32))
+    assert hash(mir.LLT.scalar(32)) != hash(mir.LLT.scalar(64))
+    types = {mir.LLT.scalar(32), mir.LLT.scalar(32), mir.LLT.fixed_vector(4, 32)}
+    assert len(types) == 2
+    assert mir.LLT.scalar(32) in types
 
 
 def test_llt_str():
