@@ -11,6 +11,8 @@ inspected. The reference shapes asserted here were produced with
 
 from textwrap import dedent
 
+import gc
+
 import pytest
 
 import llvm
@@ -45,6 +47,36 @@ _DECL_SRC = dedent("""\
     entry:
       %s = add i32 %a, %b
       ret i32 %s
+    }
+    """)
+
+# A loop cannot collapse to a single block (a plain conditional branch would be
+# if-converted to a CSEL), so its machine blocks get distinct, non-zero numbers.
+_LOOP_SRC = dedent("""\
+    define void @count(i32 %n) {
+    entry:
+      br label %head
+    head:
+      %i = phi i32 [ 0, %entry ], [ %i.next, %body ]
+      %c = icmp slt i32 %i, %n
+      br i1 %c, label %body, label %exit
+    body:
+      %i.next = add i32 %i, 1
+      br label %head
+    exit:
+      ret void
+    }
+    """)
+
+# Two definitions, so to_mir's per-function loop runs more than once.
+_TWO_FN_SRC = dedent("""\
+    define i32 @add(i32 %a, i32 %b) {
+      %s = add i32 %a, %b
+      ret i32 %s
+    }
+    define i32 @sub(i32 %a, i32 %b) {
+      %d = sub i32 %a, %b
+      ret i32 %d
     }
     """)
 
@@ -103,6 +135,7 @@ def test_addwrr_operands_are_one_def_two_uses():
         assert add.operand(1).is_use
         assert add.operand(2).is_use
         assert add.operand(0).reg.is_virtual
+        assert not add.operand(0).reg.is_physical
     assert_no_leaks()
 
 
@@ -121,6 +154,7 @@ def test_object_model_accessors():
         last_copy = [i for i in block.instructions if i.opcode_name == "COPY"][-1]
         phys = last_copy.operand(0)
         assert phys.reg.is_physical
+        assert not phys.reg.is_virtual
         assert phys.reg.id > 0
         assert "w0" in str(phys)
     assert_no_leaks()
@@ -160,8 +194,60 @@ def test_immediate_operand_and_kind_guards():
         mov = next(i for i in block.instructions if i.opcode_name == "MOVi32imm")
         assert mov.operand(1).is_imm
         assert mov.operand(1).imm == 42
+        # is_def/is_use are register-only; a non-register operand reports False
+        # rather than tripping LLVM's isReg() assert.
+        assert not mov.operand(1).is_def
+        assert not mov.operand(1).is_use
         with pytest.raises(ValueError):
             mov.operand(1).reg  # an immediate operand has no register
         with pytest.raises(ValueError):
             mov.operand(0).imm  # a register operand has no immediate
+    assert_no_leaks()
+
+
+def test_run_codegen_to_mir_consumes_module():
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly(_ADD_SRC, ctx, "m")
+        mir.run_codegen_to_mir(mod, jit.TargetMachine(triple=_TRIPLE))
+        assert mod._is_consumed
+        with pytest.raises(RuntimeError):
+            mod.functions  # the module moved into the wrapper; it can't be used
+    assert_no_leaks()
+
+
+def test_machine_function_outlives_dropped_mmi_handle():
+    with ir.Context() as ctx:
+        mmi = _add_machine_module(ctx)
+        mf = mmi.machine_function("add")
+        block = mf.blocks[0]
+        del mmi
+        gc.collect()
+        # reference_internal pins the owning MachineModuleInfo through mf/block,
+        # so the machine function stays valid after the Python handle is dropped.
+        assert mf.name == "add"
+        assert any(i.opcode_name == "ADDWrr" for i in block.instructions)
+    assert_no_leaks()
+
+
+def test_multi_block_function_numbers_its_blocks():
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly(_LOOP_SRC, ctx, "m")
+        mmi = mir.run_codegen_to_mir(mod, jit.TargetMachine(triple=_TRIPLE))
+        blocks = mmi.machine_function("count").blocks
+        numbers = [b.number for b in blocks]
+        assert len(blocks) >= 2
+        assert numbers == sorted(numbers)
+        assert max(numbers) >= 1  # not every block is number 0
+    assert_no_leaks()
+
+
+def test_to_mir_emits_every_defined_function():
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly(_TWO_FN_SRC, ctx, "m")
+        mmi = mir.run_codegen_to_mir(mod, jit.TargetMachine(triple=_TRIPLE))
+        assert mmi.machine_function("add").name == "add"
+        assert mmi.machine_function("sub").name == "sub"
+        text = mmi.to_mir()
+        assert "name:            add" in text
+        assert "name:            sub" in text
     assert_no_leaks()

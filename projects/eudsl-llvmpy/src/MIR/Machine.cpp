@@ -16,6 +16,9 @@
 #include <llvm/CodeGen/TargetPassConfig.h>
 #include <llvm/CodeGen/TargetSubtargetInfo.h>
 #include <llvm/CodeGenTypes/LowLevelType.h>
+#include <llvm/IR/DiagnosticInfo.h>
+#include <llvm/IR/DiagnosticPrinter.h>
+#include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Target/TargetMachine.h>
@@ -26,14 +29,56 @@
 
 namespace {
 
+// MIR parsing and codegen report failures through LLVMContext::diagnose --
+// their return values are only a bare success/failure bit, so the rich reason
+// (line, column, message) would otherwise be lost to the default handler's
+// stderr print, which is invisible under the Python/nanobind harness. This RAII
+// guard installs a handler that captures error-severity diagnostics into `sink`
+// for the duration of one parse/codegen call, restoring the previous handler on
+// scope exit so the capture buffer (a caller stack local) never outlives the
+// handler that points at it.
+struct ScopedDiagnosticCapture {
+  llvm::LLVMContext &ctx;
+  llvm::DiagnosticHandler::DiagnosticHandlerTy prevHandler;
+  void *prevContext;
+
+  ScopedDiagnosticCapture(llvm::LLVMContext &ctx, std::string &sink)
+      : ctx(ctx), prevHandler(ctx.getDiagnosticHandlerCallBack()),
+        prevContext(ctx.getDiagnosticContext()) {
+    ctx.setDiagnosticHandlerCallBack(
+        [](const llvm::DiagnosticInfo *di, void *context) {
+          if (di->getSeverity() == llvm::DS_Error) {
+            auto *out = static_cast<std::string *>(context);
+            llvm::raw_string_ostream os(*out);
+            llvm::DiagnosticPrinterRawOStream printer(os);
+            di->print(printer);
+          }
+        },
+        &sink);
+  }
+  ~ScopedDiagnosticCapture() {
+    ctx.setDiagnosticHandlerCallBack(prevHandler, prevContext);
+  }
+  ScopedDiagnosticCapture(const ScopedDiagnosticCapture &) = delete;
+  ScopedDiagnosticCapture &operator=(const ScopedDiagnosticCapture &) = delete;
+};
+
+// "<base>" when no diagnostic was captured, else "<base>: <detail>".
+std::string withDetail(llvm::StringRef base, const std::string &detail) {
+  if (detail.empty())
+    return base.str(); // LCOV_EXCL_LINE -- MIRParser always diagnoses on error
+  return (base + ": " + detail).str();
+}
+
 // Owns everything the inspected MachineFunctions transitively depend on, so
-// none of it is freed out from under them: the IR Module (whose Functions the
-// MachineFunctions reference) and the MachineModuleInfo that owns the
-// MachineFunctions. The MMI is owned two ways depending on how it was built:
-// the codegen path (run_codegen_to_mir) leaves it inside a
-// MachineModuleInfoWrapperPass owned by `pm`; the parse path (parse_mir) owns
-// it directly via `ownedMmi`. `mmi` is the query handle either way. The
-// TargetMachine is a separate Python object kept alive by a keep_alive.
+// none of it is freed out from under them: the LLVMContext (pinned by
+// `ctxKeepAlive`), the IR Module (whose Functions the MachineFunctions
+// reference), and the MachineModuleInfo that owns the MachineFunctions. The MMI
+// is owned two ways depending on how it was built: the codegen path
+// (run_codegen_to_mir) leaves it inside a MachineModuleInfoWrapperPass owned by
+// `pm`; the parse path (parse_mir) owns it directly via `ownedMmi`. `mmi` is
+// the query handle either way. The TargetMachine is a separate Python object
+// kept alive by a keep_alive.
 struct MachineModuleInfo {
   std::shared_ptr<llvm::LLVMContext> ctxKeepAlive;
   std::unique_ptr<llvm::Module> module;
@@ -42,7 +87,10 @@ struct MachineModuleInfo {
   llvm::MachineModuleInfo *mmi;
 
   // Print the whole module as .mir text: the IR block, then each function's
-  // machine-level block, matching what `llc -stop-after` emits.
+  // machine-level block, matching what `llc -stop-after=finalize-isel` emits. A
+  // function with no MachineFunction is skipped -- expected for declarations
+  // (nothing to lower); a definition only lacks one if codegen failed, which
+  // run_codegen_to_mir now reports as an exception rather than reaching here.
   std::string toMIR() {
     std::string buf;
     llvm::raw_string_ostream os(buf);
@@ -164,8 +212,20 @@ void populate_mir(nb::module_ &m) {
                    [](llvm::MachineInstr &self) { return self.getOpcode(); })
       .def_prop_ro("opcode_name",
                    [](llvm::MachineInstr &self) {
+                     const llvm::MachineFunction *mf = self.getMF();
+                     // LCOV_EXCL_START -- block instrs are always attached
+                     if (!mf) {
+                       throw nb::value_error(
+                           "instruction is not attached to a MachineFunction");
+                     }
+                     // LCOV_EXCL_STOP
                      const llvm::TargetInstrInfo *tii =
-                         self.getMF()->getSubtarget().getInstrInfo();
+                         mf->getSubtarget().getInstrInfo();
+                     // LCOV_EXCL_START -- AArch64 always has a TargetInstrInfo
+                     if (!tii) {
+                       throw nb::value_error("target has no TargetInstrInfo");
+                     }
+                     // LCOV_EXCL_STOP
                      return tii->getName(self.getOpcode()).str();
                    })
       .def_prop_ro(
@@ -224,21 +284,24 @@ void populate_mir(nb::module_ &m) {
       .def("__str__",
            [](llvm::MachineFunction &self) { return eudsl::toString(self); });
 
-  // The result of run_codegen_to_mir: owns the MachineFunctions and everything
-  // they depend on. `machine_function` resolves one by its IR Function name.
+  // The result of run_codegen_to_mir or parse_mir: owns the MachineFunctions
+  // and everything they depend on. `machine_function` resolves one by its IR
+  // Function name.
   nb::class_<MachineModuleInfo>(m, "MachineModuleInfo")
       .def(
           "machine_function",
           [](MachineModuleInfo &self,
              const std::string &name) -> llvm::MachineFunction * {
             llvm::Function *f = self.module->getFunction(name);
-            if (!f)
+            if (!f) {
               throw nb::key_error(
                   ("no function named '" + name + "' in the module").c_str());
+            }
             llvm::MachineFunction *mf = self.mmi->getMachineFunction(*f);
-            if (!mf)
+            if (!mf) {
               throw nb::key_error(
                   ("function '" + name + "' has no MachineFunction").c_str());
+            }
             return mf;
           },
           "name"_a, nb::rv_policy::reference_internal)
@@ -251,9 +314,10 @@ void populate_mir(nb::module_ &m) {
   // MachineModuleInfo that owns the resulting MachineFunctions. Consumes the
   // module (like adding it to the JIT): the MachineFunctions reference its
   // Functions, so ownership moves into the returned wrapper. Only the ISel
-  // passes are added -- not addMachinePasses -- so the MachineFunctions are
-  // retained (not freed by FreeMachineFunctionPass) for inspection, the state
-  // `llc -stop-after=finalize-isel` produces.
+  // passes are added -- not the object-emission pipeline (addPassesToEmitFile),
+  // which would append FreeMachineFunctionPass -- so the MachineFunctions are
+  // retained for inspection, the state `llc -stop-after=finalize-isel`
+  // produces.
   m.def(
       "run_codegen_to_mir",
       [](eudsl::Module &mod, llvm::TargetMachine &tm) {
@@ -267,11 +331,29 @@ void populate_mir(nb::module_ &m) {
         pm->add(tpc);
         auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(&tm);
         pm->add(mmiwp);
-        if (tpc->addISelPasses())
-          throw std::runtime_error( // LCOV_EXCL_LINE
-              "target cannot add instruction-selection passes"); // LCOV_EXCL_LINE
+        // LCOV_EXCL_START -- only a misconfigured target fails to add ISel
+        if (tpc->addISelPasses()) {
+          throw std::runtime_error(
+              "target cannot add instruction-selection passes");
+        }
+        // LCOV_EXCL_STOP
         tpc->setInitialized();
-        pm->run(*module);
+
+        // Codegen reports failures (e.g. an un-selectable construct) through
+        // the context diagnostic handler, not pm->run()'s return value; capture
+        // them so a failed selection surfaces as an exception instead of a
+        // silently-empty MachineModuleInfo.
+        std::string diag;
+        {
+          ScopedDiagnosticCapture capture(module->getContext(), diag);
+          pm->run(*module);
+        }
+        // LCOV_EXCL_START -- needs an un-selectable input to trigger
+        if (!diag.empty()) {
+          throw std::runtime_error(
+              withDetail("instruction selection failed", diag));
+        }
+        // LCOV_EXCL_STOP
 
         return new MachineModuleInfo{std::move(ctxKeepAlive), std::move(module),
                                      std::move(pm), /*ownedMmi=*/nullptr,
@@ -289,18 +371,29 @@ void populate_mir(nb::module_ &m) {
       [](const std::string &text, eudsl::Context &context,
          llvm::TargetMachine &tm) {
         std::shared_ptr<llvm::LLVMContext> ctxKeepAlive = context.shared();
+        // The MIR parser reports syntax/semantic errors through the context
+        // diagnostic handler and only returns a bare null/true; capture the
+        // real diagnostic so the thrown message carries the line and reason.
+        std::string diag;
+        ScopedDiagnosticCapture capture(context.get(), diag);
         std::unique_ptr<llvm::MIRParser> parser = llvm::createMIRParser(
             llvm::MemoryBuffer::getMemBuffer(text, "<mir>"), context.get());
-        if (!parser)
-          throw std::runtime_error(           // LCOV_EXCL_LINE
-              "could not create MIR parser"); // LCOV_EXCL_LINE
+        // LCOV_EXCL_START -- createMIRParser only fails on internal error
+        if (!parser) {
+          throw std::runtime_error("could not create MIR parser");
+        }
+        // LCOV_EXCL_STOP
         std::unique_ptr<llvm::Module> module = parser->parseIRModule();
-        if (!module)
-          throw std::runtime_error("failed to parse the IR portion of the MIR");
+        if (!module) {
+          throw std::runtime_error(
+              withDetail("failed to parse the IR portion of the MIR", diag));
+        }
         module->setDataLayout(tm.createDataLayout());
         auto ownedMmi = std::make_unique<llvm::MachineModuleInfo>(&tm);
-        if (parser->parseMachineFunctions(*module, *ownedMmi))
-          throw std::runtime_error("failed to parse machine functions");
+        if (parser->parseMachineFunctions(*module, *ownedMmi)) {
+          throw std::runtime_error(
+              withDetail("failed to parse machine functions", diag));
+        }
         llvm::MachineModuleInfo *mmi = ownedMmi.get();
         return new MachineModuleInfo{std::move(ctxKeepAlive), std::move(module),
                                      /*pm=*/nullptr, std::move(ownedMmi), mmi};

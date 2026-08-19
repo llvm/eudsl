@@ -72,10 +72,13 @@ def test_mir_print_parse_is_idempotent():
 
 def test_parse_mir_rejects_invalid_text():
     with ir.Context() as ctx:
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError) as ei:
             mir.parse_mir(
                 "@@@ not valid mir @@@", ctx, jit.TargetMachine(triple=_TRIPLE)
             )
+        # The real parser diagnostic is threaded into the message, not swallowed.
+        assert "failed to parse" in str(ei.value)
+        assert ":" in str(ei.value)
     assert_no_leaks()
 
 
@@ -96,6 +99,8 @@ _BAD_MF = dedent("""\
 
 def test_parse_mir_rejects_bad_machine_function_body():
     with ir.Context() as ctx:
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError) as ei:
             mir.parse_mir(_BAD_MF, ctx, jit.TargetMachine(triple=_TRIPLE))
+        assert "failed to parse machine functions" in str(ei.value)
+        assert ":" in str(ei.value)
     assert_no_leaks()
