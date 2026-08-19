@@ -21,8 +21,8 @@ cond_br.set_successor. The values passed to yield_ become the merge block's
 G_PHIs, built on the else branch (when both incoming edges are known), so
 `r = yield_(...)` binds to the phi that `return r` uses.
 
-Loops are not lowered here yet; a for/while in a @machine_function body is
-unsupported until the loop runtime lands.
+Only if/else is lowered here: a for/while in a @machine_function body is
+rejected (MIRCanonicalizer installs no loop transformers).
 """
 
 from contextlib import contextmanager
@@ -71,6 +71,14 @@ class _MIRIfOp:
         pred.add_successor(self.merge_block)
         return pred
 
+    def _repoint_false_edge(self, new_target):
+        """Atomically move the entry's false edge (CFG successor + the G_BR
+        terminator's target) from the merge block to `new_target`. MIR tracks
+        the successor list and the terminator operand separately, so both must
+        change together or the CFG and terminators silently disagree."""
+        self.entry_block.replace_successor(self.merge_block, new_target)
+        self.false_br.set_branch_target(new_target)
+
     def record_and_maybe_phi(self, values):
         """Called by yield_. Record this branch's values; on the else branch
         (both edges known) build the G_PHIs and return them."""
@@ -83,9 +91,18 @@ class _MIRIfOp:
         # else branch: both edges known, build the phis at the merge block.
         self.else_vals = list(values)
         self.else_pred = self._terminate_current()
+        if len(self.then_vals) != len(self.else_vals):
+            raise ValueError(
+                f"then/else branches yield different numbers of values "
+                f"({len(self.then_vals)} vs {len(self.else_vals)})"
+            )
         b.set_block(self.merge_block)
         phis = []
         for tv, ev in zip(self.then_vals, self.else_vals):
+            if tv.llt != ev.llt:
+                raise TypeError(
+                    f"then/else values have mismatched types: {tv.llt} and " f"{ev.llt}"
+                )
             reg = b.build_phi(
                 tv.llt, [(tv.reg, self.then_pred), (ev.reg, self.else_pred)]
             )
@@ -113,8 +130,7 @@ def else_ctx_manager(op):
     b = op.builder
     op.else_block = b.machine_function.create_block()
     # Repoint the entry's fall-through branch (and CFG edge) merge -> else.
-    op.entry_block.replace_successor(op.merge_block, op.else_block)
-    op.false_br.set_branch_target(op.else_block)
+    op._repoint_false_edge(op.else_block)
     op.active = "else"
     _if_stack.append(op)
     b.set_block(op.else_block)
@@ -126,6 +142,13 @@ def else_ctx_manager(op):
 
 
 def yield_(*values):
+    # _InjectMIRCFGlobals injects yield_ into the traced function's globals, so
+    # a stray yield_ outside an if body is reachable; fail with a clear message
+    # rather than a bare IndexError.
+    if not _if_stack:
+        raise RuntimeError(
+            "yield_ used outside a lowered if/else body (no active if op)"
+        )
     return _if_stack[-1].record_and_maybe_phi(values)
 
 
@@ -139,11 +162,29 @@ class _InjectMIRCFGlobals(FunctionPatcher):
         return f
 
 
+class _RejectLoops(_T.StrictTransformer):
+    """This runtime lowers only if/else; a for/while would otherwise fall
+    through the canonicalizer untouched and silently unroll (a Python `range`)
+    or hang the trace (a truthy MachineValue condition). Reject it loudly."""
+
+    def visit_For(self, node):
+        raise NotImplementedError(
+            "`for` loops in a @machine_function body are not supported"
+        )
+
+    def visit_While(self, node):
+        raise NotImplementedError(
+            "`while` loops in a @machine_function body are not supported"
+        )
+
+
 class MIRCanonicalizer(Canonicalizer):
-    # if/else only for now (no loop transformers); mirrors LLVMCanonicalizer's
-    # if/else passes so the rewritten AST shape is identical.
+    # if/else lowering; mirrors LLVMCanonicalizer's if/else passes so the
+    # rewritten AST shape is identical. _RejectLoops turns an unsupported
+    # for/while into a clear error instead of silently wrong MIR.
     cst_transformers = [
         _T.RejectUnsupportedJumps,
+        _RejectLoops,
         _T.CanonicalizeElIfs,
         _T.InsertEmptyYield,
         _T.ReplaceYieldWithLLVMYield,
