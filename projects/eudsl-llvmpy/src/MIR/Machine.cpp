@@ -937,21 +937,46 @@ void populate_mir(nb::module_ &m) {
           [](MachineModuleInfo &self) {
             if (self.emitted)
               throw std::runtime_error("object already emitted");
-            if (!self.mmiwp || !self.tm)
+            if (!self.mmiwp || !self.tm) {
               throw std::runtime_error(
                   "emit_object requires a module built with "
                   "create_machine_function");
+            }
+            // Verify the hand-built MIR up front so malformed input (the prior
+            // PRs' unchecked primitives can produce it: bogus properties,
+            // undefined vregs, ...) raises a catchable Python error instead of
+            // muddling through the emission pipeline -- whose in-pass verifier
+            // and asserts are gone under NDEBUG -- to a garbage object or a
+            // fatal codegen abort. The pipeline runs with DisableVerify=true
+            // since we verify here.
+            std::string report;
+            llvm::raw_string_ostream reportOS(report);
+            bool ok = true;
+            for (llvm::Function &f : *self.module) {
+              if (llvm::MachineFunction *mf = self.mmi->getMachineFunction(f)) {
+                ok &= mf->verify(/*p=*/nullptr, /*Banner=*/nullptr, &reportOS,
+                                 /*AbortOnError=*/false);
+              }
+            }
+            if (!ok)
+              throw std::runtime_error(
+                  withDetail("hand-built MIR failed verification", report));
+
             // Run only the back half of codegen (regalloc, prologue/epilogue,
-            // asm/object emission) over the already-selected MachineFunctions:
+            // object emission) over the already-selected MachineFunctions:
             // -start-after=finalize-isel skips instruction selection so the
             // hand-built MIR is used as-is. The option is process-global (read
             // by the pass config addPassesToEmitFile builds), so set+restore
-            // it.
+            // it; there is no lock, so this relies on the GIL serializing
+            // callers (no concurrent/nested/free-threaded codegen).
             auto &opts = llvm::cl::getRegisteredOptions();
             auto it = opts.find("start-after");
-            if (it == opts.end())
-              throw std::runtime_error( // LCOV_EXCL_LINE
-                  "the -start-after option is not registered"); // LCOV_EXCL_LINE
+            // LCOV_EXCL_START -- start-after is always registered by codegen
+            if (it == opts.end()) {
+              throw std::runtime_error(
+                  "the -start-after option is not registered");
+            }
+            // LCOV_EXCL_STOP
             auto &startAfter =
                 *static_cast<llvm::cl::opt<std::string> *>(it->second);
             std::string saved = startAfter;
@@ -969,23 +994,42 @@ void populate_mir(nb::module_ &m) {
             self.pm = std::make_unique<llvm::legacy::PassManager>();
             // addPassesToEmitFile adopts the MMIWrapperPass into `pm` (which we
             // keep, so `mmi` stays valid); it holds the built MachineFunctions.
+            // LCOV_EXCL_START -- AArch64 can always emit an object file
             if (self.tm->addPassesToEmitFile(
                     *self.pm, os, nullptr, llvm::CodeGenFileType::ObjectFile,
-                    /*DisableVerify=*/true, self.mmiwp.release()))
-              throw std::runtime_error(                 // LCOV_EXCL_LINE
-                  "target cannot emit an object file"); // LCOV_EXCL_LINE
+                    /*DisableVerify=*/true, self.mmiwp.release())) {
+              throw std::runtime_error("target cannot emit an object file");
+            }
+            // LCOV_EXCL_STOP
             // The back half (register allocation) requires reserved registers
             // to be frozen; the front of the pipeline normally does this, so do
             // it here for the hand-built MachineFunctions.
-            for (llvm::Function &f : *self.module)
+            for (llvm::Function &f : *self.module) {
               if (llvm::MachineFunction *mf = self.mmi->getMachineFunction(f))
                 mf->getRegInfo().freezeReservedRegs();
-            self.pm->run(*self.module);
+            }
+            // A codegen pass reports failure through the context diagnostic
+            // handler (DS_Error -> stderr + exit under the default handler),
+            // not pm->run()'s value; capture it so it surfaces as an exception.
+            std::string diag;
+            {
+              ScopedDiagnosticCapture capture(self.module->getContext(), diag);
+              self.pm->run(*self.module);
+            }
             self.emitted = true;
+            // LCOV_EXCL_START -- eager verification makes a back-half failure
+            // or empty emission unreachable from well-formed hand-built MIR.
+            if (!diag.empty())
+              throw std::runtime_error(
+                  withDetail("object emission failed", diag));
+            if (buf.empty())
+              throw std::runtime_error("object emission produced no output");
+            // LCOV_EXCL_STOP
             return nb::bytes(buf.data(), buf.size());
           },
           "Emit a relocatable object file for the built (already-selected) MIR "
-          "by running the back half of codegen (regalloc, emission).");
+          "by running the back half of codegen (regalloc, emission). Verifies "
+          "the MIR first, raising if it is malformed.");
 
   // Run instruction selection on an IR module and hand back the
   // MachineModuleInfo that owns the resulting MachineFunctions. Consumes the
