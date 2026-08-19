@@ -464,9 +464,10 @@ void populate_mir(nb::module_ &m) {
       .def(
           "set_branch_target",
           [](llvm::MachineInstr &self, llvm::MachineBasicBlock *mbb) {
-            if (self.getNumOperands() == 0 || !self.getOperand(0).isMBB())
+            if (self.getNumOperands() == 0 || !self.getOperand(0).isMBB()) {
               throw nb::value_error(
                   "instruction has no branch-target (MBB) operand");
+            }
             self.getOperand(0).setMBB(mbb);
           },
           "block"_a,
@@ -530,6 +531,13 @@ void populate_mir(nb::module_ &m) {
           "replace_successor",
           [](llvm::MachineBasicBlock &self, llvm::MachineBasicBlock *old,
              llvm::MachineBasicBlock *replacement) {
+            // replaceSuccessor only asserts `old` is a successor (gone under
+            // NDEBUG); without the check it walks past succ_end() and corrupts
+            // the CFG. Guard it, and reject a cross-function replacement.
+            if (!self.isSuccessor(old)) {
+              throw nb::value_error("`old` is not a successor of this block");
+            }
+            requireSameFunction(*self.getParent(), replacement, "new");
             self.replaceSuccessor(old, replacement);
           },
           "old"_a, "new"_a, "Replace a CFG successor edge with another block.")

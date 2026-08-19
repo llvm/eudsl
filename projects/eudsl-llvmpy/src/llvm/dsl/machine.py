@@ -97,8 +97,11 @@ class MachineValue:
 
     def _cmp(self, other, predicate):
         """Emit a G_ICMP, producing an i1 (LLT.scalar(1)) MachineValue.
-        Comparisons default to signed-integer predicates."""
+        Comparisons default to signed-integer predicates; the unsigned
+        ult/ule/ugt/uge methods request the unsigned ones."""
         other = self._coerce(other)
+        if self.llt != other.llt:
+            raise TypeError(f"mismatched types: {self.llt} and {other.llt}")
         i1 = LLT.scalar(1)
         reg = current_machine_builder().build_icmp(predicate, i1, self.reg, other.reg)
         return MachineValue(reg, i1)
@@ -116,7 +119,11 @@ class MachineValue:
         return self._cmp(other, ICmpPredicate.SGE)
 
     # __eq__/__ne__ stay identity (so a MachineValue is hashable and usable in
-    # traversal); value equality is exposed by name, like ArithValue.
+    # traversal); value equality is exposed by name, like ArithValue. NOTE: in a
+    # @machine_function body `if a == b:` therefore compares Python identity (a
+    # compile-time False for two distinct values), NOT a G_ICMP -- use a.eq(b) /
+    # a.ne(b) for a value comparison, and the ult/ule/ugt/uge methods for
+    # unsigned ordering (the < <= > >= operators are signed).
     __hash__ = object.__hash__
 
     def eq(self, other):
@@ -124,6 +131,18 @@ class MachineValue:
 
     def ne(self, other):
         return self._cmp(other, ICmpPredicate.NE)
+
+    def ult(self, other):
+        return self._cmp(other, ICmpPredicate.ULT)
+
+    def ule(self, other):
+        return self._cmp(other, ICmpPredicate.ULE)
+
+    def ugt(self, other):
+        return self._cmp(other, ICmpPredicate.UGT)
+
+    def uge(self, other):
+        return self._cmp(other, ICmpPredicate.UGE)
 
 
 class DSLMachineFunction:
