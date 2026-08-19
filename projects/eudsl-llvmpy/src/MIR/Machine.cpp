@@ -45,20 +45,18 @@ void populate_mir(nb::module_ &m) {
                    [](const llvm::LLT &self) { return self.isFloat(); })
       .def_prop_ro("is_valid",
                    [](const llvm::LLT &self) { return self.isValid(); })
-      .def("__eq__",
-           [](const llvm::LLT &self, nb::handle other) {
-             llvm::LLT o;
-             if (!nb::try_cast<llvm::LLT>(other, o))
-               return false;
-             return self == o;
-           })
-      .def("__ne__",
-           [](const llvm::LLT &self, nb::handle other) {
-             llvm::LLT o;
-             if (!nb::try_cast<llvm::LLT>(other, o))
-               return true;
-             return self != o;
-           })
+      .def(
+          "__eq__",
+          [](const llvm::LLT &self, const llvm::LLT &other) {
+            return self == other;
+          },
+          nb::is_operator())
+      .def(
+          "__ne__",
+          [](const llvm::LLT &self, const llvm::LLT &other) {
+            return self != other;
+          },
+          nb::is_operator())
       .def("__hash__",
            [](const llvm::LLT &self) {
              return static_cast<Py_ssize_t>(self.getUniqueRAWLLTData());

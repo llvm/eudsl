@@ -26,7 +26,9 @@ def test_value_eq_hash_and_operands():
         mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
         f = mod.get_function("f")
         add = f.arg(0).users[0]
-        # __eq__ against a non-Value returns False (try_cast fails).
+        # __eq__ against a non-Value returns False (nanobind's is_operator
+        # yields NotImplemented on the failed cast, so Python falls back to
+        # identity).
         assert (f.arg(0) == "not a value") is False
         assert (f.arg(0) != "not a value") is True
         # __hash__: usable in a set/dict.
