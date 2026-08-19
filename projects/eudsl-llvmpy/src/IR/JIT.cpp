@@ -11,6 +11,7 @@
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Object/ObjectFile.h>
 #include <llvm/Support/MemoryBuffer.h>
 
 #include <memory>
@@ -47,6 +48,14 @@ void populate_jit(nb::module_ &m) {
                     llvm::StringRef(static_cast<const char *>(obj.data()),
                                     obj.size()),
                     "<jit-obj>");
+            // ORC's addObjectFile is lazy: it records the buffer and defers
+            // parsing to materialization (a later lookup), so bad bytes would
+            // otherwise surface as an opaque error attributed to the wrong
+            // operation. Parse eagerly here so add_object itself raises on a
+            // non-object / truncated / wrong-format buffer.
+            eudsl::unwrap(llvm::object::ObjectFile::createObjectFile(
+                              memBuf->getMemBufferRef())
+                              .takeError());
             eudsl::unwrap(self.addObjectFile(std::move(memBuf)));
           },
           "obj"_a,
