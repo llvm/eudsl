@@ -20,6 +20,7 @@
 #include <llvm/CodeGen/TargetPassConfig.h>
 #include <llvm/CodeGen/TargetSubtargetInfo.h>
 #include <llvm/CodeGenTypes/LowLevelType.h>
+#include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/DiagnosticInfo.h>
@@ -97,6 +98,28 @@ void requireVRegOfType(llvm::MachineIRBuilder &b, llvm::Register reg,
                            " must be a virtual register of this "
                            "MachineFunction with the result type")
                               .c_str());
+}
+
+// A MachineBasicBlock / Register crosses the Python boundary as a bare handle
+// with no back-link to its function; passing one from a different function
+// builds corrupt MIR (cross-linked CFGs, out-of-bounds vreg indexes) that the
+// verifier -- gone under NDEBUG -- would otherwise catch. Guard provenance
+// against the builder's (or another block's) function.
+void requireSameFunction(const llvm::MachineFunction &mf,
+                         const llvm::MachineBasicBlock *mbb, const char *role) {
+  if (mbb->getParent() != &mf)
+    throw nb::value_error(
+        (std::string(role) + " belongs to a different MachineFunction")
+            .c_str());
+}
+
+void requireVReg(llvm::MachineIRBuilder &b, llvm::Register reg,
+                 const char *role) {
+  if (!b.getMF().getRegInfo().getType(reg).isValid())
+    throw nb::value_error(
+        (std::string(role) +
+         " must be a generic virtual register of this MachineFunction")
+            .c_str());
 }
 
 // The "current MachineIRBuilder" is tracked on a thread-local stack, mirroring
@@ -501,6 +524,9 @@ void populate_mir(nb::module_ &m) {
       .def(
           "add_successor",
           [](llvm::MachineBasicBlock &self, llvm::MachineBasicBlock *succ) {
+            // addSuccessor also calls succ->addPredecessor(this), so a
+            // cross-function successor would corrupt two functions' CFGs.
+            requireSameFunction(*self.getParent(), succ, "successor");
             self.addSuccessor(succ);
           },
           "successor"_a, "Add a CFG successor edge to another block.")
@@ -540,13 +566,16 @@ void populate_mir(nb::module_ &m) {
           "type"_a, "Create a new generic virtual register of the given LLT.")
       .def(
           "create_block",
-          [](llvm::MachineFunction &self) -> llvm::MachineBasicBlock * {
-            llvm::MachineBasicBlock *mbb = self.CreateMachineBasicBlock();
+          [](llvm::MachineFunction &self,
+             const llvm::BasicBlock *bb) -> llvm::MachineBasicBlock * {
+            llvm::MachineBasicBlock *mbb = self.CreateMachineBasicBlock(bb);
             self.push_back(mbb);
             return mbb;
           },
+          "basic_block"_a.none() = nb::none(),
           nb::rv_policy::reference_internal,
-          "Append a new, empty MachineBasicBlock to the function.")
+          "Append a new, empty MachineBasicBlock to the function, optionally "
+          "linked to an IR BasicBlock for debug info/naming.")
       .def("__str__",
            [](llvm::MachineFunction &self) { return eudsl::toString(self); });
 
@@ -823,6 +852,7 @@ void populate_mir(nb::module_ &m) {
       .def(
           "set_block",
           [](llvm::MachineIRBuilder &self, llvm::MachineBasicBlock *mbb) {
+            requireSameFunction(self.getMF(), mbb, "block");
             self.setMBB(*mbb);
           },
           "block"_a, "Insert subsequent instructions at the end of `block`.")
@@ -831,19 +861,40 @@ void populate_mir(nb::module_ &m) {
           [](llvm::MachineIRBuilder &self, llvm::CmpInst::Predicate pred,
              llvm::LLT ty, llvm::Register lhs,
              llvm::Register rhs) -> llvm::Register {
+            // buildICmp only asserts these (gone under NDEBUG): an integer
+            // predicate, an s1 (or vector-of-s1) result, and same-typed operand
+            // vregs of this function.
+            if (!llvm::CmpInst::isIntPredicate(pred))
+              throw nb::value_error(
+                  "build_icmp requires an integer comparison predicate");
+            llvm::LLT s1 = llvm::LLT::scalar(1);
+            if (ty != s1 && !(ty.isFixedVector() && ty.getElementType() == s1))
+              throw nb::value_error(
+                  "build_icmp result type must be s1 or a fixed vector of s1");
+            requireVReg(self, lhs, "lhs");
+            requireVReg(self, rhs, "rhs");
+            const llvm::MachineRegisterInfo &mri = self.getMF().getRegInfo();
+            if (mri.getType(lhs) != mri.getType(rhs))
+              throw nb::value_error("build_icmp operands must have the same "
+                                    "type");
             return self.buildICmp(pred, ty, lhs, rhs).getReg(0);
           },
           "predicate"_a, "type"_a, "lhs"_a, "rhs"_a)
       .def(
           "build_br",
           [](llvm::MachineIRBuilder &self, llvm::MachineBasicBlock *dest) {
+            requireSameFunction(self.getMF(), dest, "dest");
             self.buildBr(*dest);
           },
           "dest"_a, "Build an unconditional branch (G_BR) to `dest`.")
       .def(
           "build_brcond",
           [](llvm::MachineIRBuilder &self, llvm::Register cond,
-             llvm::MachineBasicBlock *dest) { self.buildBrCond(cond, *dest); },
+             llvm::MachineBasicBlock *dest) {
+            requireVReg(self, cond, "cond");
+            requireSameFunction(self.getMF(), dest, "dest");
+            self.buildBrCond(cond, *dest);
+          },
           "cond"_a, "dest"_a,
           "Build a conditional branch (G_BRCOND) on `cond` to `dest`.")
       .def(
@@ -851,6 +902,16 @@ void populate_mir(nb::module_ &m) {
           [](llvm::MachineIRBuilder &self, llvm::LLT ty,
              std::vector<std::pair<llvm::Register, llvm::MachineBasicBlock *>>
                  incomings) -> llvm::Register {
+            // A G_PHI with no operands is structurally invalid; each incoming
+            // value must be a vreg of this function with the phi's type, and
+            // each predecessor block must belong to this function.
+            if (incomings.empty())
+              throw nb::value_error("build_phi requires at least one "
+                                    "(value, predecessor-block) pair");
+            for (auto &[reg, mbb] : incomings) {
+              requireVRegOfType(self, reg, ty, "incoming value");
+              requireSameFunction(self.getMF(), mbb, "predecessor block");
+            }
             llvm::Register res =
                 self.getMRI()->createGenericVirtualRegister(ty);
             llvm::MachineInstrBuilder phi =
