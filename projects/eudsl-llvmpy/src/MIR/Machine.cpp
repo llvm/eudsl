@@ -142,6 +142,46 @@ void requireValidOpcode(const llvm::TargetInstrInfo &tii, unsigned opcode) {
     throw nb::index_error("opcode number out of range");
 }
 
+// getRegisterInfo() can be null for a target without one; real backends always
+// have it (these MachineFunctions come from create_machine_function/codegen
+// with a real subtarget), so this is purely defensive (mirrors requireTII).
+const llvm::TargetRegisterInfo &requireTRI(const llvm::MachineFunction &mf) {
+  const llvm::TargetRegisterInfo *tri = mf.getSubtarget().getRegisterInfo();
+  if (!tri)
+    throw nb::value_error("target has no TargetRegisterInfo"); // LCOV_EXCL_LINE
+  return *tri;
+}
+
+// Shared register-operand construction for add_def/add_use/add_reg, so the
+// "same operation with defaults" invariant lives in one place rather than in
+// three parallel CreateReg calls. Rejects flags that LLVM only permits on the
+// opposite operand kind (kill on a use, dead on a def) and out-of-range
+// subregister indices -- all guarded by asserts in LLVM that vanish under
+// NDEBUG, so an otherwise-silent corrupt operand would result.
+void addRegOperand(llvm::MachineInstr &mi, llvm::Register reg, bool isDef,
+                   bool isImp, bool isKill, bool isDead, bool isUndef,
+                   bool isEarlyClobber, unsigned subReg, bool isDebug,
+                   bool isInternalRead, bool isRenamable) {
+  if (isKill && isDef)
+    throw nb::value_error(
+        "is_kill is only valid on a use operand (is_def=False)");
+  if (isDead && !isDef)
+    throw nb::value_error(
+        "is_dead is only valid on a def operand (is_def=True)");
+  if (isRenamable && !reg.isPhysical())
+    throw nb::value_error("is_renamable is only valid on a physical register");
+  llvm::MachineFunction &mf = *mi.getMF();
+  if (subReg) {
+    const llvm::TargetRegisterInfo &tri = requireTRI(mf);
+    if (subReg >= tri.getNumSubRegIndices())
+      throw nb::index_error("sub_reg index out of range");
+  }
+  mi.addOperand(mf,
+                llvm::MachineOperand::CreateReg(
+                    reg, isDef, isImp, isKill, isDead, isUndef, isEarlyClobber,
+                    subReg, isDebug, isInternalRead, isRenamable));
+}
+
 // The "current MachineIRBuilder" is tracked on a thread-local stack, mirroring
 // the IR builder's `with builder:` / current_builder() mechanism (see the
 // thread_local ThreadContextEntry stack in IR/Builder.cpp). `with builder:`
@@ -287,10 +327,12 @@ void populate_mir(nb::module_ &m) {
   // already-selected MIR.
   nb::class_<llvm::TargetRegisterClass>(m, "TargetRegisterClass");
 
-  // MachineFunctionProperties::Property -- the pipeline-stage flags a
-  // MachineFunction carries (set with MachineFunction.set_property). Building
-  // already-selected MIR by hand means setting these to match what the
-  // corresponding codegen stage would have produced (e.g. IsSSA).
+  // MachineFunctionProperties::Property -- the flags a MachineFunction carries
+  // (set with MachineFunction.set_property). Some mark progress through the
+  // codegen pipeline (Legalized, RegBankSelected, Selected) and some are
+  // descriptive invariants of the current body (IsSSA, NoPHIs, TracksLiveness,
+  // NoVRegs). Building already-selected MIR by hand means setting these to
+  // match what the corresponding codegen stage would have produced.
   nb::enum_<llvm::MachineFunctionProperties::Property>(
       m, "MachineFunctionProperty")
       .value("IsSSA", llvm::MachineFunctionProperties::Property::IsSSA)
@@ -318,6 +360,37 @@ void populate_mir(nb::module_ &m) {
       .def_prop_ro("is_use",
                    [](llvm::MachineOperand &self) {
                      return self.isReg() && self.isUse();
+                   })
+      .def_prop_ro("is_implicit",
+                   [](llvm::MachineOperand &self) {
+                     return self.isReg() && self.isImplicit();
+                   })
+      .def_prop_ro("is_kill",
+                   [](llvm::MachineOperand &self) {
+                     return self.isReg() && self.isKill();
+                   })
+      .def_prop_ro("is_dead",
+                   [](llvm::MachineOperand &self) {
+                     return self.isReg() && self.isDead();
+                   })
+      .def_prop_ro("is_undef",
+                   [](llvm::MachineOperand &self) {
+                     return self.isReg() && self.isUndef();
+                   })
+      .def_prop_ro("is_early_clobber",
+                   [](llvm::MachineOperand &self) {
+                     return self.isReg() && self.isEarlyClobber();
+                   })
+      .def_prop_ro("is_renamable",
+                   [](llvm::MachineOperand &self) {
+                     // isRenamable() asserts a physical register (renamable is
+                     // a post-RA physreg concept), so guard on that too.
+                     return self.isReg() && self.getReg().isPhysical() &&
+                            self.isRenamable();
+                   })
+      .def_prop_ro("sub_reg",
+                   [](llvm::MachineOperand &self) -> unsigned {
+                     return self.isReg() ? self.getSubReg() : 0;
                    })
       .def_prop_ro("reg",
                    [](llvm::MachineOperand &self) -> llvm::Register {
@@ -549,36 +622,43 @@ void populate_mir(nb::module_ &m) {
       .def(
           "add_def",
           [](llvm::MachineInstr &self, llvm::Register reg) {
-            self.addOperand(*self.getMF(), llvm::MachineOperand::CreateReg(
-                                               reg, /*isDef=*/true));
+            addRegOperand(self, reg, /*isDef=*/true, /*isImp=*/false,
+                          /*isKill=*/false, /*isDead=*/false, /*isUndef=*/false,
+                          /*isEarlyClobber=*/false, /*subReg=*/0,
+                          /*isDebug=*/false, /*isInternalRead=*/false,
+                          /*isRenamable=*/false);
           },
           "reg"_a, "Append a register def operand.")
       .def(
           "add_use",
           [](llvm::MachineInstr &self, llvm::Register reg, bool implicit) {
-            self.addOperand(*self.getMF(), llvm::MachineOperand::CreateReg(
-                                               reg, /*isDef=*/false, implicit));
+            addRegOperand(self, reg, /*isDef=*/false, /*isImp=*/implicit,
+                          /*isKill=*/false, /*isDead=*/false, /*isUndef=*/false,
+                          /*isEarlyClobber=*/false, /*subReg=*/0,
+                          /*isDebug=*/false, /*isInternalRead=*/false,
+                          /*isRenamable=*/false);
           },
-          "reg"_a, "implicit"_a = false, "Append a register use operand.")
+          "reg"_a, "implicit"_a = false,
+          "Append a register use operand (implicit=True for an implicit use).")
       .def(
           "add_reg",
           [](llvm::MachineInstr &self, llvm::Register reg, bool isDef,
              bool isImp, bool isKill, bool isDead, bool isUndef,
-             bool isEarlyClobber, unsigned subReg, bool isRenamable) {
-            self.addOperand(*self.getMF(),
-                            llvm::MachineOperand::CreateReg(
-                                reg, isDef, isImp, isKill, isDead, isUndef,
-                                isEarlyClobber, subReg, /*isDebug=*/false,
-                                /*isInternalRead=*/false, isRenamable));
+             bool isEarlyClobber, unsigned subReg, bool isDebug,
+             bool isInternalRead, bool isRenamable) {
+            addRegOperand(self, reg, isDef, isImp, isKill, isDead, isUndef,
+                          isEarlyClobber, subReg, isDebug, isInternalRead,
+                          isRenamable);
           },
           "reg"_a, "is_def"_a = false, "implicit"_a = false,
           "is_kill"_a = false, "is_dead"_a = false, "is_undef"_a = false,
-          "is_early_clobber"_a = false, "sub_reg"_a = 0,
-          "is_renamable"_a = false,
+          "is_early_clobber"_a = false, "sub_reg"_a = 0, "is_debug"_a = false,
+          "is_internal_read"_a = false, "is_renamable"_a = false,
           "Append a register operand, exposing the full MachineOperand "
-          "register "
-          "flag set (def/use, implicit, kill, dead, undef, early-clobber, "
-          "sub-register, renamable).")
+          "register flag set (def/use, implicit, kill, dead, undef, "
+          "early-clobber, sub-register, debug, internal-read, renamable). "
+          "is_kill is only valid on a use, is_dead only on a def, and "
+          "is_renamable only on a physical register.")
       .def(
           "add_imm",
           [](llvm::MachineInstr &self, int64_t value) {
@@ -665,6 +745,11 @@ void populate_mir(nb::module_ &m) {
       .def(
           "add_livein",
           [](llvm::MachineBasicBlock &self, llvm::Register reg) {
+            // asMCReg() only asserts physicality (compiled out under NDEBUG),
+            // so a virtual register would be truncated into a garbage
+            // MCRegister and recorded as a bogus livein. Reject it here.
+            if (!reg.isPhysical())
+              throw nb::value_error("add_livein requires a physical register");
             self.addLiveIn(reg.asMCReg());
           },
           "reg"_a, "Declare a physical register live-in to this block.")
@@ -706,27 +791,26 @@ void populate_mir(nb::module_ &m) {
           "reg_class",
           [](llvm::MachineFunction &self,
              const std::string &name) -> const llvm::TargetRegisterClass * {
-            const llvm::TargetRegisterInfo *tri =
-                self.getSubtarget().getRegisterInfo();
-            for (unsigned i = 0, e = tri->getNumRegClasses(); i < e; ++i) {
-              const llvm::TargetRegisterClass *rc = tri->getRegClass(i);
-              if (name == tri->getRegClassName(
-                              &tri->MCRegisterInfo::getRegClass(rc->getID())))
+            const llvm::TargetRegisterInfo &tri = requireTRI(self);
+            for (unsigned i = 0, e = tri.getNumRegClasses(); i < e; ++i) {
+              const llvm::TargetRegisterClass *rc = tri.getRegClass(i);
+              if (name == tri.getRegClassName(
+                              &tri.MCRegisterInfo::getRegClass(rc->getID()))) {
                 return rc;
+              }
             }
             throw nb::key_error(
                 ("no target register class named '" + name + "'").c_str());
           },
-          "name"_a, nb::rv_policy::reference_internal,
+          "name"_a, nb::rv_policy::reference,
           "Look up a target register class by name (e.g. \"GPR32\").")
       .def(
           "physreg",
           [](llvm::MachineFunction &self,
              const std::string &name) -> llvm::Register {
-            const llvm::TargetRegisterInfo *tri =
-                self.getSubtarget().getRegisterInfo();
-            for (unsigned i = 1, e = tri->getNumRegs(); i < e; ++i) {
-              if (name == tri->getName(i))
+            const llvm::TargetRegisterInfo &tri = requireTRI(self);
+            for (unsigned i = 1, e = tri.getNumRegs(); i < e; ++i) {
+              if (name == tri.getName(i))
                 return llvm::Register(i);
             }
             throw nb::key_error(
@@ -747,7 +831,22 @@ void populate_mir(nb::module_ &m) {
              llvm::MachineFunctionProperties::Property prop) {
             self.getProperties().set(prop);
           },
-          "property"_a, "Set a MachineFunctionProperties flag.")
+          "property"_a,
+          "Set a MachineFunctionProperties flag. Warning: this asserts, it "
+          "does "
+          "not request -- the machine verifier trusts these flags and chooses "
+          "which invariant classes to enforce from them (e.g. liveness is only "
+          "checked when TracksLiveness is set), so setting a flag the MIR does "
+          "not actually satisfy can make verify() pass on malformed MIR.")
+      .def(
+          "has_property",
+          [](llvm::MachineFunction &self,
+             llvm::MachineFunctionProperties::Property prop) {
+            return self.getProperties().hasProperty(prop);
+          },
+          "property"_a,
+          "Whether a MachineFunctionProperties flag is set (read side of "
+          "set_property).")
       .def(
           "create_block",
           [](llvm::MachineFunction &self,
