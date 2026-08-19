@@ -60,8 +60,7 @@ NB_MODULE(eudslllvm_ext, m) {
   nb::module_ intrinsics = m.def_submodule("intrinsics");
   populate_intrinsics(intrinsics);
 
-  // llvm.mir -- Machine IR: the target-independent LowLevelType (LLT) and,
-  // building on it, the MachineFunction/MachineInstr object model.
+  // llvm.mir -- Machine IR: the target-independent LowLevelType (LLT).
   nb::module_ mir = m.def_submodule("mir");
   populate_mir(mir);
 }
