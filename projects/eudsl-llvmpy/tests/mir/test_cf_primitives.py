@@ -2,9 +2,10 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """Control-flow primitives for generic MIR: extra blocks, branches, compares,
-and G_PHI. These are the pieces the @machine_function control-flow runtime is
-built on; here they are driven directly to hand-build an if-diamond.
+and G_PHI. Here they are driven directly to hand-build an if-diamond.
 """
+
+import pytest
 
 from llvm import ir, jit, mir
 from llvm.testing import assert_no_leaks
@@ -13,11 +14,11 @@ from llvm.testing import assert_no_leaks
 _TRIPLE = None
 
 
-def _new_function(ctx):
+def _new_function(ctx, name="f"):
     mod = ir.Module("m", ctx)
     tm = jit.TargetMachine(triple=_TRIPLE)
-    mmi = mir.create_machine_function(mod, tm, "f")
-    return mmi, mmi.machine_function("f")
+    mmi = mir.create_machine_function(mod, tm, name)
+    return mmi, mmi.machine_function(name)
 
 
 def test_create_block_and_set_block():
@@ -67,8 +68,121 @@ def test_build_if_diamond_with_phi():
         r = b.build_phi(s32, [(tv, then_bb), (ev, else_bb)])
         assert r.is_virtual
 
-        text = str(mf)
         assert len(mf.blocks) == 4
-        for opc in ("G_ICMP", "G_BRCOND", "G_BR", "G_PHI"):
-            assert opc in text
+
+        # Structural check of the G_ICMP: def is `cond`, operands (after the
+        # predicate operand) are x and one, in order. build_* return a raw
+        # Register, so compare .id directly.
+        icmp = next(i for i in entry.instructions if i.opcode_name == "G_ICMP")
+        assert icmp.operand(0).reg.id == cond.id
+        assert icmp.operand(2).reg.id == x.id
+        assert icmp.operand(3).reg.id == one.id
+
+        # Structural check of the G_PHI: def is `r`, and the value operands are
+        # tv then ev in that order (register operands are 1 and 3; 2 and 4 are
+        # the predecessor blocks). Swapping the pair order would fail here.
+        phi = next(i for i in join_bb.instructions if i.opcode_name == "G_PHI")
+        assert phi.num_operands == 5
+        assert phi.operand(0).reg.id == r.id
+        assert phi.operand(1).reg.id == tv.id
+        assert phi.operand(3).reg.id == ev.id
+    assert_no_leaks()
+
+
+def test_create_block_accepts_ir_basic_block():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        # Passing an IR BasicBlock links the MBB to it (debug info/naming); the
+        # default (None) is used everywhere else. Just exercise the arg path.
+        fn = ir.parse_assembly(
+            "define void @g() {\nentry:\n  ret void\n}\n", ctx, "g2"
+        ).functions[0]
+        bb = fn.entry_block
+        before = len(mf.blocks)
+        mbb = mf.create_block(bb)
+        assert len(mf.blocks) == before + 1
+        assert mbb.number == before
+    assert_no_leaks()
+
+
+def test_build_icmp_rejects_float_predicate():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s32, s1 = mir.LLT.scalar(32), mir.LLT.scalar(1)
+        b = mir.MachineIRBuilder(mf)
+        x = b.build_constant(s32, 1)
+        with pytest.raises(ValueError, match="integer comparison predicate"):
+            b.build_icmp(ir.FCmpPredicate.OLT, s1, x, x)
+    assert_no_leaks()
+
+
+def test_build_icmp_rejects_non_s1_result():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s32 = mir.LLT.scalar(32)
+        b = mir.MachineIRBuilder(mf)
+        x = b.build_constant(s32, 1)
+        with pytest.raises(ValueError, match="s1"):
+            b.build_icmp(ir.ICmpPredicate.SLT, s32, x, x)  # result must be s1
+    assert_no_leaks()
+
+
+def test_build_icmp_rejects_mismatched_operands():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s32, s64, s1 = mir.LLT.scalar(32), mir.LLT.scalar(64), mir.LLT.scalar(1)
+        b = mir.MachineIRBuilder(mf)
+        a = b.build_constant(s32, 1)
+        c = b.build_constant(s64, 1)
+        with pytest.raises(ValueError, match="same type"):
+            b.build_icmp(ir.ICmpPredicate.SLT, s1, a, c)
+    assert_no_leaks()
+
+
+def test_build_phi_rejects_empty_incomings():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        b = mir.MachineIRBuilder(mf)
+        with pytest.raises(ValueError, match="at least one"):
+            b.build_phi(mir.LLT.scalar(32), [])
+    assert_no_leaks()
+
+
+def test_build_phi_rejects_mistyped_incoming():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s32, s64 = mir.LLT.scalar(32), mir.LLT.scalar(64)
+        b = mir.MachineIRBuilder(mf)
+        wrong = b.build_constant(s64, 1)  # not s32
+        entry = mf.blocks[0]
+        with pytest.raises(ValueError, match="incoming value"):
+            b.build_phi(s32, [(wrong, entry)])
+    assert_no_leaks()
+
+
+def test_cross_function_block_rejected():
+    with ir.Context() as ctx:
+        mmi_f, mf = _new_function(ctx, "f")
+        mmi_g, mg = _new_function(ctx, "g")
+        foreign = mg.create_block()  # a block owned by g
+        b = mir.MachineIRBuilder(mf)
+        entry = mf.blocks[0]
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            b.set_block(foreign)
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            b.build_br(foreign)
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            entry.add_successor(foreign)
+    assert_no_leaks()
+
+
+def test_cross_function_register_rejected():
+    with ir.Context() as ctx:
+        mmi_f, mf = _new_function(ctx, "f")
+        mmi_g, mg = _new_function(ctx, "g")
+        s32, s1 = mir.LLT.scalar(32), mir.LLT.scalar(1)
+        foreign = mir.MachineIRBuilder(mg).build_constant(s32, 1)  # g's vreg
+        bf = mir.MachineIRBuilder(mf)
+        with pytest.raises(ValueError):
+            bf.build_brcond(foreign, mf.blocks[0])
     assert_no_leaks()
