@@ -77,6 +77,32 @@ class Pipeline(Pipeline):
         self.add_pass("acc-compute-lowering", **{"device-type": device_type})
         return self
 
+    def acc_declare_ctor_dtor_conversion(
+        self, priority: int = None, generate_dtors: bool = None
+    ):
+        """Convert OpenACC declare global constructors and destructors to LLVM functions
+
+        Converts `acc.global_ctor` into `llvm.func` entry points and registers them
+        in `llvm.mlir.global_ctors`. When enabled, similarly converts
+        `acc.global_dtor` and registers the functions in `llvm.mlir.global_dtors`;
+        otherwise, removes the destructor operations.
+
+        The ctor/dtor priority defaults to 102 so declare constructors run after
+        libacctarget init (priority 101).
+
+        Nested OpenACC operations inside the ctor/dtor regions are left unchanged
+        for later lowering.
+
+        Args:
+            priority: Priority for ACC declare global constructors and destructors
+            generate_dtors: Generate LLVM destructor functions and register them globally
+        """
+        self.add_pass(
+            "acc-declare-ctor-dtor-conversion",
+            **{"priority": priority, "generate-dtors": generate_dtors}
+        )
+        return self
+
     def acc_declare_gpu_module_insertion(self, cuda_unified: bool = None):
         """Copy globals with acc.declare into the GPU module
 
@@ -3902,6 +3928,11 @@ class Pipeline(Pipeline):
         )
         return self
 
+    def omp_function_filter(self):
+        """Filters out functions intended for the host when compiling for an OpenMP target device."""
+        self.add_pass("omp-function-filter")
+        return self
+
     def omp_host_op_filter(self):
         """Removes all non target-related ops from host functions.
 
@@ -3933,6 +3964,9 @@ class Pipeline(Pipeline):
         Marks functions contained within the module as declare target if they are
         called from within an explicitly marked declare target function or a target
         region (omp.target).
+
+        Also, mark transitively reached functions through recipe ops (e.g.
+        omp.private) and other function calls.
 
         """
         self.add_pass("omp-mark-declare-target")
