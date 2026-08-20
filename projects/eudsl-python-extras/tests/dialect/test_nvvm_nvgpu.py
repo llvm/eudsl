@@ -390,7 +390,7 @@ def test_transform_mma_sync_matmul_f16_f16_accum(ctx: MLIRContext, capfd):
     # CHECK:        %[[VAL_116:.*]] = vector.insert %[[VAL_111]], %[[VAL_115]] [0, 1] : f16 into vector<2x2xf16>
     # CHECK:        %[[VAL_117:.*]] = vector.insert %[[VAL_112]], %[[VAL_116]] [1, 0] : f16 into vector<2x2xf16>
     # CHECK:        %[[VAL_118:.*]] = vector.insert %[[VAL_113]], %[[VAL_117]] [1, 1] : f16 into vector<2x2xf16>
-    # CHECK:        %[[VAL_119:.*]] = nvgpu.mma.sync(%[[VAL_100]], %[[VAL_109]], %[[VAL_118]]) {mmaShape = [16, 8, 16]} : (vector<4x2xf16>, vector<2x2xf16>, vector<2x2xf16>) -> vector<2x2xf16>
+    # CHECK:        %[[VAL_119:.*]] = nvgpu.mma.sync(%[[VAL_100]], %[[VAL_109]], %[[VAL_118]]) mmaShape = [16, 8, 16] : (vector<4x2xf16>, vector<2x2xf16>, vector<2x2xf16>) -> vector<2x2xf16>
     # CHECK:        %[[VAL_120:.*]] = vector.extract %[[VAL_119]][0, 0] : f16 from vector<2x2xf16>
     # CHECK:        %[[VAL_121:.*]] = vector.extract %[[VAL_119]][0, 1] : f16 from vector<2x2xf16>
     # CHECK:        %[[VAL_122:.*]] = vector.extract %[[VAL_119]][1, 0] : f16 from vector<2x2xf16>
@@ -828,7 +828,7 @@ def test_tma(ctx: MLIRContext):
     # CHECK:      %[[VAL_48:.*]] = nvgpu.warpgroup.mma.init.accumulator -> <fragmented = vector<64x64xf32>>
     # CHECK:      %[[VAL_49:.*]] = nvgpu.warpgroup.generate.descriptor %[[VAL_25]], %[[VAL_5]] : memref<64x64xf16, #gpu.address_space<workgroup>>, <tensor = memref<128x64xf16, #gpu.address_space<workgroup>>, swizzle = swizzle_128b, l2promo = none, oob = zero, interleave = none> -> <tensor = memref<64x64xf16, #gpu.address_space<workgroup>>>
     # CHECK:      %[[VAL_50:.*]] = nvgpu.warpgroup.generate.descriptor %[[VAL_27]], %[[VAL_6]] : memref<64x64xf16, #gpu.address_space<workgroup>>, <tensor = memref<64x64xf16, #gpu.address_space<workgroup>>, swizzle = swizzle_128b, l2promo = none, oob = zero, interleave = none> -> <tensor = memref<64x64xf16, #gpu.address_space<workgroup>>>
-    # CHECK:      %[[VAL_51:.*]] = nvgpu.warpgroup.mma %[[VAL_49]], %[[VAL_50]], %[[VAL_48]] {transposeB} : <tensor = memref<64x64xf16, #gpu.address_space<workgroup>>>, <tensor = memref<64x64xf16, #gpu.address_space<workgroup>>>, <fragmented = vector<64x64xf32>> -> <fragmented = vector<64x64xf32>>
+    # CHECK:      %[[VAL_51:.*]] = nvgpu.warpgroup.mma %[[VAL_49]], %[[VAL_50]], %[[VAL_48]] transposeB : <tensor = memref<64x64xf16, #gpu.address_space<workgroup>>>, <tensor = memref<64x64xf16, #gpu.address_space<workgroup>>>, <fragmented = vector<64x64xf32>> -> <fragmented = vector<64x64xf32>>
     # CHECK:      nvgpu.warpgroup.mma.store %[[VAL_51]], %[[VAL_2]] : <fragmented = vector<64x64xf32>> to memref<64x64xf32>
     # CHECK:      gpu.return
     # CHECK:    }
