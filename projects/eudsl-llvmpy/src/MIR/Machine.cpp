@@ -16,8 +16,11 @@
 #include <llvm/CodeGen/TargetPassConfig.h>
 #include <llvm/CodeGen/TargetSubtargetInfo.h>
 #include <llvm/CodeGenTypes/LowLevelType.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/DiagnosticInfo.h>
 #include <llvm/IR/DiagnosticPrinter.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/GlobalValue.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -168,10 +171,33 @@ void populate_mir(nb::module_ &m) {
   // target's real registers).
   nb::class_<llvm::Register>(m, "Register")
       .def_prop_ro("id", [](llvm::Register &self) { return self.id(); })
+      .def_prop_ro("is_valid",
+                   [](llvm::Register &self) { return self.isValid(); })
       .def_prop_ro("is_virtual",
                    [](llvm::Register &self) { return self.isVirtual(); })
       .def_prop_ro("is_physical",
-                   [](llvm::Register &self) { return self.isPhysical(); });
+                   [](llvm::Register &self) { return self.isPhysical(); })
+      .def_prop_ro("virt_reg_index",
+                   [](llvm::Register &self) {
+                     if (!self.isVirtual())
+                       throw nb::value_error("register is not virtual");
+                     return self.virtRegIndex();
+                   })
+      .def(
+          "__eq__",
+          [](llvm::Register &self, llvm::Register other) {
+            return self == other;
+          },
+          nb::is_operator())
+      .def(
+          "__ne__",
+          [](llvm::Register &self, llvm::Register other) {
+            return self != other;
+          },
+          nb::is_operator())
+      .def("__hash__", [](llvm::Register &self) {
+        return static_cast<Py_ssize_t>(self.id());
+      });
 
   // llvm::MachineOperand -- one operand of a MachineInstr. is_def/is_use are
   // register-only in LLVM (they assert otherwise), so they are guarded to
@@ -200,6 +226,107 @@ void populate_mir(nb::module_ &m) {
                      if (!self.isImm())
                        throw nb::value_error("operand is not an immediate");
                      return self.getImm();
+                   })
+      // Remaining register-operand flags (read side).
+      .def_prop_ro("is_debug",
+                   [](llvm::MachineOperand &self) {
+                     return self.isReg() && self.isDebug();
+                   })
+      .def_prop_ro("is_internal_read",
+                   [](llvm::MachineOperand &self) {
+                     return self.isReg() && self.isInternalRead();
+                   })
+      .def_prop_ro("is_tied",
+                   [](llvm::MachineOperand &self) {
+                     return self.isReg() && self.isTied();
+                   })
+      .def_prop_ro(
+          "target_flags",
+          [](llvm::MachineOperand &self) { return self.getTargetFlags(); })
+      // Operand-kind predicates (mirror MachineOperand::isX()).
+      .def_prop_ro("is_cimm",
+                   [](llvm::MachineOperand &self) { return self.isCImm(); })
+      .def_prop_ro("is_fpimm",
+                   [](llvm::MachineOperand &self) { return self.isFPImm(); })
+      .def_prop_ro("is_mbb",
+                   [](llvm::MachineOperand &self) { return self.isMBB(); })
+      .def_prop_ro("is_fi",
+                   [](llvm::MachineOperand &self) { return self.isFI(); })
+      .def_prop_ro("is_cpi",
+                   [](llvm::MachineOperand &self) { return self.isCPI(); })
+      .def_prop_ro("is_jti",
+                   [](llvm::MachineOperand &self) { return self.isJTI(); })
+      .def_prop_ro(
+          "is_target_index",
+          [](llvm::MachineOperand &self) { return self.isTargetIndex(); })
+      .def_prop_ro("is_global",
+                   [](llvm::MachineOperand &self) { return self.isGlobal(); })
+      .def_prop_ro("is_symbol",
+                   [](llvm::MachineOperand &self) { return self.isSymbol(); })
+      .def_prop_ro(
+          "is_block_address",
+          [](llvm::MachineOperand &self) { return self.isBlockAddress(); })
+      .def_prop_ro("is_reg_mask",
+                   [](llvm::MachineOperand &self) { return self.isRegMask(); })
+      .def_prop_ro("is_metadata",
+                   [](llvm::MachineOperand &self) { return self.isMetadata(); })
+      .def_prop_ro(
+          "is_predicate",
+          [](llvm::MachineOperand &self) { return self.isPredicate(); })
+      // Kind-specific getters (guarded; each asserts its kind in LLVM).
+      .def_prop_ro(
+          "cimm",
+          [](llvm::MachineOperand &self) -> const llvm::ConstantInt * {
+            if (!self.isCImm())
+              throw nb::value_error("operand is not a CImm");
+            return self.getCImm();
+          },
+          nb::rv_policy::reference)
+      .def_prop_ro(
+          "fpimm",
+          [](llvm::MachineOperand &self) -> const llvm::ConstantFP * {
+            if (!self.isFPImm())
+              throw nb::value_error("operand is not an FPImm");
+            return self.getFPImm();
+          },
+          nb::rv_policy::reference)
+      .def_prop_ro(
+          "mbb",
+          [](llvm::MachineOperand &self) -> llvm::MachineBasicBlock * {
+            if (!self.isMBB())
+              throw nb::value_error("operand is not a MachineBasicBlock");
+            return self.getMBB();
+          },
+          nb::rv_policy::reference_internal)
+      .def_prop_ro("index",
+                   [](llvm::MachineOperand &self) {
+                     if (!self.isFI() && !self.isCPI() && !self.isJTI() &&
+                         !self.isTargetIndex())
+                       throw nb::value_error("operand has no index");
+                     return self.getIndex();
+                   })
+      .def_prop_ro(
+          "global_value",
+          [](llvm::MachineOperand &self) -> const llvm::GlobalValue * {
+            if (!self.isGlobal())
+              throw nb::value_error("operand is not a global address");
+            return self.getGlobal();
+          },
+          nb::rv_policy::reference)
+      .def_prop_ro("symbol_name",
+                   [](llvm::MachineOperand &self) {
+                     if (!self.isSymbol())
+                       throw nb::value_error(
+                           "operand is not an external symbol");
+                     return std::string(self.getSymbolName());
+                   })
+      .def_prop_ro("offset",
+                   [](llvm::MachineOperand &self) {
+                     if (!self.isGlobal() && !self.isSymbol() &&
+                         !self.isCPI() && !self.isTargetIndex() &&
+                         !self.isBlockAddress())
+                       throw nb::value_error("operand has no offset");
+                     return self.getOffset();
                    })
       .def("__str__",
            [](llvm::MachineOperand &self) { return eudsl::toString(self); });
@@ -240,6 +367,51 @@ void populate_mir(nb::module_ &m) {
             return &self.getOperand(i);
           },
           "index"_a, nb::rv_policy::reference_internal)
+      .def_prop_ro(
+          "parent",
+          [](llvm::MachineInstr &self) -> const llvm::MachineBasicBlock * {
+            return self.getParent();
+          },
+          nb::rv_policy::reference_internal)
+      .def_prop_ro("num_defs",
+                   [](llvm::MachineInstr &self) { return self.getNumDefs(); })
+      .def_prop_ro("num_explicit_operands",
+                   [](llvm::MachineInstr &self) {
+                     return self.getNumExplicitOperands();
+                   })
+      // Classification predicates (query the MCInstrDesc; mirror MachineInstr).
+      .def_prop_ro("is_terminator",
+                   [](llvm::MachineInstr &self) { return self.isTerminator(); })
+      .def_prop_ro("is_branch",
+                   [](llvm::MachineInstr &self) { return self.isBranch(); })
+      .def_prop_ro(
+          "is_conditional_branch",
+          [](llvm::MachineInstr &self) { return self.isConditionalBranch(); })
+      .def_prop_ro(
+          "is_unconditional_branch",
+          [](llvm::MachineInstr &self) { return self.isUnconditionalBranch(); })
+      .def_prop_ro(
+          "is_indirect_branch",
+          [](llvm::MachineInstr &self) { return self.isIndirectBranch(); })
+      .def_prop_ro("is_barrier",
+                   [](llvm::MachineInstr &self) { return self.isBarrier(); })
+      .def_prop_ro("is_call",
+                   [](llvm::MachineInstr &self) { return self.isCall(); })
+      .def_prop_ro("is_return",
+                   [](llvm::MachineInstr &self) { return self.isReturn(); })
+      .def_prop_ro("is_copy",
+                   [](llvm::MachineInstr &self) { return self.isCopy(); })
+      .def_prop_ro("is_phi",
+                   [](llvm::MachineInstr &self) { return self.isPHI(); })
+      .def_prop_ro(
+          "is_implicit_def",
+          [](llvm::MachineInstr &self) { return self.isImplicitDef(); })
+      .def_prop_ro("may_load",
+                   [](llvm::MachineInstr &self) { return self.mayLoad(); })
+      .def_prop_ro("may_store",
+                   [](llvm::MachineInstr &self) { return self.mayStore(); })
+      .def_prop_ro("is_debug_instr",
+                   [](llvm::MachineInstr &self) { return self.isDebugInstr(); })
       .def("__str__",
            [](llvm::MachineInstr &self) { return eudsl::toString(self); });
 
@@ -261,6 +433,31 @@ void populate_mir(nb::module_ &m) {
             return instrs;
           },
           nb::rv_policy::reference_internal)
+      .def_prop_ro(
+          "parent",
+          [](llvm::MachineBasicBlock &self) -> llvm::MachineFunction * {
+            return self.getParent();
+          },
+          nb::rv_policy::reference_internal)
+      .def_prop_ro(
+          "is_entry_block",
+          [](llvm::MachineBasicBlock &self) { return self.isEntryBlock(); })
+      .def_prop_ro(
+          "successors",
+          [](llvm::MachineBasicBlock &self) {
+            std::vector<llvm::MachineBasicBlock *> succs(self.succ_begin(),
+                                                         self.succ_end());
+            return succs;
+          },
+          nb::rv_policy::reference_internal)
+      .def_prop_ro(
+          "predecessors",
+          [](llvm::MachineBasicBlock &self) {
+            std::vector<llvm::MachineBasicBlock *> preds(self.pred_begin(),
+                                                         self.pred_end());
+            return preds;
+          },
+          nb::rv_policy::reference_internal)
       .def("__str__",
            [](llvm::MachineBasicBlock &self) { return eudsl::toString(self); });
 
@@ -279,6 +476,14 @@ void populate_mir(nb::module_ &m) {
             for (llvm::MachineBasicBlock &mbb : self)
               blocks.push_back(&mbb);
             return blocks;
+          },
+          nb::rv_policy::reference_internal)
+      .def_prop_ro("num_blocks",
+                   [](llvm::MachineFunction &self) { return self.size(); })
+      .def_prop_ro(
+          "function",
+          [](llvm::MachineFunction &self) -> const llvm::Function * {
+            return &self.getFunction();
           },
           nb::rv_policy::reference_internal)
       .def("__str__",
@@ -305,6 +510,19 @@ void populate_mir(nb::module_ &m) {
             return mf;
           },
           "name"_a, nb::rv_policy::reference_internal)
+      .def_prop_ro(
+          "machine_functions",
+          [](MachineModuleInfo &self) {
+            std::vector<llvm::MachineFunction *> mfs;
+            for (llvm::Function &f : *self.module) {
+              if (llvm::MachineFunction *mf = self.mmi->getMachineFunction(f))
+                mfs.push_back(mf);
+            }
+            return mfs;
+          },
+          nb::rv_policy::reference_internal,
+          "The MachineFunctions in the module (functions without one -- e.g. "
+          "declarations -- are skipped).")
       .def(
           "to_mir", [](MachineModuleInfo &self) { return self.toMIR(); },
           "Serialize the whole module (IR block + machine functions) as .mir "
