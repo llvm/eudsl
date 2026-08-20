@@ -83,6 +83,66 @@ _TWO_FN_SRC = dedent("""\
 _TRIPLE = "aarch64-unknown-linux-gnu"
 
 
+# A load from a global -> a machine operand that isGlobal (the @g address).
+_GLOBAL_SRC = dedent("""\
+    @g = global i32 0
+    define i32 @f() {
+      %v = load i32, ptr @g
+      ret i32 %v
+    }
+    """)
+
+# An alloca -> a stack slot, i.e. a frame-index (isFI) machine operand. The
+# accesses are volatile so they survive as real load/store machine instructions
+# (a plain alloca would be promoted away).
+_ALLOCA_SRC = dedent("""\
+    define i32 @a(i32 %x) {
+      %p = alloca i32
+      store volatile i32 %x, ptr %p
+      %v = load volatile i32, ptr %p
+      ret i32 %v
+    }
+    """)
+
+# Generic (pre-ISel) MIR parsed directly: G_CONSTANT carries a CImm operand and
+# G_FCONSTANT an FPImm operand -- the operand kinds selected MIR doesn't have.
+_GENERIC_MIR = dedent("""\
+    --- |
+      define i32 @c() { ret i32 0 }
+      define float @fc() { ret float 0.0 }
+    ...
+    ---
+    name: c
+    body: |
+      bb.0:
+        %0:_(s32) = G_CONSTANT i32 42
+        $w0 = COPY %0(s32)
+        RET_ReallyLR implicit $w0
+    ...
+    ---
+    name: fc
+    body: |
+      bb.0:
+        %0:_(s32) = G_FCONSTANT float 1.000000e+00
+        RET_ReallyLR
+    ...
+    """)
+
+# An external-symbol (isSymbol) machine operand, via an ADRP of a runtime symbol.
+_SYMBOL_MIR = dedent("""\
+    --- |
+      define void @s() { ret void }
+    ...
+    ---
+    name: s
+    body: |
+      bb.0:
+        $x0 = ADRP target-flags(aarch64-page) &__stack_chk_guard
+        RET_ReallyLR
+    ...
+    """)
+
+
 def test_run_codegen_to_mir_yields_named_machine_function():
     with ir.Context() as ctx:
         mod = ir.parse_assembly(_ADD_SRC, ctx, "m")
@@ -250,4 +310,269 @@ def test_to_mir_emits_every_defined_function():
         text = mmi.to_mir()
         assert "name:            add" in text
         assert "name:            sub" in text
+    assert_no_leaks()
+
+
+def test_register_accessors():
+    with ir.Context() as ctx:
+        block = _add_machine_module(ctx).machine_function("add").blocks[0]
+        add = next(i for i in block.instructions if i.opcode_name == "ADDWrr")
+        vreg = add.operand(0).reg  # a def: virtual
+        assert vreg.is_valid
+        assert vreg.is_virtual
+        assert vreg.virt_reg_index >= 0
+        # Equality + hashing (by register id).
+        assert vreg == add.operand(0).reg
+        assert vreg != add.operand(1).reg
+        assert hash(vreg) == vreg.id
+        assert (vreg == "not a register") is False
+        # virt_reg_index is virtual-only.
+        phys = (
+            next(i for i in block.instructions if i.opcode_name == "RET_ReallyLR")
+            .operand(0)
+            .reg
+        )
+        assert phys.is_physical
+        with pytest.raises(ValueError):
+            phys.virt_reg_index
+    assert_no_leaks()
+
+
+def test_operand_kind_predicates_are_all_false_on_a_register():
+    with ir.Context() as ctx:
+        block = _add_machine_module(ctx).machine_function("add").blocks[0]
+        reg = next(i for i in block.instructions if i.opcode_name == "ADDWrr").operand(
+            0
+        )
+        assert reg.is_reg
+        # Every non-register kind predicate is False for a register operand
+        # (this exercises each predicate's binding line).
+        for pred in (
+            "is_cimm",
+            "is_fpimm",
+            "is_mbb",
+            "is_fi",
+            "is_cpi",
+            "is_jti",
+            "is_target_index",
+            "is_global",
+            "is_symbol",
+            "is_block_address",
+            "is_reg_mask",
+            "is_metadata",
+            "is_predicate",
+        ):
+            assert getattr(reg, pred) is False
+        # Register-flag reads + target_flags.
+        assert reg.is_debug is False
+        assert reg.is_internal_read is False
+        assert isinstance(reg.is_tied, bool)
+        assert reg.target_flags == 0
+    assert_no_leaks()
+
+
+def test_operand_getters_raise_on_wrong_kind():
+    with ir.Context() as ctx:
+        block = _add_machine_module(ctx).machine_function("add").blocks[0]
+        reg = next(i for i in block.instructions if i.opcode_name == "ADDWrr").operand(
+            0
+        )
+        for attr in (
+            "cimm",
+            "fpimm",
+            "mbb",
+            "index",
+            "global_value",
+            "symbol_name",
+            "offset",
+        ):
+            with pytest.raises(ValueError):
+                getattr(reg, attr)
+    assert_no_leaks()
+
+
+def test_branch_operands_expose_target_blocks():
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly(_LOOP_SRC, ctx, "m")
+        mf = mir.run_codegen_to_mir(
+            mod, jit.TargetMachine(triple=_TRIPLE)
+        ).machine_function("count")
+        mbb_ops = [
+            i.operand(k)
+            for b in mf.blocks
+            for i in b.instructions
+            for k in range(i.num_operands)
+            if i.operand(k).is_mbb
+        ]
+        assert mbb_ops  # the loop has conditional/unconditional branches
+        assert all(o.mbb.number >= 0 for o in mbb_ops)
+    assert_no_leaks()
+
+
+def test_constant_operands_read_their_values():
+    with ir.Context() as ctx:
+        mmi = mir.parse_mir(_GENERIC_MIR, ctx, jit.TargetMachine(triple=_TRIPLE))
+        cimm = next(
+            i.operand(k)
+            for b in mmi.machine_function("c").blocks
+            for i in b.instructions
+            for k in range(i.num_operands)
+            if i.operand(k).is_cimm
+        )
+        assert cimm.cimm.zext_value == 42  # the G_CONSTANT's ConstantInt
+        fpimm = next(
+            i.operand(k)
+            for b in mmi.machine_function("fc").blocks
+            for i in b.instructions
+            for k in range(i.num_operands)
+            if i.operand(k).is_fpimm
+        )
+        assert type(fpimm.fpimm).__name__ == "ConstantFP"
+    assert_no_leaks()
+
+
+def test_global_operand_reads_the_global_value():
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly(_GLOBAL_SRC, ctx, "m")
+        mf = mir.run_codegen_to_mir(
+            mod, jit.TargetMachine(triple=_TRIPLE)
+        ).machine_function("f")
+        gop = next(
+            i.operand(k)
+            for b in mf.blocks
+            for i in b.instructions
+            for k in range(i.num_operands)
+            if i.operand(k).is_global
+        )
+        assert gop.global_value.name == "g"
+        assert gop.offset == 0
+        assert isinstance(gop.target_flags, int)
+    assert_no_leaks()
+
+
+def test_frame_index_operand_has_an_index():
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly(_ALLOCA_SRC, ctx, "m")
+        mf = mir.run_codegen_to_mir(
+            mod, jit.TargetMachine(triple=_TRIPLE)
+        ).machine_function("a")
+        fop = next(
+            i.operand(k)
+            for b in mf.blocks
+            for i in b.instructions
+            for k in range(i.num_operands)
+            if i.operand(k).is_fi
+        )
+        assert isinstance(fop.index, int)
+    assert_no_leaks()
+
+
+def test_external_symbol_operand_reads_its_name():
+    with ir.Context() as ctx:
+        mmi = mir.parse_mir(_SYMBOL_MIR, ctx, jit.TargetMachine(triple=_TRIPLE))
+        sop = next(
+            i.operand(k)
+            for b in mmi.machine_function("s").blocks
+            for i in b.instructions
+            for k in range(i.num_operands)
+            if i.operand(k).is_symbol
+        )
+        assert sop.symbol_name == "__stack_chk_guard"
+        assert sop.offset == 0
+    assert_no_leaks()
+
+
+def test_machine_instr_navigation_and_classification():
+    with ir.Context() as ctx:
+        mf = _add_machine_module(ctx).machine_function("add")
+        block = mf.blocks[0]
+        add = next(i for i in block.instructions if i.opcode_name == "ADDWrr")
+        # Navigation.
+        assert add.parent.number == block.number
+        assert add.num_defs == 1
+        assert add.num_explicit_operands == 3
+        # Classification on known instructions.
+        copy = next(i for i in block.instructions if i.opcode_name == "COPY")
+        ret = next(i for i in block.instructions if i.opcode_name == "RET_ReallyLR")
+        assert copy.is_copy
+        assert ret.is_return and ret.is_terminator
+        assert not add.is_terminator
+        # Exercise every remaining predicate line (values vary by instr).
+        for pred in (
+            "is_branch",
+            "is_conditional_branch",
+            "is_unconditional_branch",
+            "is_indirect_branch",
+            "is_barrier",
+            "is_call",
+            "is_phi",
+            "is_implicit_def",
+            "may_load",
+            "may_store",
+            "is_debug_instr",
+        ):
+            assert isinstance(getattr(add, pred), bool)
+    assert_no_leaks()
+
+
+def test_branch_instruction_classification():
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly(_LOOP_SRC, ctx, "m")
+        mf = mir.run_codegen_to_mir(
+            mod, jit.TargetMachine(triple=_TRIPLE)
+        ).machine_function("count")
+        instrs = [i for b in mf.blocks for i in b.instructions]
+        assert any(i.is_branch for i in instrs)
+        assert any(i.is_conditional_branch for i in instrs)
+        assert any(i.is_phi for i in instrs)
+    assert_no_leaks()
+
+
+def test_memory_instruction_classification():
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly(_ALLOCA_SRC, ctx, "m")
+        mf = mir.run_codegen_to_mir(
+            mod, jit.TargetMachine(triple=_TRIPLE)
+        ).machine_function("a")
+        instrs = [i for b in mf.blocks for i in b.instructions]
+        assert any(i.may_load for i in instrs)
+        assert any(i.may_store for i in instrs)
+    assert_no_leaks()
+
+
+def test_machine_basic_block_cfg_accessors():
+    with ir.Context() as ctx:
+        mf = mir.run_codegen_to_mir(
+            ir.parse_assembly(_LOOP_SRC, ctx, "m"),
+            jit.TargetMachine(triple=_TRIPLE),
+        ).machine_function("count")
+        entry = mf.blocks[0]
+        assert entry.is_entry_block
+        assert entry.parent.name == "count"
+        # Some block has a successor, and some block has a predecessor.
+        assert any(b.successors for b in mf.blocks)
+        assert any(b.predecessors for b in mf.blocks)
+        # Successor/predecessor edges are consistent.
+        for b in mf.blocks:
+            for s in b.successors:
+                assert b in s.predecessors
+    assert_no_leaks()
+
+
+def test_machine_function_accessors():
+    with ir.Context() as ctx:
+        mf = _add_machine_module(ctx).machine_function("add")
+        assert mf.num_blocks == 1
+        assert mf.function.name == "add"  # the IR Function it was lowered from
+    assert_no_leaks()
+
+
+def test_machine_module_info_lists_machine_functions():
+    with ir.Context() as ctx:
+        mmi = mir.run_codegen_to_mir(
+            ir.parse_assembly(_TWO_FN_SRC, ctx, "m"),
+            jit.TargetMachine(triple=_TRIPLE),
+        )
+        names = sorted(mf.name for mf in mmi.machine_functions)
+        assert names == ["add", "sub"]
     assert_no_leaks()
