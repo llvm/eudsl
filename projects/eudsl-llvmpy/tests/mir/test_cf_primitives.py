@@ -186,3 +186,43 @@ def test_cross_function_register_rejected():
         with pytest.raises(ValueError):
             bf.build_brcond(foreign, mf.blocks[0])
     assert_no_leaks()
+
+
+def test_set_branch_target_on_non_branch_raises():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        b = mir.MachineIRBuilder(mf)
+        b.build_constant(mir.LLT.scalar(32), 7)
+        const_mi = mf.blocks[0].instructions[0]
+        with pytest.raises(ValueError):
+            const_mi.set_branch_target(mf.create_block())
+    assert_no_leaks()
+
+
+def test_replace_successor_requires_an_existing_successor():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        entry = mf.blocks[0]
+        a = mf.create_block()
+        b = mf.create_block()
+        # `a` is not a successor of entry yet -- replacing it is a no-op in
+        # LLVM's assert-only path (UB in release); guarded to raise.
+        with pytest.raises(ValueError, match="not a successor"):
+            entry.replace_successor(a, b)
+        # After adding the edge, the replacement succeeds.
+        entry.add_successor(a)
+        entry.replace_successor(a, b)
+    assert_no_leaks()
+
+
+def test_replace_successor_rejects_cross_function_block():
+    with ir.Context() as ctx:
+        mmi_f, mf = _new_function(ctx, "f")
+        mmi_g, mg = _new_function(ctx, "g")
+        entry = mf.blocks[0]
+        a = mf.create_block()
+        entry.add_successor(a)
+        foreign = mg.create_block()  # belongs to g
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            entry.replace_successor(a, foreign)
+    assert_no_leaks()
