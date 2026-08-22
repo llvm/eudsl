@@ -23,6 +23,7 @@ void populate_target(nb::module_ &m);
 void populate_linker(nb::module_ &m);
 void populate_jit(nb::module_ &m);
 void populate_intrinsics(nb::module_ &m);
+void populate_mir(nb::module_ &m);
 
 NB_MODULE(eudslllvm_ext, m) {
   m.doc() = "Hand-written nanobind bindings over the LLVM C++ IR API.";
@@ -58,4 +59,8 @@ NB_MODULE(eudslllvm_ext, m) {
   // llvm.intrinsics -- intrinsic lookup and declaration.
   nb::module_ intrinsics = m.def_submodule("intrinsics");
   populate_intrinsics(intrinsics);
+
+  // llvm.mir -- Machine IR: the target-independent LowLevelType (LLT).
+  nb::module_ mir = m.def_submodule("mir");
+  populate_mir(mir);
 }

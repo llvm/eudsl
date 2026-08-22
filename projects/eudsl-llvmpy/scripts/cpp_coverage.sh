@@ -6,7 +6,7 @@
 # C++ (llvm-cov) coverage for the eudslllvm_ext bindings, analogous to the
 # --cov gate for the Python surface. Builds the extension instrumented, runs
 # the pytest suite (which imports the .so and thereby exercises the C++), merges
-# the profraw, and enforces a src/IR line-coverage threshold.
+# the profraw, and enforces a src/IR + src/MIR line-coverage threshold.
 #
 # Env:
 #   CMAKE_PREFIX_PATH  path to the LLVM install/build (for LLVMConfig.cmake)
@@ -66,10 +66,10 @@ if [[ -z "$SO" || ! -f "$SO" ]]; then
   exit 1
 fi
 
-echo ">> checking src/IR coverage (threshold=${THRESHOLD}%)"
+echo ">> checking src/IR + src/MIR coverage (threshold=${THRESHOLD}%)"
 "$PY" "${PROJ_DIR}/scripts/check_coverage.py" \
   --llvm-cov "$LLVM_COV" \
   --profdata "${COV_DIR}/eudslllvm.profdata" \
   --objects "$SO" \
-  --sources "${PROJ_DIR}/src/IR" \
+  --sources "${PROJ_DIR}/src/IR" "${PROJ_DIR}/src/MIR" \
   --threshold="${THRESHOLD}"

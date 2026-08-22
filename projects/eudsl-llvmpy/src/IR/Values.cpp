@@ -122,13 +122,10 @@ void populate_values(nb::module_ &m) {
           },
           "value"_a, "exceptions"_a)
       .def("__str__", [](llvm::Value &self) { return eudsl::toString(self); })
-      .def("__eq__",
-           [](llvm::Value &self, nb::handle other) {
-             llvm::Value *o;
-             if (!nb::try_cast<llvm::Value *>(other, o))
-               return false;
-             return &self == o;
-           })
+      .def(
+          "__eq__",
+          [](llvm::Value &self, llvm::Value *other) { return &self == other; },
+          nb::is_operator())
       .def("__hash__", [](llvm::Value &self) {
         return static_cast<Py_ssize_t>(reinterpret_cast<std::uintptr_t>(&self));
       });
