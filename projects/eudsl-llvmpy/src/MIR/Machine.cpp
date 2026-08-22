@@ -32,6 +32,7 @@
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetOptions.h>
 
 #include <nanobind/stl/pair.h>
 
@@ -673,6 +674,24 @@ void populate_mir(nb::module_ &m) {
             return tii.getName(opcode).str();
           },
           "opcode"_a, "The mnemonic for a target opcode number.")
+      .def(
+          "verify",
+          [](llvm::MachineFunction &self) {
+            return self.verify(/*p=*/nullptr, /*Banner=*/nullptr,
+                               /*OS=*/nullptr, /*AbortOnError=*/false);
+          },
+          "Run the machine verifier; returns True if no problems were found.")
+      .def(
+          "verify_diagnostic",
+          [](llvm::MachineFunction &self) {
+            std::string buf;
+            llvm::raw_string_ostream os(buf);
+            self.verify(/*p=*/nullptr, /*Banner=*/nullptr, &os,
+                        /*AbortOnError=*/false);
+            return buf;
+          },
+          "Run the machine verifier and return its report -- an empty string "
+          "if the MIR is well-formed, else the verifier's explanation.")
       .def("__str__",
            [](llvm::MachineFunction &self) { return eudsl::toString(self); });
 
@@ -722,14 +741,26 @@ void populate_mir(nb::module_ &m) {
   // passes are added -- not the object-emission pipeline (addPassesToEmitFile),
   // which would append FreeMachineFunctionPass -- so the MachineFunctions are
   // retained for inspection, the state `llc -stop-after=finalize-isel`
-  // produces.
+  // produces. With global_isel=True the ISel passes are the GlobalISel pipeline
+  // (IRTranslator -> Legalizer -> RegBankSelect -> InstructionSelect), so the
+  // retained MIR is fully target-selected when selection succeeds;
+  // DisableWithDiag keeps a legalization failure from aborting the process, and
+  // a post-run scan turns a resulting residual generic op into an exception.
   m.def(
       "run_codegen_to_mir",
-      [](eudsl::Module &mod, llvm::TargetMachine &tm) {
+      [](eudsl::Module &mod, llvm::TargetMachine &tm, bool globalISel) {
         std::shared_ptr<llvm::LLVMContext> ctxKeepAlive =
             mod.context().shared();
         std::unique_ptr<llvm::Module> module = mod.take();
         module->setDataLayout(tm.createDataLayout());
+
+        // Set both flags on every call (the tm is caller-owned and reused), so
+        // the selection mode is a pure function of `globalISel` and doesn't
+        // stick from a prior global_isel=True call.
+        tm.setGlobalISel(globalISel);
+        tm.setGlobalISelAbort(globalISel
+                                  ? llvm::GlobalISelAbortMode::DisableWithDiag
+                                  : llvm::GlobalISelAbortMode::Enable);
 
         auto pm = std::make_unique<llvm::legacy::PassManager>();
         llvm::TargetPassConfig *tpc = tm.createPassConfig(*pm);
@@ -760,11 +791,35 @@ void populate_mir(nb::module_ &m) {
         }
         // LCOV_EXCL_STOP
 
+        // GlobalISel with DisableWithDiag emits its fallback diagnostic as a
+        // warning (not captured above) and leaves residual generic (G_*) ops
+        // rather than aborting. Scan for them so an incompletely-selected
+        // function is reported instead of returned as if fully selected.
+        if (globalISel) {
+          for (llvm::Function &f : *module) {
+            llvm::MachineFunction *mf = mmiwp->getMMI().getMachineFunction(f);
+            if (!mf)
+              continue;
+            for (llvm::MachineBasicBlock &mbb : *mf) {
+              for (llvm::MachineInstr &mi : mbb) {
+                // LCOV_EXCL_START -- needs an un-selectable input to trigger
+                if (llvm::isPreISelGenericOpcode(mi.getOpcode())) {
+                  throw std::runtime_error(
+                      "GlobalISel did not fully select the module (a generic "
+                      "G_* instruction remains)");
+                }
+                // LCOV_EXCL_STOP
+              }
+            }
+          }
+        }
+
         return new MachineModuleInfo{std::move(ctxKeepAlive), std::move(module),
                                      std::move(pm), /*ownedMmi=*/nullptr,
                                      &mmiwp->getMMI()};
       },
-      "module"_a, "target_machine"_a, nb::keep_alive<0, 2>());
+      "module"_a, "target_machine"_a, "global_isel"_a = false,
+      nb::keep_alive<0, 2>());
 
   // Parse .mir text into a MachineModuleInfo. Mirrors run_codegen_to_mir's
   // result but builds the MachineFunctions by deserialization rather than
