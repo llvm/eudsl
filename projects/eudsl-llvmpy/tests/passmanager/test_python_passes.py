@@ -40,6 +40,16 @@ _SRC_DECL = dedent("""\
     }
     """)
 
+# Has an `add %x, 0` that instcombine folds away -- lets a composed pipeline
+# show the builtin pass ran after the named Python pass.
+_SRC_ADDZERO = dedent("""\
+    define i32 @f(i32 %x) {
+    entry:
+      %a = add i32 %x, 0
+      ret i32 %a
+    }
+    """)
+
 
 def test_module_pass_is_invoked_once_with_the_module():
     with llvm.ir.Context() as ctx:
@@ -272,5 +282,86 @@ def test_function_pass_forwards_tuning_and_flags():
             mod, lambda fn: names.append(fn.name), tuning=tuning, verify_each=True
         )
         assert sorted(names) == ["f", "g"]
+        del mod
+    assert_no_leaks()
+
+
+def test_registered_pass_runs_by_name():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        calls = []
+
+        def rename(m):
+            calls.append(1)
+            m.get_function("f").name = "renamed"
+
+        llvm.passmanager.register_python_pass("test-rename-f", rename)
+        llvm.passmanager.run_passes(mod, "test-rename-f")
+        assert calls == [1]
+        assert "@renamed(" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_registered_pass_composes_with_builtin():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC_ADDZERO, ctx, "m")
+
+        def rename(m):
+            m.get_function("f").name = "renamed"
+
+        llvm.passmanager.register_python_pass("test-rename-compose", rename)
+        # Named Python pass then a builtin, in order.
+        llvm.passmanager.run_passes(mod, "test-rename-compose,instcombine")
+        assert "@renamed(" in str(mod)
+        assert "add i32 %x, 0" not in str(mod)  # instcombine ran too
+        del mod
+    assert_no_leaks()
+
+
+def test_unregistered_name_still_raises():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        with pytest.raises(RuntimeError, match="unknown pass name"):
+            llvm.passmanager.run_passes(mod, "definitely-not-registered")
+        del mod
+    assert_no_leaks()
+
+
+def test_registered_function_pass_runs_by_name():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC2, ctx, "m")
+        names = []
+        llvm.passmanager.register_python_pass(
+            "test-collect-fn",
+            lambda fn: names.append(fn.name),
+            on=llvm.passmanager.PassKind.FUNCTION,
+        )
+        # Function passes are named inside a function(...) pipeline.
+        llvm.passmanager.run_passes(mod, "function(test-collect-fn)")
+        assert sorted(names) == ["f", "g"]
+        del mod
+    assert_no_leaks()
+
+
+def test_register_python_pass_rejects_non_passkind():
+    # `on` is a typed PassKind enum, not a string.
+    with pytest.raises(TypeError):
+        llvm.passmanager.register_python_pass("bad", lambda m: None, on="module")
+
+
+def test_raising_pass_skips_rest_of_pipeline():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC_ADDZERO, ctx, "m")
+
+        def raiser(m):
+            raise ValueError("stop the pipeline")
+
+        llvm.passmanager.register_python_pass("test-raiser", raiser)
+        with pytest.raises(ValueError, match="stop the pipeline"):
+            llvm.passmanager.run_passes(mod, "test-raiser,instcombine")
+        # After the raise, the remaining optional passes are skipped, so the
+        # add-zero instcombine would have folded is still present.
+        assert "add i32 %x, 0" in str(mod)
         del mod
     assert_no_leaks()

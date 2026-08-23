@@ -12,6 +12,8 @@
 #include <llvm/Passes/StandardInstrumentations.h>
 
 #include <exception>
+#include <string>
+#include <unordered_map>
 
 namespace {
 // A Python exception raised inside a pass callback is stashed here instead of
@@ -34,41 +36,25 @@ void runPipeline(llvm::ModulePassManager &mpm, llvm::Module &m,
     std::rethrow_exception(err);
   }
 }
+// Registered Python passes usable by name in a run_passes textual pipeline.
+// Two maps: module passes (named directly, e.g. "my-pass") and function passes
+// (named inside a function(...) pipeline, e.g. "function(my-pass)"). Mirrors
+// the caster registry (Casters.cpp): static maps hold the callables alive,
+// cleared at interpreter exit so the decref happens while the Python runtime is
+// still up.
+std::unordered_map<std::string, nb::callable> &pythonModulePassRegistry() {
+  static std::unordered_map<std::string, nb::callable> registry;
+  return registry;
+}
+std::unordered_map<std::string, nb::callable> &pythonFunctionPassRegistry() {
+  static std::unordered_map<std::string, nb::callable> registry;
+  return registry;
+}
 
-// Bundles the PassBuilder with the four analysis managers and instrumentation,
-// with the lifetimes ModulePassManager::run requires: the managers and the
-// StandardInstrumentations must outlive the run that references them, and the
-// PassBuilder holds a pointer to `pic`. run_passes and run_default_pipeline
-// build this identically, so keeping it in one place stops the two copies from
-// drifting. Member declaration order is the construction order: `pic` before
-// `pb` (which captures &pic), `si` before its registerCallbacks(pic).
-struct PassPipelineEnv {
-  llvm::PassInstrumentationCallbacks pic;
-  llvm::StandardInstrumentations si;
-  llvm::PassBuilder pb;
-  llvm::LoopAnalysisManager lam;
-  llvm::FunctionAnalysisManager fam;
-  llvm::CGSCCAnalysisManager cgam;
-  llvm::ModuleAnalysisManager mam;
-
-  PassPipelineEnv(llvm::LLVMContext &ctx,
-                  const llvm::PipelineTuningOptions &opts, bool debug,
-                  bool verifyEach)
-      : si(ctx, debug, verifyEach), pb(nullptr, opts, std::nullopt, &pic) {
-    si.registerCallbacks(pic);
-    pb.registerModuleAnalyses(mam);
-    pb.registerCGSCCAnalyses(cgam);
-    pb.registerFunctionAnalyses(fam);
-    pb.registerLoopAnalyses(lam);
-    pb.crossRegisterProxies(lam, fam, cgam, mam);
-    // Once a pass callback has stashed an error, skip every subsequent optional
-    // pass so the pipeline winds down to runPipeline's re-raise instead of
-    // running builtins on IR the failed pass may have left half-mutated. (The
-    // manager still runs any isRequired() pass -- those cannot be skipped.)
-    pic.registerShouldRunOptionalPassCallback(
-        [](llvm::StringRef, llvm::Any) { return !pendingPassError; });
-  }
-};
+// Which registry register_python_pass targets (bound as llvm.passmanager
+// PassKind), so the caller picks module vs function with a typed value rather
+// than a stringly-typed flag.
+enum class PyPassKind { Module, Function };
 
 // A new-PM module pass whose body is a Python callable. The new PassManager is
 // concept-based, so a pass needs no LLVM base class beyond the PassInfoMixin
@@ -156,6 +142,69 @@ struct PyFunctionPass : llvm::PassInfoMixin<PyFunctionPass> {
     }
   }
 };
+
+// Bundles the PassBuilder with the four analysis managers and instrumentation,
+// with the lifetimes ModulePassManager::run requires: the managers and the
+// StandardInstrumentations must outlive the run that references them, and the
+// PassBuilder holds a pointer to `pic`. run_passes and run_default_pipeline
+// build this identically, so keeping it in one place stops the two copies from
+// drifting. Member declaration order is the construction order: `pic` before
+// `pb` (which captures &pic), `si` before its registerCallbacks(pic).
+struct PassPipelineEnv {
+  llvm::PassInstrumentationCallbacks pic;
+  llvm::StandardInstrumentations si;
+  llvm::PassBuilder pb;
+  llvm::LoopAnalysisManager lam;
+  llvm::FunctionAnalysisManager fam;
+  llvm::CGSCCAnalysisManager cgam;
+  llvm::ModuleAnalysisManager mam;
+
+  PassPipelineEnv(eudsl::Module &mod, const llvm::PipelineTuningOptions &opts,
+                  bool debug, bool verifyEach)
+      : si(mod.get().getContext(), debug, verifyEach),
+        pb(nullptr, opts, std::nullopt, &pic) {
+    si.registerCallbacks(pic);
+    pb.registerModuleAnalyses(mam);
+    pb.registerCGSCCAnalyses(cgam);
+    pb.registerFunctionAnalyses(fam);
+    pb.registerLoopAnalyses(lam);
+    pb.crossRegisterProxies(lam, fam, cgam, mam);
+    // Once a pass callback has stashed an error, skip every subsequent optional
+    // pass so the pipeline winds down to runPipeline's re-raise instead of
+    // running builtins on IR the failed pass may have left half-mutated. (The
+    // manager still runs any isRequired() pass -- those cannot be skipped.)
+    pic.registerShouldRunOptionalPassCallback(
+        [](llvm::StringRef, llvm::Any) { return !pendingPassError; });
+    // Resolve names registered via register_python_pass when parsing a textual
+    // pipeline. These fire only during parsePassPipeline (inert for the
+    // build*DefaultPipeline and run_python_pass_on_* paths). The module-level
+    // callback captures this call's module so the added pass hands the callback
+    // the right Module wrapper; the function-level callback (consulted inside a
+    // function(...) pipeline) needs no module -- PyFunctionPass gets the
+    // Function directly.
+    eudsl::Module *modPtr = &mod;
+    pb.registerPipelineParsingCallback(
+        [modPtr](llvm::StringRef name, llvm::ModulePassManager &pm,
+                 llvm::ArrayRef<llvm::PassBuilder::PipelineElement>) {
+          auto &reg = pythonModulePassRegistry();
+          auto it = reg.find(std::string(name));
+          if (it == reg.end())
+            return false;
+          pm.addPass(PyModulePass(modPtr, it->second));
+          return true;
+        });
+    pb.registerPipelineParsingCallback(
+        [](llvm::StringRef name, llvm::FunctionPassManager &fpm,
+           llvm::ArrayRef<llvm::PassBuilder::PipelineElement>) {
+          auto &reg = pythonFunctionPassRegistry();
+          auto it = reg.find(std::string(name));
+          if (it == reg.end())
+            return false;
+          fpm.addPass(PyFunctionPass(it->second));
+          return true;
+        });
+  }
+};
 } // namespace
 
 void populate_passes(nb::module_ &m) {
@@ -164,6 +213,10 @@ void populate_passes(nb::module_ &m) {
       .value("O1", llvm::OptimizationLevel::O1)
       .value("O2", llvm::OptimizationLevel::O2)
       .value("O3", llvm::OptimizationLevel::O3);
+
+  nb::enum_<PyPassKind>(m, "PassKind")
+      .value("MODULE", PyPassKind::Module)
+      .value("FUNCTION", PyPassKind::Function);
 
   nb::class_<llvm::PipelineTuningOptions>(m, "PipelineTuningOptions")
       .def(nb::init<>())
@@ -183,7 +236,7 @@ void populate_passes(nb::module_ &m) {
          bool verifyEach) {
         llvm::PipelineTuningOptions opts =
             pto.value_or(llvm::PipelineTuningOptions());
-        PassPipelineEnv env(mod.get().getContext(), opts, debug, verifyEach);
+        PassPipelineEnv env(mod, opts, debug, verifyEach);
 
         llvm::ModulePassManager mpm;
         if (llvm::Error err = env.pb.parsePassPipeline(mpm, pipeline))
@@ -201,7 +254,7 @@ void populate_passes(nb::module_ &m) {
          bool verifyEach) {
         llvm::PipelineTuningOptions opts =
             pto.value_or(llvm::PipelineTuningOptions());
-        PassPipelineEnv env(mod.get().getContext(), opts, debug, verifyEach);
+        PassPipelineEnv env(mod, opts, debug, verifyEach);
 
         llvm::ModulePassManager mpm =
             (level == llvm::OptimizationLevel::O0)
@@ -220,7 +273,7 @@ void populate_passes(nb::module_ &m) {
          bool verifyEach) {
         llvm::PipelineTuningOptions opts =
             pto.value_or(llvm::PipelineTuningOptions());
-        PassPipelineEnv env(mod.get().getContext(), opts, debug, verifyEach);
+        PassPipelineEnv env(mod, opts, debug, verifyEach);
         llvm::ModulePassManager mpm;
         mpm.addPass(PyModulePass(&mod, std::move(callback)));
         runPipeline(mpm, mod.get(), env.mam);
@@ -238,7 +291,7 @@ void populate_passes(nb::module_ &m) {
          bool verifyEach) {
         llvm::PipelineTuningOptions opts =
             pto.value_or(llvm::PipelineTuningOptions());
-        PassPipelineEnv env(mod.get().getContext(), opts, debug, verifyEach);
+        PassPipelineEnv env(mod, opts, debug, verifyEach);
         llvm::ModulePassManager mpm;
         mpm.addPass(llvm::createModuleToFunctionPassAdaptor(
             PyFunctionPass(std::move(callback))));
@@ -249,4 +302,28 @@ void populate_passes(nb::module_ &m) {
       "Run a Python callable as a function pass over each defined function in "
       "the module in place. The callable receives a Function; return a truthy "
       "value if it mutated the function, None/falsy otherwise.");
+
+  m.def(
+      "register_python_pass",
+      [](const std::string &name, nb::callable callback, PyPassKind on) {
+        auto &reg = on == PyPassKind::Function ? pythonFunctionPassRegistry()
+                                               : pythonModulePassRegistry();
+        reg[name] = std::move(callback);
+      },
+      "name"_a, "callback"_a, "on"_a = PyPassKind::Module,
+      "Register a Python callable as a named pass usable in a run_passes "
+      "pipeline. on=PassKind.MODULE (default) names a module pass directly "
+      "(e.g. \"my-pass,instcombine\"); on=PassKind.FUNCTION names a function "
+      "pass, invoked inside a function(...) pipeline (e.g. "
+      "\"function(my-pass)\"). Pick a name that does not collide with a "
+      "builtin pass. The callable follows the run_python_pass_on_module / "
+      "run_python_pass_on_function contract (truthy return marks the IR "
+      "mutated).");
+
+  // Drop the registered callables while the interpreter is still up, so their
+  // decref does not run after Python teardown (mirrors the caster registry).
+  nb::module_::import_("atexit").attr("register")(nb::cpp_function([]() {
+    pythonModulePassRegistry().clear();
+    pythonFunctionPassRegistry().clear();
+  }));
 }
