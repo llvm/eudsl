@@ -11,6 +11,7 @@
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Object/ObjectFile.h>
 #include <llvm/Support/MemoryBuffer.h>
 
 #include <memory>
@@ -39,6 +40,27 @@ void populate_jit(nb::module_ &m) {
             (void)mod.take();
           },
           "module"_a)
+      .def(
+          "add_object",
+          [](llvm::orc::LLJIT &self, nb::bytes obj) {
+            std::unique_ptr<llvm::MemoryBuffer> memBuf =
+                llvm::MemoryBuffer::getMemBufferCopy(
+                    llvm::StringRef(static_cast<const char *>(obj.data()),
+                                    obj.size()),
+                    "<jit-obj>");
+            // ORC's addObjectFile is lazy: it records the buffer and defers
+            // parsing to materialization (a later lookup), so bad bytes would
+            // otherwise surface as an opaque error attributed to the wrong
+            // operation. Parse eagerly here so add_object itself raises on a
+            // non-object / truncated / wrong-format buffer.
+            eudsl::unwrap(llvm::object::ObjectFile::createObjectFile(
+                              memBuf->getMemBufferRef())
+                              .takeError());
+            eudsl::unwrap(self.addObjectFile(std::move(memBuf)));
+          },
+          "obj"_a,
+          "Add a relocatable object file (e.g. from "
+          "MachineModuleInfo.emit_object) to the JIT.")
       .def(
           "lookup",
           [](llvm::orc::LLJIT &self, const std::string &name) {
