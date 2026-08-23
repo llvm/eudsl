@@ -46,13 +46,10 @@ void populate_types(nb::module_ &m) {
       .def_prop_ro("is_sized", [](llvm::Type &self) { return self.isSized(); })
       .def_prop_ro("type_id", [](llvm::Type &self) { return self.getTypeID(); })
       .def("__str__", [](llvm::Type &self) { return eudsl::toString(self); })
-      .def("__eq__",
-           [](llvm::Type &self, nb::handle other) {
-             llvm::Type *o;
-             if (!nb::try_cast<llvm::Type *>(other, o))
-               return false;
-             return &self == o;
-           })
+      .def(
+          "__eq__",
+          [](llvm::Type &self, llvm::Type *other) { return &self == other; },
+          nb::is_operator())
       .def("__hash__", [](llvm::Type &self) {
         return static_cast<Py_ssize_t>(reinterpret_cast<std::uintptr_t>(&self));
       });

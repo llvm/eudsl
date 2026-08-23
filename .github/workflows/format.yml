@@ -47,7 +47,8 @@ jobs:
           clang-format --version
           clang-format --style=file --dry-run --Werror \
             projects/eudsl-llvmpy/src/IR/*.cpp \
-            projects/eudsl-llvmpy/src/IR/*.h
+            projects/eudsl-llvmpy/src/IR/*.h \
+            projects/eudsl-llvmpy/src/MIR/*.cpp
 
       - name: black (Python)
         run: |
