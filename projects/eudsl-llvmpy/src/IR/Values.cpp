@@ -9,6 +9,7 @@
 #include <llvm/IR/Argument.h>
 #include <llvm/IR/Attributes.h>
 #include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/CFG.h>
 #include <llvm/IR/Constant.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -135,6 +136,7 @@ void populate_values(nb::module_ &m) {
       .def_prop_ro("num_operands", &llvm::User::getNumOperands)
       .def("operand", &llvm::User::getOperand, "index"_a,
            nb::rv_policy::reference_internal)
+      .def("set_operand", &llvm::User::setOperand, "index"_a, "value"_a)
       .def_prop_ro(
           "operands",
           [](llvm::User &self) {
@@ -197,7 +199,64 @@ void populate_values(nb::module_ &m) {
                    [](llvm::Instruction &self) { return self.isTerminator(); })
       .def_prop_ro(
           "parent", [](llvm::Instruction &self) { return self.getParent(); },
-          nb::rv_policy::reference_internal);
+          nb::rv_policy::reference_internal)
+      .def_prop_ro("opcode",
+                   [](llvm::Instruction &self) { return self.getOpcode(); })
+      .def_prop_ro("opcode_name",
+                   [](llvm::Instruction &self) { return self.getOpcodeName(); })
+      .def(
+          "erase_from_parent",
+          [](llvm::Instruction &self) { self.eraseFromParent(); },
+          "Unlink from the parent block and delete. The Python handle must not "
+          "be used afterward -- it dangles like the freed C++ pointer.")
+      .def(
+          "remove_from_parent",
+          [](llvm::Instruction &self) { self.removeFromParent(); },
+          "Unlink from the parent block without deleting; re-attach with "
+          "insert_before / insert_after (otherwise it leaks).")
+      .def(
+          "clone", [](llvm::Instruction &self) { return self.clone(); },
+          nb::rv_policy::reference,
+          "Return an unattached copy (no parent, no name). Insert it with "
+          "insert_before / insert_after, or it leaks.")
+      .def(
+          "move_before",
+          [](llvm::Instruction &self, llvm::Instruction *pos) {
+            self.moveBefore(pos->getIterator());
+          },
+          "pos"_a, "Move this instruction to just before `pos`.")
+      .def(
+          "insert_before",
+          [](llvm::Instruction &self, llvm::Instruction *pos) {
+            self.insertBefore(pos->getIterator());
+          },
+          "pos"_a, "Insert this (unattached) instruction just before `pos`.")
+      .def(
+          "insert_after",
+          [](llvm::Instruction &self, llvm::Instruction *pos) {
+            self.insertAfter(pos->getIterator());
+          },
+          "pos"_a, "Insert this (unattached) instruction just after `pos`.")
+      .def(
+          "comes_before",
+          [](llvm::Instruction &self, const llvm::Instruction *other) {
+            return self.comesBefore(other);
+          },
+          "other"_a,
+          "Whether this instruction precedes `other` in program order. Both "
+          "must live in the same basic block.")
+      .def_prop_ro(
+          "may_have_side_effects",
+          [](llvm::Instruction &self) { return self.mayHaveSideEffects(); })
+      .def_prop_ro(
+          "may_read_or_write_memory",
+          [](llvm::Instruction &self) { return self.mayReadOrWriteMemory(); })
+      .def_prop_ro(
+          "may_read_from_memory",
+          [](llvm::Instruction &self) { return self.mayReadFromMemory(); })
+      .def_prop_ro("may_write_to_memory", [](llvm::Instruction &self) {
+        return self.mayWriteToMemory();
+      });
 
   nb::class_<llvm::Argument, llvm::Value>(m, "Argument")
       .EUDSL_CAST_CTOR(llvm::Argument, llvm::Value)
@@ -262,7 +321,39 @@ void populate_values(nb::module_ &m) {
                 nb::type<llvm::BasicBlock>(), "InstructionIterator",
                 self.begin(), self.end(), nb::keep_alive<0, 1>());
           },
-          nb::keep_alive<0, 1>());
+          nb::keep_alive<0, 1>())
+      .def(
+          "split_basic_block",
+          [](llvm::BasicBlock &self, llvm::Instruction *before,
+             const std::string &name) {
+            return self.splitBasicBlock(before, name);
+          },
+          "before"_a, "name"_a = "", nb::rv_policy::reference_internal,
+          "Split into two blocks before `before`, leaving an unconditional "
+          "branch to the new (returned) block as this block's terminator.")
+      .def(
+          "erase_from_parent",
+          [](llvm::BasicBlock &self) { self.eraseFromParent(); },
+          "Unlink from the parent function and delete. The Python handle must "
+          "not be used afterward.")
+      .def_prop_ro(
+          "predecessors",
+          [](llvm::BasicBlock &self) {
+            std::vector<llvm::BasicBlock *> out(llvm::pred_begin(&self),
+                                                llvm::pred_end(&self));
+            return out;
+          },
+          nb::rv_policy::reference_internal,
+          "The blocks that branch to this one (CFG predecessors).")
+      .def_prop_ro(
+          "successors",
+          [](llvm::BasicBlock &self) {
+            std::vector<llvm::BasicBlock *> out(llvm::succ_begin(&self),
+                                                llvm::succ_end(&self));
+            return out;
+          },
+          nb::rv_policy::reference_internal,
+          "The blocks this one's terminator branches to (CFG successors).");
 
   nb::class_<llvm::Function, llvm::GlobalObject>(m, "Function")
       .EUDSL_CAST_CTOR(llvm::Function, llvm::Value)
