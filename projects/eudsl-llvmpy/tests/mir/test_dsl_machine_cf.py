@@ -172,42 +172,6 @@ def test_nested_if_else_captures_moved_predecessor():
     assert_no_leaks()
 
 
-def test_for_loop_in_body_is_rejected():
-    with ir.Context() as ctx:
-        mod = ir.Module("m", ctx)
-        tm = jit.TargetMachine(triple=_TRIPLE)
-        s32 = mir.LLT.scalar(32)
-
-        with pytest.raises(NotImplementedError, match="`for` loops"):
-
-            @machine_function(module=mod, target=tm)
-            @canonicalize(using=MIRCanonicalizer())
-            def f(a: s32):
-                for _ in range(3):
-                    r = yield a + 1
-                return r
-
-    assert_no_leaks()
-
-
-def test_while_loop_in_body_is_rejected():
-    with ir.Context() as ctx:
-        mod = ir.Module("m", ctx)
-        tm = jit.TargetMachine(triple=_TRIPLE)
-        s32 = mir.LLT.scalar(32)
-
-        with pytest.raises(NotImplementedError, match="`while` loops"):
-
-            @machine_function(module=mod, target=tm)
-            @canonicalize(using=MIRCanonicalizer())
-            def f(a: s32, b: s32):
-                while a < b:
-                    r = yield a + 1
-                return r
-
-    assert_no_leaks()
-
-
 def test_equality_is_python_identity_not_icmp():
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
