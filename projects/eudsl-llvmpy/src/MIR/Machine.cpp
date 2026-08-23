@@ -475,6 +475,17 @@ void populate_mir(nb::module_ &m) {
                    [](llvm::MachineInstr &self) { return self.mayStore(); })
       .def_prop_ro("is_debug_instr",
                    [](llvm::MachineInstr &self) { return self.isDebugInstr(); })
+      .def(
+          "set_branch_target",
+          [](llvm::MachineInstr &self, llvm::MachineBasicBlock *mbb) {
+            if (self.getNumOperands() == 0 || !self.getOperand(0).isMBB()) {
+              throw nb::value_error(
+                  "instruction has no branch-target (MBB) operand");
+            }
+            self.getOperand(0).setMBB(mbb);
+          },
+          "block"_a,
+          "Repoint a branch's target block (operand 0), e.g. a G_BR.")
       .def("__str__",
            [](llvm::MachineInstr &self) { return eudsl::toString(self); });
 
@@ -530,6 +541,20 @@ void populate_mir(nb::module_ &m) {
             self.addSuccessor(succ);
           },
           "successor"_a, "Add a CFG successor edge to another block.")
+      .def(
+          "replace_successor",
+          [](llvm::MachineBasicBlock &self, llvm::MachineBasicBlock *old,
+             llvm::MachineBasicBlock *replacement) {
+            // replaceSuccessor only asserts `old` is a successor (gone under
+            // NDEBUG); without the check it walks past succ_end() and corrupts
+            // the CFG. Guard it, and reject a cross-function replacement.
+            if (!self.isSuccessor(old)) {
+              throw nb::value_error("`old` is not a successor of this block");
+            }
+            requireSameFunction(*self.getParent(), replacement, "new");
+            self.replaceSuccessor(old, replacement);
+          },
+          "old"_a, "new"_a, "Replace a CFG successor edge with another block.")
       .def("__str__",
            [](llvm::MachineBasicBlock &self) { return eudsl::toString(self); });
 
@@ -856,6 +881,13 @@ void populate_mir(nb::module_ &m) {
             self.setMBB(*mbb);
           },
           "block"_a, "Insert subsequent instructions at the end of `block`.")
+      .def_prop_ro(
+          "machine_function",
+          [](llvm::MachineIRBuilder &self) -> llvm::MachineFunction * {
+            return &self.getMF();
+          },
+          nb::rv_policy::reference_internal,
+          "The MachineFunction this builder inserts into.")
       .def(
           "build_icmp",
           [](llvm::MachineIRBuilder &self, llvm::CmpInst::Predicate pred,
@@ -882,11 +914,14 @@ void populate_mir(nb::module_ &m) {
           "predicate"_a, "type"_a, "lhs"_a, "rhs"_a)
       .def(
           "build_br",
-          [](llvm::MachineIRBuilder &self, llvm::MachineBasicBlock *dest) {
+          [](llvm::MachineIRBuilder &self,
+             llvm::MachineBasicBlock *dest) -> llvm::MachineInstr * {
             requireSameFunction(self.getMF(), dest, "dest");
-            self.buildBr(*dest);
+            return self.buildBr(*dest).getInstr();
           },
-          "dest"_a, "Build an unconditional branch (G_BR) to `dest`.")
+          "dest"_a, nb::rv_policy::reference_internal,
+          "Build an unconditional branch (G_BR) to `dest`; returns the "
+          "instruction so its target can be repointed.")
       .def(
           "build_brcond",
           [](llvm::MachineIRBuilder &self, llvm::Register cond,
