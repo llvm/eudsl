@@ -18,6 +18,17 @@ _SRC = dedent("""\
     }
     """)
 
+_SRC2 = dedent("""\
+    define i32 @f(i32 %x) {
+    entry:
+      ret i32 %x
+    }
+    define i32 @g(i32 %y) {
+    entry:
+      ret i32 %y
+    }
+    """)
+
 
 def test_module_pass_is_invoked_once_with_the_module():
     with llvm.ir.Context() as ctx:
@@ -155,5 +166,66 @@ def test_none_returning_pass_runs_repeatedly_without_error():
         llvm.passmanager.run_python_pass_on_module(mod, noop)
         llvm.passmanager.run_python_pass_on_module(mod, noop)
         assert "@f(" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_function_pass_runs_once_per_function():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC2, ctx, "m")
+        names = []
+        llvm.passmanager.run_python_pass_on_function(
+            mod, lambda fn: names.append(fn.name)
+        )
+        assert sorted(names) == ["f", "g"]
+        del mod
+    assert_no_leaks()
+
+
+def test_function_pass_can_mutate_each_function():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC2, ctx, "m")
+
+        def suffix(fn):
+            fn.name = fn.name + "_x"
+
+        llvm.passmanager.run_python_pass_on_function(mod, suffix)
+        assert "@f_x(" in str(mod)
+        assert "@g_x(" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_exception_in_function_pass_propagates():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC2, ctx, "m")
+        seen = []
+
+        def boom(fn):
+            seen.append(fn.name)
+            raise ValueError("boom in " + fn.name)
+
+        # Exceptions unwind through the adaptor's extra -fno-exceptions frames;
+        # the trampoline must still capture and re-raise them (not std::terminate).
+        # The first function's error propagates and the second function is
+        # skipped (the ShouldRun callback gates the adaptor's inner passes).
+        with pytest.raises(ValueError, match="boom in f"):
+            llvm.passmanager.run_python_pass_on_function(mod, boom)
+        assert seen == ["f"]  # g was skipped after f raised
+        assert "@f(" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_function_pass_unboolable_return_propagates():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC2, ctx, "m")
+
+        class Unboolable:
+            def __bool__(self):
+                raise ValueError("no truth value")
+
+        with pytest.raises(ValueError, match="no truth value"):
+            llvm.passmanager.run_python_pass_on_function(mod, lambda fn: Unboolable())
         del mod
     assert_no_leaks()

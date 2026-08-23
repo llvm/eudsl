@@ -119,6 +119,33 @@ struct PyModulePass : llvm::PassInfoMixin<PyModulePass> {
     }
   }
 };
+
+// The per-function analogue of PyModulePass. Wrapped in a
+// ModuleToFunctionPassAdaptor it runs once per defined function; the callback
+// receives the llvm::Function (bound directly, so nanobind hands back its
+// wrapper). Same truthy-return / GIL contract as PyModulePass.
+struct PyFunctionPass : llvm::PassInfoMixin<PyFunctionPass> {
+  nb::callable callback;
+
+  explicit PyFunctionPass(nb::callable callback)
+      : callback(std::move(callback)) {}
+
+  llvm::PreservedAnalyses run(llvm::Function &f,
+                              llvm::FunctionAnalysisManager &) {
+    nb::gil_scoped_acquire gil;
+    try {
+      nb::object res = callback(nb::cast(&f, nb::rv_policy::reference));
+      int truthy = PyObject_IsTrue(res.ptr());
+      if (truthy < 0)
+        throw nb::python_error();
+      return truthy ? llvm::PreservedAnalyses::none()
+                    : llvm::PreservedAnalyses::all();
+    } catch (...) {
+      pendingPassError = std::current_exception();
+      return llvm::PreservedAnalyses::all();
+    }
+  }
+};
 } // namespace
 
 void populate_passes(nb::module_ &m) {
@@ -193,4 +220,20 @@ void populate_passes(nb::module_ &m) {
       "Run a Python callable as a module pass over the module in place. The "
       "callable receives the Module; return a truthy value if it mutated the "
       "IR (so analyses are invalidated), None/falsy otherwise.");
+
+  m.def(
+      "run_python_pass_on_function",
+      [](eudsl::Module &mod, nb::callable callback) {
+        PassPipelineEnv env(mod.get().getContext(),
+                            llvm::PipelineTuningOptions(), /*debug=*/false,
+                            /*verifyEach=*/false);
+        llvm::ModulePassManager mpm;
+        mpm.addPass(llvm::createModuleToFunctionPassAdaptor(
+            PyFunctionPass(std::move(callback))));
+        runPipeline(mpm, mod.get(), env.mam);
+      },
+      "module"_a, "callback"_a,
+      "Run a Python callable as a function pass over each defined function in "
+      "the module in place. The callable receives a Function; return a truthy "
+      "value if it mutated the function, None/falsy otherwise.");
 }
