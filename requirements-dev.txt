@@ -1,4 +1,4 @@
-nanobind>=2.9.2
+nanobind>=2.9.2,<3.0
 numpy>=2.0.2
 scikit-build-core==0.10.7
 pytest
