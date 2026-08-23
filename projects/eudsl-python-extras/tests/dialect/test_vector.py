@@ -276,7 +276,7 @@ def test_vector_wrappers(ctx: MLIRContext):
     # CHECK:  %[[VAL_17:.*]] = vector.multi_reduction <add>, %[[VAL_14]], %[[VAL_16]] [1, 3] : vector<4x8x16x32xi32> to vector<4x16xi32>
     # CHECK:  %[[VAL_18:.*]] = arith.constant 5 : i32
     # CHECK:  %[[VAL_19:.*]] = vector.broadcast %[[VAL_18]] : i32 to vector<4x8x16xi32>
-    # CHECK:  %[[VAL_20:.*]] = vector.extract_strided_slice %[[VAL_19]] {offsets = [0, 2], sizes = [2, 4], strides = [1, 1]} : vector<4x8x16xi32> to vector<2x4x16xi32>
+    # CHECK:  %[[VAL_20:.*]] = vector.extract_strided_slice %[[VAL_19]] offsets = [0, 2], sizes = [2, 4], strides = [1, 1] : vector<4x8x16xi32> to vector<2x4x16xi32>
 
     filecheck_with_comments(ctx.module)
 
