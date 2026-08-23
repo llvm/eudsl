@@ -5,18 +5,22 @@
 #include "IR/Common.h"
 #include "IR/Ownership.h"
 
+#include <llvm/CodeGen/GlobalISel/MachineIRBuilder.h>
 #include <llvm/CodeGen/MIRParser/MIRParser.h>
 #include <llvm/CodeGen/MIRPrinter.h>
 #include <llvm/CodeGen/MachineBasicBlock.h>
 #include <llvm/CodeGen/MachineFunction.h>
 #include <llvm/CodeGen/MachineInstr.h>
+#include <llvm/CodeGen/MachineInstrBuilder.h>
 #include <llvm/CodeGen/MachineModuleInfo.h>
 #include <llvm/CodeGen/MachineOperand.h>
+#include <llvm/CodeGen/MachineRegisterInfo.h>
 #include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetPassConfig.h>
 #include <llvm/CodeGen/TargetSubtargetInfo.h>
 #include <llvm/CodeGenTypes/LowLevelType.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/DiagnosticInfo.h>
 #include <llvm/IR/DiagnosticPrinter.h>
 #include <llvm/IR/Function.h>
@@ -71,6 +75,37 @@ std::string withDetail(llvm::StringRef base, const std::string &detail) {
   if (detail.empty())
     return base.str(); // LCOV_EXCL_LINE -- MIRParser always diagnoses on error
   return (base + ": " + detail).str();
+}
+
+// GlobalISel's build helpers validate their operands only with asserts, which
+// are compiled out under NDEBUG (the shipped wheel), so bad input would emit
+// malformed MIR or fault in a later pass instead of raising. Enforce the same
+// preconditions here regardless of build mode: `reg` must be a generic virtual
+// register of `b`'s MachineFunction carrying type `ty`. MachineRegisterInfo::
+// getType returns an invalid LLT{} for a non-virtual, out-of-bounds, or
+// wrong-function register, so a single type compare rejects both a type
+// mismatch and a register minted by a different MachineFunction.
+void requireVRegOfType(llvm::MachineIRBuilder &b, llvm::Register reg,
+                       llvm::LLT ty, const char *role) {
+  if (b.getMF().getRegInfo().getType(reg) != ty)
+    throw nb::value_error((std::string(role) +
+                           " must be a virtual register of this "
+                           "MachineFunction with the result type")
+                              .c_str());
+}
+
+// The "current MachineIRBuilder" is tracked on a thread-local stack, mirroring
+// the IR builder's `with builder:` / current_builder() mechanism (see the
+// thread_local ThreadContextEntry stack in IR/Builder.cpp). `with builder:`
+// pushes the builder; current_machine_builder() returns the innermost. The
+// entries are MachineIRBuilder pointers; nanobind's instance registry maps a
+// returned pointer back to the same Python object, so current_machine_builder
+// hands back the object that was entered (identity-stable, which the DSL relies
+// on to anchor a MachineValue to its builder). A `with builder:` keeps that
+// Python object alive for the block, so the raw pointer never dangles.
+static std::vector<llvm::MachineIRBuilder *> &machineBuilderStack() {
+  static thread_local std::vector<llvm::MachineIRBuilder *> stack;
+  return stack;
 }
 
 // Owns everything the inspected MachineFunctions transitively depend on, so
@@ -486,6 +521,12 @@ void populate_mir(nb::module_ &m) {
             return &self.getFunction();
           },
           nb::rv_policy::reference_internal)
+      .def(
+          "create_generic_virtual_register",
+          [](llvm::MachineFunction &self, llvm::LLT ty) -> llvm::Register {
+            return self.getRegInfo().createGenericVirtualRegister(ty);
+          },
+          "type"_a, "Create a new generic virtual register of the given LLT.")
       .def("__str__",
            [](llvm::MachineFunction &self) { return eudsl::toString(self); });
 
@@ -617,4 +658,155 @@ void populate_mir(nb::module_ &m) {
                                      /*pm=*/nullptr, std::move(ownedMmi), mmi};
       },
       "text"_a, "context"_a, "target_machine"_a, nb::keep_alive<0, 3>());
+
+  // Create a fresh, empty MachineFunction to build into: make an IR Function
+  // stub named `name` (a MachineFunction must attach to one), get its
+  // MachineFunction from a freshly owned MachineModuleInfo, and give it a
+  // single empty entry block. The stub's signature and linkage are surfaced as
+  // arguments rather than hardcoded; `function_type` defaults to `void()` (a
+  // MachineFunction anchored purely for building generic MIR never reads the IR
+  // signature). Consumes the module into the returned wrapper (like
+  // run_codegen_to_mir), which owns everything the MachineFunction depends on.
+  m.def(
+      "create_machine_function",
+      [](eudsl::Module &mod, llvm::TargetMachine &tm, const std::string &name,
+         llvm::FunctionType *fnTy, llvm::GlobalValue::LinkageTypes linkage) {
+        // Validate before take() so a rejected call leaves the module usable.
+        // Function::Create does not fail on a name collision -- it appends a
+        // numeric suffix (`f` -> `f.1`), which would then make
+        // machine_function(name) throw a confusing "no function named" error.
+        if (name.empty())
+          throw nb::value_error("function name must not be empty");
+        if (mod.get().getFunction(name)) {
+          throw nb::value_error(
+              ("module already has a function named '" + name + "'").c_str());
+        }
+
+        std::shared_ptr<llvm::LLVMContext> ctxKeepAlive =
+            mod.context().shared();
+        std::unique_ptr<llvm::Module> module = mod.take();
+        module->setDataLayout(tm.createDataLayout());
+
+        if (!fnTy)
+          fnTy = llvm::FunctionType::get(
+              llvm::Type::getVoidTy(module->getContext()), /*isVarArg=*/false);
+        llvm::Function *f =
+            llvm::Function::Create(fnTy, linkage, name, *module);
+
+        auto ownedMmi = std::make_unique<llvm::MachineModuleInfo>(&tm);
+        llvm::MachineFunction &mf = ownedMmi->getOrCreateMachineFunction(*f);
+        mf.push_back(mf.CreateMachineBasicBlock());
+
+        llvm::MachineModuleInfo *mmi = ownedMmi.get();
+        return new MachineModuleInfo{std::move(ctxKeepAlive), std::move(module),
+                                     /*pm=*/nullptr, std::move(ownedMmi), mmi};
+      },
+      "module"_a, "target_machine"_a, "name"_a, "function_type"_a = nullptr,
+      "linkage"_a = llvm::GlobalValue::LinkageTypes::ExternalLinkage,
+      nb::keep_alive<0, 2>());
+
+  // llvm::MachineIRBuilder -- the GlobalISel builder for generic (G_*) MIR. The
+  // typed helpers take the result type as an LLT (a fresh generic vreg is
+  // created for it) and the operands as Registers, returning the def Register
+  // so builds chain. Construction positions the builder at the end of the
+  // function's entry block. Entering the builder as a context manager
+  // (`with MachineIRBuilder(mf):`) makes it the current builder for the
+  // duration of the block; current_machine_builder() reads it back.
+  nb::class_<llvm::MachineIRBuilder>(m, "MachineIRBuilder")
+      .def(
+          "__init__",
+          [](llvm::MachineIRBuilder *self, llvm::MachineFunction &mf) {
+            // setMBB(mf.front()) on a block-less MachineFunction dereferences
+            // the ilist sentinel (UB, no assert). create_machine_function seeds
+            // a block, but this ctor is public and accepts any MachineFunction.
+            if (mf.empty()) {
+              throw nb::value_error(
+                  "MachineFunction has no basic block to build into");
+            }
+            new (self) llvm::MachineIRBuilder(mf);
+            self->setMBB(mf.front());
+          },
+          "machine_function"_a, nb::keep_alive<1, 2>())
+      .def(
+          "__enter__",
+          [](llvm::MachineIRBuilder *self) -> llvm::MachineIRBuilder * {
+            // Make this builder the current one for current_machine_builder().
+            machineBuilderStack().push_back(self);
+            return self;
+          },
+          nb::rv_policy::reference)
+      .def(
+          "__exit__",
+          [](llvm::MachineIRBuilder *self, nb::handle, nb::handle, nb::handle) {
+            auto &stack = machineBuilderStack();
+            if (stack.empty() || stack.back() != self)
+              throw nb::value_error("unbalanced MachineIRBuilder enter/exit");
+            stack.pop_back();
+          },
+          "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none())
+      .def(
+          "build_constant",
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty,
+             int64_t value) -> llvm::Register {
+            // buildConstant derives the width from ty's scalar size; a pointer,
+            // scalable-vector, or invalid LLT hits asserting accessors that
+            // vanish under NDEBUG and would emit a wrong-width G_CONSTANT.
+            if (!(ty.isScalar() || ty.isFixedVector())) {
+              throw nb::value_error("build_constant requires a scalar or "
+                                    "fixed-vector type");
+            }
+            return self.buildConstant(ty, value).getReg(0);
+          },
+          "type"_a, "value"_a)
+      .def(
+          "build_add",
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
+             llvm::Register rhs) -> llvm::Register {
+            requireVRegOfType(self, lhs, ty, "lhs");
+            requireVRegOfType(self, rhs, ty, "rhs");
+            return self.buildAdd(ty, lhs, rhs).getReg(0);
+          },
+          "type"_a, "lhs"_a, "rhs"_a)
+      .def(
+          "build_sub",
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
+             llvm::Register rhs) -> llvm::Register {
+            requireVRegOfType(self, lhs, ty, "lhs");
+            requireVRegOfType(self, rhs, ty, "rhs");
+            return self.buildSub(ty, lhs, rhs).getReg(0);
+          },
+          "type"_a, "lhs"_a, "rhs"_a)
+      .def(
+          "build_mul",
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
+             llvm::Register rhs) -> llvm::Register {
+            requireVRegOfType(self, lhs, ty, "lhs");
+            requireVRegOfType(self, rhs, ty, "rhs");
+            return self.buildMul(ty, lhs, rhs).getReg(0);
+          },
+          "type"_a, "lhs"_a, "rhs"_a)
+      .def(
+          "build_copy",
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty,
+             llvm::Register src) -> llvm::Register {
+            requireVRegOfType(self, src, ty, "src");
+            return self.buildCopy(ty, src).getReg(0);
+          },
+          "type"_a, "src"_a);
+
+  // The innermost MachineIRBuilder entered as a context manager, mirroring the
+  // IR module's current_builder(). Raises when there is none.
+  m.def(
+      "current_machine_builder",
+      []() -> llvm::MachineIRBuilder * {
+        auto &stack = machineBuilderStack();
+        if (stack.empty())
+          throw std::runtime_error(
+              "no current MachineIRBuilder; enter one with "
+              "`with MachineIRBuilder(mf):` (e.g. inside a @machine_function "
+              "body)");
+        return stack.back();
+      },
+      nb::rv_policy::reference,
+      "The innermost MachineIRBuilder on the thread-local stack.");
 }
