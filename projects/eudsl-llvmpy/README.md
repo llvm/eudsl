@@ -34,7 +34,9 @@ package top level:
 - `llvm.types` — the `Type` factories (`i1`…`i64`, `f16`/`f32`/`f64`, `ptr`,
   `void`, `function`, `struct`, `array`, `vector`) and `TypeID`.
 - `llvm.instructions` — free-function instruction emitters.
-- `llvm.passmanager` — `run_passes`, `run_default_pipeline`.
+- `llvm.passmanager` — `run_passes`, `run_default_pipeline`, and Python-driven
+  passes (`run_python_pass_on_module`, `run_python_pass_on_function`,
+  `register_python_pass`).
 - `llvm.jit` — `LLJIT`, `TargetMachine`, `link_into`, `host_triple`,
   `registered_targets`.
 - `llvm.intrinsics` — intrinsic declarations by name.
@@ -131,6 +133,34 @@ with ir.Context() as ctx:
     with ir.InsertPoint(fn.append_basic_block("entry"), builder=b):
         I.ret(I.add(fn.arg(0), 1, "s"))   # `1` becomes an i32 constant
     print(str(mod))
+```
+
+### Python-driven passes
+
+Besides running LLVM's own passes from a string, the *body* of a pass can be a
+Python callable. Two one-shot entry points run a callable directly:
+`run_python_pass_on_module(module, callback)` runs it as a module pass, and
+`run_python_pass_on_function(module, callback)` runs it once per defined function
+(the callback receives the `Function`). To compose a Python pass with builtins in
+a `run_passes` pipeline, register it by name: `register_python_pass(name,
+callback, on=PassKind.MODULE)` names a module pass used directly (e.g.
+`"my-pass,instcombine"`), and `on=PassKind.FUNCTION` names a function pass invoked
+inside a `function(...)` pipeline (e.g. `"function(my-pass)"`). Pick a name that
+does not collide with a builtin pass.
+
+Return a truthy value if the callback mutated the IR (so analyses are
+invalidated), `None`/falsy otherwise — reporting "unchanged" after a mutation
+leaves stale analyses, so return `True` when unsure. An exception raised in the
+callback propagates out of the call and leaves the module usable. The pass runs
+synchronously on the calling thread with the GIL held. These passes operate on
+LLVM IR (module and function scope).
+
+```python
+def rename(m):
+    m.get_function("f").name = "g"
+    return True  # mutated the IR
+
+llvm.passmanager.run_python_pass_on_module(mod, rename)
 ```
 
 ## DSL layer
