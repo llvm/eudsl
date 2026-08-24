@@ -365,3 +365,26 @@ def test_raising_pass_skips_rest_of_pipeline():
         assert "add i32 %x, 0" in str(mod)
         del mod
     assert_no_leaks()
+
+
+def test_raising_module_pass_skips_later_python_pass():
+    # Two module-level Python passes composed as "p1,p2": when p1 raises, the
+    # ShouldRun callback must skip p2 as well (not just builtin passes), so p2's
+    # callback never runs and the first error is what propagates.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        second_ran = []
+
+        def raiser(m):
+            raise ValueError("stop after p1")
+
+        def second(m):
+            second_ran.append(True)
+
+        llvm.passmanager.register_python_pass("test-p1-raiser", raiser)
+        llvm.passmanager.register_python_pass("test-p2-observer", second)
+        with pytest.raises(ValueError, match="stop after p1"):
+            llvm.passmanager.run_passes(mod, "test-p1-raiser,test-p2-observer")
+        assert second_ran == []  # p2 was skipped after p1 raised
+        del mod
+    assert_no_leaks()
