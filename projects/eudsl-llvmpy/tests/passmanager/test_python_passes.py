@@ -42,6 +42,25 @@ def test_module_pass_can_mutate_ir():
     assert_no_leaks()
 
 
+def test_module_pass_forwards_tuning_and_flags():
+    # The tuning/debug/verify_each arguments are accepted and threaded through
+    # to the pipeline environment; the pass still runs and can mutate the IR.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+
+        def rename(m):
+            m.get_function("f").name = "g"
+
+        tuning = llvm.passmanager.PipelineTuningOptions()
+        tuning.slp_vectorization = False
+        llvm.passmanager.run_python_pass_on_module(
+            mod, rename, tuning=tuning, debug=False, verify_each=True
+        )
+        assert "@g(" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
 def test_exception_in_pass_propagates_and_leaves_module_usable():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
@@ -67,9 +86,13 @@ def test_exception_from_unboolable_return_propagates():
                 raise ValueError("no truth value")
 
         # A truthiness that raises exercises the PyObject_IsTrue(<0) branch,
-        # which must propagate rather than be silently coerced or lost.
-        with pytest.raises(ValueError, match="no truth value"):
+        # which must propagate rather than be silently coerced or lost. The
+        # trampoline wraps it with a descriptive message and chains the
+        # original ValueError as the cause.
+        with pytest.raises(ValueError, match="truthiness") as excinfo:
             llvm.passmanager.run_python_pass_on_module(mod, lambda m: Unboolable())
+        assert isinstance(excinfo.value.__cause__, ValueError)
+        assert "no truth value" in str(excinfo.value.__cause__)
         assert "@f(" in str(mod)
         del mod
     assert_no_leaks()

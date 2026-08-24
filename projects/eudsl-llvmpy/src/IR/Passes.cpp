@@ -94,8 +94,16 @@ struct PyModulePass : llvm::PassInfoMixin<PyModulePass> {
       // Convention: None or any falsy return means "IR unchanged" (preserve all
       // analyses); any truthy return means the pass mutated the IR.
       int truthy = PyObject_IsTrue(res.ptr());
-      if (truthy < 0)
-        throw nb::python_error();
+      if (truthy < 0) {
+        // PyObject_IsTrue set a Python error (the return value's __bool__
+        // raised). Wrap it in a message that says where it came from, keeping
+        // the original as the exception's cause.
+        nb::python_error err;
+        nb::raise_from(
+            err, PyExc_ValueError,
+            "could not evaluate the truthiness of a Python module pass's "
+            "return value");
+      }
       return truthy ? llvm::PreservedAnalyses::none()
                     : llvm::PreservedAnalyses::all();
     } catch (...) {
@@ -165,15 +173,18 @@ void populate_passes(nb::module_ &m) {
 
   m.def(
       "run_python_pass_on_module",
-      [](eudsl::Module &mod, nb::callable callback) {
-        PassPipelineEnv env(mod.get().getContext(),
-                            llvm::PipelineTuningOptions(), /*debug=*/false,
-                            /*verifyEach=*/false);
+      [](eudsl::Module &mod, nb::callable callback,
+         std::optional<llvm::PipelineTuningOptions> pto, bool debug,
+         bool verifyEach) {
+        llvm::PipelineTuningOptions opts =
+            pto.value_or(llvm::PipelineTuningOptions());
+        PassPipelineEnv env(mod.get().getContext(), opts, debug, verifyEach);
         llvm::ModulePassManager mpm;
         mpm.addPass(PyModulePass(&mod, std::move(callback)));
         runPipeline(mpm, mod.get(), env.mam);
       },
-      "module"_a, "callback"_a,
+      "module"_a, "callback"_a, "tuning"_a = nb::none(), "debug"_a = false,
+      "verify_each"_a = false,
       "Run a Python callable as a module pass over the module in place. The "
       "callable receives the Module; return a truthy value if it mutated the "
       "IR (so analyses are invalidated), None/falsy otherwise.");
