@@ -3,6 +3,9 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 from textwrap import dedent
 
+import gc
+import weakref
+
 import pytest
 
 import llvm
@@ -112,6 +115,45 @@ def test_exception_from_unboolable_return_propagates():
             llvm.passmanager.run_python_pass_on_module(mod, lambda m: Unboolable())
         assert isinstance(excinfo.value.__cause__, ValueError)
         assert "no truth value" in str(excinfo.value.__cause__)
+        assert "@f(" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_callback_not_retained_after_exception():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+
+        class Boom:
+            def __call__(self, m):
+                raise ValueError("boom")
+
+        cb = Boom()
+        ref = weakref.ref(cb)
+        with pytest.raises(ValueError):
+            llvm.passmanager.run_python_pass_on_module(mod, cb)
+        del cb
+        gc.collect()
+        # The trampoline released the callable even on the error path. (This
+        # relies on the raised exception -- whose traceback holds Boom.__call__'s
+        # frame, and thus cb -- not outliving the pytest.raises block above.)
+        assert ref() is None
+        del mod
+    assert_no_leaks()
+
+
+def test_none_returning_pass_runs_repeatedly_without_error():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+
+        def noop(m):
+            return None  # falsy -> reported unchanged
+
+        # Each call builds its own pipeline, so this pins that a None-returning
+        # pass runs repeatedly without error (not analysis preservation, which
+        # is not observable across independent runs).
+        llvm.passmanager.run_python_pass_on_module(mod, noop)
+        llvm.passmanager.run_python_pass_on_module(mod, noop)
         assert "@f(" in str(mod)
         del mod
     assert_no_leaks()
