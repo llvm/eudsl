@@ -95,7 +95,8 @@ def test_emit_object_twice_raises():
 def test_mir_module_is_queryable_after_emit():
     """After emit_object the MirModule stays valid to query: to_mir() still
     prints the IR module. The emission pipeline appends FreeMachineFunctionPass,
-    so the MachineFunctions themselves are gone -- machine_functions is empty."""
+    so the MachineFunctions themselves are gone -- machine_functions is empty and
+    machine_function() reports the missing MachineFunction rather than crashing."""
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -104,6 +105,10 @@ def test_mir_module_is_queryable_after_emit():
         mmi.emit_object()
         assert "@add" in mmi.to_mir()
         assert list(mmi.machine_functions) == []
+        # Routes through the same (post-emit) MMI handle: the IR Function still
+        # exists but its MachineFunction was freed.
+        with pytest.raises(KeyError, match="has no MachineFunction"):
+            mmi.machine_function("add")
     assert_no_leaks()
 
 
@@ -117,6 +122,29 @@ def test_emit_object_requires_create_machine_function():
         mod = ir.parse_assembly(src, ctx, "m")
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.run_codegen_to_mir(mod, tm)  # no build-path MMIWrapperPass
+        with pytest.raises(RuntimeError, match="create_machine_function"):
+            mmi.emit_object()
+    assert_no_leaks()
+
+
+def test_emit_object_rejects_parse_path():
+    """A parse_mir result is ParseOwned (no build-path wrapper either), so
+    emit_object rejects it with the same message as the codegen path."""
+    src = dedent("""\
+        define i32 @f(i32 %a, i32 %b) {
+          %s = add i32 %a, %b
+          ret i32 %s
+        }
+        """)
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly(src, ctx, "m")
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        text = mir.run_codegen_to_mir(mod, tm).to_mir()
+    assert_no_leaks()
+
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.parse_mir(text, ctx, tm)
         with pytest.raises(RuntimeError, match="create_machine_function"):
             mmi.emit_object()
     assert_no_leaks()

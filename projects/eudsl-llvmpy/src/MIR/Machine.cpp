@@ -365,6 +365,11 @@ public:
     if (tm->addPassesToEmitFile(
             *pm, os, nullptr, llvm::CodeGenFileType::ObjectFile,
             /*DisableVerify=*/true, build->mmiwp.release())) {
+      // The wrapper has already been released into `pm`, so the BuildOwned's
+      // mmiwp is now null. Consume it into EmittedOwned before throwing so `pm`
+      // (and thus `info`) stays alive and a later query/retry reports a clean
+      // error instead of dereferencing the released mmiwp.
+      state_ = EmittedOwned{std::move(pm), info};
       throw std::runtime_error("target cannot emit an object file");
     }
     // LCOV_EXCL_STOP
