@@ -56,7 +56,11 @@ def _inline_single_block(call, callee):
 
 
 def inline_calls(module):
-    """Inline every call to a defined, single-block function (once)."""
+    """Inline every call to a defined, single-block function (once).
+
+    Minimal on purpose: only calls in each function's entry block are scanned,
+    so calls in other blocks, recursion, and multiple passes are out of scope.
+    """
     changed = False
     for fn in module.functions:
         if fn.is_declaration:
@@ -77,7 +81,8 @@ def inline_calls(module):
 def test_inliner_removes_call_and_splices_body():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
-        llvm.passmanager.run_python_pass_on_module(mod, inline_calls)
+        changed = inline_calls(mod)
+        assert changed is True  # the pass reports it mutated the IR
         caller = str(mod).split("define i32 @caller")[1]
         assert "call i32 @callee" not in caller  # the call was removed
         assert "add i32 %x, 3" in caller  # callee body cloned + args remapped
@@ -113,7 +118,105 @@ def test_inliner_leaves_external_calls_alone():
             "m",
         )
         llvm.passmanager.run_python_pass_on_module(mod, inline_calls)
+        # A declaration has no body, so the call is left alone. (This pins the
+        # caller-side `if fn.is_declaration: continue` -- without it, iterating
+        # @ext's entry block would fail. The callee-side is_declaration guard is
+        # redundant here: a declaration also has 0 blocks, which the single-block
+        # check already rejects.)
         assert "call i32 @ext" in str(mod)  # declaration -> not inlined
         mod.verify()
         del mod
+    assert_no_leaks()
+
+
+def test_inliner_keeps_constant_operands_through_remap():
+    # The callee uses an immediate constant (`add %a, 7`). That operand is not
+    # in vmap, so it must be left pointing at the shared constant rather than
+    # remapped -- the "op not in vmap" branch the main fixture never hits. JIT
+    # confirms the constant survived with the right value.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
+            dedent("""\
+                define i32 @callee(i32 %a) {
+                  %t = add i32 %a, 7
+                  ret i32 %t
+                }
+                define i32 @caller(i32 %x) {
+                  %c = call i32 @callee(i32 %x)
+                  ret i32 %c
+                }
+                """),
+            ctx,
+            "m",
+        )
+        inline_calls(mod)
+        caller = str(mod).split("define i32 @caller")[1]
+        assert "call i32 @callee" not in caller
+        assert "add i32 %x, 7" in caller  # arg remapped, constant 7 preserved
+        mod.verify()
+        j = jit.LLJIT()
+        j.add_module(mod)
+        fn = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32)(j.lookup("caller"))
+        assert fn(5) == 12  # 5 + 7
+    assert_no_leaks()
+
+
+def test_inliner_skips_multi_block_callee():
+    # The single-block guard must skip a multi-block callee, leaving the call in
+    # place (cloning only the entry block would produce broken IR).
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
+            dedent("""\
+                define i32 @callee(i32 %a) {
+                entry:
+                  br label %next
+                next:
+                  ret i32 %a
+                }
+                define i32 @caller(i32 %x) {
+                  %c = call i32 @callee(i32 %x)
+                  ret i32 %c
+                }
+                """),
+            ctx,
+            "m",
+        )
+        changed = inline_calls(mod)
+        assert changed is False  # nothing inlined
+        assert "call i32 @callee" in str(mod)  # multi-block callee left alone
+        mod.verify()
+        del mod
+    assert_no_leaks()
+
+
+def test_inliner_void_callee_with_unused_result():
+    # A void callee exercises the `ret_val is None` path: the ret has no operand,
+    # so there are no uses to rewire -- the call is just spliced away.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
+            dedent("""\
+                define void @callee(ptr %p) {
+                  store i32 42, ptr %p
+                  ret void
+                }
+                define void @caller(ptr %p) {
+                  call void @callee(ptr %p)
+                  ret void
+                }
+                """),
+            ctx,
+            "m",
+        )
+        changed = inline_calls(mod)
+        assert changed is True
+        caller = str(mod).split("define void @caller")[1]
+        assert "call void @callee" not in caller  # call spliced away
+        assert "store i32 42" in caller  # body cloned in
+        mod.verify()
+        j = jit.LLJIT()
+        j.add_module(mod)
+        out = ctypes.c_int32(0)
+        fn = ctypes.CFUNCTYPE(None, ctypes.POINTER(ctypes.c_int32))(j.lookup("caller"))
+        fn(ctypes.byref(out))
+        assert out.value == 42  # the inlined store ran
     assert_no_leaks()
