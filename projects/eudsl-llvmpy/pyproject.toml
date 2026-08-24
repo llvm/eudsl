@@ -5,8 +5,11 @@
 
 [project]
 name = "eudsl-llvmpy"
+# The extension is built against the CPython stable ABI (nanobind STABLE_ABI),
+# which nanobind only honors on Python >= 3.12, and the wheel is tagged
+# cp312-abi3 (see wheel.py-api). pip therefore only installs it on 3.12+.
 version = "0.0.1"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 
 [project.urls]
 Homepage = "https://github.com/llvm/eudsl"
@@ -68,6 +71,16 @@ omit = [
 
 [tool.cibuildwheel]
 build-verbosity = 1
+# The extension is built against the stable ABI (nanobind STABLE_ABI) and the
+# wheel is tagged cp312-abi3 (see wheel.py-api). nanobind only honors the stable
+# ABI on Python >= 3.12; on 3.10/3.11 it emits a version-specific
+# `.cpython-31X.so` that links private CPython symbols. Because the extension is
+# written into src/llvm (packaged wholesale via wheel.packages) and cibuildwheel
+# does not clean that shared source tree between per-version builds, those
+# non-abi3 .so files would leak into the single cp312-abi3 wheel and fail the
+# abi3audit check cibuildwheel runs on abi3 wheels. One cp312 build produces the
+# one abi3 extension the wheel needs (installable on 3.12+), so build only that.
+build = ["cp312-*"]
 skip = ["*-manylinux_i686", "*-musllinux*", "pp*", "*-win32"]
 archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
