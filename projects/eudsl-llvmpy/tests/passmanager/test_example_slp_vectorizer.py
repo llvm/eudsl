@@ -8,12 +8,13 @@ single vector `add`, rewires the scalar uses to extractelements, and erases the
 dead scalar adds. No LLVM analyses are used -- the (trivial) legality check is
 done in Python."""
 
+import ctypes
 from textwrap import dedent
 
 import pytest
 
 import llvm
-from llvm import ir, types
+from llvm import ir, jit, types
 from llvm import instructions as I
 from llvm.testing import assert_no_leaks
 
@@ -60,6 +61,11 @@ def slp_vectorize(fn):
     # Legality (checked, not assumed): same element type; both pure (no memory
     # traffic or other side effects); and mutually independent -- neither
     # transitively feeds the other -- so a single vector op can replace both.
+    # The independence walk is the load-bearing check here and is exercised in
+    # both the direct and transitive tests. The purity guard is a general-
+    # legality illustration: candidates are integer `add`s, which are always
+    # pure, so for this candidate set it never fires -- a real SLP pass over a
+    # wider opcode set (e.g. loads/calls) would need it.
     if x.type is not y.type:
         return False
     if any(i.may_read_or_write_memory or i.may_have_side_effects for i in (x, y)):
@@ -68,7 +74,9 @@ def slp_vectorize(fn):
         return False
 
     # Insert after whichever add comes later, so all four scalar operands
-    # dominate the new vector op.
+    # dominate the new vector op. `adds` is in program order, so x precedes y
+    # here and `last` is always y; comes_before is used to keep the rule correct
+    # if candidate selection ever stops being ordered.
     last = y if x.comes_before(y) else x
     vec = types.vector(x.type, 2)  # element type taken from the scalar op
     b = ir.IRBuilder()
@@ -100,6 +108,35 @@ def test_slp_vectorizer_combines_two_adds():
         assert text.count("extractelement") == 2  # the two lanes feed the stores
         mod.verify()  # the rewritten IR is well-formed
         del mod
+    assert_no_leaks()
+
+
+def test_slp_vectorizer_preserves_semantics():
+    # String+verify can't tell a correct vectorization from one that swaps
+    # lanes or mixes operands (all produce "add <2 x i32>" + two extracts that
+    # verify()). JIT-execute @f and assert the stored results to pin the actual
+    # data flow: *pa must be a0+b0 and *pc must be a1+b1.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        llvm.passmanager.run_python_pass_on_function(mod, slp_vectorize)
+        assert "add <2 x i32>" in str(mod)  # vectorization did happen
+        mod.verify()
+        j = jit.LLJIT()
+        j.add_module(mod)  # consumes the module
+        f = ctypes.CFUNCTYPE(
+            None,
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.POINTER(ctypes.c_int32),
+        )(j.lookup("f"))
+        pa = ctypes.c_int32(10)  # a0
+        pb = ctypes.c_int32(3)  # b0
+        pc = ctypes.c_int32(20)  # a1
+        pd = ctypes.c_int32(7)  # b1
+        f(ctypes.byref(pa), ctypes.byref(pb), ctypes.byref(pc), ctypes.byref(pd))
+        assert pa.value == 13  # store i32 %s0 -> %pa, s0 = a0 + b0 = 10 + 3
+        assert pc.value == 27  # store i32 %s1 -> %pc, s1 = a1 + b1 = 20 + 7
     assert_no_leaks()
 
 
@@ -137,6 +174,33 @@ def test_slp_vectorizer_skips_dependent_adds():
             "m",
         )
         # %s1 uses %s0, so the two adds are not independent -> not vectorized.
+        llvm.passmanager.run_python_pass_on_function(mod, slp_vectorize)
+        assert "add <2" not in str(mod)
+        assert str(mod).count("add i32") == 2  # both scalar adds untouched
+        mod.verify()
+        del mod
+    assert_no_leaks()
+
+
+def test_slp_vectorizer_skips_transitively_dependent_adds():
+    # The first two `add`s are %s0 and %s2; %s2 depends on %s0 only *through*
+    # %s1 (%s2 = add %s1, ...; %s1 = add %s0, ...). This forces _reaches to walk
+    # past the direct operands (push %s1, then reach %s0) -- the direct-only
+    # test never exercises that transitive walk.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(
+            dedent("""\
+                define i32 @deep(i32 %p, i32 %q) {
+                  %s0 = add i32 %p, %q
+                  %s1 = mul i32 %s0, %q
+                  %s2 = add i32 %s1, %q
+                  ret i32 %s2
+                }
+                """),
+            ctx,
+            "m",
+        )
+        # adds[0]=%s0, adds[1]=%s2; %s2 transitively consumes %s0 via %s1.
         llvm.passmanager.run_python_pass_on_function(mod, slp_vectorize)
         assert "add <2" not in str(mod)
         assert str(mod).count("add i32") == 2  # both scalar adds untouched
