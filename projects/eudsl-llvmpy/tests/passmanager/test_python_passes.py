@@ -40,6 +40,16 @@ _SRC_DECL = dedent("""\
     }
     """)
 
+# Has an `add %x, 0` that instcombine folds away -- lets a composed pipeline
+# show the builtin pass ran after the named Python pass.
+_SRC_ADDZERO = dedent("""\
+    define i32 @f(i32 %x) {
+    entry:
+      %a = add i32 %x, 0
+      ret i32 %a
+    }
+    """)
+
 
 def test_module_pass_is_invoked_once_with_the_module():
     with llvm.ir.Context() as ctx:
@@ -272,5 +282,167 @@ def test_function_pass_forwards_tuning_and_flags():
             mod, lambda fn: names.append(fn.name), tuning=tuning, verify_each=True
         )
         assert sorted(names) == ["f", "g"]
+        del mod
+    assert_no_leaks()
+
+
+def test_registered_pass_runs_by_name():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        calls = []
+
+        def rename(m):
+            calls.append(1)
+            m.get_function("f").name = "renamed"
+
+        llvm.passmanager.register_python_pass("test-rename-f", rename)
+        llvm.passmanager.run_passes(mod, "test-rename-f")
+        assert calls == [1]
+        assert "@renamed(" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_registered_pass_composes_with_builtin():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC_ADDZERO, ctx, "m")
+
+        def rename(m):
+            m.get_function("f").name = "renamed"
+
+        llvm.passmanager.register_python_pass("test-rename-compose", rename)
+        # A named Python pass and a builtin in one pipeline: both run. This does
+        # not prove ordering -- the two effects (rename, add-zero fold) are
+        # independent -- only that composition works; ordering is pinned
+        # separately in test_registered_passes_run_in_pipeline_order.
+        llvm.passmanager.run_passes(mod, "test-rename-compose,instcombine")
+        assert "@renamed(" in str(mod)
+        assert "add i32 %x, 0" not in str(mod)  # instcombine ran too
+        del mod
+    assert_no_leaks()
+
+
+def test_registered_passes_run_in_pipeline_order():
+    # Two registered Python passes composed as "p1,p2" run in textual order.
+    # Each records its name when invoked, so the recorded sequence pins order
+    # (it would flip if the pipeline ran them in registration/other order).
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        order = []
+        llvm.passmanager.register_python_pass(
+            "test-order-p1", lambda m: order.append("p1")
+        )
+        llvm.passmanager.register_python_pass(
+            "test-order-p2", lambda m: order.append("p2")
+        )
+        llvm.passmanager.run_passes(mod, "test-order-p1,test-order-p2")
+        assert order == ["p1", "p2"]
+        del mod
+    assert_no_leaks()
+
+
+def test_register_python_pass_last_write_wins():
+    # Registering the same name twice replaces the callable (map assignment);
+    # the pipeline invokes only the most recent one.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        calls = []
+        llvm.passmanager.register_python_pass(
+            "test-overwrite", lambda m: calls.append("first")
+        )
+        llvm.passmanager.register_python_pass(
+            "test-overwrite", lambda m: calls.append("second")
+        )
+        llvm.passmanager.run_passes(mod, "test-overwrite")
+        assert calls == ["second"]
+        del mod
+    assert_no_leaks()
+
+
+def test_registered_pass_truthy_return_via_named_path():
+    # The truthy-return -> "changed" convention holds through the named textual
+    # path too (not just the direct run_python_pass_on_module call): the pass
+    # runs and its mutation persists.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+
+        def rename_changed(m):
+            m.get_function("f").name = "renamed"
+            return True  # truthy -> reported changed
+
+        llvm.passmanager.register_python_pass("test-named-changed", rename_changed)
+        llvm.passmanager.run_passes(mod, "test-named-changed")
+        assert "@renamed(" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_unregistered_name_still_raises():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        with pytest.raises(RuntimeError, match="unknown pass name"):
+            llvm.passmanager.run_passes(mod, "definitely-not-registered")
+        del mod
+    assert_no_leaks()
+
+
+def test_registered_function_pass_runs_by_name():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC2, ctx, "m")
+        names = []
+        llvm.passmanager.register_python_pass(
+            "test-collect-fn",
+            lambda fn: names.append(fn.name),
+            on=llvm.passmanager.PassKind.FUNCTION,
+        )
+        # Function passes are named inside a function(...) pipeline.
+        llvm.passmanager.run_passes(mod, "function(test-collect-fn)")
+        assert sorted(names) == ["f", "g"]
+        del mod
+    assert_no_leaks()
+
+
+def test_register_python_pass_rejects_non_passkind():
+    # `on` is a typed PassKind enum, not a string.
+    with pytest.raises(TypeError):
+        llvm.passmanager.register_python_pass("bad", lambda m: None, on="module")
+
+
+def test_raising_pass_skips_rest_of_pipeline():
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC_ADDZERO, ctx, "m")
+
+        def raiser(m):
+            raise ValueError("stop the pipeline")
+
+        llvm.passmanager.register_python_pass("test-raiser", raiser)
+        with pytest.raises(ValueError, match="stop the pipeline"):
+            llvm.passmanager.run_passes(mod, "test-raiser,instcombine")
+        # After the raise, the remaining optional passes are skipped, so the
+        # add-zero instcombine would have folded is still present.
+        assert "add i32 %x, 0" in str(mod)
+        del mod
+    assert_no_leaks()
+
+
+def test_raising_module_pass_skips_later_python_pass():
+    # Two module-level Python passes composed as "p1,p2": when p1 raises, the
+    # ShouldRun callback must skip p2 as well (not just builtin passes), so p2's
+    # callback never runs and the first error is what propagates.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        second_ran = []
+
+        def raiser(m):
+            raise ValueError("stop after p1")
+
+        def second(m):
+            second_ran.append(True)
+
+        llvm.passmanager.register_python_pass("test-p1-raiser", raiser)
+        llvm.passmanager.register_python_pass("test-p2-observer", second)
+        with pytest.raises(ValueError, match="stop after p1"):
+            llvm.passmanager.run_passes(mod, "test-p1-raiser,test-p2-observer")
+        assert second_ran == []  # p2 was skipped after p1 raised
         del mod
     assert_no_leaks()
