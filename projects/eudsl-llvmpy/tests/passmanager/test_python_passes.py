@@ -29,6 +29,17 @@ _SRC2 = dedent("""\
     }
     """)
 
+# One defined function plus a bare declaration -- the function-pass adaptor
+# should visit only the defined one.
+_SRC_DECL = dedent("""\
+    declare i32 @ext(i32)
+    define i32 @f(i32 %x) {
+    entry:
+      %r = call i32 @ext(i32 %x)
+      ret i32 %r
+    }
+    """)
+
 
 def test_module_pass_is_invoked_once_with_the_module():
     with llvm.ir.Context() as ctx:
@@ -225,7 +236,41 @@ def test_function_pass_unboolable_return_propagates():
             def __bool__(self):
                 raise ValueError("no truth value")
 
-        with pytest.raises(ValueError, match="no truth value"):
+        # The trampoline wraps the __bool__ failure with a descriptive message
+        # and chains the original ValueError as the cause.
+        with pytest.raises(ValueError, match="truthiness") as excinfo:
             llvm.passmanager.run_python_pass_on_function(mod, lambda fn: Unboolable())
+        assert isinstance(excinfo.value.__cause__, ValueError)
+        assert "no truth value" in str(excinfo.value.__cause__)
+        del mod
+    assert_no_leaks()
+
+
+def test_function_pass_skips_declarations():
+    # The ModuleToFunctionPassAdaptor visits only defined functions, so a bare
+    # declaration must not be handed to the callback.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC_DECL, ctx, "m")
+        names = []
+        llvm.passmanager.run_python_pass_on_function(
+            mod, lambda fn: names.append(fn.name)
+        )
+        assert names == ["f"]  # @ext (declaration) was not visited
+        del mod
+    assert_no_leaks()
+
+
+def test_function_pass_forwards_tuning_and_flags():
+    # tuning/debug/verify_each are accepted and threaded through to the pipeline
+    # environment; the pass still runs once per defined function.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC2, ctx, "m")
+        names = []
+        tuning = llvm.passmanager.PipelineTuningOptions()
+        tuning.slp_vectorization = False
+        llvm.passmanager.run_python_pass_on_function(
+            mod, lambda fn: names.append(fn.name), tuning=tuning, verify_each=True
+        )
+        assert sorted(names) == ["f", "g"]
         del mod
     assert_no_leaks()
