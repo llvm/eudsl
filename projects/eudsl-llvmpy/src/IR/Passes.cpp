@@ -119,6 +119,43 @@ struct PyModulePass : llvm::PassInfoMixin<PyModulePass> {
     }
   }
 };
+
+// The per-function analogue of PyModulePass. Wrapped in a
+// ModuleToFunctionPassAdaptor it runs once per defined function; the callback
+// receives the llvm::Function (bound directly, so nanobind hands back its
+// wrapper). Same truthy-return / GIL contract as PyModulePass.
+struct PyFunctionPass : llvm::PassInfoMixin<PyFunctionPass> {
+  nb::callable callback;
+
+  explicit PyFunctionPass(nb::callable callback)
+      : callback(std::move(callback)) {}
+
+  llvm::PreservedAnalyses run(llvm::Function &f,
+                              llvm::FunctionAnalysisManager &) {
+    // GIL guard outside the try for the same reason as PyModulePass::run: the
+    // catch stashes via std::current_exception() (touching Python refcounts for
+    // an nb::python_error) and so must run while the GIL is held.
+    nb::gil_scoped_acquire gil;
+    try {
+      nb::object res = callback(nb::cast(&f, nb::rv_policy::reference));
+      int truthy = PyObject_IsTrue(res.ptr());
+      if (truthy < 0) {
+        // The return value's __bool__ raised; wrap it with a message that says
+        // where it came from, chaining the original as the exception's cause.
+        nb::python_error err;
+        nb::raise_from(
+            err, PyExc_ValueError,
+            "could not evaluate the truthiness of a Python function pass's "
+            "return value");
+      }
+      return truthy ? llvm::PreservedAnalyses::none()
+                    : llvm::PreservedAnalyses::all();
+    } catch (...) {
+      pendingPassError = std::current_exception();
+      return llvm::PreservedAnalyses::all();
+    }
+  }
+};
 } // namespace
 
 void populate_passes(nb::module_ &m) {
@@ -193,4 +230,23 @@ void populate_passes(nb::module_ &m) {
       "Run a Python callable as a module pass over the module in place. The "
       "callable receives the Module; return a truthy value if it mutated the "
       "IR (so analyses are invalidated), None/falsy otherwise.");
+
+  m.def(
+      "run_python_pass_on_function",
+      [](eudsl::Module &mod, nb::callable callback,
+         std::optional<llvm::PipelineTuningOptions> pto, bool debug,
+         bool verifyEach) {
+        llvm::PipelineTuningOptions opts =
+            pto.value_or(llvm::PipelineTuningOptions());
+        PassPipelineEnv env(mod.get().getContext(), opts, debug, verifyEach);
+        llvm::ModulePassManager mpm;
+        mpm.addPass(llvm::createModuleToFunctionPassAdaptor(
+            PyFunctionPass(std::move(callback))));
+        runPipeline(mpm, mod.get(), env.mam);
+      },
+      "module"_a, "callback"_a, "tuning"_a = nb::none(), "debug"_a = false,
+      "verify_each"_a = false,
+      "Run a Python callable as a function pass over each defined function in "
+      "the module in place. The callable receives a Function; return a truthy "
+      "value if it mutated the function, None/falsy otherwise.");
 }
