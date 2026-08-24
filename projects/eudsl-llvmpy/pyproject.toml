@@ -5,8 +5,11 @@
 
 [project]
 name = "eudsl-llvmpy"
+# The extension is built against the CPython stable ABI (nanobind STABLE_ABI),
+# which nanobind only honors on Python >= 3.12, and the wheel is tagged
+# cp312-abi3 (see wheel.py-api). pip therefore only installs it on 3.12+.
 version = "0.0.1"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 
 [project.urls]
 Homepage = "https://github.com/llvm/eudsl"
@@ -68,6 +71,7 @@ omit = [
 
 [tool.cibuildwheel]
 build-verbosity = 1
+build = ["cp312-*"]
 skip = ["*-manylinux_i686", "*-musllinux*", "pp*", "*-win32"]
 archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
