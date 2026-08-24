@@ -175,7 +175,7 @@ def test_builder_outlives_machine_function_handle():
         del mmi
         gc.collect()
         # keep_alive<1,2> pins the MachineFunction (and transitively its owning
-        # MachineModuleInfo) to the builder, so building still works.
+        # MirModule) to the builder, so building still works.
         assert b.build_constant(mir.LLT.scalar(32), 5).is_virtual
     assert_no_leaks()
 

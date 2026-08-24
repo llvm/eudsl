@@ -92,6 +92,21 @@ def test_emit_object_twice_raises():
     assert_no_leaks()
 
 
+def test_mir_module_is_queryable_after_emit():
+    """After emit_object the MirModule stays valid to query: to_mir() still
+    prints the IR module. The emission pipeline appends FreeMachineFunctionPass,
+    so the MachineFunctions themselves are gone -- machine_functions is empty."""
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        mmi.emit_object()
+        assert "@add" in mmi.to_mir()
+        assert list(mmi.machine_functions) == []
+    assert_no_leaks()
+
+
 def test_emit_object_requires_create_machine_function():
     src = dedent("""\
         define i32 @f(i32 %a) {

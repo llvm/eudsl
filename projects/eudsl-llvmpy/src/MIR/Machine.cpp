@@ -43,6 +43,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -199,25 +200,84 @@ static std::vector<llvm::MachineIRBuilder *> &machineBuilderStack() {
   return stack;
 }
 
+// The llvm::MachineModuleInfo that owns the MachineFunctions is held one of
+// three ways depending on how a MirModule was built. Each construction path is
+// its own type, and MirModule::state is a std::variant over them, so "which
+// path built this" is the active alternative rather than a runtime null-check
+// over three sometimes-null owner pointers. `queryHandle()` recovers the shared
+// llvm::MachineModuleInfo* the read accessors need, whichever alternative is
+// live.
+
+// run_codegen_to_mir: instruction selection ran in `pm`, which adopted the
+// MachineModuleInfoWrapperPass holding the MachineFunctions; `pm` owns it and
+// `mmi` queries into it.
+struct CodegenOwned {
+  std::unique_ptr<llvm::legacy::PassManager> pm;
+  llvm::MachineModuleInfo *mmi;
+  llvm::MachineModuleInfo *queryHandle() const { return mmi; }
+};
+// parse_mir: the MachineModuleInfo is owned directly (no PassManager).
+struct ParseOwned {
+  std::unique_ptr<llvm::MachineModuleInfo> mmi;
+  llvm::MachineModuleInfo *queryHandle() const { return mmi.get(); }
+};
+// create_machine_function: the wrapper is not yet in any PassManager, so
+// emit_object can still hand it to one. `tm` (borrowed, kept alive by a
+// keep_alive on the factory) is needed to build that emission pipeline.
+struct BuildOwned {
+  std::unique_ptr<llvm::MachineModuleInfoWrapperPass> mmiwp;
+  llvm::TargetMachine *tm;
+  llvm::MachineModuleInfo *queryHandle() const { return &mmiwp->getMMI(); }
+};
+// After emit_object: addPassesToEmitFile adopted the build wrapper into the
+// emission `pm`, which we keep so `mmi` stays valid. A BuildOwned transitions
+// to this once emitted; it is a distinct type, so a second emit_object cannot
+// find a BuildOwned to re-run, and the old "both mmiwp and pm live" state is
+// unrepresentable.
+struct EmittedOwned {
+  std::unique_ptr<llvm::legacy::PassManager> pm;
+  llvm::MachineModuleInfo *mmi;
+  llvm::MachineModuleInfo *queryHandle() const { return mmi; }
+};
+
 // Owns everything the MachineFunctions transitively depend on, so none of it is
 // freed out from under them: the LLVMContext (pinned by `ctxKeepAlive`), the IR
-// Module (whose Functions the MachineFunctions reference), and the
-// MachineModuleInfo that owns the MachineFunctions. The MMI is owned one of
-// three ways depending on how it was built: run_codegen_to_mir leaves it in a
-// MachineModuleInfoWrapperPass owned by the (already-run) `pm`; parse_mir owns
-// it directly via `ownedMmi`; create_machine_function owns a
-// MachineModuleInfoWrapperPass via `mmiwp` (not yet in a PassManager, so
-// emit_object can hand it to one). `mmi` is the query handle. `tm` is borrowed
-// (kept alive by a keep_alive on the factory).
-struct MachineModuleInfo {
-  std::shared_ptr<llvm::LLVMContext> ctxKeepAlive;
-  std::unique_ptr<llvm::Module> module;
-  std::unique_ptr<llvm::legacy::PassManager> pm;     // codegen/emit path
-  std::unique_ptr<llvm::MachineModuleInfo> ownedMmi; // parse path
-  std::unique_ptr<llvm::MachineModuleInfoWrapperPass> mmiwp; // build path
-  llvm::MachineModuleInfo *mmi;
-  llvm::TargetMachine *tm = nullptr;
-  bool emitted = false; // emit_object runs a pass pipeline once
+// Module (whose Functions the MachineFunctions reference), and -- through
+// `state` -- the MachineModuleInfo that owns the MachineFunctions. Constructed
+// only through the named factories below, each of which maps a construction
+// path to its ownership alternative; the private constructor keeps the
+// path/alternative pairing an invariant callers cannot break.
+class MirModule {
+public:
+  static MirModule codegen(std::shared_ptr<llvm::LLVMContext> ctx,
+                           std::unique_ptr<llvm::Module> module,
+                           std::unique_ptr<llvm::legacy::PassManager> pm,
+                           llvm::MachineModuleInfo *mmi) {
+    return MirModule(std::move(ctx), std::move(module),
+                     CodegenOwned{std::move(pm), mmi});
+  }
+  static MirModule parsed(std::shared_ptr<llvm::LLVMContext> ctx,
+                          std::unique_ptr<llvm::Module> module,
+                          std::unique_ptr<llvm::MachineModuleInfo> mmi) {
+    return MirModule(std::move(ctx), std::move(module),
+                     ParseOwned{std::move(mmi)});
+  }
+  static MirModule
+  building(std::shared_ptr<llvm::LLVMContext> ctx,
+           std::unique_ptr<llvm::Module> module,
+           std::unique_ptr<llvm::MachineModuleInfoWrapperPass> mmiwp,
+           llvm::TargetMachine *tm) {
+    return MirModule(std::move(ctx), std::move(module),
+                     BuildOwned{std::move(mmiwp), tm});
+  }
+
+  llvm::Module &module() { return *module_; }
+
+  // The query handle the read accessors used to get for free as a field: the
+  // active alternative knows how to produce its own llvm::MachineModuleInfo*.
+  llvm::MachineModuleInfo *mmi() {
+    return std::visit([](auto &s) { return s.queryHandle(); }, state_);
+  }
 
   // Print the whole module as .mir text: the IR block, then each function's
   // machine-level block, matching what `llc -stop-after=finalize-isel` emits. A
@@ -225,15 +285,128 @@ struct MachineModuleInfo {
   // (nothing to lower); a definition only lacks one if codegen failed, which
   // run_codegen_to_mir now reports as an exception rather than reaching here.
   std::string toMIR() {
+    llvm::MachineModuleInfo *info = mmi();
     std::string buf;
     llvm::raw_string_ostream os(buf);
-    llvm::printMIR(os, *module);
-    for (llvm::Function &f : *module) {
-      if (llvm::MachineFunction *mf = mmi->getMachineFunction(f))
-        llvm::printMIR(os, *mmi, *mf);
+    llvm::printMIR(os, *module_);
+    for (llvm::Function &f : *module_) {
+      if (llvm::MachineFunction *mf = info->getMachineFunction(f))
+        llvm::printMIR(os, *info, *mf);
     }
     return buf;
   }
+
+  // Emit a relocatable object for the built (already-selected) MIR by running
+  // the back half of codegen. Only valid on the build path, and only once: the
+  // BuildOwned is consumed into an EmittedOwned, so "build-path only" and the
+  // one-shot are enforced by the variant's active alternative rather than a
+  // pair of runtime flags.
+  nb::bytes emitObject() {
+    if (std::holds_alternative<EmittedOwned>(state_))
+      throw std::runtime_error("object already emitted");
+    BuildOwned *build = std::get_if<BuildOwned>(&state_);
+    if (!build) {
+      throw std::runtime_error(
+          "emit_object requires a module built with create_machine_function");
+    }
+    llvm::TargetMachine *tm = build->tm;
+    llvm::MachineModuleInfo *info = &build->mmiwp->getMMI();
+
+    // Verify the hand-built MIR up front so malformed input (the prior PRs'
+    // unchecked primitives can produce it: bogus properties, undefined vregs,
+    // ...) raises a catchable Python error instead of muddling through the
+    // emission pipeline -- whose in-pass verifier and asserts are gone under
+    // NDEBUG -- to a garbage object or a fatal codegen abort. The pipeline runs
+    // with DisableVerify=true since we verify here.
+    std::string report;
+    llvm::raw_string_ostream reportOS(report);
+    bool ok = true;
+    for (llvm::Function &f : *module_) {
+      if (llvm::MachineFunction *mf = info->getMachineFunction(f)) {
+        ok &= mf->verify(/*p=*/nullptr, /*Banner=*/nullptr, &reportOS,
+                         /*AbortOnError=*/false);
+      }
+    }
+    if (!ok)
+      throw std::runtime_error(
+          withDetail("hand-built MIR failed verification", report));
+
+    // Run only the back half of codegen (regalloc, prologue/epilogue, object
+    // emission) over the already-selected MachineFunctions:
+    // -start-after=finalize-isel skips instruction selection so the hand-built
+    // MIR is used as-is. The option is process-global (read by the pass config
+    // addPassesToEmitFile builds), so set+restore it; there is no lock, so this
+    // relies on the GIL serializing callers (no concurrent/nested/free-threaded
+    // codegen).
+    auto &opts = llvm::cl::getRegisteredOptions();
+    auto it = opts.find("start-after");
+    // LCOV_EXCL_START -- start-after is always registered by codegen
+    if (it == opts.end()) {
+      throw std::runtime_error("the -start-after option is not registered");
+    }
+    // LCOV_EXCL_STOP
+    auto &startAfter = *static_cast<llvm::cl::opt<std::string> *>(it->second);
+    std::string saved = startAfter;
+    struct Restore {
+      llvm::cl::opt<std::string> &opt;
+      std::string value;
+      ~Restore() { opt = value; }
+    } restore{startAfter, saved};
+    startAfter = "finalize-isel";
+
+    // Write straight into a SmallVector (raw_svector_ostream writes through, so
+    // no deferred flush surprises when `pm` outlives here).
+    llvm::SmallVector<char, 0> buf;
+    llvm::raw_svector_ostream os(buf);
+    auto pm = std::make_unique<llvm::legacy::PassManager>();
+    // addPassesToEmitFile adopts the MMIWrapperPass into `pm` (which we keep,
+    // so `info` stays valid); it holds the built MachineFunctions.
+    // LCOV_EXCL_START -- AArch64 can always emit an object file
+    if (tm->addPassesToEmitFile(
+            *pm, os, nullptr, llvm::CodeGenFileType::ObjectFile,
+            /*DisableVerify=*/true, build->mmiwp.release())) {
+      throw std::runtime_error("target cannot emit an object file");
+    }
+    // LCOV_EXCL_STOP
+    // The back half (register allocation) requires reserved registers to be
+    // frozen; the front of the pipeline normally does this, so do it here for
+    // the hand-built MachineFunctions.
+    for (llvm::Function &f : *module_) {
+      if (llvm::MachineFunction *mf = info->getMachineFunction(f))
+        mf->getRegInfo().freezeReservedRegs();
+    }
+    // A codegen pass reports failure through the context diagnostic handler
+    // (DS_Error -> stderr + exit under the default handler), not pm->run()'s
+    // value; capture it so it surfaces as an exception.
+    std::string diag;
+    {
+      ScopedDiagnosticCapture capture(module_->getContext(), diag);
+      pm->run(*module_);
+    }
+    // Consume the BuildOwned into an EmittedOwned: the released wrapper now
+    // lives in `pm`, and a second emit_object sees EmittedOwned and refuses.
+    state_ = EmittedOwned{std::move(pm), info};
+    // LCOV_EXCL_START -- eager verification makes a back-half failure or empty
+    // emission unreachable from well-formed hand-built MIR.
+    if (!diag.empty())
+      throw std::runtime_error(withDetail("object emission failed", diag));
+    if (buf.empty())
+      throw std::runtime_error("object emission produced no output");
+    // LCOV_EXCL_STOP
+    return nb::bytes(buf.data(), buf.size());
+  }
+
+private:
+  MirModule(
+      std::shared_ptr<llvm::LLVMContext> ctx,
+      std::unique_ptr<llvm::Module> module,
+      std::variant<CodegenOwned, ParseOwned, BuildOwned, EmittedOwned> state)
+      : ctxKeepAlive_(std::move(ctx)), module_(std::move(module)),
+        state_(std::move(state)) {}
+
+  std::shared_ptr<llvm::LLVMContext> ctxKeepAlive_;
+  std::unique_ptr<llvm::Module> module_;
+  std::variant<CodegenOwned, ParseOwned, BuildOwned, EmittedOwned> state_;
 };
 
 } // namespace
@@ -911,17 +1084,17 @@ void populate_mir(nb::module_ &m) {
   // The result of run_codegen_to_mir or parse_mir: owns the MachineFunctions
   // and everything they depend on. `machine_function` resolves one by its IR
   // Function name.
-  nb::class_<MachineModuleInfo>(m, "MachineModuleInfo")
+  nb::class_<MirModule>(m, "MirModule")
       .def(
           "machine_function",
-          [](MachineModuleInfo &self,
+          [](MirModule &self,
              const std::string &name) -> llvm::MachineFunction * {
-            llvm::Function *f = self.module->getFunction(name);
+            llvm::Function *f = self.module().getFunction(name);
             if (!f) {
               throw nb::key_error(
                   ("no function named '" + name + "' in the module").c_str());
             }
-            llvm::MachineFunction *mf = self.mmi->getMachineFunction(*f);
+            llvm::MachineFunction *mf = self.mmi()->getMachineFunction(*f);
             if (!mf) {
               throw nb::key_error(
                   ("function '" + name + "' has no MachineFunction").c_str());
@@ -931,10 +1104,11 @@ void populate_mir(nb::module_ &m) {
           "name"_a, nb::rv_policy::reference_internal)
       .def_prop_ro(
           "machine_functions",
-          [](MachineModuleInfo &self) {
+          [](MirModule &self) {
+            llvm::MachineModuleInfo *info = self.mmi();
             std::vector<llvm::MachineFunction *> mfs;
-            for (llvm::Function &f : *self.module) {
-              if (llvm::MachineFunction *mf = self.mmi->getMachineFunction(f))
+            for (llvm::Function &f : self.module()) {
+              if (llvm::MachineFunction *mf = info->getMachineFunction(f))
                 mfs.push_back(mf);
             }
             return mfs;
@@ -942,111 +1116,16 @@ void populate_mir(nb::module_ &m) {
           nb::rv_policy::reference_internal,
           "The MachineFunctions in the module (functions without one -- e.g. "
           "declarations -- are skipped).")
-      .def(
-          "to_mir", [](MachineModuleInfo &self) { return self.toMIR(); },
-          "Serialize the whole module (IR block + machine functions) as .mir "
-          "text.")
-      .def(
-          "emit_object",
-          [](MachineModuleInfo &self) {
-            if (self.emitted)
-              throw std::runtime_error("object already emitted");
-            if (!self.mmiwp || !self.tm) {
-              throw std::runtime_error(
-                  "emit_object requires a module built with "
-                  "create_machine_function");
-            }
-            // Verify the hand-built MIR up front so malformed input (the prior
-            // PRs' unchecked primitives can produce it: bogus properties,
-            // undefined vregs, ...) raises a catchable Python error instead of
-            // muddling through the emission pipeline -- whose in-pass verifier
-            // and asserts are gone under NDEBUG -- to a garbage object or a
-            // fatal codegen abort. The pipeline runs with DisableVerify=true
-            // since we verify here.
-            std::string report;
-            llvm::raw_string_ostream reportOS(report);
-            bool ok = true;
-            for (llvm::Function &f : *self.module) {
-              if (llvm::MachineFunction *mf = self.mmi->getMachineFunction(f)) {
-                ok &= mf->verify(/*p=*/nullptr, /*Banner=*/nullptr, &reportOS,
-                                 /*AbortOnError=*/false);
-              }
-            }
-            if (!ok)
-              throw std::runtime_error(
-                  withDetail("hand-built MIR failed verification", report));
+      .def("to_mir", &MirModule::toMIR,
+           "Serialize the whole module (IR block + machine functions) as .mir "
+           "text.")
+      .def("emit_object", &MirModule::emitObject,
+           "Emit a relocatable object file for the built (already-selected) "
+           "MIR by running the back half of codegen (regalloc, emission). "
+           "Verifies the MIR first, raising if it is malformed.");
 
-            // Run only the back half of codegen (regalloc, prologue/epilogue,
-            // object emission) over the already-selected MachineFunctions:
-            // -start-after=finalize-isel skips instruction selection so the
-            // hand-built MIR is used as-is. The option is process-global (read
-            // by the pass config addPassesToEmitFile builds), so set+restore
-            // it; there is no lock, so this relies on the GIL serializing
-            // callers (no concurrent/nested/free-threaded codegen).
-            auto &opts = llvm::cl::getRegisteredOptions();
-            auto it = opts.find("start-after");
-            // LCOV_EXCL_START -- start-after is always registered by codegen
-            if (it == opts.end()) {
-              throw std::runtime_error(
-                  "the -start-after option is not registered");
-            }
-            // LCOV_EXCL_STOP
-            auto &startAfter =
-                *static_cast<llvm::cl::opt<std::string> *>(it->second);
-            std::string saved = startAfter;
-            struct Restore {
-              llvm::cl::opt<std::string> &opt;
-              std::string value;
-              ~Restore() { opt = value; }
-            } restore{startAfter, saved};
-            startAfter = "finalize-isel";
-
-            // Write straight into a SmallVector (raw_svector_ostream writes
-            // through, so no deferred flush surprises when `pm` outlives here).
-            llvm::SmallVector<char, 0> buf;
-            llvm::raw_svector_ostream os(buf);
-            self.pm = std::make_unique<llvm::legacy::PassManager>();
-            // addPassesToEmitFile adopts the MMIWrapperPass into `pm` (which we
-            // keep, so `mmi` stays valid); it holds the built MachineFunctions.
-            // LCOV_EXCL_START -- AArch64 can always emit an object file
-            if (self.tm->addPassesToEmitFile(
-                    *self.pm, os, nullptr, llvm::CodeGenFileType::ObjectFile,
-                    /*DisableVerify=*/true, self.mmiwp.release())) {
-              throw std::runtime_error("target cannot emit an object file");
-            }
-            // LCOV_EXCL_STOP
-            // The back half (register allocation) requires reserved registers
-            // to be frozen; the front of the pipeline normally does this, so do
-            // it here for the hand-built MachineFunctions.
-            for (llvm::Function &f : *self.module) {
-              if (llvm::MachineFunction *mf = self.mmi->getMachineFunction(f))
-                mf->getRegInfo().freezeReservedRegs();
-            }
-            // A codegen pass reports failure through the context diagnostic
-            // handler (DS_Error -> stderr + exit under the default handler),
-            // not pm->run()'s value; capture it so it surfaces as an exception.
-            std::string diag;
-            {
-              ScopedDiagnosticCapture capture(self.module->getContext(), diag);
-              self.pm->run(*self.module);
-            }
-            self.emitted = true;
-            // LCOV_EXCL_START -- eager verification makes a back-half failure
-            // or empty emission unreachable from well-formed hand-built MIR.
-            if (!diag.empty())
-              throw std::runtime_error(
-                  withDetail("object emission failed", diag));
-            if (buf.empty())
-              throw std::runtime_error("object emission produced no output");
-            // LCOV_EXCL_STOP
-            return nb::bytes(buf.data(), buf.size());
-          },
-          "Emit a relocatable object file for the built (already-selected) MIR "
-          "by running the back half of codegen (regalloc, emission). Verifies "
-          "the MIR first, raising if it is malformed.");
-
-  // Run instruction selection on an IR module and hand back the
-  // MachineModuleInfo that owns the resulting MachineFunctions. Consumes the
+  // Run instruction selection on an IR module and hand back the MirModule that
+  // owns the resulting MachineFunctions. Consumes the
   // module (like adding it to the JIT): the MachineFunctions reference its
   // Functions, so ownership moves into the returned wrapper. Only the ISel
   // passes are added -- not the object-emission pipeline (addPassesToEmitFile),
@@ -1125,15 +1204,14 @@ void populate_mir(nb::module_ &m) {
           }
         }
 
-        return new MachineModuleInfo{
-            std::move(ctxKeepAlive), std::move(module), std::move(pm),
-            /*ownedMmi=*/nullptr,
-            /*mmiwp=*/nullptr,       &mmiwp->getMMI(),  &tm};
+        return new MirModule(
+            MirModule::codegen(std::move(ctxKeepAlive), std::move(module),
+                               std::move(pm), &mmiwp->getMMI()));
       },
       "module"_a, "target_machine"_a, "global_isel"_a = false,
       nb::keep_alive<0, 2>());
 
-  // Parse .mir text into a MachineModuleInfo. Mirrors run_codegen_to_mir's
+  // Parse .mir text into a MirModule. Mirrors run_codegen_to_mir's
   // result but builds the MachineFunctions by deserialization rather than
   // instruction selection. The context is kept alive by the returned wrapper;
   // the TargetMachine (which the parsed MachineFunctions bind to) by
@@ -1166,14 +1244,8 @@ void populate_mir(nb::module_ &m) {
           throw std::runtime_error(
               withDetail("failed to parse machine functions", diag));
         }
-        llvm::MachineModuleInfo *mmi = ownedMmi.get();
-        return new MachineModuleInfo{std::move(ctxKeepAlive),
-                                     std::move(module),
-                                     /*pm=*/nullptr,
-                                     std::move(ownedMmi),
-                                     /*mmiwp=*/nullptr,
-                                     mmi,
-                                     &tm};
+        return new MirModule(MirModule::parsed(
+            std::move(ctxKeepAlive), std::move(module), std::move(ownedMmi)));
       },
       "text"_a, "context"_a, "target_machine"_a, nb::keep_alive<0, 3>());
 
@@ -1220,11 +1292,8 @@ void populate_mir(nb::module_ &m) {
             mmiwp->getMMI().getOrCreateMachineFunction(*f);
         mf.push_back(mf.CreateMachineBasicBlock());
 
-        llvm::MachineModuleInfo *mmi = &mmiwp->getMMI();
-        return new MachineModuleInfo{
-            std::move(ctxKeepAlive), std::move(module),
-            /*pm=*/nullptr,
-            /*ownedMmi=*/nullptr,    std::move(mmiwp),  mmi, &tm};
+        return new MirModule(MirModule::building(
+            std::move(ctxKeepAlive), std::move(module), std::move(mmiwp), &tm));
       },
       "module"_a, "target_machine"_a, "name"_a, "function_type"_a = nullptr,
       "linkage"_a = llvm::GlobalValue::LinkageTypes::ExternalLinkage,

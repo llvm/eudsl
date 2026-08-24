@@ -4,7 +4,7 @@
 """Inspecting MIR produced by the codegen pipeline.
 
 `run_codegen_to_mir` runs instruction selection on an IR module and hands back
-the MachineModuleInfo that owns the resulting MachineFunctions, so they can be
+the MirModule that owns the resulting MachineFunctions, so they can be
 inspected. The reference shapes asserted here were produced with
 `llc -mtriple=aarch64-unknown-linux-gnu -stop-after=finalize-isel`.
 """
@@ -153,7 +153,7 @@ def test_run_codegen_to_mir_yields_named_machine_function():
 
 
 def _add_machine_module(ctx):
-    """Lower @add to MIR; returns the MachineModuleInfo that owns it."""
+    """Lower @add to MIR; returns the MirModule that owns it."""
     mod = ir.parse_assembly(_ADD_SRC, ctx, "m")
     tm = jit.TargetMachine(triple=_TRIPLE)
     return mir.run_codegen_to_mir(mod, tm)
@@ -286,7 +286,7 @@ def test_machine_function_outlives_dropped_mmi_handle():
         block = mf.blocks[0]
         del mmi
         gc.collect()
-        # reference_internal pins the owning MachineModuleInfo through mf/block,
+        # reference_internal pins the owning MirModule through mf/block,
         # so the machine function stays valid after the Python handle is dropped.
         assert mf.name == "add"
         assert any(i.opcode_name == "ADDWrr" for i in block.instructions)
