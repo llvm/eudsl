@@ -254,7 +254,7 @@ and **lower** built MIR to native code.
 The object model is bound as its own hierarchy (MIR is not part of the `Value`
 hierarchy): `MachineFunction`, `MachineBasicBlock`, `MachineInstr`,
 `MachineOperand`, `Register`, plus `LLT` (the generic low-level type) and
-`MachineFunctionProperty`. `MachineModuleInfo` owns the `MachineFunction`s and
+`MachineFunctionProperty`. `MirModule` owns the `MachineFunction`s and
 keeps everything they reference alive.
 
 > The examples below use AArch64 opcodes/registers/triples, so they need the
@@ -266,7 +266,7 @@ keeps everything they reference alive.
 ### Inspecting MIR from the compiler
 
 `run_codegen_to_mir` runs instruction selection on an IR module and hands back the
-`MachineModuleInfo` owning the resulting `MachineFunction`s. Pass
+`MirModule` owning the resulting `MachineFunction`s. Pass
 `global_isel=True` for the GlobalISel pipeline instead of SelectionDAG.
 `to_mir()` prints the `.mir` textual form and `parse_mir` reads it back;
 `MachineFunction.verify()` runs the machine verifier.

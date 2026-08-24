@@ -60,7 +60,7 @@ void populate_jit(nb::module_ &m) {
           },
           "obj"_a,
           "Add a relocatable object file (e.g. from "
-          "MachineModuleInfo.emit_object) to the JIT.")
+          "MirModule.emit_object) to the JIT.")
       .def(
           "lookup",
           [](llvm::orc::LLJIT &self, const std::string &name) {

@@ -3,7 +3,7 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """Round-tripping MIR through its textual serialization format.
 
-`to_mir()` prints a MachineModuleInfo as `.mir` text; `parse_mir` reads it back.
+`to_mir()` prints a MirModule as `.mir` text; `parse_mir` reads it back.
 The reference MIR is produced by lowering @add with run_codegen_to_mir rather
 than hand-written, so the test stays honest about the real serialization.
 """

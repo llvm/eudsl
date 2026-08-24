@@ -138,7 +138,7 @@ class MachineValue:
 
 class DSLMachineFunction:
     """The result of @machine_function: the built MachineFunction plus the
-    MachineModuleInfo that owns it."""
+    MirModule that owns it."""
 
     def __init__(self, mmi, name, machine_function):
         self.mmi = mmi

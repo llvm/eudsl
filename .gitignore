@@ -37,3 +37,8 @@
 .mcp.json
 .coverage
 *.zip
+
+# Local LLVM/MLIR dev install (see mlir_wheel; used for building eudsl-llvmpy locally)
+/mlir_wheel/
+/mlir_wheel-*.whl
+/mlir_wheel-*.dist-info/
