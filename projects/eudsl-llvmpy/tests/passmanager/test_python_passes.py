@@ -311,10 +311,68 @@ def test_registered_pass_composes_with_builtin():
             m.get_function("f").name = "renamed"
 
         llvm.passmanager.register_python_pass("test-rename-compose", rename)
-        # Named Python pass then a builtin, in order.
+        # A named Python pass and a builtin in one pipeline: both run. This does
+        # not prove ordering -- the two effects (rename, add-zero fold) are
+        # independent -- only that composition works; ordering is pinned
+        # separately in test_registered_passes_run_in_pipeline_order.
         llvm.passmanager.run_passes(mod, "test-rename-compose,instcombine")
         assert "@renamed(" in str(mod)
         assert "add i32 %x, 0" not in str(mod)  # instcombine ran too
+        del mod
+    assert_no_leaks()
+
+
+def test_registered_passes_run_in_pipeline_order():
+    # Two registered Python passes composed as "p1,p2" run in textual order.
+    # Each records its name when invoked, so the recorded sequence pins order
+    # (it would flip if the pipeline ran them in registration/other order).
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        order = []
+        llvm.passmanager.register_python_pass(
+            "test-order-p1", lambda m: order.append("p1")
+        )
+        llvm.passmanager.register_python_pass(
+            "test-order-p2", lambda m: order.append("p2")
+        )
+        llvm.passmanager.run_passes(mod, "test-order-p1,test-order-p2")
+        assert order == ["p1", "p2"]
+        del mod
+    assert_no_leaks()
+
+
+def test_register_python_pass_last_write_wins():
+    # Registering the same name twice replaces the callable (map assignment);
+    # the pipeline invokes only the most recent one.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+        calls = []
+        llvm.passmanager.register_python_pass(
+            "test-overwrite", lambda m: calls.append("first")
+        )
+        llvm.passmanager.register_python_pass(
+            "test-overwrite", lambda m: calls.append("second")
+        )
+        llvm.passmanager.run_passes(mod, "test-overwrite")
+        assert calls == ["second"]
+        del mod
+    assert_no_leaks()
+
+
+def test_registered_pass_truthy_return_via_named_path():
+    # The truthy-return -> "changed" convention holds through the named textual
+    # path too (not just the direct run_python_pass_on_module call): the pass
+    # runs and its mutation persists.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+
+        def rename_changed(m):
+            m.get_function("f").name = "renamed"
+            return True  # truthy -> reported changed
+
+        llvm.passmanager.register_python_pass("test-named-changed", rename_changed)
+        llvm.passmanager.run_passes(mod, "test-named-changed")
+        assert "@renamed(" in str(mod)
         del mod
     assert_no_leaks()
 

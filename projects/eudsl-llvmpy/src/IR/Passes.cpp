@@ -315,10 +315,15 @@ void populate_passes(nb::module_ &m) {
       "pipeline. on=PassKind.MODULE (default) names a module pass directly "
       "(e.g. \"my-pass,instcombine\"); on=PassKind.FUNCTION names a function "
       "pass, invoked inside a function(...) pipeline (e.g. "
-      "\"function(my-pass)\"). Pick a name that does not collide with a "
-      "builtin pass. The callable follows the run_python_pass_on_module / "
+      "\"function(my-pass)\"). Registering the same name again replaces the "
+      "callable. Pick a name that does not collide with a builtin pass. The "
+      "callable follows the run_python_pass_on_module / "
       "run_python_pass_on_function contract (truthy return marks the IR "
-      "mutated).");
+      "mutated). Caveats: the registry is not synchronized, so register from a "
+      "single thread (e.g. at import) before running pipelines concurrently; "
+      "and a callable that closes over a Module or Context keeps it alive "
+      "until "
+      "interpreter exit, so prefer callables that take the IR as an argument.");
 
   // Drop the registered callables while the interpreter is still up, so their
   // decref does not run after Python teardown (mirrors the caster registry).
