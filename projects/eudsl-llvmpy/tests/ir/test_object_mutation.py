@@ -4,7 +4,7 @@
 """Object-level IR mutation/inspection bindings that map 1:1 to LLVM C++:
 Instruction.opcode/opcode_name, erase_from_parent/remove_from_parent, clone,
 move_before/insert_before/insert_after, User.set_operand, and
-BasicBlock.split_basic_block/erase_from_parent/remove_from_parent."""
+BasicBlock.split_basic_block/erase_from_parent."""
 
 from textwrap import dedent
 
@@ -35,9 +35,16 @@ def test_opcode_and_opcode_name_distinguish_binops():
         assert add.opcode_name == "add"
         assert mul.opcode_name == "mul"
         assert ret.opcode_name == "ret"
-        # opcode is the stable integer; add != mul, and it agrees with the name.
+        # opcode is the stable integer keyed to the opcode, not an address/hash:
+        # two `add`s share it, and it agrees with opcode_name via a clone (whose
+        # opcode_name we already trust) -- so a distinct-but-wrong integer fails.
         assert isinstance(add.opcode, int)
         assert add.opcode != mul.opcode
+        add2 = add.clone()
+        add2.insert_before(mul)  # give the clone a parent before erasing it
+        assert add2.opcode_name == "add"
+        assert add2.opcode == add.opcode  # same opcode -> same integer
+        add2.erase_from_parent()  # clone has no uses; drop it cleanly
         del mod
     assert_no_leaks()
 
@@ -107,6 +114,11 @@ def test_erase_from_parent_removes_instruction():
         assert len(_insts(fn)) == 4
         dup.erase_from_parent()  # dup has no uses
         assert len(_insts(fn)) == 3
+        # The handle is poisoned: touching it raises TypeError (nanobind
+        # refuses to cast an uninitialized instance) instead of dereferencing
+        # the freed C++ instruction.
+        with pytest.raises(TypeError):
+            dup.opcode_name
         del mod
     assert_no_leaks()
 
@@ -150,6 +162,11 @@ def test_basic_block_erase_from_parent():
         assert len(list(fn.basic_blocks)) == 2
         dead.erase_from_parent()
         assert len(list(fn.basic_blocks)) == 1
+        # The handle is poisoned: touching it raises TypeError (nanobind
+        # refuses to cast an uninitialized instance) instead of dereferencing
+        # the freed C++ block.
+        with pytest.raises(TypeError):
+            dead.name
         del mod
     assert_no_leaks()
 
@@ -184,8 +201,10 @@ def test_memory_and_side_effect_predicates():
         assert load.may_read_from_memory
         assert not load.may_write_to_memory
         assert not add.may_read_or_write_memory
+        assert not add.may_read_from_memory  # pure add reads no memory
         assert store.may_have_side_effects
         assert store.may_write_to_memory
+        assert not store.may_read_from_memory  # store writes but does not read
         assert not add.may_have_side_effects
         del mod
     assert_no_leaks()

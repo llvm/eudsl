@@ -136,7 +136,9 @@ void populate_values(nb::module_ &m) {
       .def_prop_ro("num_operands", &llvm::User::getNumOperands)
       .def("operand", &llvm::User::getOperand, "index"_a,
            nb::rv_policy::reference_internal)
-      .def("set_operand", &llvm::User::setOperand, "index"_a, "value"_a)
+      .def("set_operand", &llvm::User::setOperand, "index"_a, "value"_a,
+           "Set operand `index` to `value`. `index` must be < num_operands "
+           "(out of range is undefined behavior, matching LLVM's setOperand).")
       .def_prop_ro(
           "operands",
           [](llvm::User &self) {
@@ -206,9 +208,18 @@ void populate_values(nb::module_ &m) {
                    [](llvm::Instruction &self) { return self.getOpcodeName(); })
       .def(
           "erase_from_parent",
-          [](llvm::Instruction &self) { self.eraseFromParent(); },
-          "Unlink from the parent block and delete. The Python handle must not "
-          "be used afterward -- it dangles like the freed C++ pointer.")
+          [](nb::handle self) {
+            nb::cast<llvm::Instruction *>(self)->eraseFromParent();
+            // The C++ object is now freed, but nanobind still holds this
+            // wrapper's (dangling) pointer in its instance registry. Mark the
+            // wrapper uninitialized so any later attribute access raises
+            // "attempted to access an uninitialized instance" instead of
+            // dereferencing freed memory. destruct=false: we do not own it (the
+            // ilist did) and it is already deleted.
+            nb::inst_set_state(self, /*ready=*/false, /*destruct=*/false);
+          },
+          "Unlink from the parent block and delete. The Python handle is "
+          "poisoned afterward: any further use raises rather than dangling.")
       .def(
           "remove_from_parent",
           [](llvm::Instruction &self) { self.removeFromParent(); },
@@ -333,9 +344,15 @@ void populate_values(nb::module_ &m) {
           "branch to the new (returned) block as this block's terminator.")
       .def(
           "erase_from_parent",
-          [](llvm::BasicBlock &self) { self.eraseFromParent(); },
-          "Unlink from the parent function and delete. The Python handle must "
-          "not be used afterward.")
+          [](nb::handle self) {
+            nb::cast<llvm::BasicBlock *>(self)->eraseFromParent();
+            // Poison the wrapper: the block is freed, so any later use should
+            // raise rather than dereference the dangling pointer (see the
+            // Instruction.erase_from_parent binding for the rationale).
+            nb::inst_set_state(self, /*ready=*/false, /*destruct=*/false);
+          },
+          "Unlink from the parent function and delete. The Python handle is "
+          "poisoned afterward: any further use raises rather than dangling.")
       .def_prop_ro(
           "predecessors",
           [](llvm::BasicBlock &self) {
