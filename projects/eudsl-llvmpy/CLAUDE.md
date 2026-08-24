@@ -72,3 +72,34 @@ the live context count. Do not call `gc.collect()` right before it, and prefer
 `Context._get_live_count() == 0`. Keep an explicit `gc.collect()` only where a
 following assertion reads a live count directly, such as checking that a module
 holds its context at one after the context handle is dropped.
+
+## C++ coverage
+
+`scripts/cpp_coverage.sh` builds the extension instrumented, runs the suite, and
+enforces **100%** line and function coverage over `src/IR` and `src/MIR`. CI runs
+this **per PR**, so every new binding/line must be exercised by a test in the
+same PR (not a later one) — or marked `// LCOV_EXCL_LINE` (/ `LCOV_EXCL_START` /
+`LCOV_EXCL_STOP`) for a genuinely unreachable line, as `Machine.cpp` does.
+
+Running it locally: the profile format the compiler bakes into the `.so` must
+match the `llvm-profdata`/`llvm-cov` that read it. The bundled `mlir_wheel`
+tools are a newer LLVM than the system compiler that builds the `.so`, so their
+`llvm-profdata` rejects the system `profraw` ("raw profile version mismatch").
+Point the script at the `llvm-profdata`/`llvm-cov` that ship with the *same*
+toolchain as your compiler via `LLVM_PROFDATA`/`LLVM_COV`.
+
+On macOS, the Apple-clang tools come from the active developer dir:
+
+```
+LLVM_PROFDATA="$(xcrun -f llvm-profdata)" LLVM_COV="$(xcrun -f llvm-cov)" \
+  COVERAGE_THRESHOLD=100 bash scripts/cpp_coverage.sh
+```
+
+On Linux (no `xcrun`), use the versioned tools next to your compiler — e.g. if
+you build with `clang-18`, pass `llvm-profdata-18`/`llvm-cov-18`:
+
+```
+LLVM_PROFDATA="$(command -v llvm-profdata-18)" LLVM_COV="$(command -v llvm-cov-18)" \
+  COVERAGE_THRESHOLD=100 bash scripts/cpp_coverage.sh
+```
+
