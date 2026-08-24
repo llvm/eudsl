@@ -42,6 +42,25 @@ def test_module_pass_can_mutate_ir():
     assert_no_leaks()
 
 
+def test_module_pass_can_mutate_ir_and_report_changed():
+    # A callback that returns a truthy value drives the "IR changed" branch
+    # (PreservedAnalyses::none(), invalidating analyses). That invalidation is
+    # not observable across independent runs, so this pins the observable part:
+    # a truthy return is accepted, the pass runs, and its mutation persists.
+    with llvm.ir.Context() as ctx:
+        mod = llvm.ir.parse_assembly(_SRC, ctx, "m")
+
+        def rename_changed(m):
+            m.get_function("f").name = "g"
+            return True  # truthy -> reported changed
+
+        llvm.passmanager.run_python_pass_on_module(mod, rename_changed)
+        assert "@g(" in str(mod)
+        assert "@f(" not in str(mod)
+        del mod
+    assert_no_leaks()
+
+
 def test_module_pass_forwards_tuning_and_flags():
     # The tuning/debug/verify_each arguments are accepted and threaded through
     # to the pipeline environment; the pass still runs and can mutate the IR.

@@ -88,6 +88,11 @@ struct PyModulePass : llvm::PassInfoMixin<PyModulePass> {
       : mod(mod), callback(std::move(callback)) {}
 
   llvm::PreservedAnalyses run(llvm::Module &, llvm::ModuleAnalysisManager &) {
+    // The GIL guard is intentionally outside the try: the catch stashes the
+    // exception with std::current_exception(), which for an nb::python_error
+    // touches Python refcounts and so must run while the GIL is held. Its
+    // construction (PyGILState_Ensure) does not raise, so nothing is lost by
+    // leaving it uncaught here.
     nb::gil_scoped_acquire gil;
     try {
       nb::object res = callback(nb::cast(mod, nb::rv_policy::reference));
