@@ -17,6 +17,8 @@
 // assertions enabled (-UNDEBUG) to match the prebuilt LLVM it links against;
 // see the note in CMakeLists.txt.
 
+#include "MIR/Diagnostics.h"
+
 #include <llvm/CodeGen/MachineScheduler.h>
 #include <llvm/CodeGen/ScheduleDAG.h>
 
@@ -28,6 +30,14 @@
 #include <vector>
 
 namespace nb = nanobind;
+
+namespace eudsl {
+// Definition of the codegen error stash declared in Diagnostics.h (extern there
+// so the two MIR TUs share one instance). The pickNode trampoline below writes
+// it; runCodegenPipeline (in Diagnostics.h, used by emit_object) reads and
+// re-raises it.
+thread_local std::exception_ptr pendingCodegenError;
+} // namespace eudsl
 
 namespace {
 // Counts pickNode invocations across all TrivialTopDownStrategy instances. It
@@ -114,30 +124,52 @@ public:
   // picks. The callable receives a list[SUnit] and returns one element; we
   // accept its choice only if it is one of the presented nodes, by pointer
   // identity. With no callable installed (the strategy was selected by name,
-  // not via `pick`), or when the callable returns something that is not a
-  // presented node, we keep the native first-ready choice so the schedule stays
-  // legal. This PR assumes a well-behaved callable that does not raise;
-  // propagating a Python exception across LLVM's -fno-exceptions frames is
-  // handled separately.
+  // not via `pick`) we keep the native first-ready choice so the schedule stays
+  // legal. A callable that raises, or returns something that is not one of the
+  // presented ready nodes, has its exception stashed in
+  // eudsl::pendingCodegenError; we then fall back to the native first-ready
+  // node so this call (and the rest of the unskippable codegen pipeline)
+  // returns a legal node, and runCodegenPipeline re-raises the stashed
+  // exception after the run.
   llvm::SUnit *pickNode(bool &IsTopNode) override {
     if (ReadyQ.empty())
       return nullptr;
     IsTopNode = true;
     llvm::SUnit *chosen = nullptr;
-    if (pickCallback) {
+    // Once a callback has stashed an error, stop invoking Python; the remaining
+    // pickNode calls just drain the ready queue in first-ready order so the
+    // required pipeline winds down to runCodegenPipeline's re-raise.
+    if (pickCallback && !eudsl::pendingCodegenError) {
+      // The GIL guard is intentionally outside the try: the catch stashes the
+      // exception with std::current_exception(), which for an nb::python_error
+      // touches Python refcounts and so must run while the GIL is held. Its
+      // construction does not raise, so nothing is lost by leaving it uncaught.
       nb::gil_scoped_acquire gil;
-      nb::list ready;
-      for (llvm::SUnit *SU : ReadyQ)
-        ready.append(nb::cast(SU, nb::rv_policy::reference));
-      nb::object choice = pickCallback(ready);
-      llvm::SUnit *returned = nullptr;
-      if (nb::try_cast<llvm::SUnit *>(choice, returned)) {
-        for (llvm::SUnit *SU : ReadyQ) {
-          if (SU == returned) {
-            chosen = returned;
-            break;
+      try {
+        nb::list ready;
+        for (llvm::SUnit *SU : ReadyQ)
+          ready.append(nb::cast(SU, nb::rv_policy::reference));
+        nb::object choice = pickCallback(ready);
+        llvm::SUnit *returned = nullptr;
+        if (nb::try_cast<llvm::SUnit *>(choice, returned)) {
+          for (llvm::SUnit *SU : ReadyQ) {
+            if (SU == returned) {
+              chosen = returned;
+              break;
+            }
           }
         }
+        if (!chosen) {
+          throw nb::value_error(
+              "scheduler pickNode returned a value that is not one of the "
+              "ready nodes");
+        }
+      } catch (...) {
+        // Do not let the exception unwind through LLVM's -fno-exceptions
+        // frames; stash it and fall through to the native first-ready node so
+        // the pipeline winds down to runCodegenPipeline's re-raise.
+        eudsl::pendingCodegenError = std::current_exception();
+        chosen = nullptr;
       }
     }
     if (!chosen)

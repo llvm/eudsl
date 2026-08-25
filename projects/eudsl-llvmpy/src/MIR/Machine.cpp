@@ -523,11 +523,14 @@ public:
     }
     // A codegen pass reports failure through the context diagnostic handler
     // (DS_Error -> stderr + exit under the default handler), not pm->run()'s
-    // value; capture it so it surfaces as an exception.
+    // value; capture it so it surfaces as an exception. runCodegenPipeline
+    // re-raises any Python exception a pickNode callback stashed during the run
+    // (before the diagnostic check below), so a callback error takes precedence
+    // over a captured diagnostic.
     std::string diag;
     {
       eudsl::ScopedDiagnosticCapture capture(module_->getContext(), diag);
-      pm->run(*module_);
+      eudsl::runCodegenPipeline(*pm, *module_);
     }
     // Consume the BuildOwned into an EmittedOwned: the released wrapper now
     // lives in `pm`, and a second emit_object sees EmittedOwned and refuses.

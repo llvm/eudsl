@@ -13,11 +13,13 @@ otherwise. A JIT-executed test additionally proves the result stays correct.
 
 emit_object(pick=<callable>) instead routes the pre-RA MachineScheduler's pickNode
 through a user Python callable: the callable receives the ready SUnits as a
-list[SUnit] and returns the one to schedule next. The callback here is assumed
-well-behaved (returns a presented node, does not raise); a callback that returns
-something not in the ready set falls back to the native first-ready node so the
-schedule stays legal. The callable appending to a list closed over by the test is
-the witness that Python (not the target default) actually drove pickNode.
+list[SUnit] and returns the one to schedule next. A callback that raises, or that
+returns something that is not one of the presented ready SUnits, has its Python
+exception propagated out of emit_object: the exception is stashed and re-raised
+after the (unskippable) codegen pipeline winds down, so it surfaces as a Python
+error rather than crashing across LLVM's -fno-exceptions frames. The callable
+appending to a list closed over by the test is the witness that Python (not the
+target default) actually drove pickNode.
 """
 
 import ctypes
@@ -169,15 +171,64 @@ def test_python_scheduler_without_callback_falls_back():
     assert_no_leaks()
 
 
-def test_python_pick_callback_wrong_return_falls_back():
+def test_python_pick_callback_wrong_return_raises():
     """A callback that returns something that is not one of the presented SUnits
-    is a misbehaving callback: pickNode ignores it and falls back to the native
-    first-ready node, keeping the schedule legal and still emitting an object."""
+    is a misbehaving callback: pickNode stashes a ValueError and re-raises it out
+    of emit_object once the pipeline winds down, rather than silently falling
+    back. The interpreter survives (a Python error, not a crash), and no
+    Context/Module/callable leaks on the stash path."""
     picks = []
 
     def cb(ready):
         picks.append(len(ready))
-        return 123  # not a SUnit -> not in the ready set -> fallback
+        return 123  # not a SUnit -> not in the ready set -> error
+
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(ValueError, match="not one of the ready nodes"):
+            mmi.emit_object(pick=cb)
+        assert picks  # the callable ran before its return was rejected
+    assert_no_leaks()
+
+
+def test_python_pick_callback_raise_propagates():
+    """A callback that raises surfaces as a Python exception out of emit_object
+    (the exception is stashed and re-raised after codegen winds down, never
+    thrown across LLVM's -fno-exceptions frames), and does not crash the
+    interpreter. No Context/Module/callable leaks on the stash path."""
+    picks = []
+
+    def cb(ready):
+        picks.append(len(ready))
+        raise ValueError("boom")
+
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(ValueError, match="boom"):
+            mmi.emit_object(pick=cb)
+        assert picks  # the callable ran and raised
+    assert_no_leaks()
+
+
+def test_python_pick_callback_reads_sunit_fields():
+    """The SUnit read-only accessors return sensible values for the ready nodes
+    handed to the callback: node_num is a valid index, top-ready nodes (which is
+    what a top-down scheduler presents) report is_top_ready, and instr is the
+    wrapped MachineInstr. A legal pick still produces a well-formed object."""
+    seen = []
+
+    def cb(ready):
+        su = ready[0]
+        seen.append(
+            (su.node_num, su.is_top_ready, su.is_bottom_ready, su.instr is not None)
+        )
+        return su
 
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
@@ -185,7 +236,12 @@ def test_python_pick_callback_wrong_return_falls_back():
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         obj = mmi.emit_object(pick=cb)
-        assert picks  # the callable ran even though its return was rejected
+        assert seen
+        node_num, is_top_ready, is_bottom_ready, has_instr = seen[0]
+        assert node_num >= 0
+        assert is_top_ready  # a node in the top-down ready set has no preds left
+        assert isinstance(is_bottom_ready, bool)
+        assert has_instr  # every ready SUnit wraps a MachineInstr
         assert obj[:4] == b"\x7fELF"
     assert_no_leaks()
 

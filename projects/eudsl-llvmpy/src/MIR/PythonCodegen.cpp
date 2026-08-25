@@ -4,6 +4,7 @@
 
 #include "IR/Common.h"
 
+#include <llvm/CodeGen/MachineInstr.h>
 #include <llvm/CodeGen/MachineScheduler.h>
 #include <llvm/CodeGen/ScheduleDAG.h>
 
@@ -24,10 +25,27 @@ void resetTrivialSchedulerPickCount();
 
 void populate_python_codegen(nb::module_ &m) {
   // llvm::SUnit -- one scheduling unit (a MachineInstr plus its dependency
-  // edges) the pre-RA MachineScheduler orders. Bound opaque: a python `pick`
-  // callback receives the ready SUnits as a list[SUnit] and returns the one to
-  // schedule next, matched back by pointer identity. No fields are exposed yet.
-  nb::class_<llvm::SUnit>(m, "SUnit");
+  // edges) the pre-RA MachineScheduler orders. A python `pick` callback
+  // receives the ready SUnits as a list[SUnit] and returns the one to schedule
+  // next, matched back by pointer identity. The read-only accessors below
+  // expose the node's identity and readiness so the callback can base its
+  // choice on the scheduler's state.
+  nb::class_<llvm::SUnit>(m, "SUnit")
+      .def_prop_ro(
+          "node_num", [](llvm::SUnit &su) { return su.NodeNum; },
+          "Entry number of this node in the DAG's node vector.")
+      .def_prop_ro(
+          "is_top_ready", [](llvm::SUnit &su) { return su.isTopReady(); },
+          "Whether all predecessors are scheduled (ready for top-down "
+          "scheduling).")
+      .def_prop_ro(
+          "is_bottom_ready", [](llvm::SUnit &su) { return su.isBottomReady(); },
+          "Whether all successors are scheduled (ready for bottom-up "
+          "scheduling).")
+      .def_prop_ro(
+          "instr", [](llvm::SUnit &su) { return su.getInstr(); },
+          nb::rv_policy::reference_internal,
+          "The representative MachineInstr this scheduling unit wraps.");
 
   m.def(
       "registered_schedulers",
