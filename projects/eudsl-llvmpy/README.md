@@ -361,9 +361,11 @@ with ir.Context() as ctx:
     mf.blocks[0].add_livein(w0); mf.blocks[0].add_livein(w1)
     v0, v1, v2 = (mf.create_vreg(gpr32) for _ in range(3))
     for dst, src in ((v0, w0), (v1, w1)):
-        c = b.build_instr(mf.opcode("COPY")); c.add_reg(dst, is_def=True); c.add_reg(src)
-    a = b.build_instr(mf.opcode("ADDWrr")); a.add_reg(v2, is_def=True); a.add_reg(v0); a.add_reg(v1)
-    c = b.build_instr(mf.opcode("COPY")); c.add_reg(w0, is_def=True); c.add_reg(v2)
+        b.build(mf.opcode("COPY"), [dst], [src])   # dst = COPY src
+    b.build(mf.opcode("ADDWrr"), [v2], [v0, v1])   # v2 = ADDWrr v0, v1
+    b.build(mf.opcode("COPY"), [w0], [v2])         # $w0 = COPY v2
+    # RET_ReallyLR takes an *implicit* use of $w0, which build's plain-use srcs
+    # can't express, so drop to build_instr + add_reg for that one operand.
     r = b.build_instr(mf.opcode("RET_ReallyLR")); r.add_reg(w0, implicit=True)
     for p in ("IsSSA", "TracksLiveness", "NoPHIs"):
         mf.set_property(getattr(mir.MachineFunctionProperty, p))

@@ -213,6 +213,11 @@ def test_cross_function_vreg_collision_rejected():
         phi = bf.build_empty_phi(s32)
         with pytest.raises(ValueError, match="different MachineFunction"):
             phi.add_phi_incoming(foreign, mf.blocks[0])
+        # ...also the requireVReg / build_phi-incoming consuming sites.
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            bf.build_icmp(ir.ICmpPredicate.EQ, mir.LLT.scalar(1), own, foreign)
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            bf.build_phi(s32, [(foreign, mf.blocks[0])])
     assert_no_leaks()
 
 
