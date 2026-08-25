@@ -119,10 +119,11 @@ def test_terminator_builders_reject_second_terminator():
         cond = b.build_constant(s1, 1)  # built before the block is closed
         b.build_br(dest)  # closes the entry block with a G_BR barrier
         # A second terminator would be an unreachable double terminator past the
-        # barrier; both terminator builders refuse to append it.
-        with pytest.raises(ValueError, match="second .*terminator"):
+        # barrier; both terminator builders refuse to append it. Match the role
+        # prefix too, so a swapped role string in the guard is caught.
+        with pytest.raises(ValueError, match=r"build_br .*second .*terminator"):
             b.build_br(dest)
-        with pytest.raises(ValueError, match="second .*terminator"):
+        with pytest.raises(ValueError, match=r"build_brcond .*second .*terminator"):
             b.build_brcond(cond, dest)
     assert_no_leaks()
 
