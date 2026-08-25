@@ -202,6 +202,9 @@ def test_cross_function_vreg_collision_rejected():
         own = bf.build_constant(s32, 1)  # f's %0
         foreign = bg.build_constant(s32, 1)  # g's %0 -- same id and type
         assert own.id == foreign.id  # the collision that used to slip through
+        # Equality considers the owner, so the two same-id registers are
+        # distinct despite the id collision (they can coexist as dict keys).
+        assert own != foreign
         # Every site that consumes a caller-supplied register rejects the
         # foreign one by owner, while the same-shaped local register is fine.
         with pytest.raises(ValueError, match="different MachineFunction"):

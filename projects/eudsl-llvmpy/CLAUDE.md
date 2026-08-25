@@ -4,6 +4,16 @@ Guidance for this project: the hand-written nanobind bindings over the LLVM
 C++ API, plus the DSL frontend built on them. These apply to every PR in the
 stack, so check new code against them before pushing.
 
+## Breaking changes are fine
+
+There are no stability contracts here -- no external API guarantees, and no
+test expectation is sacred. Make a breaking change whenever it makes sense or
+improves the APIs/functionality: change signatures, rename bindings, alter
+equality/hash semantics, drop a behavior. Do not preserve a worse design for
+backward compatibility. When you make such a change, update the affected tests,
+docstrings, and README to match rather than working around them -- a pinned
+assertion that documents the old behavior is something to update, not defend.
+
 ## Mirror the LLVM C++ API
 
 Bind names as LLVM spells them. Do not rename or merge a method or field

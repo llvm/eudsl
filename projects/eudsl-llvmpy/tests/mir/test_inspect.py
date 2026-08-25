@@ -325,10 +325,11 @@ def test_register_accessors():
         assert vreg.is_valid
         assert vreg.is_virtual
         assert vreg.virt_reg_index >= 0
-        # Equality + hashing (by register id).
+        # Equality and hashing consider id + owning function: the same register
+        # read twice compares and hashes equal; a different register does not.
         assert vreg == add.operand(0).reg
+        assert hash(vreg) == hash(add.operand(0).reg)
         assert vreg != add.operand(1).reg
-        assert hash(vreg) == vreg.id
         assert (vreg == "not a register") is False
         # virt_reg_index is virtual-only.
         phys = (

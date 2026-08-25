@@ -5,6 +5,7 @@
 #include "IR/Common.h"
 #include "IR/Ownership.h"
 
+#include <llvm/ADT/Hashing.h>
 #include <llvm/CodeGen/GlobalISel/MachineIRBuilder.h>
 #include <llvm/CodeGen/MIRParser/MIRParser.h>
 #include <llvm/CodeGen/MIRPrinter.h>
@@ -109,9 +110,10 @@ std::string withDetail(llvm::StringRef base, const std::string &detail) {
 // by the `owned` factory from the register's own virtual-ness, and the
 // constructor is private, so no caller can construct an inconsistent pairing (a
 // vreg with no owner, or a physreg with one) -- the illegal states are
-// unrepresentable. Equality and hashing are by register id (see the binding),
-// so they are intra-function only; the owner is consulted only when a register
-// is consumed by the builder.
+// unrepresentable. Equality and hashing consider both id and owner, so two
+// same-id registers from different functions are distinct rather than
+// colliding; the owner is also checked whenever a register is consumed by the
+// builder.
 class TypedRegister {
 public:
   static TypedRegister owned(llvm::MachineFunction &mf, llvm::Register reg) {
@@ -535,11 +537,10 @@ void populate_mir(nb::module_ &m) {
   // target's real registers). Bound as TypedRegister so a virtual register also
   // carries the MachineFunction that minted it (physregs carry none), letting
   // the builder reject a register passed into a different function. Equality
-  // and hashing are by id -- a register's identity *within its function* -- so
-  // two registers with the same id from different functions compare and hash
-  // equal even though they are distinct; do not key a set/dict on registers
-  // gathered across functions. (The builder still rejects a cross-function
-  // register at build time regardless.)
+  // and hashing consider both id and owner, so two same-id registers from
+  // different functions are distinct -- they can safely coexist as set/dict
+  // keys, and a cross-function `==` is False (as well as rejected at build
+  // time).
   nb::class_<TypedRegister>(m, "Register")
       .def_prop_ro("id", [](TypedRegister &self) { return self.reg().id(); })
       .def_prop_ro("is_valid",
@@ -557,17 +558,18 @@ void populate_mir(nb::module_ &m) {
       .def(
           "__eq__",
           [](TypedRegister &self, TypedRegister other) {
-            return self.reg() == other.reg();
+            return self.reg() == other.reg() && self.owner() == other.owner();
           },
           nb::is_operator())
       .def(
           "__ne__",
           [](TypedRegister &self, TypedRegister other) {
-            return self.reg() != other.reg();
+            return self.reg() != other.reg() || self.owner() != other.owner();
           },
           nb::is_operator())
       .def("__hash__", [](TypedRegister &self) {
-        return static_cast<Py_ssize_t>(self.reg().id());
+        return static_cast<Py_ssize_t>(
+            llvm::hash_combine(self.reg().id(), self.owner()));
       });
 
   // A target register class (e.g. AArch64 GPR32), looked up by name via
