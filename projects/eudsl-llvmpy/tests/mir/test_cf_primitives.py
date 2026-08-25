@@ -89,6 +89,44 @@ def test_build_if_diamond_with_phi():
     assert_no_leaks()
 
 
+def test_is_terminated_reflects_barrier_terminator():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s1 = mir.LLT.scalar(1)
+        b = mir.MachineIRBuilder(mf)
+        entry = mf.blocks[0]
+        dest = mf.create_block()
+        # A fresh (empty) block has no terminator -- control falls through.
+        assert not entry.is_terminated
+        # A block ending in only a conditional G_BRCOND still falls through, so
+        # it is not "terminated" (the standard pattern appends a G_BR next).
+        cond = b.build_constant(s1, 1)
+        b.build_brcond(cond, dest)
+        assert not entry.is_terminated
+        # The trailing unconditional G_BR is a barrier: control can no longer
+        # fall through, so the block is now terminated.
+        b.build_br(dest)
+        assert entry.is_terminated
+    assert_no_leaks()
+
+
+def test_terminator_builders_reject_second_terminator():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s1 = mir.LLT.scalar(1)
+        b = mir.MachineIRBuilder(mf)
+        dest = mf.create_block()
+        cond = b.build_constant(s1, 1)  # built before the block is closed
+        b.build_br(dest)  # closes the entry block with a G_BR barrier
+        # A second terminator would be an unreachable double terminator past the
+        # barrier; both terminator builders refuse to append it.
+        with pytest.raises(ValueError, match="second .*terminator"):
+            b.build_br(dest)
+        with pytest.raises(ValueError, match="second .*terminator"):
+            b.build_brcond(cond, dest)
+    assert_no_leaks()
+
+
 def test_create_block_accepts_ir_basic_block():
     with ir.Context() as ctx:
         mmi, mf = _new_function(ctx)
