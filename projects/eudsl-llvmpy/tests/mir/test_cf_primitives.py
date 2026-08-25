@@ -144,12 +144,35 @@ def test_branch_and_cond_branch_wire_successors():
         assert succ_numbers == {then_bb.number, else_bb.number}
         ops = [i.opcode_name for i in entry.instructions]
         assert ops[-2:] == ["G_BRCOND", "G_BR"]
+        # Pin the branch *targets*, not just the successor set/opcode order: a
+        # swapped routing (G_BRCOND -> else, G_BR -> then) produces the same
+        # successor set and opcode order, so only the operand targets catch it.
+        # G_BRCOND operand(1) is the true target; the returned G_BR operand(0)
+        # is the fall-through (false) target.
+        brcond = next(i for i in entry.instructions if i.opcode_name == "G_BRCOND")
+        assert brcond.operand(1).mbb.number == then_bb.number
+        assert false_br.operand(0).mbb.number == else_bb.number
 
         # branch: G_BR + the single successor edge from the current block.
         b.set_block(then_bb)
         br = b.branch(join_bb)
         assert br.opcode_name == "G_BR"
         assert [s.number for s in then_bb.successors] == [join_bb.number]
+        assert br.operand(0).mbb.number == join_bb.number
+    assert_no_leaks()
+
+
+def test_cond_branch_rejects_equal_true_and_false_blocks():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s1 = mir.LLT.scalar(1)
+        b = mir.MachineIRBuilder(mf)
+        same = mf.create_block()
+        cond = b.build_constant(s1, 1)
+        # Equal true/false blocks would wire the same successor edge twice
+        # (addSuccessor does not dedup) -- a malformed CFG; the helper rejects it.
+        with pytest.raises(ValueError, match="true_block and false_block must differ"):
+            b.cond_branch(cond, same, same)
     assert_no_leaks()
 
 
