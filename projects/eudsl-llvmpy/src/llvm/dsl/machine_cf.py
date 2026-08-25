@@ -52,11 +52,10 @@ class _MIRIfOp:
         self.merge_block = mf.create_block()
         self.else_block = None
         # G_BRCOND cond -> then, then a fall-through G_BR whose target starts at
-        # merge; else_ctx_manager repoints it to the else block.
-        b.build_brcond(cond.reg, self.then_block)
-        self.false_br = b.build_br(self.merge_block)
-        self.entry_block.add_successor(self.then_block)
-        self.entry_block.add_successor(self.merge_block)
+        # merge; else_ctx_manager repoints it to the else block. cond_branch
+        # emits both terminators and wires both successor edges, returning the
+        # fall-through G_BR so we can repoint it later.
+        self.false_br = b.cond_branch(cond.reg, self.then_block, self.merge_block)
         self.then_vals = None
         self.else_vals = None
         self.then_pred = None
@@ -69,8 +68,7 @@ class _MIRIfOp:
         # predecessor (b.insert_block), which nested control flow may have moved.
         b = self.builder
         pred = b.insert_block
-        b.build_br(self.merge_block)
-        pred.add_successor(self.merge_block)
+        b.branch(self.merge_block)  # G_BR + successor edge from pred
         return pred
 
     def _repoint_false_edge(self, new_target):
@@ -199,8 +197,7 @@ class _MIRLoop:
         self.header = mf.create_block()
         body = mf.create_block()
         self.exit_block = mf.create_block()
-        b.build_br(self.header)
-        preheader.add_successor(self.header)
+        b.branch(self.header)  # G_BR + successor edge preheader -> header
 
         b.set_block(self.header)
         # The type witness is the first MachineValue among the bounds/carried
@@ -252,10 +249,9 @@ class _MIRLoop:
                     "while condition must evaluate to an i1 MachineValue "
                     "(e.g. a comparison like `a < b`)"
                 )
-        b.build_brcond(cond.reg, body)
-        b.build_br(self.exit_block)
-        self.header.add_successor(body)
-        self.header.add_successor(self.exit_block)
+        # Branch to body when the condition holds, else fall through to exit;
+        # cond_branch emits both terminators and wires both successor edges.
+        b.cond_branch(cond.reg, body, self.exit_block)
 
         b.set_block(body)
         _loop_stack.append(self)
@@ -270,8 +266,7 @@ class _MIRLoop:
         b = self.builder
         body_end = b.insert_block  # nested control flow may have moved us
         next_iv = self._iv_val + self.step if self.kind == "for" else None
-        b.build_br(self.header)
-        body_end.add_successor(self.header)
+        b.branch(self.header)  # G_BR + successor edge body_end -> header
         if self.kind == "for":
             self.iv_phi.add_phi_incoming(next_iv.reg, body_end)
         if len(self.next_carried) != len(self.carried_phis):

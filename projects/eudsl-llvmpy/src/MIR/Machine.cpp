@@ -1588,6 +1588,54 @@ void populate_mir(nb::module_ &m) {
           "cond"_a, "dest"_a,
           "Build a conditional branch (G_BRCOND) on `cond` to `dest`.")
       .def(
+          "branch",
+          [](llvm::MachineIRBuilder &self,
+             llvm::MachineBasicBlock *dest) -> llvm::MachineInstr * {
+            requireSameFunction(self.getMF(), dest, "dest");
+            requireNotTerminated(self, "branch");
+            self.getMBB().addSuccessor(dest);
+            return self.buildBr(*dest).getInstr();
+          },
+          "dest"_a, nb::rv_policy::reference_internal,
+          "Unconditional branch to `dest` that also wires the CFG successor "
+          "edge from the current block (add_successor + build_br in one step); "
+          "returns the G_BR so its target can be repointed. This helper owns "
+          "the "
+          "edge -- do not also call add_successor(dest) yourself, as neither "
+          "dedups and the edge would be wired twice.")
+      .def(
+          "cond_branch",
+          [](llvm::MachineIRBuilder &self, TypedRegister cond,
+             llvm::MachineBasicBlock *true_block,
+             llvm::MachineBasicBlock *false_block) -> llvm::MachineInstr * {
+            requireVReg(self, cond, "cond");
+            requireSameFunction(self.getMF(), true_block, "true block");
+            requireSameFunction(self.getMF(), false_block, "false block");
+            requireNotTerminated(self, "cond_branch");
+            // Equal true/false blocks would wire the same successor edge twice
+            // (addSuccessor does not dedup) -- a malformed CFG. Such a branch
+            // is degenerate anyway (both arms go to the same place); reject it.
+            if (true_block == false_block) {
+              throw nb::value_error(
+                  "cond_branch true_block and false_block must differ; equal "
+                  "blocks would wire a duplicate successor edge");
+            }
+            self.buildBrCond(cond.reg(), *true_block);
+            llvm::MachineInstr *falseBr = self.buildBr(*false_block).getInstr();
+            self.getMBB().addSuccessor(true_block);
+            self.getMBB().addSuccessor(false_block);
+            return falseBr;
+          },
+          "cond"_a, "true_block"_a, "false_block"_a,
+          nb::rv_policy::reference_internal,
+          "Conditional branch: G_BRCOND on `cond` to `true_block`, fallthrough "
+          "G_BR to `false_block`, wiring both CFG successor edges from the "
+          "current block (build_brcond + build_br + two add_successor calls in "
+          "one step). Returns the fallthrough G_BR so its target can be "
+          "repointed. `true_block` and `false_block` must differ, and this "
+          "helper owns both edges -- do not also call add_successor for them "
+          "yourself, as neither dedups and the edges would be wired twice.")
+      .def(
           "build_phi",
           [](llvm::MachineIRBuilder &self, llvm::LLT ty,
              std::vector<std::pair<TypedRegister, llvm::MachineBasicBlock *>>

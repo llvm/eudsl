@@ -49,20 +49,17 @@ def test_build_if_diamond_with_phi():
         then_bb = mf.create_block()
         else_bb = mf.create_block()
         join_bb = mf.create_block()
-        entry.add_successor(then_bb)
-        entry.add_successor(else_bb)
-        b.build_brcond(cond, then_bb)
-        b.build_br(else_bb)
+        # cond_branch emits G_BRCOND -> then, fall-through G_BR -> else, and
+        # wires both successor edges from entry, in one call.
+        b.cond_branch(cond, then_bb, else_bb)
 
         b.set_block(then_bb)
         tv = b.build_add(s32, x, one)
-        b.build_br(join_bb)
-        then_bb.add_successor(join_bb)
+        b.branch(join_bb)  # G_BR + then->join successor edge
 
         b.set_block(else_bb)
         ev = b.build_sub(s32, x, two)
-        b.build_br(join_bb)
-        else_bb.add_successor(join_bb)
+        b.branch(join_bb)  # G_BR + else->join successor edge
 
         b.set_block(join_bb)
         r = b.build_phi(s32, [(tv, then_bb), (ev, else_bb)])
@@ -125,6 +122,99 @@ def test_terminator_builders_reject_second_terminator():
             b.build_br(dest)
         with pytest.raises(ValueError, match=r"build_brcond .*second .*terminator"):
             b.build_brcond(cond, dest)
+    assert_no_leaks()
+
+
+def test_branch_and_cond_branch_wire_successors():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s1 = mir.LLT.scalar(1)
+        b = mir.MachineIRBuilder(mf)
+        entry = mf.blocks[0]
+        then_bb = mf.create_block()
+        else_bb = mf.create_block()
+        join_bb = mf.create_block()
+
+        cond = b.build_constant(s1, 1)
+        # cond_branch: G_BRCOND -> then, fall-through G_BR -> else, plus both
+        # successor edges, and it returns the fall-through G_BR.
+        false_br = b.cond_branch(cond, then_bb, else_bb)
+        assert false_br.opcode_name == "G_BR"
+        succ_numbers = {s.number for s in entry.successors}
+        assert succ_numbers == {then_bb.number, else_bb.number}
+        ops = [i.opcode_name for i in entry.instructions]
+        assert ops[-2:] == ["G_BRCOND", "G_BR"]
+        # Pin the branch *targets*, not just the successor set/opcode order: a
+        # swapped routing (G_BRCOND -> else, G_BR -> then) produces the same
+        # successor set and opcode order, so only the operand targets catch it.
+        # G_BRCOND operand(1) is the true target; the returned G_BR operand(0)
+        # is the fall-through (false) target.
+        brcond = next(i for i in entry.instructions if i.opcode_name == "G_BRCOND")
+        assert brcond.operand(1).mbb.number == then_bb.number
+        assert false_br.operand(0).mbb.number == else_bb.number
+
+        # branch: G_BR + the single successor edge from the current block.
+        b.set_block(then_bb)
+        br = b.branch(join_bb)
+        assert br.opcode_name == "G_BR"
+        assert [s.number for s in then_bb.successors] == [join_bb.number]
+        assert br.operand(0).mbb.number == join_bb.number
+    assert_no_leaks()
+
+
+def test_cond_branch_rejects_equal_true_and_false_blocks():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s1 = mir.LLT.scalar(1)
+        b = mir.MachineIRBuilder(mf)
+        same = mf.create_block()
+        cond = b.build_constant(s1, 1)
+        # Equal true/false blocks would wire the same successor edge twice
+        # (addSuccessor does not dedup) -- a malformed CFG; the helper rejects it.
+        with pytest.raises(ValueError, match="true_block and false_block must differ"):
+            b.cond_branch(cond, same, same)
+    assert_no_leaks()
+
+
+def test_branch_helpers_reject_cross_function_operands():
+    with ir.Context() as ctx:
+        mmi_f, mf = _new_function(ctx, "f")
+        mmi_g, mg = _new_function(ctx, "g")
+        s1 = mir.LLT.scalar(1)
+        bf = mir.MachineIRBuilder(mf)
+        foreign_block = mg.create_block()  # belongs to g
+        foreign_cond = mir.MachineIRBuilder(mg).build_constant(s1, 1)  # g's vreg
+        local = mf.create_block()
+        cond = bf.build_constant(s1, 1)
+        # branch rejects a foreign destination.
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            bf.branch(foreign_block)
+        # cond_branch rejects a foreign condition register and either foreign
+        # block (true or false).
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            bf.cond_branch(foreign_cond, local, mf.blocks[0])
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            bf.cond_branch(cond, foreign_block, mf.blocks[0])
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            bf.cond_branch(cond, local, foreign_block)
+    assert_no_leaks()
+
+
+def test_branch_helpers_reject_second_terminator():
+    with ir.Context() as ctx:
+        mmi, mf = _new_function(ctx)
+        s1 = mir.LLT.scalar(1)
+        b = mir.MachineIRBuilder(mf)
+        dest = mf.create_block()
+        other = mf.create_block()
+        cond = b.build_constant(s1, 1)  # built before the block is closed
+        b.branch(dest)  # closes the entry block with a G_BR barrier
+        # branch/cond_branch route through the same double-terminator guard as
+        # build_br/build_brcond, so neither appends past the barrier.
+        with pytest.raises(ValueError, match="second .*terminator"):
+            b.branch(dest)
+        with pytest.raises(ValueError, match="second .*terminator"):
+            b.cond_branch(cond, dest, other)
     assert_no_leaks()
 
 
