@@ -10,6 +10,14 @@ semantics-preserving, so the emitted code alone cannot tell "trivial ran" from a
 no-op; the strategy exposes a diagnostic pickNode counter, and the tests below
 assert it is non-zero exactly when scheduler="trivial" is selected and zero
 otherwise. A JIT-executed test additionally proves the result stays correct.
+
+emit_object(pick=<callable>) instead routes the pre-RA MachineScheduler's pickNode
+through a user Python callable: the callable receives the ready SUnits as a
+list[SUnit] and returns the one to schedule next. The callback here is assumed
+well-behaved (returns a presented node, does not raise); a callback that returns
+something not in the ready set falls back to the native first-ready node so the
+schedule stays legal. The callable appending to a list closed over by the test is
+the witness that Python (not the target default) actually drove pickNode.
 """
 
 import ctypes
@@ -116,6 +124,110 @@ def test_unknown_scheduler_name_raises():
         _build_selected_add(mmi)
         with pytest.raises(RuntimeError, match="scheduler"):
             mmi.emit_object(scheduler="does-not-exist")
+    assert_no_leaks()
+
+
+def test_python_scheduler_is_registered():
+    assert "python" in mir.registered_schedulers()
+    assert_no_leaks()
+
+
+def test_python_pick_callback_invoked_and_emits_object():
+    """emit_object(pick=cb) routes pickNode through the callable: it receives the
+    ready SUnits and returns one. The callable appends to `picks`, so a non-empty
+    `picks` witnesses that Python drove the scheduler (semantics-preserving
+    scheduling leaves no other trace); the emitted object is a well-formed ELF."""
+    picks = []
+
+    def cb(ready):
+        picks.append(len(ready))
+        return ready[0]  # mimic the native first-ready policy
+
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)  # cross: ELF, any host
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        obj = mmi.emit_object(pick=cb)
+        assert picks  # the callable really ran
+        assert obj[:4] == b"\x7fELF"
+        assert b"add\x00" in obj
+    assert_no_leaks()
+
+
+def test_python_scheduler_without_callback_falls_back():
+    """Selecting the python strategy by name but without a callback is legal: with
+    no callback installed pickNode keeps the native first-ready choice, so a
+    well-formed object is still emitted."""
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        obj = mmi.emit_object(scheduler="python")
+        assert obj[:4] == b"\x7fELF"
+    assert_no_leaks()
+
+
+def test_python_pick_callback_wrong_return_falls_back():
+    """A callback that returns something that is not one of the presented SUnits
+    is a misbehaving callback: pickNode ignores it and falls back to the native
+    first-ready node, keeping the schedule legal and still emitting an object."""
+    picks = []
+
+    def cb(ready):
+        picks.append(len(ready))
+        return 123  # not a SUnit -> not in the ready set -> fallback
+
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        obj = mmi.emit_object(pick=cb)
+        assert picks  # the callable ran even though its return was rejected
+        assert obj[:4] == b"\x7fELF"
+    assert_no_leaks()
+
+
+def test_scheduler_and_pick_are_mutually_exclusive():
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(ValueError, match="scheduler"):
+            mmi.emit_object(scheduler="trivial", pick=lambda ready: ready[0])
+    assert_no_leaks()
+
+
+@pytest.mark.skipif(
+    not _IS_AARCH64,
+    reason="hand-built MIR is AArch64; executing it needs an AArch64 host",
+)
+def test_jit_executes_python_scheduled_add():
+    picks = []
+
+    def cb(ready):
+        picks.append(len(ready))
+        return ready[0]
+
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()  # host triple -> object loadable in-process
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        obj = mmi.emit_object(pick=cb)
+        assert picks  # the python callback drove pickNode
+
+        j = jit.LLJIT()
+        j.add_object(obj)
+        add = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_int32)(
+            j.lookup("add")
+        )
+        assert add(2, 3) == 5
+        assert add(40, 2) == 42
+        del j
     assert_no_leaks()
 
 

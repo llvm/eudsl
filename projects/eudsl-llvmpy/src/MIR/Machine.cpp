@@ -53,6 +53,14 @@
 #include <variant>
 #include <vector>
 
+namespace eudsl {
+// Defined in TrivialScheduler.cpp: install / clear the per-thread Python pick
+// callback the "python" MachineScheduler strategy reads at construction. Called
+// under the GIL around the emission pipeline run below.
+void setPendingPickCallback(nb::callable cb);
+void clearPendingPickCallback();
+} // namespace eudsl
+
 namespace {
 
 // A machine register paired with the MachineFunction that owns it. A virtual
@@ -356,8 +364,16 @@ public:
   // one-shot are enforced by the variant's active alternative rather than a
   // pair of runtime flags. When `scheduler` names a registered
   // MachineSchedRegistry strategy, the pre-RA MachineScheduler uses it instead
-  // of the target's default; an unregistered name raises.
-  nb::bytes emitObject(std::optional<std::string> scheduler) {
+  // of the target's default; an unregistered name raises. When `pick` is a
+  // Python callable, the "python" strategy is selected instead and routes each
+  // pickNode choice through the callable (see PyMachineSchedStrategy);
+  // `scheduler` and `pick` are mutually exclusive.
+  nb::bytes emitObject(std::optional<std::string> scheduler,
+                       std::optional<nb::callable> pick) {
+    if (scheduler && pick) {
+      throw nb::value_error(
+          "emit_object accepts at most one of scheduler= and pick=");
+    }
     if (std::holds_alternative<EmittedOwned>(state_))
       throw std::runtime_error("object already emitted");
     BuildOwned *build = std::get_if<BuildOwned>(&state_);
@@ -370,19 +386,23 @@ public:
 
     // Resolve the requested scheduler against the MachineSchedRegistry before
     // touching any codegen state so an unknown name fails cleanly. The registry
-    // holds the constructors that -misched selects among.
+    // holds the constructors that -misched selects among; `pick` selects the
+    // "python" strategy by that name and additionally installs the callable.
+    std::optional<std::string> schedName = scheduler;
+    if (pick)
+      schedName = "python";
     llvm::MachineSchedRegistry::ScheduleDAGCtor schedCtor = nullptr;
-    if (scheduler) {
+    if (schedName) {
       for (llvm::MachineSchedRegistry *node =
                llvm::MachineSchedRegistry::getList();
            node; node = node->getNext()) {
-        if (node->getName() == *scheduler) {
+        if (node->getName() == *schedName) {
           schedCtor = node->getCtor();
           break;
         }
       }
       if (!schedCtor)
-        throw std::runtime_error("unknown scheduler: " + *scheduler);
+        throw std::runtime_error("unknown scheduler: " + *schedName);
     }
 
     // Verify the hand-built MIR up front so malformed input (the prior PRs'
@@ -456,6 +476,23 @@ public:
       restoreSched.opt = &misched;
       restoreSched.value = misched;
       misched = schedCtor;
+    }
+
+    // Install the Python pick callback for the "python" strategy, if one was
+    // given, and clear it once the pipeline has run so it never leaks into a
+    // later emit. The strategy is constructed inside pm->run() below, on this
+    // thread, and copies the callback then; both the install and the clear
+    // touch Python refcounts and run under the GIL (held throughout emit).
+    struct RestorePick {
+      bool active = false;
+      ~RestorePick() {
+        if (active)
+          eudsl::clearPendingPickCallback();
+      }
+    } restorePick;
+    if (pick) {
+      eudsl::setPendingPickCallback(*pick);
+      restorePick.active = true;
     }
 
     // Write straight into a SmallVector (raw_svector_ostream writes through, so
@@ -1258,12 +1295,17 @@ void populate_mir(nb::module_ &m) {
       .def("to_mir", &MirModule::toMIR,
            "Serialize the whole module (IR block + machine functions) as .mir "
            "text.")
-      .def("emit_object", &MirModule::emitObject, "scheduler"_a = nb::none(),
-           "Emit a relocatable object file for the built (already-selected) "
-           "MIR by running the back half of codegen (regalloc, emission). "
-           "Verifies the MIR first, raising if it is malformed. `scheduler` "
-           "selects a registered pre-RA MachineScheduler strategy by name; an "
-           "unknown name raises.");
+      .def(
+          "emit_object", &MirModule::emitObject, "scheduler"_a = nb::none(),
+          "pick"_a = nb::none(),
+          "Emit a relocatable object file for the built (already-selected) "
+          "MIR by running the back half of codegen (regalloc, emission). "
+          "Verifies the MIR first, raising if it is malformed. `scheduler` "
+          "selects a registered pre-RA MachineScheduler strategy by name; an "
+          "unknown name raises. `pick` is a Python callable that drives the "
+          "scheduler's pickNode: it receives the ready SUnits as a list[SUnit] "
+          "and returns the one to schedule next. `scheduler` and `pick` are "
+          "mutually exclusive.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the

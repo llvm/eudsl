@@ -5,6 +5,7 @@
 #include "IR/Common.h"
 
 #include <llvm/CodeGen/MachineScheduler.h>
+#include <llvm/CodeGen/ScheduleDAG.h>
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h>
@@ -22,6 +23,12 @@ void resetTrivialSchedulerPickCount();
 } // namespace eudsl
 
 void populate_python_codegen(nb::module_ &m) {
+  // llvm::SUnit -- one scheduling unit (a MachineInstr plus its dependency
+  // edges) the pre-RA MachineScheduler orders. Bound opaque: a python `pick`
+  // callback receives the ready SUnits as a list[SUnit] and returns the one to
+  // schedule next, matched back by pointer identity. No fields are exposed yet.
+  nb::class_<llvm::SUnit>(m, "SUnit");
+
   m.def(
       "registered_schedulers",
       []() {
