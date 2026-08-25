@@ -4,6 +4,7 @@
 
 #include "IR/Common.h"
 #include "IR/Ownership.h"
+#include "MIR/Diagnostics.h"
 
 #include <llvm/ADT/Hashing.h>
 #include <llvm/CodeGen/GlobalISel/MachineIRBuilder.h>
@@ -15,7 +16,9 @@
 #include <llvm/CodeGen/MachineInstrBuilder.h>
 #include <llvm/CodeGen/MachineModuleInfo.h>
 #include <llvm/CodeGen/MachineOperand.h>
+#include <llvm/CodeGen/MachinePassRegistry.h>
 #include <llvm/CodeGen/MachineRegisterInfo.h>
+#include <llvm/CodeGen/MachineScheduler.h>
 #include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetOpcodes.h>
 #include <llvm/CodeGen/TargetPassConfig.h>
@@ -39,57 +42,18 @@
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
 
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/variant.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
 namespace {
-
-// MIR parsing and codegen report failures through LLVMContext::diagnose --
-// their return values are only a bare success/failure bit, so the rich reason
-// (line, column, message) would otherwise be lost to the default handler's
-// stderr print, which is invisible under the Python/nanobind harness. This RAII
-// guard installs a handler that captures error-severity diagnostics into `sink`
-// for the duration of one parse/codegen call, restoring the previous handler on
-// scope exit so the capture buffer (a caller stack local) never outlives the
-// handler that points at it.
-struct ScopedDiagnosticCapture {
-  llvm::LLVMContext &ctx;
-  llvm::DiagnosticHandler::DiagnosticHandlerTy prevHandler;
-  void *prevContext;
-
-  ScopedDiagnosticCapture(llvm::LLVMContext &ctx, std::string &sink)
-      : ctx(ctx), prevHandler(ctx.getDiagnosticHandlerCallBack()),
-        prevContext(ctx.getDiagnosticContext()) {
-    ctx.setDiagnosticHandlerCallBack(
-        [](const llvm::DiagnosticInfo *di, void *context) {
-          if (di->getSeverity() == llvm::DS_Error) {
-            auto *out = static_cast<std::string *>(context);
-            llvm::raw_string_ostream os(*out);
-            llvm::DiagnosticPrinterRawOStream printer(os);
-            di->print(printer);
-          }
-        },
-        &sink);
-  }
-  ~ScopedDiagnosticCapture() {
-    ctx.setDiagnosticHandlerCallBack(prevHandler, prevContext);
-  }
-  ScopedDiagnosticCapture(const ScopedDiagnosticCapture &) = delete;
-  ScopedDiagnosticCapture &operator=(const ScopedDiagnosticCapture &) = delete;
-};
-
-// "<base>" when no diagnostic was captured, else "<base>: <detail>".
-std::string withDetail(llvm::StringRef base, const std::string &detail) {
-  if (detail.empty())
-    return base.str(); // LCOV_EXCL_LINE -- MIRParser always diagnoses on error
-  return (base + ": " + detail).str();
-}
 
 // A machine register paired with the MachineFunction that owns it. A virtual
 // register's numeric id is only an index into its own function's
@@ -390,8 +354,10 @@ public:
   // the back half of codegen. Only valid on the build path, and only once: the
   // BuildOwned is consumed into an EmittedOwned, so "build-path only" and the
   // one-shot are enforced by the variant's active alternative rather than a
-  // pair of runtime flags.
-  nb::bytes emitObject() {
+  // pair of runtime flags. When `scheduler` names a registered
+  // MachineSchedRegistry strategy, the pre-RA MachineScheduler uses it instead
+  // of the target's default; an unregistered name raises.
+  nb::bytes emitObject(std::optional<std::string> scheduler) {
     if (std::holds_alternative<EmittedOwned>(state_))
       throw std::runtime_error("object already emitted");
     BuildOwned *build = std::get_if<BuildOwned>(&state_);
@@ -401,6 +367,23 @@ public:
     }
     llvm::TargetMachine *tm = build->tm;
     llvm::MachineModuleInfo *info = &build->mmiwp->getMMI();
+
+    // Resolve the requested scheduler against the MachineSchedRegistry before
+    // touching any codegen state so an unknown name fails cleanly. The registry
+    // holds the constructors that -misched selects among.
+    llvm::MachineSchedRegistry::ScheduleDAGCtor schedCtor = nullptr;
+    if (scheduler) {
+      for (llvm::MachineSchedRegistry *node =
+               llvm::MachineSchedRegistry::getList();
+           node; node = node->getNext()) {
+        if (node->getName() == *scheduler) {
+          schedCtor = node->getCtor();
+          break;
+        }
+      }
+      if (!schedCtor)
+        throw std::runtime_error("unknown scheduler: " + *scheduler);
+    }
 
     // Verify the hand-built MIR up front so malformed input (the prior PRs'
     // unchecked primitives can produce it: bogus properties, undefined vregs,
@@ -419,7 +402,7 @@ public:
     }
     if (!ok)
       throw std::runtime_error(
-          withDetail("hand-built MIR failed verification", report));
+          eudsl::withDetail("hand-built MIR failed verification", report));
 
     // Run only the back half of codegen (regalloc, prologue/epilogue, object
     // emission) over the already-selected MachineFunctions:
@@ -443,6 +426,37 @@ public:
       ~Restore() { opt = value; }
     } restore{startAfter, saved};
     startAfter = "finalize-isel";
+
+    // Select the pre-RA MachineScheduler strategy the same way, but only when
+    // one was requested: -misched is a process-global option whose value is the
+    // ScheduleDAGCtor the scheduler pass reads, so set+restore it under the
+    // same GIL-serialized assumption. Its value type is a constructor pointer,
+    // not a string. With no scheduler requested the option is left untouched so
+    // the target's default choice stands.
+    using SchedCtor = llvm::MachineSchedRegistry::ScheduleDAGCtor;
+    using SchedOpt =
+        llvm::cl::opt<SchedCtor, false,
+                      llvm::RegisterPassParser<llvm::MachineSchedRegistry>>;
+    struct RestoreSched {
+      SchedOpt *opt = nullptr;
+      SchedCtor value = nullptr;
+      ~RestoreSched() {
+        if (opt)
+          *opt = value;
+      }
+    } restoreSched;
+    if (schedCtor) {
+      auto mischedIt = opts.find("misched");
+      // LCOV_EXCL_START -- misched is always registered by codegen
+      if (mischedIt == opts.end()) {
+        throw std::runtime_error("the -misched option is not registered");
+      }
+      // LCOV_EXCL_STOP
+      auto &misched = *static_cast<SchedOpt *>(mischedIt->second);
+      restoreSched.opt = &misched;
+      restoreSched.value = misched;
+      misched = schedCtor;
+    }
 
     // Write straight into a SmallVector (raw_svector_ostream writes through, so
     // no deferred flush surprises when `pm` outlives here).
@@ -475,7 +489,7 @@ public:
     // value; capture it so it surfaces as an exception.
     std::string diag;
     {
-      ScopedDiagnosticCapture capture(module_->getContext(), diag);
+      eudsl::ScopedDiagnosticCapture capture(module_->getContext(), diag);
       pm->run(*module_);
     }
     // Consume the BuildOwned into an EmittedOwned: the released wrapper now
@@ -483,8 +497,10 @@ public:
     state_ = EmittedOwned{std::move(pm), info};
     // LCOV_EXCL_START -- eager verification makes a back-half failure or empty
     // emission unreachable from well-formed hand-built MIR.
-    if (!diag.empty())
-      throw std::runtime_error(withDetail("object emission failed", diag));
+    if (!diag.empty()) {
+      throw std::runtime_error(
+          eudsl::withDetail("object emission failed", diag));
+    }
     if (buf.empty())
       throw std::runtime_error("object emission produced no output");
     // LCOV_EXCL_STOP
@@ -1242,10 +1258,12 @@ void populate_mir(nb::module_ &m) {
       .def("to_mir", &MirModule::toMIR,
            "Serialize the whole module (IR block + machine functions) as .mir "
            "text.")
-      .def("emit_object", &MirModule::emitObject,
+      .def("emit_object", &MirModule::emitObject, "scheduler"_a = nb::none(),
            "Emit a relocatable object file for the built (already-selected) "
            "MIR by running the back half of codegen (regalloc, emission). "
-           "Verifies the MIR first, raising if it is malformed.");
+           "Verifies the MIR first, raising if it is malformed. `scheduler` "
+           "selects a registered pre-RA MachineScheduler strategy by name; an "
+           "unknown name raises.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the
@@ -1294,13 +1312,13 @@ void populate_mir(nb::module_ &m) {
         // silently-empty MachineModuleInfo.
         std::string diag;
         {
-          ScopedDiagnosticCapture capture(module->getContext(), diag);
+          eudsl::ScopedDiagnosticCapture capture(module->getContext(), diag);
           pm->run(*module);
         }
         // LCOV_EXCL_START -- needs an un-selectable input to trigger
         if (!diag.empty()) {
           throw std::runtime_error(
-              withDetail("instruction selection failed", diag));
+              eudsl::withDetail("instruction selection failed", diag));
         }
         // LCOV_EXCL_STOP
 
@@ -1348,7 +1366,7 @@ void populate_mir(nb::module_ &m) {
         // diagnostic handler and only returns a bare null/true; capture the
         // real diagnostic so the thrown message carries the line and reason.
         std::string diag;
-        ScopedDiagnosticCapture capture(context.get(), diag);
+        eudsl::ScopedDiagnosticCapture capture(context.get(), diag);
         std::unique_ptr<llvm::MIRParser> parser = llvm::createMIRParser(
             llvm::MemoryBuffer::getMemBuffer(text, "<mir>"), context.get());
         // LCOV_EXCL_START -- createMIRParser only fails on internal error
@@ -1358,14 +1376,14 @@ void populate_mir(nb::module_ &m) {
         // LCOV_EXCL_STOP
         std::unique_ptr<llvm::Module> module = parser->parseIRModule();
         if (!module) {
-          throw std::runtime_error(
-              withDetail("failed to parse the IR portion of the MIR", diag));
+          throw std::runtime_error(eudsl::withDetail(
+              "failed to parse the IR portion of the MIR", diag));
         }
         module->setDataLayout(tm.createDataLayout());
         auto ownedMmi = std::make_unique<llvm::MachineModuleInfo>(&tm);
         if (parser->parseMachineFunctions(*module, *ownedMmi)) {
           throw std::runtime_error(
-              withDetail("failed to parse machine functions", diag));
+              eudsl::withDetail("failed to parse machine functions", diag));
         }
         return new MirModule(MirModule::parsed(
             std::move(ctxKeepAlive), std::move(module), std::move(ownedMmi)));
