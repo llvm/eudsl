@@ -38,6 +38,18 @@ jobs:
           echo "LLVM_SHA_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           popd
 
+      - name: "Sync vendored LLVM-internal headers"
+        run: |
+
+          set -euo pipefail
+          # These headers live under llvm/lib/ so they are not installed into the
+          # public include/ dir the prebuilt LLVM distro ships; keep verbatim
+          # in-tree copies the bindings can #include, re-synced on every bump.
+          cp third_party/llvm-project/llvm/lib/CodeGen/RegAllocBase.h \
+            projects/eudsl-llvmpy/src/MIR/RegAllocBase.h
+          cp third_party/llvm-project/llvm/lib/CodeGen/AllocationOrder.h \
+            projects/eudsl-llvmpy/src/MIR/AllocationOrder.h
+
       - name: "Regenerate Pipeline pass methods"
         run: |
           
