@@ -5,6 +5,7 @@
 #include "IR/Common.h"
 #include "IR/Ownership.h"
 
+#include <llvm/ADT/Hashing.h>
 #include <llvm/CodeGen/GlobalISel/MachineIRBuilder.h>
 #include <llvm/CodeGen/MIRParser/MIRParser.h>
 #include <llvm/CodeGen/MIRPrinter.h>
@@ -39,6 +40,7 @@
 #include <llvm/Target/TargetOptions.h>
 
 #include <nanobind/stl/pair.h>
+#include <nanobind/stl/variant.h>
 
 #include <memory>
 #include <string>
@@ -89,28 +91,82 @@ std::string withDetail(llvm::StringRef base, const std::string &detail) {
   return (base + ": " + detail).str();
 }
 
+// A machine register paired with the MachineFunction that owns it. A virtual
+// register's numeric id is only an index into its own function's
+// MachineRegisterInfo, so the same id names a *different* register in another
+// function. When that id also happens to be a valid, same-typed register in
+// the target function, feeding the foreign one in produces well-formed MIR that
+// even the verifier cannot flag (it references a register that is legal there);
+// only the out-of-bounds / wrong-type foreign ids are detectable, and only when
+// asserts are on. Carrying the owner lets the build/consume helpers reject a
+// cross-function vreg structurally, by identity, rather than relying on a
+// type/index mismatch that may never surface. A physical register is
+// target-static (the same MCRegister across every function of a target), so it
+// carries a null owner and is accepted anywhere -- matching how physregs are
+// used (block live-ins, COPYs to/from $wN).
+//
+// The vreg<=>owner correspondence is an invariant: a virtual register has a
+// non-null owner, a physical register has none. It is not passed in but derived
+// by the `owned` factory from the register's own virtual-ness, and the
+// constructor is private, so no caller can construct an inconsistent pairing (a
+// vreg with no owner, or a physreg with one) -- the illegal states are
+// unrepresentable. Equality and hashing consider both id and owner, so two
+// same-id registers from different functions are distinct rather than
+// colliding; the owner is also checked whenever a register is consumed by the
+// builder.
+class TypedRegister {
+public:
+  static TypedRegister owned(llvm::MachineFunction &mf, llvm::Register reg) {
+    return TypedRegister(reg, reg.isVirtual() ? &mf : nullptr);
+  }
+  llvm::Register reg() const { return reg_; }
+  llvm::MachineFunction *owner() const { return mf_; }
+
+private:
+  TypedRegister(llvm::Register reg, llvm::MachineFunction *mf)
+      : reg_(reg), mf_(mf) {}
+  llvm::Register reg_;
+  llvm::MachineFunction *mf_;
+};
+
+// Reject a virtual register minted by a different MachineFunction than `mf`.
+// This is the single structural cross-function guard shared by every site that
+// consumes a caller-supplied register (the builder helpers, add_reg/def/use,
+// G_PHI incomings, the generic `build`), so the check -- and its message --
+// live in one place. A physical register (null owner) is target-static and
+// passes.
+void requireOwnedVReg(const llvm::MachineFunction &mf, const TypedRegister &reg,
+                      const char *role) {
+  if (reg.reg().isVirtual() && reg.owner() != &mf)
+    throw nb::value_error(
+        (std::string(role) + " belongs to a different MachineFunction")
+            .c_str());
+}
+
 // GlobalISel's build helpers validate their operands only with asserts, which
 // are compiled out under NDEBUG (the shipped wheel), so bad input would emit
 // malformed MIR or fault in a later pass instead of raising. Enforce the same
 // preconditions here regardless of build mode: `reg` must be a generic virtual
-// register of `b`'s MachineFunction carrying type `ty`. MachineRegisterInfo::
-// getType returns an invalid LLT{} for a non-virtual, out-of-bounds, or
-// wrong-function register, so a single type compare rejects both a type
-// mismatch and a register minted by a different MachineFunction.
-void requireVRegOfType(llvm::MachineIRBuilder &b, llvm::Register reg,
+// register of `b`'s MachineFunction carrying type `ty`. The owner check rejects
+// a register minted by a different function; MachineRegisterInfo::getType then
+// returns an invalid LLT{} for a non-virtual or out-of-bounds register, so the
+// type compare rejects both a type mismatch and a physical register.
+void requireVRegOfType(llvm::MachineIRBuilder &b, const TypedRegister &reg,
                        llvm::LLT ty, const char *role) {
-  if (b.getMF().getRegInfo().getType(reg) != ty)
+  requireOwnedVReg(b.getMF(), reg, role);
+  if (b.getMF().getRegInfo().getType(reg.reg()) != ty)
     throw nb::value_error((std::string(role) +
                            " must be a virtual register of this "
                            "MachineFunction with the result type")
                               .c_str());
 }
 
-// A MachineBasicBlock / Register crosses the Python boundary as a bare handle
-// with no back-link to its function; passing one from a different function
-// builds corrupt MIR (cross-linked CFGs, out-of-bounds vreg indexes) that the
-// verifier -- gone under NDEBUG -- would otherwise catch. Guard provenance
-// against the builder's (or another block's) function.
+// The Python API lets any MachineBasicBlock be passed to any builder or block,
+// with nothing tying the argument to the target function; passing one from a
+// different function builds corrupt MIR (cross-linked CFGs) that the verifier
+// -- gone under NDEBUG -- would otherwise catch. Guard provenance via
+// getParent() against the builder's (or another block's) function. (Registers
+// get the same guarantee from TypedRegister's owner.)
 void requireSameFunction(const llvm::MachineFunction &mf,
                          const llvm::MachineBasicBlock *mbb, const char *role) {
   if (mbb->getParent() != &mf)
@@ -119,9 +175,10 @@ void requireSameFunction(const llvm::MachineFunction &mf,
             .c_str());
 }
 
-void requireVReg(llvm::MachineIRBuilder &b, llvm::Register reg,
+void requireVReg(llvm::MachineIRBuilder &b, const TypedRegister &reg,
                  const char *role) {
-  if (!b.getMF().getRegInfo().getType(reg).isValid())
+  requireOwnedVReg(b.getMF(), reg, role);
+  if (!b.getMF().getRegInfo().getType(reg.reg()).isValid())
     throw nb::value_error(
         (std::string(role) +
          " must be a generic virtual register of this MachineFunction")
@@ -162,28 +219,29 @@ const llvm::TargetRegisterInfo &requireTRI(const llvm::MachineFunction &mf) {
 // opposite operand kind (kill on a use, dead on a def) and out-of-range
 // subregister indices -- all guarded by asserts in LLVM that vanish under
 // NDEBUG, so an otherwise-silent corrupt operand would result.
-void addRegOperand(llvm::MachineInstr &mi, llvm::Register reg, bool isDef,
+void addRegOperand(llvm::MachineInstr &mi, const TypedRegister &reg, bool isDef,
                    bool isImp, bool isKill, bool isDead, bool isUndef,
                    bool isEarlyClobber, unsigned subReg, bool isDebug,
                    bool isInternalRead, bool isRenamable) {
+  llvm::MachineFunction &mf = *mi.getMF();
+  requireOwnedVReg(mf, reg, "register");
   if (isKill && isDef)
     throw nb::value_error(
         "is_kill is only valid on a use operand (is_def=False)");
   if (isDead && !isDef)
     throw nb::value_error(
         "is_dead is only valid on a def operand (is_def=True)");
-  if (isRenamable && !reg.isPhysical())
+  if (isRenamable && !reg.reg().isPhysical())
     throw nb::value_error("is_renamable is only valid on a physical register");
-  llvm::MachineFunction &mf = *mi.getMF();
   if (subReg) {
     const llvm::TargetRegisterInfo &tri = requireTRI(mf);
     if (subReg >= tri.getNumSubRegIndices())
       throw nb::index_error("sub_reg index out of range");
   }
-  mi.addOperand(mf,
-                llvm::MachineOperand::CreateReg(
-                    reg, isDef, isImp, isKill, isDead, isUndef, isEarlyClobber,
-                    subReg, isDebug, isInternalRead, isRenamable));
+  mi.addOperand(mf, llvm::MachineOperand::CreateReg(
+                        reg.reg(), isDef, isImp, isKill, isDead, isUndef,
+                        isEarlyClobber, subReg, isDebug, isInternalRead,
+                        isRenamable));
 }
 
 // The "current MachineIRBuilder" is tracked on a thread-local stack, mirroring
@@ -476,35 +534,42 @@ void populate_mir(nb::module_ &m) {
 
   // llvm::Register -- a machine register operand's value (a tagged unsigned:
   // virtual registers are SSA-ish temporaries from ISel, physical are the
-  // target's real registers).
-  nb::class_<llvm::Register>(m, "Register")
-      .def_prop_ro("id", [](llvm::Register &self) { return self.id(); })
+  // target's real registers). Bound as TypedRegister so a virtual register also
+  // carries the MachineFunction that minted it (physregs carry none), letting
+  // the builder reject a register passed into a different function. Equality
+  // and hashing consider both id and owner, so two same-id registers from
+  // different functions are distinct -- they can safely coexist as set/dict
+  // keys, and a cross-function `==` is False (as well as rejected at build
+  // time).
+  nb::class_<TypedRegister>(m, "Register")
+      .def_prop_ro("id", [](TypedRegister &self) { return self.reg().id(); })
       .def_prop_ro("is_valid",
-                   [](llvm::Register &self) { return self.isValid(); })
+                   [](TypedRegister &self) { return self.reg().isValid(); })
       .def_prop_ro("is_virtual",
-                   [](llvm::Register &self) { return self.isVirtual(); })
+                   [](TypedRegister &self) { return self.reg().isVirtual(); })
       .def_prop_ro("is_physical",
-                   [](llvm::Register &self) { return self.isPhysical(); })
+                   [](TypedRegister &self) { return self.reg().isPhysical(); })
       .def_prop_ro("virt_reg_index",
-                   [](llvm::Register &self) {
-                     if (!self.isVirtual())
+                   [](TypedRegister &self) {
+                     if (!self.reg().isVirtual())
                        throw nb::value_error("register is not virtual");
-                     return self.virtRegIndex();
+                     return self.reg().virtRegIndex();
                    })
       .def(
           "__eq__",
-          [](llvm::Register &self, llvm::Register other) {
-            return self == other;
+          [](TypedRegister &self, TypedRegister other) {
+            return self.reg() == other.reg() && self.owner() == other.owner();
           },
           nb::is_operator())
       .def(
           "__ne__",
-          [](llvm::Register &self, llvm::Register other) {
-            return self != other;
+          [](TypedRegister &self, TypedRegister other) {
+            return self.reg() != other.reg() || self.owner() != other.owner();
           },
           nb::is_operator())
-      .def("__hash__", [](llvm::Register &self) {
-        return static_cast<Py_ssize_t>(self.id());
+      .def("__hash__", [](TypedRegister &self) {
+        return static_cast<Py_ssize_t>(
+            llvm::hash_combine(self.reg().id(), self.owner()));
       });
 
   // A target register class (e.g. AArch64 GPR32), looked up by name via
@@ -578,10 +643,19 @@ void populate_mir(nb::module_ &m) {
                      return self.isReg() ? self.getSubReg() : 0;
                    })
       .def_prop_ro("reg",
-                   [](llvm::MachineOperand &self) -> llvm::Register {
+                   [](llvm::MachineOperand &self) -> TypedRegister {
                      if (!self.isReg())
                        throw nb::value_error("operand is not a register");
-                     return self.getReg();
+                     // Carry provenance so a register inspected off an
+                     // instruction can be fed back into its own function's
+                     // builder: `owned` records the function for a virtual
+                     // register and no owner for a (target-static) physical
+                     // one. An operand reachable through this binding always
+                     // belongs to an inserted instruction, so getParent() (and
+                     // its getMF()) is non-null; a future binding exposing a
+                     // detached operand would need to revisit this.
+                     return TypedRegister::owned(*self.getParent()->getMF(),
+                                                 self.getReg());
                    })
       .def_prop_ro("imm",
                    [](llvm::MachineOperand &self) {
@@ -787,7 +861,7 @@ void populate_mir(nb::module_ &m) {
           "Repoint a branch's target block (operand 0), e.g. a G_BR.")
       .def(
           "add_phi_incoming",
-          [](llvm::MachineInstr &self, llvm::Register reg,
+          [](llvm::MachineInstr &self, TypedRegister reg,
              llvm::MachineBasicBlock *mbb) {
             // Appending (value, block) operands only makes sense for a G_PHI;
             // on any other instruction it silently grows it with junk operands
@@ -797,8 +871,9 @@ void populate_mir(nb::module_ &m) {
                   "add_phi_incoming requires a G_PHI instruction");
             }
             llvm::MachineFunction &mf = *self.getMF();
+            requireOwnedVReg(mf, reg, "value");
             self.addOperand(mf,
-                            llvm::MachineOperand::CreateReg(reg,
+                            llvm::MachineOperand::CreateReg(reg.reg(),
                                                             /*isDef=*/false));
             self.addOperand(mf, llvm::MachineOperand::CreateMBB(mbb));
           },
@@ -806,7 +881,7 @@ void populate_mir(nb::module_ &m) {
           "Append a (value, predecessor-block) incoming pair to a G_PHI.")
       .def(
           "add_def",
-          [](llvm::MachineInstr &self, llvm::Register reg) {
+          [](llvm::MachineInstr &self, TypedRegister reg) {
             addRegOperand(self, reg, /*isDef=*/true, /*isImp=*/false,
                           /*isKill=*/false, /*isDead=*/false, /*isUndef=*/false,
                           /*isEarlyClobber=*/false, /*subReg=*/0,
@@ -816,7 +891,7 @@ void populate_mir(nb::module_ &m) {
           "reg"_a, "Append a register def operand.")
       .def(
           "add_use",
-          [](llvm::MachineInstr &self, llvm::Register reg, bool implicit) {
+          [](llvm::MachineInstr &self, TypedRegister reg, bool implicit) {
             addRegOperand(self, reg, /*isDef=*/false, /*isImp=*/implicit,
                           /*isKill=*/false, /*isDead=*/false, /*isUndef=*/false,
                           /*isEarlyClobber=*/false, /*subReg=*/0,
@@ -827,7 +902,7 @@ void populate_mir(nb::module_ &m) {
           "Append a register use operand (implicit=True for an implicit use).")
       .def(
           "add_reg",
-          [](llvm::MachineInstr &self, llvm::Register reg, bool isDef,
+          [](llvm::MachineInstr &self, TypedRegister reg, bool isDef,
              bool isImp, bool isKill, bool isDead, bool isUndef,
              bool isEarlyClobber, unsigned subReg, bool isDebug,
              bool isInternalRead, bool isRenamable) {
@@ -929,13 +1004,13 @@ void populate_mir(nb::module_ &m) {
           "old"_a, "new"_a, "Replace a CFG successor edge with another block.")
       .def(
           "add_livein",
-          [](llvm::MachineBasicBlock &self, llvm::Register reg) {
+          [](llvm::MachineBasicBlock &self, TypedRegister reg) {
             // asMCReg() only asserts physicality (compiled out under NDEBUG),
             // so a virtual register would be truncated into a garbage
             // MCRegister and recorded as a bogus livein. Reject it here.
-            if (!reg.isPhysical())
+            if (!reg.reg().isPhysical())
               throw nb::value_error("add_livein requires a physical register");
-            self.addLiveIn(reg.asMCReg());
+            self.addLiveIn(reg.reg().asMCReg());
           },
           "reg"_a, "Declare a physical register live-in to this block.")
       .def("__str__",
@@ -968,8 +1043,9 @@ void populate_mir(nb::module_ &m) {
           nb::rv_policy::reference_internal)
       .def(
           "create_generic_virtual_register",
-          [](llvm::MachineFunction &self, llvm::LLT ty) -> llvm::Register {
-            return self.getRegInfo().createGenericVirtualRegister(ty);
+          [](llvm::MachineFunction &self, llvm::LLT ty) -> TypedRegister {
+            return TypedRegister::owned(
+                self, self.getRegInfo().createGenericVirtualRegister(ty));
           },
           "type"_a, "Create a new generic virtual register of the given LLT.")
       .def(
@@ -992,11 +1068,11 @@ void populate_mir(nb::module_ &m) {
       .def(
           "physreg",
           [](llvm::MachineFunction &self,
-             const std::string &name) -> llvm::Register {
+             const std::string &name) -> TypedRegister {
             const llvm::TargetRegisterInfo &tri = requireTRI(self);
             for (unsigned i = 1, e = tri.getNumRegs(); i < e; ++i) {
               if (name == tri.getName(i))
-                return llvm::Register(i);
+                return TypedRegister::owned(self, llvm::Register(i));
             }
             throw nb::key_error(
                 ("no physical register named '" + name + "'").c_str());
@@ -1005,8 +1081,9 @@ void populate_mir(nb::module_ &m) {
       .def(
           "create_vreg",
           [](llvm::MachineFunction &self,
-             const llvm::TargetRegisterClass *rc) -> llvm::Register {
-            return self.getRegInfo().createVirtualRegister(rc);
+             const llvm::TargetRegisterClass *rc) -> TypedRegister {
+            return TypedRegister::owned(
+                self, self.getRegInfo().createVirtualRegister(rc));
           },
           "reg_class"_a,
           "Create a new virtual register constrained to a register class.")
@@ -1346,7 +1423,7 @@ void populate_mir(nb::module_ &m) {
       .def(
           "build_constant",
           [](llvm::MachineIRBuilder &self, llvm::LLT ty,
-             int64_t value) -> llvm::Register {
+             int64_t value) -> TypedRegister {
             // buildConstant derives the width from ty's scalar size; a pointer,
             // scalable-vector, or invalid LLT hits asserting accessors that
             // vanish under NDEBUG and would emit a wrong-width G_CONSTANT.
@@ -1354,42 +1431,50 @@ void populate_mir(nb::module_ &m) {
               throw nb::value_error("build_constant requires a scalar or "
                                     "fixed-vector type");
             }
-            return self.buildConstant(ty, value).getReg(0);
+            return TypedRegister::owned(
+                self.getMF(), self.buildConstant(ty, value).getReg(0));
           },
           "type"_a, "value"_a)
       .def(
           "build_add",
-          [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
-             llvm::Register rhs) -> llvm::Register {
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty, TypedRegister lhs,
+             TypedRegister rhs) -> TypedRegister {
             requireVRegOfType(self, lhs, ty, "lhs");
             requireVRegOfType(self, rhs, ty, "rhs");
-            return self.buildAdd(ty, lhs, rhs).getReg(0);
+            return TypedRegister::owned(
+                self.getMF(),
+                self.buildAdd(ty, lhs.reg(), rhs.reg()).getReg(0));
           },
           "type"_a, "lhs"_a, "rhs"_a)
       .def(
           "build_sub",
-          [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
-             llvm::Register rhs) -> llvm::Register {
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty, TypedRegister lhs,
+             TypedRegister rhs) -> TypedRegister {
             requireVRegOfType(self, lhs, ty, "lhs");
             requireVRegOfType(self, rhs, ty, "rhs");
-            return self.buildSub(ty, lhs, rhs).getReg(0);
+            return TypedRegister::owned(
+                self.getMF(),
+                self.buildSub(ty, lhs.reg(), rhs.reg()).getReg(0));
           },
           "type"_a, "lhs"_a, "rhs"_a)
       .def(
           "build_mul",
-          [](llvm::MachineIRBuilder &self, llvm::LLT ty, llvm::Register lhs,
-             llvm::Register rhs) -> llvm::Register {
+          [](llvm::MachineIRBuilder &self, llvm::LLT ty, TypedRegister lhs,
+             TypedRegister rhs) -> TypedRegister {
             requireVRegOfType(self, lhs, ty, "lhs");
             requireVRegOfType(self, rhs, ty, "rhs");
-            return self.buildMul(ty, lhs, rhs).getReg(0);
+            return TypedRegister::owned(
+                self.getMF(),
+                self.buildMul(ty, lhs.reg(), rhs.reg()).getReg(0));
           },
           "type"_a, "lhs"_a, "rhs"_a)
       .def(
           "build_copy",
           [](llvm::MachineIRBuilder &self, llvm::LLT ty,
-             llvm::Register src) -> llvm::Register {
+             TypedRegister src) -> TypedRegister {
             requireVRegOfType(self, src, ty, "src");
-            return self.buildCopy(ty, src).getReg(0);
+            return TypedRegister::owned(
+                self.getMF(), self.buildCopy(ty, src.reg()).getReg(0));
           },
           "type"_a, "src"_a)
       .def_prop_ro(
@@ -1416,8 +1501,8 @@ void populate_mir(nb::module_ &m) {
       .def(
           "build_icmp",
           [](llvm::MachineIRBuilder &self, llvm::CmpInst::Predicate pred,
-             llvm::LLT ty, llvm::Register lhs,
-             llvm::Register rhs) -> llvm::Register {
+             llvm::LLT ty, TypedRegister lhs,
+             TypedRegister rhs) -> TypedRegister {
             // buildICmp only asserts these (gone under NDEBUG): an integer
             // predicate, an s1 (or vector-of-s1) result, and same-typed operand
             // vregs of this function.
@@ -1431,10 +1516,12 @@ void populate_mir(nb::module_ &m) {
             requireVReg(self, lhs, "lhs");
             requireVReg(self, rhs, "rhs");
             const llvm::MachineRegisterInfo &mri = self.getMF().getRegInfo();
-            if (mri.getType(lhs) != mri.getType(rhs))
+            if (mri.getType(lhs.reg()) != mri.getType(rhs.reg()))
               throw nb::value_error("build_icmp operands must have the same "
                                     "type");
-            return self.buildICmp(pred, ty, lhs, rhs).getReg(0);
+            return TypedRegister::owned(
+                self.getMF(),
+                self.buildICmp(pred, ty, lhs.reg(), rhs.reg()).getReg(0));
           },
           "predicate"_a, "type"_a, "lhs"_a, "rhs"_a)
       .def(
@@ -1449,19 +1536,19 @@ void populate_mir(nb::module_ &m) {
           "instruction so its target can be repointed.")
       .def(
           "build_brcond",
-          [](llvm::MachineIRBuilder &self, llvm::Register cond,
+          [](llvm::MachineIRBuilder &self, TypedRegister cond,
              llvm::MachineBasicBlock *dest) {
             requireVReg(self, cond, "cond");
             requireSameFunction(self.getMF(), dest, "dest");
-            self.buildBrCond(cond, *dest);
+            self.buildBrCond(cond.reg(), *dest);
           },
           "cond"_a, "dest"_a,
           "Build a conditional branch (G_BRCOND) on `cond` to `dest`.")
       .def(
           "build_phi",
           [](llvm::MachineIRBuilder &self, llvm::LLT ty,
-             std::vector<std::pair<llvm::Register, llvm::MachineBasicBlock *>>
-                 incomings) -> llvm::Register {
+             std::vector<std::pair<TypedRegister, llvm::MachineBasicBlock *>>
+                 incomings) -> TypedRegister {
             // A G_PHI with no operands is structurally invalid; each incoming
             // value must be a vreg of this function with the phi's type, and
             // each predecessor block must belong to this function.
@@ -1478,10 +1565,10 @@ void populate_mir(nb::module_ &m) {
                 self.buildInstr(llvm::TargetOpcode::G_PHI);
             phi.addDef(res);
             for (auto &[reg, mbb] : incomings) {
-              phi.addUse(reg);
+              phi.addUse(reg.reg());
               phi.addMBB(mbb);
             }
-            return res;
+            return TypedRegister::owned(self.getMF(), res);
           },
           "type"_a, "incomings"_a,
           "Build a G_PHI from (value, predecessor-block) pairs.")
@@ -1513,7 +1600,50 @@ void populate_mir(nb::module_ &m) {
           "BuildMI analogue for target-specific opcodes. Like BuildMI, the "
           "appended operands are not validated against the opcode's "
           "MCInstrDesc (arity/kind/def-first order are the caller's "
-          "responsibility).");
+          "responsibility).")
+      .def(
+          "build",
+          [](llvm::MachineIRBuilder &self, unsigned opcode,
+             std::vector<std::variant<llvm::LLT, TypedRegister>> dsts,
+             std::vector<TypedRegister> srcs) -> llvm::MachineInstr * {
+            // The typed analogue of GlobalISel's buildInstr(opcode, DstOps,
+            // SrcOps): each dst is either an LLT (a fresh generic vreg of that
+            // type is minted for it) or an existing Register to define, and
+            // each src is a Register use -- so, unlike the single-def
+            // build_add/... helpers, this expresses multiple defs and writing
+            // into a caller-provided vreg. buildInstr validates arity/types
+            // only with asserts, so bad input aborts the process (our LLVM is
+            // built with assertions on) or, where an assert is compiled out,
+            // silently builds malformed MIR. Guard the opcode and every
+            // caller-supplied register's provenance here so those raise a clean
+            // Python error instead; leave the rest (like build_instr) as the
+            // caller's responsibility.
+            requireValidOpcode(requireTII(self.getMF()), opcode);
+            llvm::SmallVector<llvm::DstOp, 1> dstOps;
+            for (auto &dst : dsts) {
+              if (auto *ty = std::get_if<llvm::LLT>(&dst)) {
+                dstOps.emplace_back(*ty);
+              } else {
+                const TypedRegister &reg = std::get<TypedRegister>(dst);
+                requireOwnedVReg(self.getMF(), reg, "dst");
+                dstOps.emplace_back(reg.reg());
+              }
+            }
+            llvm::SmallVector<llvm::SrcOp, 2> srcOps;
+            for (const TypedRegister &src : srcs) {
+              requireOwnedVReg(self.getMF(), src, "src");
+              srcOps.emplace_back(src.reg());
+            }
+            return self.buildInstr(opcode, dstOps, srcOps).getInstr();
+          },
+          "opcode"_a, "dsts"_a, "srcs"_a, nb::rv_policy::reference_internal,
+          "Build an instruction from typed destination and source operands "
+          "(the buildInstr(opcode, DstOps, SrcOps) analogue). Each dst is an "
+          "LLT (a fresh generic vreg of that type is created and defined) or a "
+          "Register to define; each src is a Register use. Returns the "
+          "instruction so its operands -- including any minted defs -- can be "
+          "read. Like build_instr, operands are not validated against the "
+          "opcode's MCInstrDesc.");
 
   // The innermost MachineIRBuilder entered as a context manager, mirroring the
   // IR module's current_builder(). Raises when there is none.

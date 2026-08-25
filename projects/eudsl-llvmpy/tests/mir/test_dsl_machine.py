@@ -158,6 +158,9 @@ def test_non_int_coercion_raises():
 
 
 def test_value_from_other_function_raises():
+    """A value from one @machine_function body used in another's is rejected:
+    its Register carries function g as its owner, so f's builder refuses it
+    (ValueError from the C++ owner check, not a Python-side anchor)."""
     with ir.Context() as ctx:
         tm = jit.TargetMachine(triple=_TRIPLE)
         s32 = mir.LLT.scalar(32)
@@ -168,12 +171,32 @@ def test_value_from_other_function_raises():
             leaked["a"] = a
             return a
 
-        with pytest.raises(RuntimeError, match="different MachineFunction"):
+        with pytest.raises(ValueError, match="different MachineFunction"):
 
             @machine_function(module=ir.Module("f", ctx), target=tm)
             def f(b: s32):
                 return b + leaked["a"]
 
+    assert_no_leaks()
+
+
+def test_value_reused_under_second_builder_of_same_function():
+    """Dropping the per-builder anchor ties a MachineValue to its *function*,
+    not to the specific builder instance that was current when it was made: a
+    value built under one MachineIRBuilder is still usable under a second
+    builder of the same MachineFunction (the C++ owner check keys on the
+    function). Contrast test_value_from_other_function_raises."""
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        s32 = mir.LLT.scalar(32)
+        mf = mir.create_machine_function(mod, tm, "f").machine_function("f")
+        with mir.MachineIRBuilder(mf):
+            a = MachineValue(mf.create_generic_virtual_register(s32), s32)
+        with mir.MachineIRBuilder(mf):  # a fresh builder over the same function
+            out = a + a
+        assert out.reg.is_virtual
+        assert any(i.opcode_name == "G_ADD" for i in mf.blocks[0].instructions)
     assert_no_leaks()
 
 

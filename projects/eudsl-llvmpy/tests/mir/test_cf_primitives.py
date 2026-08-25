@@ -188,6 +188,42 @@ def test_cross_function_register_rejected():
     assert_no_leaks()
 
 
+def test_cross_function_vreg_collision_rejected():
+    """The load-bearing case for a register knowing its function: f and g each
+    mint their *first* vreg, so both share vreg id 0 with the same type. Feeding
+    g's %0 into f's builder must still be rejected -- a plain id+type check
+    (what the register carried before) would see f's own %0 and wrongly accept
+    it. The owner (function g) is what distinguishes them."""
+    with ir.Context() as ctx:
+        mmi_f, mf = _new_function(ctx, "f")
+        mmi_g, mg = _new_function(ctx, "g")
+        s32 = mir.LLT.scalar(32)
+        bf, bg = mir.MachineIRBuilder(mf), mir.MachineIRBuilder(mg)
+        own = bf.build_constant(s32, 1)  # f's %0
+        foreign = bg.build_constant(s32, 1)  # g's %0 -- same id and type
+        assert own.id == foreign.id  # the collision that used to slip through
+        # Equality considers the owner, so the two same-id registers are
+        # distinct despite the id collision (they can coexist as dict keys).
+        assert own != foreign
+        # Every site that consumes a caller-supplied register rejects the
+        # foreign one by owner, while the same-shaped local register is fine.
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            bf.build_add(s32, own, foreign)
+        assert bf.build_add(s32, own, own).is_virtual
+        instr = mf.blocks[0].instructions[0]
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            instr.add_use(foreign)
+        phi = bf.build_empty_phi(s32)
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            phi.add_phi_incoming(foreign, mf.blocks[0])
+        # ...also the requireVReg / build_phi-incoming consuming sites.
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            bf.build_icmp(ir.ICmpPredicate.EQ, mir.LLT.scalar(1), own, foreign)
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            bf.build_phi(s32, [(foreign, mf.blocks[0])])
+    assert_no_leaks()
+
+
 def test_set_branch_target_on_non_branch_raises():
     with ir.Context() as ctx:
         mmi, mf = _new_function(ctx)

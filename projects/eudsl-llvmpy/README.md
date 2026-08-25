@@ -255,7 +255,10 @@ The object model is bound as its own hierarchy (MIR is not part of the `Value`
 hierarchy): `MachineFunction`, `MachineBasicBlock`, `MachineInstr`,
 `MachineOperand`, `Register`, plus `LLT` (the generic low-level type) and
 `MachineFunctionProperty`. `MirModule` owns the `MachineFunction`s and
-keeps everything they reference alive.
+keeps everything they reference alive. A `Register` carries the
+`MachineFunction` that minted it (a physical register carries none), so a vreg
+passed into a *different* function's builder is rejected — its numeric id would
+otherwise silently alias a same-typed register in that function.
 
 > The examples below use AArch64 opcodes/registers/triples, so they need the
 > AArch64 backend linked (`EUDSL_LLVMPY_TARGETS`); on other hosts
@@ -336,6 +339,9 @@ already-selected **target** MIR directly and run only the back half of codegen.
 `reg_class`/`physreg` resolve register classes and physical registers by name,
 `create_vreg` makes class-constrained vregs, `add_reg` appends operands with the
 full flag set (def/use, implicit, kill, …), and `set_property` marks the function.
+(`build(opcode, dsts, srcs)` is a typed one-shot alternative to
+`build_instr` + `add_reg`: each dst is an `LLT` to mint a fresh vreg for or a
+`Register` to define, each src is a `Register` use.)
 `emit_object()` then runs register allocation and emission (via
 `-start-after=finalize-isel`, so no instruction selection), and `LLJIT.add_object`
 loads the result:
@@ -355,9 +361,11 @@ with ir.Context() as ctx:
     mf.blocks[0].add_livein(w0); mf.blocks[0].add_livein(w1)
     v0, v1, v2 = (mf.create_vreg(gpr32) for _ in range(3))
     for dst, src in ((v0, w0), (v1, w1)):
-        c = b.build_instr(mf.opcode("COPY")); c.add_reg(dst, is_def=True); c.add_reg(src)
-    a = b.build_instr(mf.opcode("ADDWrr")); a.add_reg(v2, is_def=True); a.add_reg(v0); a.add_reg(v1)
-    c = b.build_instr(mf.opcode("COPY")); c.add_reg(w0, is_def=True); c.add_reg(v2)
+        b.build(mf.opcode("COPY"), [dst], [src])   # dst = COPY src
+    b.build(mf.opcode("ADDWrr"), [v2], [v0, v1])   # v2 = ADDWrr v0, v1
+    b.build(mf.opcode("COPY"), [w0], [v2])         # $w0 = COPY v2
+    # RET_ReallyLR takes an *implicit* use of $w0, which build's plain-use srcs
+    # can't express, so drop to build_instr + add_reg for that one operand.
     r = b.build_instr(mf.opcode("RET_ReallyLR")); r.add_reg(w0, implicit=True)
     for p in ("IsSSA", "TracksLiveness", "NoPHIs"):
         mf.set_property(getattr(mir.MachineFunctionProperty, p))

@@ -161,7 +161,10 @@ def test_build_add_rejects_register_from_another_function():
 
         mmi_f = mir.create_machine_function(ir.Module("f", ctx), tm, "f")
         bf = mir.MachineIRBuilder(mmi_f.machine_function("f"))
-        with pytest.raises(ValueError, match="virtual register of this"):
+        # The register carries function g as its owner, so f's builder rejects
+        # it by provenance (see test_cross_function_vreg_collision_rejected for
+        # why the owner, not just the id/type, is what makes this sound).
+        with pytest.raises(ValueError, match="different MachineFunction"):
             bf.build_add(s32, foreign, foreign)
     assert_no_leaks()
 
@@ -193,6 +196,114 @@ def test_create_generic_virtual_register_is_virtual():
         # (the builder validates operand type against the result type).
         b = mir.MachineIRBuilder(mf)
         assert b.build_add(s64, reg, reg).is_virtual
+    assert_no_leaks()
+
+
+def test_build_typed_instr_mints_and_reuses_destinations():
+    """`build` is the typed buildInstr(opcode, DstOps, SrcOps): an LLT dst mints
+    a fresh generic vreg and defines it; a Register dst defines that existing
+    vreg. Both are exercised here on a G_ADD, plus the Register source uses."""
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(mod, tm, "f")
+        mf = mmi.machine_function("f")
+        s32 = mir.LLT.scalar(32)
+        b = mir.MachineIRBuilder(mf)
+        a = mf.create_generic_virtual_register(s32)
+        c = mf.create_generic_virtual_register(s32)
+        g_add = mf.opcode("G_ADD")
+
+        # LLT dst: a fresh generic vreg is minted for the def.
+        minted = b.build(g_add, [s32], [a, c])
+        assert minted.opcode_name == "G_ADD"
+        assert minted.operand(0).is_def and minted.operand(0).reg.is_virtual
+        assert minted.operand(0).reg.id not in (a.id, c.id)  # a new register
+        assert minted.operand(1).reg.id == a.id
+        assert minted.operand(2).reg.id == c.id
+
+        # Register dst: the caller's existing vreg is defined instead.
+        dst = mf.create_generic_virtual_register(s32)
+        reused = b.build(g_add, [dst], [a, c])
+        assert reused.operand(0).reg.id == dst.id
+    assert_no_leaks()
+
+
+def test_build_rejects_out_of_range_opcode():
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(mod, tm, "f")
+        mf = mmi.machine_function("f")
+        b = mir.MachineIRBuilder(mf)
+        with pytest.raises(IndexError, match="opcode number out of range"):
+            b.build(10**9, [mir.LLT.scalar(32)], [])
+    assert_no_leaks()
+
+
+def test_build_emits_multiple_defs():
+    """build's headline over the single-def helpers is multiple defs: G_UADDO
+    yields a (result, carry) pair, so both operand 0 and operand 1 are defs."""
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(mod, tm, "f")
+        mf = mmi.machine_function("f")
+        s32, s1 = mir.LLT.scalar(32), mir.LLT.scalar(1)
+        b = mir.MachineIRBuilder(mf)
+        a = mf.create_generic_virtual_register(s32)
+        c = mf.create_generic_virtual_register(s32)
+        uaddo = b.build(mf.opcode("G_UADDO"), [s32, s1], [a, c])
+        assert uaddo.opcode_name == "G_UADDO"
+        assert uaddo.num_defs == 2
+        assert uaddo.operand(0).is_def and uaddo.operand(1).is_def
+    assert_no_leaks()
+
+
+def test_build_rejects_registers_from_another_function():
+    """build guards both destinations and sources: a foreign vreg used as a dst
+    or a src is rejected by owner (its own guard call sites, not just the
+    shared helper reached via other builders)."""
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        s32 = mir.LLT.scalar(32)
+        mmi_g = mir.create_machine_function(ir.Module("g", ctx), tm, "g")
+        foreign = mir.MachineIRBuilder(mmi_g.machine_function("g")).build_constant(
+            s32, 1
+        )
+        mmi_f = mir.create_machine_function(ir.Module("f", ctx), tm, "f")
+        mf = mmi_f.machine_function("f")
+        b = mir.MachineIRBuilder(mf)
+        own = mf.create_generic_virtual_register(s32)
+        g_add = mf.opcode("G_ADD")
+        with pytest.raises(ValueError, match="dst .*different MachineFunction"):
+            b.build(g_add, [foreign], [own, own])
+        with pytest.raises(ValueError, match="src .*different MachineFunction"):
+            b.build(g_add, [s32], [foreign, own])
+    assert_no_leaks()
+
+
+def test_register_read_off_operand_feeds_back_into_builder():
+    """A register inspected off an instruction's operand carries its owning
+    function, so it is accepted when fed back into that function's builder --
+    the round-trip the owner field must not wrongly reject."""
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(mod, tm, "f")
+        mf = mmi.machine_function("f")
+        s32 = mir.LLT.scalar(32)
+        b = mir.MachineIRBuilder(mf)
+        a = mf.create_generic_virtual_register(s32)
+        c = mf.create_generic_virtual_register(s32)
+        add = b.build(mf.opcode("G_ADD"), [s32], [a, c])
+        read_back = add.operand(0).reg  # the def vreg, read off the operand
+        assert read_back.is_virtual
+        # Accepted by both the typed helper and the raw operand appender.
+        assert b.build_add(s32, read_back, read_back).is_virtual
+        instr = b.build_instr(mf.opcode("G_ADD"))
+        instr.add_def(read_back)  # no "different MachineFunction" error
+        assert instr.operand(0).reg.id == read_back.id
     assert_no_leaks()
 
 
