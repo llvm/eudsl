@@ -1588,6 +1588,41 @@ void populate_mir(nb::module_ &m) {
           "cond"_a, "dest"_a,
           "Build a conditional branch (G_BRCOND) on `cond` to `dest`.")
       .def(
+          "branch",
+          [](llvm::MachineIRBuilder &self,
+             llvm::MachineBasicBlock *dest) -> llvm::MachineInstr * {
+            requireSameFunction(self.getMF(), dest, "dest");
+            requireNotTerminated(self, "branch");
+            self.getMBB().addSuccessor(dest);
+            return self.buildBr(*dest).getInstr();
+          },
+          "dest"_a, nb::rv_policy::reference_internal,
+          "Unconditional branch to `dest` that also wires the CFG successor "
+          "edge from the current block (build_br + add_successor in one step); "
+          "returns the G_BR so its target can be repointed.")
+      .def(
+          "cond_branch",
+          [](llvm::MachineIRBuilder &self, TypedRegister cond,
+             llvm::MachineBasicBlock *true_block,
+             llvm::MachineBasicBlock *false_block) -> llvm::MachineInstr * {
+            requireVReg(self, cond, "cond");
+            requireSameFunction(self.getMF(), true_block, "true block");
+            requireSameFunction(self.getMF(), false_block, "false block");
+            requireNotTerminated(self, "cond_branch");
+            self.buildBrCond(cond.reg(), *true_block);
+            llvm::MachineInstr *falseBr = self.buildBr(*false_block).getInstr();
+            self.getMBB().addSuccessor(true_block);
+            self.getMBB().addSuccessor(false_block);
+            return falseBr;
+          },
+          "cond"_a, "true_block"_a, "false_block"_a,
+          nb::rv_policy::reference_internal,
+          "Conditional branch: G_BRCOND on `cond` to `true_block`, fallthrough "
+          "G_BR to `false_block`, wiring both CFG successor edges from the "
+          "current block (build_brcond + build_br + two add_successor calls in "
+          "one step). Returns the fallthrough G_BR so its target can be "
+          "repointed.")
+      .def(
           "build_phi",
           [](llvm::MachineIRBuilder &self, llvm::LLT ty,
              std::vector<std::pair<TypedRegister, llvm::MachineBasicBlock *>>

@@ -329,7 +329,12 @@ For lower-level construction, `MachineIRBuilder` exposes the typed `build_*`
 helpers (`build_constant`, `build_add`, `build_br`, `build_brcond`, `build_phi`,
 …) and a generic `build_instr(opcode)` for any opcode; `MachineFunction.opcode`
 looks a target opcode up by mnemonic (the generated opcode enums are not in
-installed LLVM headers, so lookup is by name via `TargetInstrInfo`).
+installed LLVM headers, so lookup is by name via `TargetInstrInfo`). For
+control flow, `branch(dest)` and `cond_branch(cond, true_block, false_block)`
+fold the terminator emission and the CFG successor edge(s) into one call — MIR
+tracks the successor list and the branch operand separately, so these keep the
+two in sync (`cond_branch` returns the fall-through `G_BR` so its target can be
+repointed).
 
 ### Building target MIR and lowering to native code
 
