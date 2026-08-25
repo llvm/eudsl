@@ -10,7 +10,9 @@
 // binding and populate_python_codegen.
 
 #include "IR/Common.h"
+#include "MIR/Diagnostics.h"
 
+#include <llvm/CodeGen/MachineInstr.h>
 #include <llvm/CodeGen/MachineScheduler.h>
 #include <llvm/CodeGen/ScheduleDAG.h>
 
@@ -65,28 +67,51 @@ public:
   // picks. The callable receives a list[SUnit] and returns one element; we
   // accept its choice only if it is one of the presented nodes, by pointer
   // identity. With no callable installed (the strategy was selected by name,
-  // not via `pick`), or when the callable returns something that is not a
-  // presented node, we keep the first-ready choice so the schedule stays legal.
-  // This assumes a well-behaved callable that does not raise.
+  // not via `pick`) we keep the native first-ready choice. A callable that
+  // raises, or returns something that is not one of the presented ready nodes,
+  // has its exception stashed in eudsl::pendingCodegenError; we fall back to
+  // the native first-ready node so this call (and the rest of the unskippable
+  // codegen pipeline) returns a legal node, and runCodegenPipeline re-raises
+  // the stashed exception after the run.
   llvm::SUnit *pickNode(bool &IsTopNode) override {
     if (ReadyQ.empty())
       return nullptr;
     IsTopNode = true;
     llvm::SUnit *chosen = nullptr;
-    if (pickCallback) {
+    // Once a callback has stashed an error, stop invoking Python; the remaining
+    // pickNode calls just drain the ready queue in first-ready order so the
+    // required pipeline winds down to runCodegenPipeline's re-raise.
+    if (pickCallback && !eudsl::pendingCodegenError) {
+      // The GIL guard is intentionally outside the try: the catch stashes the
+      // exception with std::current_exception(), which for an nb::python_error
+      // touches Python refcounts and so must run while the GIL is held. Its
+      // construction does not raise, so nothing is lost by leaving it uncaught.
       nb::gil_scoped_acquire gil;
-      nb::list ready;
-      for (llvm::SUnit *SU : ReadyQ)
-        ready.append(nb::cast(SU, nb::rv_policy::reference));
-      nb::object choice = pickCallback(ready);
-      llvm::SUnit *returned = nullptr;
-      if (nb::try_cast<llvm::SUnit *>(choice, returned)) {
-        for (llvm::SUnit *SU : ReadyQ) {
-          if (SU == returned) {
-            chosen = returned;
-            break;
+      try {
+        nb::list ready;
+        for (llvm::SUnit *SU : ReadyQ)
+          ready.append(nb::cast(SU, nb::rv_policy::reference));
+        nb::object choice = pickCallback(ready);
+        llvm::SUnit *returned = nullptr;
+        if (nb::try_cast<llvm::SUnit *>(choice, returned)) {
+          for (llvm::SUnit *SU : ReadyQ) {
+            if (SU == returned) {
+              chosen = returned;
+              break;
+            }
           }
         }
+        if (!chosen) {
+          throw nb::value_error(
+              "scheduler pickNode returned a value that is not one of the "
+              "ready nodes");
+        }
+      } catch (...) {
+        // Do not let the exception unwind through LLVM's -fno-exceptions
+        // frames; stash it and fall through to the native first-ready node so
+        // the pipeline winds down to runCodegenPipeline's re-raise.
+        eudsl::pendingCodegenError = std::current_exception();
+        chosen = nullptr;
       }
     }
     if (!chosen)
@@ -107,6 +132,11 @@ llvm::MachineSchedRegistry
 } // namespace
 
 namespace eudsl {
+// The one definition of the codegen-error stash slot declared extern in
+// MIR/Diagnostics.h; this TU holds the scheduler's pickNode trampoline that
+// stashes into it.
+thread_local std::exception_ptr pendingCodegenError;
+
 // Install / clear the per-thread pick callback the python strategy reads at
 // construction. Called from emit_object around the emission pipeline run; both
 // touch Python refcounts, so the caller holds the GIL.
@@ -118,10 +148,27 @@ void clearPendingPickCallback() { pendingPickCallback = nb::callable(); }
 
 void populate_python_codegen(nb::module_ &m) {
   // llvm::SUnit -- one scheduling unit (a MachineInstr plus its dependency
-  // edges) the pre-RA MachineScheduler orders. Bound opaque: a python `pick`
-  // callback receives the ready SUnits as a list[SUnit] and returns the one to
-  // schedule next, matched back by pointer identity. No fields are exposed yet.
-  nb::class_<llvm::SUnit>(m, "SUnit");
+  // edges) the pre-RA MachineScheduler orders. A python `pick` callback
+  // receives the ready SUnits as a list[SUnit] and returns the one to schedule
+  // next, matched back by pointer identity. The read-only accessors below
+  // expose the node's identity and readiness so the callback can base its
+  // choice on the scheduler's state.
+  nb::class_<llvm::SUnit>(m, "SUnit")
+      .def_prop_ro(
+          "node_num", [](llvm::SUnit &su) { return su.NodeNum; },
+          "Entry number of this node in the DAG's node vector.")
+      .def_prop_ro(
+          "is_top_ready", [](llvm::SUnit &su) { return su.isTopReady(); },
+          "Whether all predecessors are scheduled (ready for top-down "
+          "scheduling).")
+      .def_prop_ro(
+          "is_bottom_ready", [](llvm::SUnit &su) { return su.isBottomReady(); },
+          "Whether all successors are scheduled (ready for bottom-up "
+          "scheduling).")
+      .def_prop_ro(
+          "instr", [](llvm::SUnit &su) { return su.getInstr(); },
+          nb::rv_policy::reference_internal,
+          "The representative MachineInstr this scheduling unit wraps.");
 
   m.def(
       "registered_schedulers",

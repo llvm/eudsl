@@ -10,11 +10,42 @@
 #include <llvm/IR/DiagnosticInfo.h>
 #include <llvm/IR/DiagnosticPrinter.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <exception>
 #include <string>
 
 namespace eudsl {
+
+// A Python exception raised inside a scheduler pickNode callback is stashed here
+// instead of thrown across llvm::legacy::PassManager::run, which libLLVMCodeGen
+// compiles with -fno-exceptions: unwinding through those frames skips their
+// destructors and std::terminates on targets built without asynchronous unwind
+// tables. The pickNode trampoline stashes into this slot and returns a legal
+// ready node so the (isRequired, unskippable) codegen passes wind down normally;
+// runCodegenPipeline then re-raises after the run returns, so the throw only
+// crosses our own -fexceptions frames. Thread-local so concurrent pipelines
+// don't clobber it. Mirrors the IR-pass pendingPassError mechanism. Declared
+// extern and defined once (PythonCodegen.cpp) rather than inline: an inline
+// thread_local emits a duplicate TLS initialization routine in every including
+// TU, which the linker rejects.
+extern thread_local std::exception_ptr pendingCodegenError;
+
+// Run a codegen PassManager, then re-raise any Python exception a callback
+// (e.g. the "python" scheduler's pickNode) stashed during the run. The rethrow
+// happens before any post-run diagnostic check the caller performs, so a
+// re-raised Python error takes precedence over a captured LLVM diagnostic.
+inline void runCodegenPipeline(llvm::legacy::PassManager &pm, llvm::Module &m) {
+  pendingCodegenError = nullptr;
+  pm.run(m);
+  if (pendingCodegenError) {
+    std::exception_ptr e = pendingCodegenError;
+    pendingCodegenError = nullptr;
+    std::rethrow_exception(e);
+  }
+}
 
 // MIR parsing and codegen report failures through LLVMContext::diagnose --
 // their return values are only a bare success/failure bit, so the rich reason
