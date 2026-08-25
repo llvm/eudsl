@@ -57,16 +57,19 @@ std::unordered_map<std::string, nb::callable> &pythonFunctionPassRegistry() {
 enum class PyPassKind { Module, Function };
 
 // A new-PM module pass whose body is a Python callable. The new PassManager is
-// concept-based, so a pass needs no LLVM base class beyond the PassInfoMixin
-// that supplies name()/isRequired()/printPipeline -- any movable type with a
-// run(Module&, ModuleAnalysisManager&) qualifies. We hold the owning
+// concept-based, so a pass needs no LLVM base class beyond the
+// OptionalPassInfoMixin that supplies name()/isRequired()/printPipeline -- any
+// movable type with a run(Module&, ModuleAnalysisManager&) qualifies. (LLVM
+// moved the old llvm::PassInfoMixin into llvm::detail and now asks passes to
+// inherit RequiredPassInfoMixin or OptionalPassInfoMixin; these are optional --
+// isRequired() == false -- matching the old default.) We hold the owning
 // eudsl::Module so the callback receives the same Python wrapper the caller
 // passed (rv_policy::reference maps the pointer back through nanobind's
 // instance registry), and the nb::callable so the callback outlives the move
 // into PassModel. Everything runs synchronously on the calling (Python) thread,
 // so the callable's refcounting stays correct; we still take the GIL in run()
 // to stay correct under a free-threaded interpreter.
-struct PyModulePass : llvm::PassInfoMixin<PyModulePass> {
+struct PyModulePass : llvm::OptionalPassInfoMixin<PyModulePass> {
   eudsl::Module *mod;
   nb::callable callback;
 
@@ -110,7 +113,7 @@ struct PyModulePass : llvm::PassInfoMixin<PyModulePass> {
 // ModuleToFunctionPassAdaptor it runs once per defined function; the callback
 // receives the llvm::Function (bound directly, so nanobind hands back its
 // wrapper). Same truthy-return / GIL contract as PyModulePass.
-struct PyFunctionPass : llvm::PassInfoMixin<PyFunctionPass> {
+struct PyFunctionPass : llvm::OptionalPassInfoMixin<PyFunctionPass> {
   nb::callable callback;
 
   explicit PyFunctionPass(nb::callable callback)
