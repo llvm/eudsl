@@ -255,7 +255,10 @@ The object model is bound as its own hierarchy (MIR is not part of the `Value`
 hierarchy): `MachineFunction`, `MachineBasicBlock`, `MachineInstr`,
 `MachineOperand`, `Register`, plus `LLT` (the generic low-level type) and
 `MachineFunctionProperty`. `MirModule` owns the `MachineFunction`s and
-keeps everything they reference alive.
+keeps everything they reference alive. A `Register` carries the
+`MachineFunction` that minted it (a physical register carries none), so a vreg
+passed into a *different* function's builder is rejected — its numeric id would
+otherwise silently alias a same-typed register in that function.
 
 > The examples below use AArch64 opcodes/registers/triples, so they need the
 > AArch64 backend linked (`EUDSL_LLVMPY_TARGETS`); on other hosts
@@ -336,6 +339,9 @@ already-selected **target** MIR directly and run only the back half of codegen.
 `reg_class`/`physreg` resolve register classes and physical registers by name,
 `create_vreg` makes class-constrained vregs, `add_reg` appends operands with the
 full flag set (def/use, implicit, kill, …), and `set_property` marks the function.
+(`build(opcode, dsts, srcs)` is a typed one-shot alternative to
+`build_instr` + `add_reg`: each dst is an `LLT` to mint a fresh vreg for or a
+`Register` to define, each src is a `Register` use.)
 `emit_object()` then runs register allocation and emission (via
 `-start-after=finalize-isel`, so no instruction selection), and `LLJIT.add_object`
 loads the result:

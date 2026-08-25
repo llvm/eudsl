@@ -181,3 +181,19 @@ def test_selected_add_survives_mir_roundtrip():
         mmi2 = mir.parse_mir(text, ctx, jit.TargetMachine(triple=_TRIPLE))
         assert mmi2.machine_function("add").verify() is True
     assert_no_leaks()
+
+
+def test_build_brcond_rejects_physical_register():
+    """A generic builder op like build_brcond needs a *generic vreg* condition.
+    A physical register belongs to no function (it is target-static), so it
+    passes the cross-function owner guard -- but it is still not a generic
+    virtual register of this function, so it is rejected on that ground."""
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        mf = mmi.machine_function("add")
+        b = mir.MachineIRBuilder(mf)
+        with pytest.raises(ValueError, match="generic virtual register"):
+            b.build_brcond(mf.physreg("W0"), mf.blocks[0])
+    assert_no_leaks()

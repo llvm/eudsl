@@ -161,7 +161,10 @@ def test_build_add_rejects_register_from_another_function():
 
         mmi_f = mir.create_machine_function(ir.Module("f", ctx), tm, "f")
         bf = mir.MachineIRBuilder(mmi_f.machine_function("f"))
-        with pytest.raises(ValueError, match="virtual register of this"):
+        # The register carries function g as its owner, so f's builder rejects
+        # it by provenance (see test_cross_function_vreg_collision_rejected for
+        # why the owner, not just the id/type, is what makes this sound).
+        with pytest.raises(ValueError, match="different MachineFunction"):
             bf.build_add(s32, foreign, foreign)
     assert_no_leaks()
 
@@ -193,6 +196,48 @@ def test_create_generic_virtual_register_is_virtual():
         # (the builder validates operand type against the result type).
         b = mir.MachineIRBuilder(mf)
         assert b.build_add(s64, reg, reg).is_virtual
+    assert_no_leaks()
+
+
+def test_build_typed_instr_mints_and_reuses_destinations():
+    """`build` is the typed buildInstr(opcode, DstOps, SrcOps): an LLT dst mints
+    a fresh generic vreg and defines it; a Register dst defines that existing
+    vreg. Both are exercised here on a G_ADD, plus the Register source uses."""
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(mod, tm, "f")
+        mf = mmi.machine_function("f")
+        s32 = mir.LLT.scalar(32)
+        b = mir.MachineIRBuilder(mf)
+        a = mf.create_generic_virtual_register(s32)
+        c = mf.create_generic_virtual_register(s32)
+        g_add = mf.opcode("G_ADD")
+
+        # LLT dst: a fresh generic vreg is minted for the def.
+        minted = b.build(g_add, [s32], [a, c])
+        assert minted.opcode_name == "G_ADD"
+        assert minted.operand(0).is_def and minted.operand(0).reg.is_virtual
+        assert minted.operand(0).reg.id not in (a.id, c.id)  # a new register
+        assert minted.operand(1).reg.id == a.id
+        assert minted.operand(2).reg.id == c.id
+
+        # Register dst: the caller's existing vreg is defined instead.
+        dst = mf.create_generic_virtual_register(s32)
+        reused = b.build(g_add, [dst], [a, c])
+        assert reused.operand(0).reg.id == dst.id
+    assert_no_leaks()
+
+
+def test_build_rejects_out_of_range_opcode():
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(mod, tm, "f")
+        mf = mmi.machine_function("f")
+        b = mir.MachineIRBuilder(mf)
+        with pytest.raises(IndexError, match="opcode number out of range"):
+            b.build(10**9, [mir.LLT.scalar(32)], [])
     assert_no_leaks()
 
 

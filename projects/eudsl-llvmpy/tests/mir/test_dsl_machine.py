@@ -158,6 +158,9 @@ def test_non_int_coercion_raises():
 
 
 def test_value_from_other_function_raises():
+    """A value from one @machine_function body used in another's is rejected:
+    its Register carries function g as its owner, so f's builder refuses it
+    (ValueError from the C++ owner check, not a Python-side anchor)."""
     with ir.Context() as ctx:
         tm = jit.TargetMachine(triple=_TRIPLE)
         s32 = mir.LLT.scalar(32)
@@ -168,7 +171,7 @@ def test_value_from_other_function_raises():
             leaked["a"] = a
             return a
 
-        with pytest.raises(RuntimeError, match="different MachineFunction"):
+        with pytest.raises(ValueError, match="different MachineFunction"):
 
             @machine_function(module=ir.Module("f", ctx), target=tm)
             def f(b: s32):

@@ -9,6 +9,11 @@ mechanism the IR builder uses): `with MachineIRBuilder(mf):` makes it current
 and current_machine_builder() reads it back. A MachineValue wraps a Register
 plus its LLT and overloads `+ - *` onto build_add/build_sub/build_mul; Python
 ints coerce to a G_CONSTANT of the other operand's type.
+
+A Register now carries the MachineFunction that minted it, so feeding a value
+from one @machine_function body into another's builder is rejected in C++ (the
+builder compares the register's owner against its own function) -- the DSL does
+not need a separate Python-side anchor for that.
 """
 
 import inspect
@@ -28,28 +33,13 @@ class MachineValue:
     def __init__(self, reg, llt):
         self.reg = reg
         self.llt = llt
-        # Anchor to the builder tracing this value's MachineFunction. A
-        # MachineValue carries a bare reg + llt, so a value that escapes its
-        # @machine_function body could otherwise emit into a different (e.g.
-        # nested) function's builder, referencing vregs it doesn't own. A
-        # MachineValue is only ever constructed while a builder is current.
-        self._builder = current_machine_builder()
-
-    def _require_current(self):
-        if self._builder is not current_machine_builder():
-            raise RuntimeError(
-                "MachineValue used outside the @machine_function body that "
-                "created it (it belongs to a different MachineFunction)"
-            )
 
     def _coerce(self, other):
         """A MachineValue passes through; a Python int becomes a G_CONSTANT of
         this value's LLT. Only an exact int (not bool, not float) is accepted --
         int(other) would silently truncate a float or parse a str into a
         wrong-typed constant that survives into the release wheel."""
-        self._require_current()
         if isinstance(other, MachineValue):
-            other._require_current()
             return other
         if type(other) is not int:
             raise TypeError(
