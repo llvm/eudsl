@@ -61,10 +61,16 @@ def test_reflected_operators():
         def g(a: s32):
             return 1 + a, 2 * a, 10 - a
 
-        ops = [i.opcode_name for i in g.machine_function.blocks[0].instructions]
-        # three constants (1, 2, 10) and one each of add/mul/sub
-        assert ops.count("G_CONSTANT") == 3
+        instrs = g.machine_function.blocks[0].instructions
+        ops = [i.opcode_name for i in instrs]
+        # one each of add/mul/sub, plus three constants whose literal values are
+        # exactly 1, 2, 10 -- read straight off the G_CONSTANT's CImm operand
+        # (operand 1; operand 0 is the def) rather than inferred from structure.
         assert "G_ADD" in ops and "G_MUL" in ops and "G_SUB" in ops
+        consts = sorted(
+            i.operand(1).cimm.value for i in instrs if i.opcode_name == "G_CONSTANT"
+        )
+        assert consts == [1, 2, 10]
     assert_no_leaks()
 
 
@@ -83,9 +89,11 @@ def test_reflected_subtraction_operand_order():
         instrs = g.machine_function.blocks[0].instructions
         const = next(i for i in instrs if i.opcode_name == "G_CONSTANT")
         sub = next(i for i in instrs if i.opcode_name == "G_SUB")
+        # The constant operand literally holds 10 (read via its CImm), and
         # `10 - a` must emit G_SUB(const, a): lhs (operand 1) is the constant,
         # rhs (operand 2) is a. operand(0) is the def. If the reflected flag were
         # dropped, these two would be swapped.
+        assert const.operand(1).cimm.value == 10
         assert sub.operand(1).reg.id == const.operand(0).reg.id
         assert sub.operand(2).reg.id == captured["a"]
     assert_no_leaks()
@@ -106,7 +114,9 @@ def test_forward_subtraction_operand_order():
         instrs = g.machine_function.blocks[0].instructions
         const = next(i for i in instrs if i.opcode_name == "G_CONSTANT")
         sub = next(i for i in instrs if i.opcode_name == "G_SUB")
+        # The constant operand literally holds 10 (read via its CImm), and
         # `a - 10` -> G_SUB(a, const): a is the lhs, the constant is the rhs.
+        assert const.operand(1).cimm.value == 10
         assert sub.operand(1).reg.id == captured["a"]
         assert sub.operand(2).reg.id == const.operand(0).reg.id
     assert_no_leaks()
