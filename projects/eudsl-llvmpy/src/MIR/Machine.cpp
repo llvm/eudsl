@@ -185,6 +185,38 @@ void requireVReg(llvm::MachineIRBuilder &b, const TypedRegister &reg,
             .c_str());
 }
 
+// A block is "terminated" once its last instruction is a barrier terminator
+// (G_BR, a return, ...) -- control cannot fall through off the end. A block
+// ending in only a conditional G_BRCOND is NOT terminated: it still falls
+// through, which is exactly why the standard `build_brcond` + `build_br` pair
+// is two terminators in one block. We require *both* isTerminator() and
+// isBarrier(): isBarrier() distinguishes the unconditional closers from the
+// fall-through conditional, and pairing it with isTerminator() excludes the
+// rare barrier-but-not-terminator instruction (e.g. a target TRAP), which does
+// not close the block for branch purposes.
+bool blockEndsInBarrier(const llvm::MachineBasicBlock &mbb) {
+  return !mbb.empty() && mbb.back().isTerminator() && mbb.back().isBarrier();
+}
+
+// Appending a terminator to a block that already ends in a barrier builds a
+// malformed block (a second, unreachable terminator past the barrier). The
+// machine verifier catches this, but only when run explicitly via verify():
+// the automatic verification and the build-helper asserts that would flag it
+// during construction are gone under NDEBUG, so in a release build the bad
+// block is otherwise built silently. The builder only ever inserts at the end
+// of its block (setMBB parks the insert point at end(); no mid-block insert
+// point is exposed), so back() is reliably where the next instruction lands.
+// Reject the double-terminator here.
+void requireNotTerminated(llvm::MachineIRBuilder &b, const char *role) {
+  if (blockEndsInBarrier(b.getMBB())) {
+    throw nb::value_error(
+        (std::string(role) +
+         " into a block that already ends in a barrier terminator; a block "
+         "cannot have a second terminator after an unconditional one")
+            .c_str());
+  }
+}
+
 // getInstrInfo() can be null for a target without one; real backends always
 // have it (these MachineFunctions come from create_machine_function/codegen
 // with a real subtarget), so this is purely defensive.
@@ -964,6 +996,15 @@ void populate_mir(nb::module_ &m) {
           "is_entry_block",
           [](llvm::MachineBasicBlock &self) { return self.isEntryBlock(); })
       .def_prop_ro(
+          "is_terminated",
+          [](llvm::MachineBasicBlock &self) {
+            return blockEndsInBarrier(self);
+          },
+          "Whether this block ends in a barrier terminator (G_BR today; a "
+          "return once such a builder exists) so control cannot fall through. "
+          "A block ending in only a conditional G_BRCOND is not terminated -- "
+          "it falls through.")
+      .def_prop_ro(
           "successors",
           [](llvm::MachineBasicBlock &self) {
             std::vector<llvm::MachineBasicBlock *> succs(self.succ_begin(),
@@ -1529,6 +1570,7 @@ void populate_mir(nb::module_ &m) {
           [](llvm::MachineIRBuilder &self,
              llvm::MachineBasicBlock *dest) -> llvm::MachineInstr * {
             requireSameFunction(self.getMF(), dest, "dest");
+            requireNotTerminated(self, "build_br");
             return self.buildBr(*dest).getInstr();
           },
           "dest"_a, nb::rv_policy::reference_internal,
@@ -1540,6 +1582,7 @@ void populate_mir(nb::module_ &m) {
              llvm::MachineBasicBlock *dest) {
             requireVReg(self, cond, "cond");
             requireSameFunction(self.getMF(), dest, "dest");
+            requireNotTerminated(self, "build_brcond");
             self.buildBrCond(cond.reg(), *dest);
           },
           "cond"_a, "dest"_a,
