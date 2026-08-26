@@ -4,6 +4,7 @@
 
 #include "IR/Common.h"
 #include "IR/Ownership.h"
+#include "MIR/Diagnostics.h"
 
 #include <llvm/ADT/Hashing.h>
 #include <llvm/CodeGen/GlobalISel/MachineIRBuilder.h>
@@ -49,47 +50,6 @@
 #include <vector>
 
 namespace {
-
-// MIR parsing and codegen report failures through LLVMContext::diagnose --
-// their return values are only a bare success/failure bit, so the rich reason
-// (line, column, message) would otherwise be lost to the default handler's
-// stderr print, which is invisible under the Python/nanobind harness. This RAII
-// guard installs a handler that captures error-severity diagnostics into `sink`
-// for the duration of one parse/codegen call, restoring the previous handler on
-// scope exit so the capture buffer (a caller stack local) never outlives the
-// handler that points at it.
-struct ScopedDiagnosticCapture {
-  llvm::LLVMContext &ctx;
-  llvm::DiagnosticHandler::DiagnosticHandlerTy prevHandler;
-  void *prevContext;
-
-  ScopedDiagnosticCapture(llvm::LLVMContext &ctx, std::string &sink)
-      : ctx(ctx), prevHandler(ctx.getDiagnosticHandlerCallBack()),
-        prevContext(ctx.getDiagnosticContext()) {
-    ctx.setDiagnosticHandlerCallBack(
-        [](const llvm::DiagnosticInfo *di, void *context) {
-          if (di->getSeverity() == llvm::DS_Error) {
-            auto *out = static_cast<std::string *>(context);
-            llvm::raw_string_ostream os(*out);
-            llvm::DiagnosticPrinterRawOStream printer(os);
-            di->print(printer);
-          }
-        },
-        &sink);
-  }
-  ~ScopedDiagnosticCapture() {
-    ctx.setDiagnosticHandlerCallBack(prevHandler, prevContext);
-  }
-  ScopedDiagnosticCapture(const ScopedDiagnosticCapture &) = delete;
-  ScopedDiagnosticCapture &operator=(const ScopedDiagnosticCapture &) = delete;
-};
-
-// "<base>" when no diagnostic was captured, else "<base>: <detail>".
-std::string withDetail(llvm::StringRef base, const std::string &detail) {
-  if (detail.empty())
-    return base.str(); // LCOV_EXCL_LINE -- MIRParser always diagnoses on error
-  return (base + ": " + detail).str();
-}
 
 // A machine register paired with the MachineFunction that owns it. A virtual
 // register's numeric id is only an index into its own function's
@@ -419,7 +379,7 @@ public:
     }
     if (!ok)
       throw std::runtime_error(
-          withDetail("hand-built MIR failed verification", report));
+          eudsl::withDetail("hand-built MIR failed verification", report));
 
     // Run only the back half of codegen (regalloc, prologue/epilogue, object
     // emission) over the already-selected MachineFunctions:
@@ -475,7 +435,7 @@ public:
     // value; capture it so it surfaces as an exception.
     std::string diag;
     {
-      ScopedDiagnosticCapture capture(module_->getContext(), diag);
+      eudsl::ScopedDiagnosticCapture capture(module_->getContext(), diag);
       pm->run(*module_);
     }
     // Consume the BuildOwned into an EmittedOwned: the released wrapper now
@@ -484,7 +444,8 @@ public:
     // LCOV_EXCL_START -- eager verification makes a back-half failure or empty
     // emission unreachable from well-formed hand-built MIR.
     if (!diag.empty())
-      throw std::runtime_error(withDetail("object emission failed", diag));
+      throw std::runtime_error(
+          eudsl::withDetail("object emission failed", diag));
     if (buf.empty())
       throw std::runtime_error("object emission produced no output");
     // LCOV_EXCL_STOP
@@ -1294,13 +1255,13 @@ void populate_mir(nb::module_ &m) {
         // silently-empty MachineModuleInfo.
         std::string diag;
         {
-          ScopedDiagnosticCapture capture(module->getContext(), diag);
+          eudsl::ScopedDiagnosticCapture capture(module->getContext(), diag);
           pm->run(*module);
         }
         // LCOV_EXCL_START -- needs an un-selectable input to trigger
         if (!diag.empty()) {
           throw std::runtime_error(
-              withDetail("instruction selection failed", diag));
+              eudsl::withDetail("instruction selection failed", diag));
         }
         // LCOV_EXCL_STOP
 
@@ -1348,7 +1309,7 @@ void populate_mir(nb::module_ &m) {
         // diagnostic handler and only returns a bare null/true; capture the
         // real diagnostic so the thrown message carries the line and reason.
         std::string diag;
-        ScopedDiagnosticCapture capture(context.get(), diag);
+        eudsl::ScopedDiagnosticCapture capture(context.get(), diag);
         std::unique_ptr<llvm::MIRParser> parser = llvm::createMIRParser(
             llvm::MemoryBuffer::getMemBuffer(text, "<mir>"), context.get());
         // LCOV_EXCL_START -- createMIRParser only fails on internal error
@@ -1358,14 +1319,14 @@ void populate_mir(nb::module_ &m) {
         // LCOV_EXCL_STOP
         std::unique_ptr<llvm::Module> module = parser->parseIRModule();
         if (!module) {
-          throw std::runtime_error(
-              withDetail("failed to parse the IR portion of the MIR", diag));
+          throw std::runtime_error(eudsl::withDetail(
+              "failed to parse the IR portion of the MIR", diag));
         }
         module->setDataLayout(tm.createDataLayout());
         auto ownedMmi = std::make_unique<llvm::MachineModuleInfo>(&tm);
         if (parser->parseMachineFunctions(*module, *ownedMmi)) {
           throw std::runtime_error(
-              withDetail("failed to parse machine functions", diag));
+              eudsl::withDetail("failed to parse machine functions", diag));
         }
         return new MirModule(MirModule::parsed(
             std::move(ctxKeepAlive), std::move(module), std::move(ownedMmi)));
