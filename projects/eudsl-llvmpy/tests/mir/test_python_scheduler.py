@@ -331,3 +331,67 @@ def test_ready_queue_strategy_helper_pick():
         assert picks  # the helper's pick() hook ran
         assert obj[:4] == b"\x7fELF"
     assert_no_leaks()
+
+
+class _BottomUpStrategy(mir.MachineSchedStrategy):
+    """Bottom-up scheduling: consume nodes released bottom-ready and pick them
+    with is_top=False. Impossible with the top-down ReadyQueueStrategy helper --
+    exercises get_policy(only_bottom_up), release_bottom_node, and the
+    is_top=False pick path."""
+
+    def initialize(self, dag):
+        self.q = []
+
+    def get_policy(self):
+        p = mir.MachineSchedPolicy()
+        p.only_bottom_up = True
+        p.should_track_pressure = False
+        return p
+
+    def release_top_node(self, su):
+        pass
+
+    def release_bottom_node(self, su):
+        self.q.append(su)
+
+    def pick_node(self):
+        if not self.q:
+            return None
+        return self.q.pop(0), False  # is_top_node = False
+
+    def sched_node(self, su, is_top):
+        pass
+
+
+def test_bottom_up_strategy_emits_valid_object():
+    mir.register_scheduler("t8-bottomup", _BottomUpStrategy)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        obj = mmi.emit_object(scheduler="t8-bottomup")
+        assert obj[:4] == b"\x7fELF"
+    assert_no_leaks()
+
+
+@pytest.mark.skipif(
+    not _IS_AARCH64,
+    reason="hand-built MIR is AArch64; executing it needs an AArch64 host",
+)
+def test_jit_executes_bottom_up_scheduled_add():
+    mir.register_scheduler("t8-bottomup-jit", _BottomUpStrategy)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        obj = mmi.emit_object(scheduler="t8-bottomup-jit")
+        j = jit.LLJIT()
+        j.add_object(obj)
+        add = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_int32)(
+            j.lookup("add")
+        )
+        assert add(7, 8) == 15  # bottom-up schedule still correct
+        del j
+    assert_no_leaks()
