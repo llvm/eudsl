@@ -1492,7 +1492,11 @@ class Pipeline(Pipeline):
         return self
 
     def composite_fixed_point_pass(
-        self, name: str = None, pipeline: str = None, max_iterations: int = None
+        self,
+        name: str = None,
+        pipeline: str = None,
+        max_iterations: int = None,
+        on_convergence_failure: "mlir::ConvergenceFailureAction" = None,
     ):
         """Composite fixed point pass
 
@@ -1503,10 +1507,16 @@ class Pipeline(Pipeline):
             name: Composite pass display name
             pipeline: Composite pass inner pipeline
             max_iterations: Maximum number of iterations if inner pipeline
+            on_convergence_failure: Action to take if the pass fails to converge within max-iterations
         """
         self.add_pass(
             "composite-fixed-point-pass",
-            **{"name": name, "pipeline": pipeline, "max-iterations": max_iterations}
+            **{
+                "name": name,
+                "pipeline": pipeline,
+                "max-iterations": max_iterations,
+                "on-convergence-failure": on_convergence_failure,
+            }
         )
         return self
 
