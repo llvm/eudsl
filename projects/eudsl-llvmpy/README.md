@@ -409,6 +409,11 @@ For the common case, subclass `mir.ReadyQueueStrategy` and override only
 `emit_object` — stashed and re-raised after codegen winds down, never thrown
 across LLVM's `-fno-exceptions` frames.
 
+A subclass may also override the optional lifecycle hooks `register_roots(self)`
+(the initial ready set is complete), `enter_mbb(self, mbb)` / `leave_mbb(self)`
+(a block, possibly several scheduling regions, is starting/ending); omitting them
+keeps LLVM's defaults.
+
 ## Limitations
 
 - **`break`, `continue`, and early `return` inside DSL control flow are not

@@ -447,7 +447,16 @@ def test_sunit_accessors_readable():
 
 
 @pytest.mark.parametrize(
-    "method", ["get_policy", "release_top_node", "release_bottom_node", "sched_node"]
+    "method",
+    [
+        "get_policy",
+        "release_top_node",
+        "release_bottom_node",
+        "sched_node",
+        "register_roots",
+        "enter_mbb",
+        "leave_mbb",
+    ],
 )
 def test_override_raise_propagates(method):
     """A raise from any forwarded override is stashed and re-raised out of
@@ -591,4 +600,35 @@ def test_pressure_tracking_emits_object():
         _build_selected_add(mmi)
         obj = mmi.emit_object(scheduler="t10-pressure")
         assert obj[:4] == b"\x7fELF"
+    assert_no_leaks()
+
+
+def test_optional_lifecycle_hooks_invoked():
+    """The optional hooks (register_roots, enter_mbb, leave_mbb) are forwarded to
+    a subclass that defines them: register_roots fires once the initial ready set
+    is released, enter_mbb/leave_mbb bracket the block, and enter_mbb receives the
+    MachineBasicBlock."""
+    events = []
+
+    class Hooked(_TopDownFirstReady):
+        def enter_mbb(self, mbb):
+            events.append(("enter", mbb.name))
+
+        def register_roots(self):
+            events.append(("roots", None))
+
+        def leave_mbb(self):
+            events.append(("leave", None))
+
+    mir.register_scheduler("t11-hooks", Hooked)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        mmi.emit_object(scheduler="t11-hooks")
+    kinds = [k for k, _ in events]
+    assert "enter" in kinds and "roots" in kinds and "leave" in kinds
+    assert kinds.index("enter") < kinds.index("roots") < kinds.index("leave")
+    assert isinstance(dict(events).get("enter"), str)  # enter_mbb got an MBB name
     assert_no_leaks()

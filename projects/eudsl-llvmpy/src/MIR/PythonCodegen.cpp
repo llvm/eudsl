@@ -12,6 +12,7 @@
 #include "IR/Common.h"
 #include "MIR/Diagnostics.h"
 
+#include <llvm/CodeGen/MachineBasicBlock.h>
 #include <llvm/CodeGen/MachineInstr.h>
 #include <llvm/CodeGen/MachineScheduler.h>
 #include <llvm/CodeGen/ScheduleDAG.h>
@@ -60,7 +61,7 @@ thread_local nb::type_object activeSchedClass;
 // -- this is the safety net.
 class PySchedStrategy : public llvm::MachineSchedStrategy {
 public:
-  NB_TRAMPOLINE(llvm::MachineSchedStrategy, 6);
+  NB_TRAMPOLINE(llvm::MachineSchedStrategy, 9);
 
   llvm::MachineSchedPolicy getPolicy() const override {
     nb::gil_scoped_acquire gil;
@@ -160,6 +161,46 @@ public:
     }
   }
 
+  // Optional lifecycle hooks: forwarded only if the Python subclass defines
+  // them, otherwise LLVM's no-op default stands. registerRoots fires once the
+  // full initial ready set has been released; enterMBB/leaveMBB bracket each
+  // block (which may hold several scheduling regions).
+  void registerRoots() override {
+    nb::gil_scoped_acquire gil;
+    nb::handle self = nb_trampoline.base();
+    if (eudsl::pendingCodegenError || !nb::hasattr(self, "register_roots"))
+      return;
+    try {
+      self.attr("register_roots")();
+    } catch (...) {
+      eudsl::pendingCodegenError = std::current_exception();
+    }
+  }
+
+  void enterMBB(llvm::MachineBasicBlock *mbb) override {
+    nb::gil_scoped_acquire gil;
+    nb::handle self = nb_trampoline.base();
+    if (eudsl::pendingCodegenError || !nb::hasattr(self, "enter_mbb"))
+      return;
+    try {
+      self.attr("enter_mbb")(nb::cast(mbb, nb::rv_policy::reference));
+    } catch (...) {
+      eudsl::pendingCodegenError = std::current_exception();
+    }
+  }
+
+  void leaveMBB() override {
+    nb::gil_scoped_acquire gil;
+    nb::handle self = nb_trampoline.base();
+    if (eudsl::pendingCodegenError || !nb::hasattr(self, "leave_mbb"))
+      return;
+    try {
+      self.attr("leave_mbb")();
+    } catch (...) {
+      eudsl::pendingCodegenError = std::current_exception();
+    }
+  }
+
 private:
   // Every ready node LLVM releases (top or bottom), recorded before the
   // fallible Python call so the pick_node fallback above always has a legal
@@ -202,6 +243,9 @@ public:
   void schedNode(llvm::SUnit *su, bool isTopNode) override {
     inner->schedNode(su, isTopNode);
   }
+  void registerRoots() override { inner->registerRoots(); }
+  void enterMBB(llvm::MachineBasicBlock *mbb) override { inner->enterMBB(mbb); }
+  void leaveMBB() override { inner->leaveMBB(); }
 
 private:
   nb::object pyStrategy;
