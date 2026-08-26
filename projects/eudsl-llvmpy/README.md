@@ -380,6 +380,29 @@ with ir.Context() as ctx:
     assert add(2, 3) == 5
 ```
 
+### Python-driven codegen passes
+
+`emit_object` can route two of the back-half codegen passes through Python — the
+codegen sibling of the IR-level [Python-driven passes](#python-driven-passes)
+above. `scheduler="<name>"` selects a registered pre-RA MachineScheduler
+strategy (list them with `mir.registered_schedulers()`), and `pick=<callable>`
+instead drives the scheduler's `pickNode` from Python. `regalloc="eudsl-python"`
+selects the eudsl register allocator, and `select=<callable>` drives its
+`selectOrSplit` from Python. The scheduler-side option (`scheduler`/`pick`) and
+the allocator-side option (`regalloc`/`select`) are each mutually exclusive
+within their pair but may be combined across pairs.
+
+```python
+def pick(ready):        # ready is a list[SUnit]; return one to schedule next
+    return ready[0]
+
+obj = mmi.emit_object(pick=pick)   # or: emit_object(regalloc="eudsl-python")
+```
+
+See [PYTHON_CODEGEN_PASSES.md](PYTHON_CODEGEN_PASSES.md) for the callback
+contracts (`SUnit` / `LiveInterval` fields, legal return values, error
+behavior), caveats, and end-to-end examples.
+
 ## Limitations
 
 - **`break`, `continue`, and early `return` inside DSL control flow are not
