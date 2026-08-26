@@ -380,6 +380,35 @@ with ir.Context() as ctx:
     assert add(2, 3) == 5
 ```
 
+### Python-driven instruction scheduling
+
+`mir.MachineSchedStrategy` is the pre-RA MachineScheduler strategy interface,
+subclassable from Python. Override `initialize(dag)`, `get_policy()`,
+`release_top_node(su)` / `release_bottom_node(su)` (LLVM hands you ready
+`SUnit`s; you maintain your own ready set), `pick_node()` → `(SUnit,
+is_top_node)` or `None` when nothing is ready, and `sched_node(su, is_top)`.
+Register a subclass under a name and select it per emission:
+
+```python
+class MySched(mir.MachineSchedStrategy):
+    def initialize(self, dag): self.q = []
+    def get_policy(self):
+        p = mir.MachineSchedPolicy(); p.only_top_down = True
+        p.should_track_pressure = False; return p
+    def release_top_node(self, su): self.q.append(su)
+    def release_bottom_node(self, su): pass
+    def pick_node(self): return (self.q.pop(0), True) if self.q else None
+    def sched_node(self, su, is_top): pass
+
+mir.register_scheduler("mysched", MySched)
+obj = mmi.emit_object(scheduler="mysched")   # runs MySched as the pre-RA scheduler
+```
+
+For the common case, subclass `mir.ReadyQueueStrategy` and override only
+`pick(ready)`. A strategy that raises has its exception re-raised out of
+`emit_object` — stashed and re-raised after codegen winds down, never thrown
+across LLVM's `-fno-exceptions` frames.
+
 ## Limitations
 
 - **`break`, `continue`, and early `return` inside DSL control flow are not

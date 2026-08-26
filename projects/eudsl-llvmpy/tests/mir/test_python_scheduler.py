@@ -395,3 +395,102 @@ def test_jit_executes_bottom_up_scheduled_add():
         assert add(7, 8) == 15  # bottom-up schedule still correct
         del j
     assert_no_leaks()
+
+
+def test_sunit_accessors_readable():
+    """The SUnit read accessors return sensible values for ready nodes."""
+    seen = []
+
+    class ReadsFields(_TopDownFirstReady):
+        def pick_node(self):
+            if not self.q:
+                return None
+            su = self.q[0]
+            seen.append(
+                (su.node_num, su.is_top_ready, su.is_bottom_ready, su.instr)
+            )
+            return self.q.pop(0), True
+
+    mir.register_scheduler("t9-fields", ReadsFields)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        mmi.emit_object(scheduler="t9-fields")
+    assert seen
+    node_num, is_top, is_bottom, instr = seen[0]
+    assert node_num >= 0
+    assert is_top  # a top-ready node has no unscheduled predecessors
+    assert isinstance(is_bottom, bool)
+    assert instr is not None  # every ready SUnit wraps a MachineInstr
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize(
+    "method", ["get_policy", "release_top_node", "release_bottom_node", "sched_node"]
+)
+def test_override_raise_propagates(method):
+    """A raise from any forwarded override is stashed and re-raised out of
+    emit_object (every override is a -fno-exceptions stash site)."""
+
+    def boom(self, *args):
+        raise ValueError("boom-" + method)
+
+    Strat = type("Strat", (_TopDownFirstReady,), {method: boom})
+    mir.register_scheduler("t9-" + method, Strat)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(ValueError, match="boom-" + method):
+            mmi.emit_object(scheduler="t9-" + method)
+    assert_no_leaks()
+
+
+def test_bottom_up_pick_raise_drains_bottom_shadow():
+    """A bottom-up strategy whose pick_node raises: the fallback drains the top
+    shadow, then the bottom shadow (the is_top=False fallback path)."""
+
+    class BottomBoom(_BottomUpStrategy):
+        def pick_node(self):
+            raise ValueError("bottom-boom")
+
+    mir.register_scheduler("t9-bottomboom", BottomBoom)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(ValueError, match="bottom-boom"):
+            mmi.emit_object(scheduler="t9-bottomboom")
+    assert_no_leaks()
+
+
+def test_reregister_replaces_scheduler():
+    """Registering an existing name replaces its class (the registry node for
+    that name is reused)."""
+    picks = []
+
+    class First(_TopDownFirstReady):
+        def pick_node(self):
+            picks.append("first")
+            return super().pick_node()
+
+    class Second(_TopDownFirstReady):
+        def pick_node(self):
+            picks.append("second")
+            return super().pick_node()
+
+    mir.register_scheduler("t9-dup", First)
+    mir.register_scheduler("t9-dup", Second)  # replaces First
+    assert mir.registered_schedulers().count("t9-dup") == 1
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        mmi.emit_object(scheduler="t9-dup")
+    assert "second" in picks and "first" not in picks
+    assert_no_leaks()
