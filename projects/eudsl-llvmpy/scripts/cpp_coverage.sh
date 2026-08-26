@@ -67,9 +67,15 @@ if [[ -z "$SO" || ! -f "$SO" ]]; then
 fi
 
 echo ">> checking src/IR + src/MIR coverage (threshold=${THRESHOLD}%)"
+# RegAllocBase.h and AllocationOrder.h under src/MIR are verbatim upstream LLVM
+# private CodeGen headers, vendored only so PythonCodegen.cpp can reach their
+# declarations (they are not installed with the LLVM distro). We do not author
+# them and exercise them only incidentally through the allocator, so their
+# inline accessors are not all reachable; exclude them from our authored gate.
 "$PY" "${PROJ_DIR}/scripts/check_coverage.py" \
   --llvm-cov "$LLVM_COV" \
   --profdata "${COV_DIR}/eudslllvm.profdata" \
   --objects "$SO" \
   --sources "${PROJ_DIR}/src/IR" "${PROJ_DIR}/src/MIR" \
+  --ignore-filename-regex 'src/MIR/(RegAllocBase|AllocationOrder)\.h$' \
   --threshold="${THRESHOLD}"

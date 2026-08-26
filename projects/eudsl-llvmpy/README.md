@@ -407,6 +407,40 @@ obj = mmi.emit_object(scheduler="mysched")   # runs MySched as the pre-RA schedu
 For the common case, subclass `mir.ReadyQueueStrategy` and override only
 `pick(ready)`.
 
+### Python-driven register allocation
+
+The register allocator is a fixed C++ `MachineFunctionPass` built on LLVM's
+`RegAllocBase` driver, registered by name in the `RegisterRegAlloc` registry --
+mirroring how LLVM's own allocators (`basic`, `greedy`, ...) are structured: the
+pass *is* the allocator, chosen by name, not a driver-owned strategy object.
+Python fills in its decisions. Three ways drive it:
+
+```python
+# 1. Native first-free / spill policy.
+obj = mmi.emit_object(regalloc="eudsl-python")
+
+# 2. One-shot callable for selectOrSplit: given the vreg's LiveInterval and the
+#    legal (non-interfering) candidate physreg ids, return one to assign or None
+#    to spill.
+obj = mmi.emit_object(select=lambda li, candidates: candidates[0] if candidates else None)
+
+# 3. A named, class-based allocator: a fresh instance per MachineFunction.
+class MyAlloc:
+    def select_or_split(self, li, candidates):
+        return candidates[0] if candidates else None
+    def priority(self, li):          # optional: order the allocation queue
+        return li.weight             # (highest first; defaults to spill weight)
+
+mir.register_regalloc("myalloc", MyAlloc)
+obj = mmi.emit_object(regalloc="myalloc")
+```
+
+`regalloc=` and `select=` are mutually exclusive, and both are independent of
+`scheduler=`. A callable/method that raises, or returns an id that is not a
+presented candidate, has its exception re-raised out of `emit_object` (stashed
+and re-raised after codegen winds down, never thrown across LLVM's
+`-fno-exceptions` frames).
+
 ## Limitations
 
 - **`break`, `continue`, and early `return` inside DSL control flow are not

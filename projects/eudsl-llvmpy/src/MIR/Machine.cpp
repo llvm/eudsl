@@ -18,6 +18,7 @@
 #include <llvm/CodeGen/MachineOperand.h>
 #include <llvm/CodeGen/MachineRegisterInfo.h>
 #include <llvm/CodeGen/MachineScheduler.h>
+#include <llvm/CodeGen/RegAllocRegistry.h>
 #include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetOpcodes.h>
 #include <llvm/CodeGen/TargetPassConfig.h>
@@ -61,6 +62,11 @@ nb::type_object schedulerClass(const std::string &name);
 llvm::MachineSchedRegistry::ScheduleDAGCtor registeredSchedCtor();
 void setActiveSchedClass(nb::type_object cls);
 void clearActiveSchedClass();
+nb::type_object regAllocClass(const std::string &name);
+void setActiveRegAllocClass(nb::type_object cls);
+void clearActiveRegAllocClass();
+void setPendingSelectCallback(nb::callable cb);
+void clearPendingSelectCallback();
 } // namespace eudsl
 
 // Defined in PythonCodegen.cpp.
@@ -368,7 +374,13 @@ public:
   // BuildOwned is consumed into an EmittedOwned, so "build-path only" and the
   // one-shot are enforced by the variant's active alternative rather than a
   // pair of runtime flags.
-  nb::bytes emitObject(std::optional<std::string> scheduler) {
+  nb::bytes emitObject(std::optional<std::string> scheduler,
+                       std::optional<std::string> regalloc,
+                       std::optional<nb::callable> select) {
+    if (regalloc && select) {
+      throw nb::value_error(
+          "emit_object accepts at most one of regalloc= and select=");
+    }
     if (std::holds_alternative<EmittedOwned>(state_))
       throw std::runtime_error("object already emitted");
     BuildOwned *build = std::get_if<BuildOwned>(&state_);
@@ -386,6 +398,31 @@ public:
       if (!schedClass.is_valid())
         throw std::runtime_error("unknown scheduler: " + *scheduler);
       schedCtor = eudsl::registeredSchedCtor();
+    }
+
+    // Resolve the requested register allocator against the RegisterRegAlloc
+    // registry by name (built-ins, "eudsl-python", and register_regalloc names
+    // all live there) so an unknown name fails cleanly. select= chooses the
+    // built-in "eudsl-python" allocator and installs the callable; a name
+    // registered via register_regalloc additionally installs its class. Also
+    // capture the "default" ctor as the valid restore baseline (see the RAII).
+    std::optional<std::string> allocName = regalloc;
+    if (select)
+      allocName = "eudsl-python";
+    llvm::RegisterRegAlloc::FunctionPassCtor regAllocCtor = nullptr;
+    llvm::RegisterRegAlloc::FunctionPassCtor defaultRegAllocCtor = nullptr;
+    nb::type_object regAllocClass;
+    if (allocName) {
+      for (llvm::RegisterRegAlloc *node = llvm::RegisterRegAlloc::getList();
+           node; node = node->getNext()) {
+        if (node->getName() == *allocName)
+          regAllocCtor = node->getCtor();
+        if (node->getName() == "default")
+          defaultRegAllocCtor = node->getCtor();
+      }
+      if (!regAllocCtor)
+        throw std::runtime_error("unknown register allocator: " + *allocName);
+      regAllocClass = eudsl::regAllocClass(*allocName);
     }
 
     // Verify the hand-built MIR up front so malformed input (the prior PRs'
@@ -461,6 +498,59 @@ public:
       misched = schedCtor;
       eudsl::setActiveSchedClass(schedClass);
       restoreActiveClass.active = true;
+    }
+
+    // Select the register allocator by pointing RegisterRegAlloc's process-
+    // global default at the resolved ctor: TargetPassConfig::createRegAllocPass
+    // reads getDefault() when addPassesToEmitFile builds the pipeline below.
+    // Save/restore under the same GIL-serialized assumption as the options
+    // above. The restore value needs care: TargetPassConfig lazily inits
+    // getDefault() to useDefaultRegisterAllocator once per process (a
+    // once_flag). If our override is installed first, that init sees a non-null
+    // default and no-ops permanently, so a plain restore would put back null (a
+    // later default emit would then call a null ctor and crash). Restore to the
+    // captured "default" ctor whenever the saved default was null.
+    struct RestoreRegAlloc {
+      bool active = false;
+      llvm::RegisterRegAlloc::FunctionPassCtor value = nullptr;
+      ~RestoreRegAlloc() {
+        if (active)
+          llvm::RegisterRegAlloc::setDefault(value);
+      }
+    } restoreRegAlloc;
+    struct RestoreActiveRegAllocClass {
+      bool active = false;
+      ~RestoreActiveRegAllocClass() {
+        if (active)
+          eudsl::clearActiveRegAllocClass();
+      }
+    } restoreActiveRegAllocClass;
+    if (regAllocCtor) {
+      llvm::RegisterRegAlloc::FunctionPassCtor prev =
+          llvm::RegisterRegAlloc::getDefault();
+      restoreRegAlloc.value = prev ? prev : defaultRegAllocCtor;
+      restoreRegAlloc.active = true;
+      llvm::RegisterRegAlloc::setDefault(regAllocCtor);
+      if (regAllocClass.is_valid()) {
+        eudsl::setActiveRegAllocClass(regAllocClass);
+        restoreActiveRegAllocClass.active = true;
+      }
+    }
+
+    // Install the Python select callback for the "eudsl-python" allocator, if
+    // given, and clear it after the run so it never leaks into a later emit.
+    // The pass is constructed while addPassesToEmitFile builds the pipeline
+    // (this thread, under the GIL) and copies the callback then.
+    struct RestoreSelect {
+      bool active = false;
+      ~RestoreSelect() {
+        if (active)
+          eudsl::clearPendingSelectCallback();
+      }
+    } restoreSelect;
+    if (select) {
+      eudsl::setPendingSelectCallback(*select);
+      restoreSelect.active = true;
     }
 
     // Write straight into a SmallVector (raw_svector_ostream writes through, so
@@ -1275,12 +1365,18 @@ void populate_mir(nb::module_ &m) {
            "text.")
       .def(
           "emit_object", &MirModule::emitObject, "scheduler"_a = nb::none(),
+          "regalloc"_a = nb::none(), "select"_a = nb::none(),
           "Emit a relocatable object file for the built (already-selected) "
           "MIR by running the back half of codegen (regalloc, emission). "
           "Verifies the MIR first, raising if it is malformed. When "
           "`scheduler` names a registered MachineSchedStrategy (see "
           "register_scheduler), the pre-RA MachineScheduler runs it instead of "
-          "the target default; an unregistered name raises.");
+          "the target default; an unregistered name raises. When `regalloc` "
+          "names a registered allocator (a built-in, \"eudsl-python\", or a "
+          "register_regalloc name), it drives register allocation; an unknown "
+          "name raises. `select` is a one-shot callable driving the "
+          "\"eudsl-python\" allocator's selectOrSplit; regalloc and select are "
+          "mutually exclusive, and both are independent of scheduler.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the
