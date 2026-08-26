@@ -113,3 +113,27 @@ LLVM_PROFDATA="$(command -v llvm-profdata-18)" LLVM_COV="$(command -v llvm-cov-1
   COVERAGE_THRESHOLD=100 bash scripts/cpp_coverage.sh
 ```
 
+## Local incremental rebuilds: `cmake --build` does not update the imported module
+
+The editable install is configured with `editable.rebuild = false`, and the
+build writes the extension to its `LIBRARY_OUTPUT_DIRECTORY` (`src/llvm/`), while
+the editable finder imports `llvm` from the *installed* copy under
+`site-packages/llvm/` (`spec_from_file_location` resolves module paths against
+the finder's own dir, i.e. site-packages). So a bare
+`cmake --build build/<wheel-tag>` recompiles the `.so` into `src/llvm/` but
+`import llvm` keeps loading the stale site-packages copy — new bindings appear
+missing even though the build succeeded, and old ones linger.
+
+Two ways to pick up C++ changes:
+
+- Full reinstall (canonical): `LLVM_DIR=<distro>/lib/cmake/llvm python -m pip
+  install -e . --no-build-isolation` — reconfigures, rebuilds, and re-stages.
+- Fast loop: `cmake --build build/<wheel-tag>` then copy the rebuilt artifacts
+  into the import location, e.g.
+  `cp -R src/llvm/. "$(python -c 'import site;print(site.getsitepackages()[0])')/llvm/"`.
+
+Do not `rm` the site-packages `llvm/` directory to "clear the shadow": the finder
+serves the package from there, so removing it breaks `import llvm` until a
+reinstall or re-copy restores it.
+
+
