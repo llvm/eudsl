@@ -130,8 +130,11 @@ public:
     nb::gil_scoped_acquire gil;
     if (!eudsl::pendingCodegenError) {
       try {
-        auto [su, isTop] = nb::cast<std::pair<llvm::SUnit *, bool>>(
-            nb_trampoline.base().attr("pick_node")());
+        nb::object choice = nb_trampoline.base().attr("pick_node")();
+        // None signals "nothing ready" -- end scheduling (LLVM's nullptr).
+        if (choice.is_none())
+          return nullptr;
+        auto [su, isTop] = nb::cast<std::pair<llvm::SUnit *, bool>>(choice);
         isTopNode = isTop;
         dropFromShadow(su);
         return su;
@@ -337,6 +340,10 @@ void populate_python_codegen(nb::module_ &m) {
           "instr", [](llvm::SUnit &su) { return su.getInstr(); },
           nb::rv_policy::reference_internal,
           "The representative MachineInstr this unit wraps.");
+
+  // The scheduling DAG passed to initialize(dag). Opaque for now -- a strategy
+  // receives its nodes via release_top_node/release_bottom_node.
+  nb::class_<llvm::ScheduleDAGMI>(m, "ScheduleDAGMI");
 
   // The pre-RA MachineScheduler strategy interface, subclassable from Python.
   // Override initialize(dag), get_policy() -> MachineSchedPolicy,
