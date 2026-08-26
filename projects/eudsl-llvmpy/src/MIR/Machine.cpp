@@ -1413,8 +1413,10 @@ void populate_mir(nb::module_ &m) {
           "mutually exclusive. `regalloc` selects a registered register "
           "allocator by name (e.g. \"eudsl-python\") for the run; an unknown "
           "name raises. `select` is a Python callable that drives the eudsl "
-          "allocator's selectOrSplit: it receives the legal candidate physreg "
-          "ids as a list[int] and returns an id to assign or None to spill. "
+          "allocator's selectOrSplit: it receives the vreg's LiveInterval and "
+          "the legal candidate physreg ids as (live_interval, list[int]) and "
+          "returns an id to assign or None to spill; returning a value that is "
+          "neither raises. "
           "`regalloc` and `select` are mutually exclusive. `regalloc`/`select` "
           "are independent of `scheduler`/`pick`.");
 

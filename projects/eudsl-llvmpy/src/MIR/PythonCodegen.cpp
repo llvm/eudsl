@@ -36,6 +36,7 @@
 #include <llvm/Analysis/ProfileSummaryInfo.h>
 #include <llvm/CodeGen/CalcSpillWeights.h>
 #include <llvm/CodeGen/LiveDebugVariables.h>
+#include <llvm/CodeGen/LiveInterval.h>
 #include <llvm/CodeGen/LiveIntervals.h>
 #include <llvm/CodeGen/LiveRangeEdit.h>
 #include <llvm/CodeGen/LiveRegMatrix.h>
@@ -316,44 +317,57 @@ PyRegAlloc::selectOrSplit(const llvm::LiveInterval &VirtReg,
   auto Order =
       llvm::AllocationOrder::create(VirtReg.reg(), *VRM, RegClassInfo, Matrix);
 
-  if (selectCallback) {
-    // Marshal and dispatch under the GIL: building the candidate list and
-    // calling the callable both touch Python refcounts. Returning from inside
-    // this scope releases the GIL; the native fallback below does not need it.
-    nb::gil_scoped_acquire gil;
-    nb::list candidates;
-    llvm::SmallVector<llvm::MCRegister, 16> candidateRegs;
-    for (llvm::MCRegister PhysReg : Order) {
-      assert(PhysReg.isValid());
-      if (Matrix->checkInterference(VirtReg, PhysReg) ==
-          llvm::LiveRegMatrix::IK_Free) {
-        candidateRegs.push_back(PhysReg);
-        candidates.append(PhysReg.id());
-      }
-    }
-    nb::object choice = selectCallback(candidates);
-    unsigned chosenId = 0;
-    if (nb::try_cast<unsigned>(choice, chosenId)) {
-      // A chosen physreg id: honor it only if it is one of the presented
-      // candidates (the driver assigns it for us).
-      for (llvm::MCRegister PhysReg : candidateRegs) {
-        if (PhysReg.id() == chosenId)
-          return PhysReg;
-      }
-    } else if (choice.is_none()) {
-      return spillVirtReg(VirtReg, SplitVRegs);
-    }
-    // Uninterpretable return, or an id not among the candidates: fall through
-    // to the native policy so this call still returns a legal choice.
-  }
-
+  // The legal (non-interfering) candidates, in allocation order. Presented to
+  // the callback and reused as the native first-free fallback below.
+  llvm::SmallVector<llvm::MCRegister, 16> candidateRegs;
   for (llvm::MCRegister PhysReg : Order) {
     assert(PhysReg.isValid());
     if (Matrix->checkInterference(VirtReg, PhysReg) ==
-        llvm::LiveRegMatrix::IK_Free) {
-      return PhysReg;
+        llvm::LiveRegMatrix::IK_Free)
+      candidateRegs.push_back(PhysReg);
+  }
+
+  // Once a callback has stashed an error, stop invoking Python; the remaining
+  // selectOrSplit calls just assign first-free (or spill) so the required
+  // pipeline winds down to runCodegenPipeline's re-raise.
+  if (selectCallback && !eudsl::pendingCodegenError) {
+    // The GIL guard is intentionally outside the try: the catch stashes the
+    // exception with std::current_exception(), which for an nb::python_error
+    // touches Python refcounts and so must run while the GIL is held. Its
+    // construction does not raise, so nothing is lost by leaving it uncaught.
+    nb::gil_scoped_acquire gil;
+    try {
+      nb::list candidates;
+      for (llvm::MCRegister PhysReg : candidateRegs)
+        candidates.append(PhysReg.id());
+      nb::object choice =
+          selectCallback(nb::cast(const_cast<llvm::LiveInterval *>(&VirtReg),
+                                  nb::rv_policy::reference),
+                         candidates);
+      if (choice.is_none())
+        return spillVirtReg(VirtReg, SplitVRegs);
+      unsigned chosenId = 0;
+      if (nb::try_cast<unsigned>(choice, chosenId)) {
+        // A chosen physreg id: honor it only if it is one of the presented
+        // candidates (the driver assigns it for us).
+        for (llvm::MCRegister PhysReg : candidateRegs) {
+          if (PhysReg.id() == chosenId)
+            return PhysReg;
+        }
+      }
+      // Not None and not one of the presented candidates: an illegal choice.
+      throw nb::value_error("selectOrSplit returned a register that is not one "
+                            "of the legal candidates");
+    } catch (...) {
+      // Do not let the exception unwind through LLVM's -fno-exceptions frames;
+      // stash it and fall through to a legal native assignment so the pipeline
+      // winds down to runCodegenPipeline's re-raise.
+      eudsl::pendingCodegenError = std::current_exception();
     }
   }
+
+  if (!candidateRegs.empty())
+    return candidateRegs.front();
   return spillVirtReg(VirtReg, SplitVRegs);
 }
 
@@ -519,6 +533,24 @@ void populate_python_codegen(nb::module_ &m) {
           "instr", [](llvm::SUnit &su) { return su.getInstr(); },
           nb::rv_policy::reference_internal,
           "The representative MachineInstr this scheduling unit wraps.");
+
+  // llvm::LiveInterval -- the live range of the one virtual register the
+  // register allocator's selectOrSplit is assigning. A python `select` callback
+  // receives it alongside the legal candidate physregs so it can base its
+  // choice on the vreg's identity and spill cost. The accessors below are
+  // read-only.
+  nb::class_<llvm::LiveInterval>(m, "LiveInterval")
+      .def_prop_ro(
+          "reg", [](llvm::LiveInterval &li) { return li.reg().id(); },
+          "Id of the virtual register this live interval covers.")
+      .def_prop_ro(
+          "weight", [](llvm::LiveInterval &li) { return li.weight(); },
+          "The spill weight computed for this interval; a higher weight means "
+          "it is costlier to spill.")
+      .def_prop_ro(
+          "is_spillable",
+          [](llvm::LiveInterval &li) { return li.isSpillable(); },
+          "Whether this interval may be spilled (a finite spill weight).");
 
   m.def(
       "registered_schedulers",

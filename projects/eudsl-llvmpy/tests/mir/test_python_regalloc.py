@@ -15,14 +15,16 @@ is non-zero exactly when regalloc="eudsl-python" is selected and zero otherwise
 JIT-executed test additionally proves the allocated code stays correct.
 
 emit_object(select=<callable>) instead routes the allocator's selectOrSplit
-through a user Python callable: the callable receives the legal (non-interfering)
-candidate physregs for a virtual register as a list[int] of physreg ids and
-returns either an id from that set (assign it) or None (spill). This step assumes
-a well-behaved callback -- one that returns something uninterpretable falls back
-to the native first-free policy rather than raising. The callable appending to a
-list closed over by the test is the witness that Python (not the target default)
-actually drove selectOrSplit. select and regalloc name mutually exclusive ways of
-choosing the allocator; select is independent of the scheduler pick/scheduler.
+through a user Python callable: the callable receives the vreg's LiveInterval
+and the legal (non-interfering) candidate physregs for that virtual register as
+(live_interval, list[int] of physreg ids) and returns either an id from that set
+(assign it) or None (spill). A callable that raises, or returns a value that is
+neither None nor one of the presented candidate ids, has its Python exception
+propagated out of emit_object (stashed and re-raised after codegen winds down),
+rather than silently falling back. The callable appending to a list closed over
+by the test is the witness that Python (not the target default) actually drove
+selectOrSplit. select and regalloc name mutually exclusive ways of choosing the
+allocator; select is independent of the scheduler pick/scheduler.
 """
 
 import ctypes
@@ -265,13 +267,14 @@ def test_regalloc_and_scheduler_are_independent():
 
 def test_python_select_callback_invoked_and_emits_object():
     """emit_object(select=cb) routes selectOrSplit through the callable: it
-    receives the legal candidate physreg ids as a list[int] and returns the one
-    to assign. The callable records into `picks`, so a non-empty `picks`
-    witnesses that Python drove the allocator (semantics-preserving allocation
-    leaves no other trace); the emitted object is a well-formed ELF."""
+    receives the vreg's LiveInterval and the legal candidate physreg ids as a
+    list[int], and returns the one to assign. The callable records into `picks`,
+    so a non-empty `picks` witnesses that Python drove the allocator
+    (semantics-preserving allocation leaves no other trace); the emitted object
+    is a well-formed ELF."""
     picks = []
 
-    def cb(candidates):
+    def cb(live_interval, candidates):
         picks.append(list(candidates))
         return candidates[0]  # mimic the native first-free policy
 
@@ -291,6 +294,33 @@ def test_python_select_callback_invoked_and_emits_object():
     assert_no_leaks()
 
 
+def test_python_select_callback_receives_live_interval():
+    """The LiveInterval marshalled to the callback exposes read-only accessors:
+    the vreg id it covers (a virtual-register id, so nonzero once the
+    virtual-register flag bit is set), its spill weight (a finite, non-negative
+    float), and whether it is spillable (a bool)."""
+    seen = []
+
+    def cb(live_interval, candidates):
+        seen.append(
+            (live_interval.reg, live_interval.weight, live_interval.is_spillable)
+        )
+        return candidates[0]
+
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        mmi.emit_object(select=cb)
+        assert seen  # the callable ran and read the interval
+        for reg, weight, is_spillable in seen:
+            assert isinstance(reg, int) and reg > 0  # a real vreg id
+            assert isinstance(weight, float) and weight >= 0.0
+            assert isinstance(is_spillable, bool)
+    assert_no_leaks()
+
+
 def test_python_select_callback_spills_via_none():
     """A callable that returns None when no candidate is free signals a spill,
     running the allocator's native spill path; when a candidate is free it
@@ -299,7 +329,7 @@ def test_python_select_callback_spills_via_none():
     object is a well-formed ELF."""
     selects = []
 
-    def cb(candidates):
+    def cb(live_interval, candidates):
         selects.append(len(candidates))
         return candidates[0] if candidates else None
 
@@ -318,14 +348,16 @@ def test_python_select_callback_spills_via_none():
     assert_no_leaks()
 
 
-def test_python_select_callback_bad_return_falls_back():
-    """A well-behaved-only contract for this step: a callable that returns
-    something uninterpretable (an id not among the presented candidates) does not
-    raise -- selectOrSplit falls back to the native first-free policy so the run
-    still produces a legal, well-formed object."""
+def test_python_select_callback_illegal_return_raises():
+    """A callable that returns something that is neither None nor one of the
+    presented candidate physreg ids is a misbehaving callback: selectOrSplit
+    stashes a ValueError and re-raises it out of emit_object once the pipeline
+    winds down, rather than silently falling back. The interpreter survives (a
+    Python error, not a crash), and no Context/Module/callable leaks on the
+    stash path."""
     picks = []
 
-    def cb(candidates):
+    def cb(live_interval, candidates):
         picks.append(list(candidates))
         return 999999  # not one of the presented candidate physreg ids
 
@@ -334,10 +366,31 @@ def test_python_select_callback_bad_return_falls_back():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
-        obj = mmi.emit_object(select=cb)
-        assert picks  # the callable ran, its return was rejected
-        assert obj[:4] == b"\x7fELF"
-        assert b"add\x00" in obj
+        with pytest.raises(ValueError, match="not one of the legal candidates"):
+            mmi.emit_object(select=cb)
+        assert picks  # the callable ran before its return was rejected
+    assert_no_leaks()
+
+
+def test_python_select_callback_raise_propagates():
+    """A callable that raises surfaces as a Python exception out of emit_object
+    (the exception is stashed and re-raised after codegen winds down, never
+    thrown across LLVM's -fno-exceptions frames), and does not crash the
+    interpreter. No Context/Module/callable leaks on the stash path."""
+    picks = []
+
+    def cb(live_interval, candidates):
+        picks.append(len(candidates))
+        raise ValueError("boom")
+
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(ValueError, match="boom"):
+            mmi.emit_object(select=cb)
+        assert picks  # the callable ran and raised
     assert_no_leaks()
 
 
@@ -353,7 +406,7 @@ def test_select_and_pick_drive_one_emit():
         picks.append(len(ready))
         return ready[0]
 
-    def select_cb(candidates):
+    def select_cb(live_interval, candidates):
         selects.append(list(candidates))
         return candidates[0]
 
@@ -377,7 +430,7 @@ def test_regalloc_and_select_are_mutually_exclusive():
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         with pytest.raises(ValueError, match="regalloc"):
-            mmi.emit_object(regalloc="eudsl-python", select=lambda c: c[0])
+            mmi.emit_object(regalloc="eudsl-python", select=lambda li, c: c[0])
     assert_no_leaks()
 
 
@@ -388,7 +441,7 @@ def test_regalloc_and_select_are_mutually_exclusive():
 def test_jit_executes_python_selected_add():
     picks = []
 
-    def cb(candidates):
+    def cb(live_interval, candidates):
         picks.append(len(candidates))
         return candidates[0]
 
