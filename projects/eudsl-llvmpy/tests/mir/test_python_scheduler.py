@@ -150,3 +150,162 @@ def test_registered_strategy_emits_object():
         assert obj[:4] == b"\x7fELF"
         assert b"add\x00" in obj
     assert_no_leaks()
+
+
+def test_python_strategy_actually_drives_scheduling():
+    """A strategy recording into a list witnesses that Python drove
+    initialize/pick (semantics-preserving scheduling leaves no other trace)."""
+    trace = []
+
+    class Recording(_TopDownFirstReady):
+        def initialize(self, dag):
+            super().initialize(dag)
+            trace.append("init")
+
+        def pick_node(self):
+            trace.append("pick")
+            return super().pick_node()
+
+    mir.register_scheduler("t6-recording", Recording)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        obj = mmi.emit_object(scheduler="t6-recording")
+        assert "init" in trace and "pick" in trace
+        assert obj[:4] == b"\x7fELF"
+    assert_no_leaks()
+
+
+def test_two_strategies_coexist():
+    ran = {"a": 0, "b": 0}
+
+    class A(_TopDownFirstReady):
+        def pick_node(self):
+            ran["a"] += 1
+            return super().pick_node()
+
+    class B(_TopDownFirstReady):
+        def pick_node(self):
+            ran["b"] += 1
+            return super().pick_node()
+
+    mir.register_scheduler("t6-a", A)
+    mir.register_scheduler("t6-b", B)
+    assert "t6-a" in mir.registered_schedulers()
+    assert "t6-b" in mir.registered_schedulers()
+    for name, key in (("t6-a", "a"), ("t6-b", "b")):
+        other = "b" if key == "a" else "a"
+        before_other = ran[other]
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(mod, tm, "add")
+            _build_selected_add(mmi)
+            mmi.emit_object(scheduler=name)
+        assert ran[key] > 0  # this run's strategy ran
+        assert ran[other] == before_other  # the other did not
+    assert_no_leaks()
+
+
+def test_fresh_instance_per_function():
+    """The registry ctor constructs a fresh strategy instance per
+    MachineFunction (counted via the subclass __init__)."""
+    instances = []
+
+    class Counting(_TopDownFirstReady):
+        def __init__(self):
+            super().__init__()
+            instances.append(1)
+
+    mir.register_scheduler("t6-perfunc", Counting)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        mmi.emit_object(scheduler="t6-perfunc")
+    assert len(instances) == 1  # one MachineFunction -> one instance
+    assert_no_leaks()
+
+
+def test_pick_node_raise_propagates():
+    """A pick_node that raises surfaces as a Python exception out of emit_object
+    (stashed and re-raised after codegen winds down, never thrown across LLVM's
+    -fno-exceptions frames); the interpreter survives and nothing leaks."""
+
+    class Boom(_TopDownFirstReady):
+        def pick_node(self):
+            raise ValueError("boom")
+
+    mir.register_scheduler("t6-boom", Boom)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(ValueError, match="boom"):
+            mmi.emit_object(scheduler="t6-boom")
+    assert_no_leaks()
+
+
+def test_pick_node_bad_return_propagates():
+    """pick_node returning a non-(SUnit, bool) surfaces as a Python error, not a
+    crash: the trampoline's cast fails, is stashed, and re-raised."""
+
+    class BadReturn(_TopDownFirstReady):
+        def pick_node(self):
+            return 123  # not (SUnit, bool) and not None
+
+    mir.register_scheduler("t6-badret", BadReturn)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(Exception):
+            mmi.emit_object(scheduler="t6-badret")
+    assert_no_leaks()
+
+
+def test_initialize_raise_propagates():
+    """Every override is a stash site: a raise from initialize (not just
+    pick_node) is stashed and re-raised out of emit_object."""
+
+    class InitBoom(_TopDownFirstReady):
+        def initialize(self, dag):
+            raise ValueError("init-boom")
+
+    mir.register_scheduler("t6-initboom", InitBoom)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(ValueError, match="init-boom"):
+            mmi.emit_object(scheduler="t6-initboom")
+    assert_no_leaks()
+
+
+@pytest.mark.skipif(
+    not _IS_AARCH64,
+    reason="hand-built MIR is AArch64; executing it needs an AArch64 host",
+)
+def test_jit_executes_python_scheduled_add():
+    mir.register_scheduler("t6-jit", _TopDownFirstReady)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()  # host triple -> loadable in-process
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        obj = mmi.emit_object(scheduler="t6-jit")
+        j = jit.LLJIT()
+        j.add_object(obj)
+        add = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_int32)(
+            j.lookup("add")
+        )
+        assert add(2, 3) == 5
+        assert add(40, 2) == 42
+        del j
+    assert_no_leaks()

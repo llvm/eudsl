@@ -24,7 +24,6 @@
 #include <nanobind/trampoline.h>
 
 #include <algorithm>
-#include <atomic>
 #include <deque>
 #include <exception>
 #include <memory>
@@ -48,11 +47,6 @@ namespace {
 // registry ctor knows which class to instantiate per MachineFunction.
 // GIL-serialized, matching the process-global -misched handling in Machine.cpp.
 thread_local nb::object activeSchedClass;
-
-// Strategy instances constructed across all runs, so a test can assert one is
-// built per MachineFunction (scheduling is semantics-preserving, so the emitted
-// code alone cannot prove Python drove it).
-std::atomic<unsigned> schedInstanceCount{0};
 
 // C++ side of mir.MachineSchedStrategy. Each override forwards into the Python
 // object (nb_trampoline.base()) by name with the GIL held outside the try; a
@@ -136,24 +130,21 @@ public:
           return nullptr;
         auto [su, isTop] = nb::cast<std::pair<llvm::SUnit *, bool>>(choice);
         isTopNode = isTop;
-        dropFromShadow(su);
         return su;
       } catch (...) {
         eudsl::pendingCodegenError = std::current_exception();
       }
     }
-    // Stash path (or draining after a prior stash): return a still-ready node
-    // so the unskippable pipeline winds down to runCodegenPipeline's re-raise.
-    if (!shadowTop.empty()) {
+    // Stash path (or draining after a prior stash): return a still-ready,
+    // not-yet-scheduled node so the unskippable pipeline winds down to
+    // runCodegenPipeline's re-raise. A node released both top- and bottom-ready
+    // sits in both shadows, so skip any LLVM has already scheduled.
+    if (llvm::SUnit *su = popUnscheduled(shadowTop)) {
       isTopNode = true;
-      llvm::SUnit *su = shadowTop.front();
-      shadowTop.erase(shadowTop.begin());
       return su;
     }
-    if (!shadowBottom.empty()) {
+    if (llvm::SUnit *su = popUnscheduled(shadowBottom)) {
       isTopNode = false;
-      llvm::SUnit *su = shadowBottom.front();
-      shadowBottom.erase(shadowBottom.begin());
       return su;
     }
     return nullptr;
@@ -172,15 +163,16 @@ public:
   }
 
 private:
-  void dropFromShadow(llvm::SUnit *su) {
-    auto t = std::find(shadowTop.begin(), shadowTop.end(), su);
-    if (t != shadowTop.end()) {
-      shadowTop.erase(t);
-      return;
+  // Pop shadow entries until an unscheduled node is found (LLVM marks a node
+  // scheduled once picked), or the shadow drains.
+  static llvm::SUnit *popUnscheduled(std::vector<llvm::SUnit *> &shadow) {
+    while (!shadow.empty()) {
+      llvm::SUnit *su = shadow.front();
+      shadow.erase(shadow.begin());
+      if (!su->isScheduled)
+        return su;
     }
-    auto b = std::find(shadowBottom.begin(), shadowBottom.end(), su);
-    if (b != shadowBottom.end())
-      shadowBottom.erase(b);
+    return nullptr;
   }
 
   std::vector<llvm::SUnit *> shadowTop;
@@ -255,7 +247,6 @@ createRegisteredPyStrategy(llvm::MachineSchedContext *c) {
   if (!activeSchedClass.is_valid())
     return llvm::createSchedLive(c);
   // LCOV_EXCL_STOP
-  schedInstanceCount.fetch_add(1, std::memory_order_relaxed);
   auto strategy = std::make_unique<OwningPyStrategy>(activeSchedClass());
   auto *dag = new llvm::ScheduleDAGMILive(c, std::move(strategy));
   dag->addMutation(llvm::createCopyConstrainDAGMutation(dag->TII, dag->TRI));
@@ -301,13 +292,6 @@ nb::object schedulerClass(const std::string &name) {
 
 void setActiveSchedClass(nb::object cls) { activeSchedClass = std::move(cls); }
 void clearActiveSchedClass() { activeSchedClass = nb::object(); }
-
-unsigned schedInstanceCountValue() {
-  return schedInstanceCount.load(std::memory_order_relaxed);
-}
-void resetSchedInstanceCount() {
-  schedInstanceCount.store(0, std::memory_order_relaxed);
-}
 
 } // namespace eudsl
 
@@ -373,11 +357,4 @@ void populate_python_codegen(nb::module_ &m) {
       },
       "Names of the pre-RA MachineScheduler strategies registered in this "
       "extension, selectable via emit_object(scheduler=...).");
-
-  m.def("_sched_instance_count", &eudsl::schedInstanceCountValue,
-        "Number of Python strategy instances the scheduler registry ctor has "
-        "constructed; used by tests to verify per-MachineFunction "
-        "instantiation.");
-  m.def("_reset_sched_instance_count", &eudsl::resetSchedInstanceCount,
-        "Reset the scheduler instance counter to zero.");
 }

@@ -508,7 +508,16 @@ public:
     std::string diag;
     {
       eudsl::ScopedDiagnosticCapture capture(module_->getContext(), diag);
-      eudsl::runCodegenPipeline(*pm, *module_);
+      try {
+        eudsl::runCodegenPipeline(*pm, *module_);
+      } catch (...) {
+        // A scheduler override stashed a Python exception, now re-raised. The
+        // MMI wrapper already lives in `pm`, so consume into EmittedOwned (as
+        // the success path does) before propagating -- otherwise `state_` keeps
+        // a released (null) wrapper and `pm`/`info` would dangle.
+        state_ = EmittedOwned{std::move(pm), info};
+        throw;
+      }
     }
     // Consume the BuildOwned into an EmittedOwned: the released wrapper now
     // lives in `pm`, and a second emit_object sees EmittedOwned and refuses.
