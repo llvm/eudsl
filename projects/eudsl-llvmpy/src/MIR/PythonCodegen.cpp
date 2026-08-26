@@ -21,6 +21,15 @@ namespace eudsl {
 // selected.
 unsigned trivialSchedulerPickCount();
 void resetTrivialSchedulerPickCount();
+// Defined in TrivialRegAlloc.cpp: a diagnostic counter of selectOrSplit calls
+// made by the "eudsl-trivial" allocator, so a test can prove it actually runs
+// when selected (the fail-if-no-op witness that setDefault took effect).
+unsigned pyRegAllocSelectCount();
+void resetPyRegAllocSelectCount();
+// Also in TrivialRegAlloc.cpp: a diagnostic counter of the spill branch, so a
+// test can prove the allocator's spill path runs under high register pressure.
+unsigned pyRegAllocSpillCount();
+void resetPyRegAllocSpillCount();
 } // namespace eudsl
 
 void populate_python_codegen(nb::module_ &m) {
@@ -69,4 +78,16 @@ void populate_python_codegen(nb::module_ &m) {
   m.def("_reset_trivial_scheduler_pick_count",
         &eudsl::resetTrivialSchedulerPickCount,
         "Reset the trivial MachineScheduler pickNode counter to zero.");
+  m.def("_regalloc_select_count", &eudsl::pyRegAllocSelectCount,
+        "Number of selectOrSplit calls the trivial register allocator has "
+        "made; used by tests to verify the allocator actually runs when "
+        "selected via emit_object(regalloc=\"eudsl-trivial\").");
+  m.def("_reset_regalloc_select_count", &eudsl::resetPyRegAllocSelectCount,
+        "Reset the trivial register allocator selectOrSplit counter to zero.");
+  m.def("_regalloc_spill_count", &eudsl::pyRegAllocSpillCount,
+        "Number of times the trivial register allocator took its spill branch; "
+        "used by a test to verify the spill path runs under high register "
+        "pressure.");
+  m.def("_reset_regalloc_spill_count", &eudsl::resetPyRegAllocSpillCount,
+        "Reset the trivial register allocator spill counter to zero.");
 }

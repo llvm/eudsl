@@ -138,6 +138,7 @@ nanobind_add_module(eudslllvm_ext
   src/IR/Intrinsics.cpp
   src/MIR/Machine.cpp
   src/MIR/PythonCodegen.cpp
+  src/MIR/TrivialRegAlloc.cpp
   src/MIR/TrivialScheduler.cpp
 )
 

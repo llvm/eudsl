@@ -19,6 +19,7 @@
 #include <llvm/CodeGen/MachinePassRegistry.h>
 #include <llvm/CodeGen/MachineRegisterInfo.h>
 #include <llvm/CodeGen/MachineScheduler.h>
+#include <llvm/CodeGen/RegAllocRegistry.h>
 #include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetOpcodes.h>
 #include <llvm/CodeGen/TargetPassConfig.h>
@@ -367,9 +368,15 @@ public:
   // of the target's default; an unregistered name raises. When `pick` is a
   // Python callable, the "python" strategy is selected instead and routes each
   // pickNode choice through the callable (see PyMachineSchedStrategy);
-  // `scheduler` and `pick` are mutually exclusive.
+  // `scheduler` and `pick` are mutually exclusive. When `regalloc` names a
+  // registered RegisterRegAlloc allocator, RegisterRegAlloc's default is
+  // pointed at it (via setDefault) for the run so the codegen pipeline
+  // allocates with it instead of the target default; an unregistered name
+  // raises. `regalloc` is independent of `scheduler`/`pick` -- a caller may set
+  // both.
   nb::bytes emitObject(std::optional<std::string> scheduler,
-                       std::optional<nb::callable> pick) {
+                       std::optional<nb::callable> pick,
+                       std::optional<std::string> regalloc) {
     if (scheduler && pick) {
       throw nb::value_error(
           "emit_object accepts at most one of scheduler= and pick=");
@@ -403,6 +410,28 @@ public:
       }
       if (!schedCtor)
         throw std::runtime_error("unknown scheduler: " + *schedName);
+    }
+
+    // Resolve the requested register allocator against the RegisterRegAlloc
+    // registry the same way (walking its list by name), before touching codegen
+    // state so an unknown name fails cleanly. The registry holds the allocator
+    // pass constructors; a resolved one is installed as RegisterRegAlloc's
+    // default below so TargetPassConfig::createRegAllocPass picks it up. Also
+    // capture the ctor registered under "default" (LLVM's
+    // useDefaultRegisterAllocator sentinel): it is the valid baseline to
+    // restore to (see the RAII below).
+    llvm::RegisterRegAlloc::FunctionPassCtor regAllocCtor = nullptr;
+    llvm::RegisterRegAlloc::FunctionPassCtor defaultRegAllocCtor = nullptr;
+    if (regalloc) {
+      for (llvm::RegisterRegAlloc *node = llvm::RegisterRegAlloc::getList();
+           node; node = node->getNext()) {
+        if (node->getName() == *regalloc)
+          regAllocCtor = node->getCtor();
+        if (node->getName() == "default")
+          defaultRegAllocCtor = node->getCtor();
+      }
+      if (!regAllocCtor)
+        throw std::runtime_error("unknown register allocator: " + *regalloc);
     }
 
     // Verify the hand-built MIR up front so malformed input (the prior PRs'
@@ -476,6 +505,39 @@ public:
       restoreSched.opt = &misched;
       restoreSched.value = misched;
       misched = schedCtor;
+    }
+
+    // Select the register allocator by pointing RegisterRegAlloc's process-
+    // global default at the resolved constructor:
+    // TargetPassConfig::createRegAllocPass reads getDefault() when
+    // addPassesToEmitFile builds the pipeline below, so this must be in effect
+    // then. Save and restore the previous default under the same GIL-serialized
+    // assumption as the options above. With no allocator requested the default
+    // is left untouched so the target's choice stands.
+    //
+    // The restore value needs care: TargetPassConfig lazily initializes
+    // getDefault() to useDefaultRegisterAllocator exactly once per process
+    // (guarded by a once_flag). If our override is installed before that lazy
+    // init fires, the init sees a non-null default and no-ops -- permanently --
+    // so a plain save/restore would put back the pre-override value, which is
+    // null on a fresh process, and a later default emit would call that null
+    // ctor and crash. Restore to the captured "default" ctor
+    // (useDefaultRegisterAllocator) whenever the saved default was null, which
+    // is exactly the value the lazy init would otherwise have set.
+    struct RestoreRegAlloc {
+      bool active = false;
+      llvm::RegisterRegAlloc::FunctionPassCtor value = nullptr;
+      ~RestoreRegAlloc() {
+        if (active)
+          llvm::RegisterRegAlloc::setDefault(value);
+      }
+    } restoreRegAlloc;
+    if (regAllocCtor) {
+      llvm::RegisterRegAlloc::FunctionPassCtor prev =
+          llvm::RegisterRegAlloc::getDefault();
+      restoreRegAlloc.value = prev ? prev : defaultRegAllocCtor;
+      restoreRegAlloc.active = true;
+      llvm::RegisterRegAlloc::setDefault(regAllocCtor);
     }
 
     // Install the Python pick callback for the "python" strategy, if one was
@@ -1300,7 +1362,7 @@ void populate_mir(nb::module_ &m) {
            "text.")
       .def(
           "emit_object", &MirModule::emitObject, "scheduler"_a = nb::none(),
-          "pick"_a = nb::none(),
+          "pick"_a = nb::none(), "regalloc"_a = nb::none(),
           "Emit a relocatable object file for the built (already-selected) "
           "MIR by running the back half of codegen (regalloc, emission). "
           "Verifies the MIR first, raising if it is malformed. `scheduler` "
@@ -1308,7 +1370,9 @@ void populate_mir(nb::module_ &m) {
           "unknown name raises. `pick` is a Python callable that drives the "
           "scheduler's pickNode: it receives the ready SUnits as a list[SUnit] "
           "and returns the one to schedule next. `scheduler` and `pick` are "
-          "mutually exclusive.");
+          "mutually exclusive. `regalloc` selects a registered register "
+          "allocator by name (e.g. \"eudsl-trivial\") for the run; an unknown "
+          "name raises. `regalloc` is independent of `scheduler`/`pick`.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the
