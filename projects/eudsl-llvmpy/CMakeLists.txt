@@ -37,6 +37,18 @@ include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
+# The prebuilt LLVM is built with assertions enabled, so its ScheduleDAG/SUnit
+# (and similar) classes carry extra "#ifndef NDEBUG" members. A Release build
+# here defines NDEBUG and would give those shared classes a smaller layout, so
+# instantiating LLVM's inline templates (e.g. createSchedLive<>) emits an
+# ABI-incompatible copy the linker coalesces with LLVM's -- corrupting codegen.
+# Undefine NDEBUG to match the distro's layout. Gated on the distro's assertion
+# setting (a no-assertions release build must keep NDEBUG), and applied in both
+# the standalone and add_subdirectory (umbrella) builds.
+if(LLVM_ENABLE_ASSERTIONS)
+  add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:-UNDEBUG>)
+endif()
+
 # C++ source coverage (llvm-cov). When ON, the extension is built with
 # instrumentation; scripts/cpp_coverage.sh runs the test suite (which imports
 # the .so) under LLVM_PROFILE_FILE, merges the profraw, and enforces a
@@ -125,6 +137,7 @@ nanobind_add_module(eudslllvm_ext
   src/IR/JIT.cpp
   src/IR/Intrinsics.cpp
   src/MIR/Machine.cpp
+  src/MIR/PythonCodegen.cpp
 )
 
 set(eudslllvm_ext_libs
