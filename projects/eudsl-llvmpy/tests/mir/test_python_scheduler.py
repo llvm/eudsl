@@ -127,7 +127,6 @@ def test_register_scheduler_missing_method_raises():
         mir.register_scheduler("t4-incomplete", Incomplete)
 
 
-
 def test_unknown_scheduler_name_raises():
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
@@ -406,9 +405,7 @@ def test_sunit_accessors_readable():
             if not self.q:
                 return None
             su = self.q[0]
-            seen.append(
-                (su.node_num, su.is_top_ready, su.is_bottom_ready, su.instr)
-            )
+            seen.append((su.node_num, su.is_top_ready, su.is_bottom_ready, su.instr))
             return self.q.pop(0), True
 
     mir.register_scheduler("t9-fields", ReadsFields)
