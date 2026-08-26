@@ -30,6 +30,7 @@ if(EUDSLLLVM_STANDALONE_BUILD)
 
   set(LLVM_RUNTIME_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/bin)
   list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+  include(HandleLLVMOptions)
   include(AddLLVM)
 endif()
 
@@ -125,6 +126,7 @@ nanobind_add_module(eudslllvm_ext
   src/IR/JIT.cpp
   src/IR/Intrinsics.cpp
   src/MIR/Machine.cpp
+  src/MIR/PythonCodegen.cpp
 )
 
 set(eudslllvm_ext_libs

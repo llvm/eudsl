@@ -10,11 +10,28 @@
 #include <llvm/IR/DiagnosticInfo.h>
 #include <llvm/IR/DiagnosticPrinter.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <exception>
 #include <string>
 
 namespace eudsl {
+
+extern thread_local std::exception_ptr pendingCodegenError;
+
+// Run a codegen pass manager, then re-raise any exception a scheduler override
+// stashed during the run (before the caller inspects captured diagnostics).
+inline void runCodegenPipeline(llvm::legacy::PassManager &pm, llvm::Module &m) {
+  pendingCodegenError = nullptr;
+  pm.run(m);
+  if (pendingCodegenError) {
+    std::exception_ptr e = pendingCodegenError;
+    pendingCodegenError = nullptr;
+    std::rethrow_exception(e);
+  }
+}
 
 // MIR parsing and codegen report failures through LLVMContext::diagnose --
 // their return values are only a bare success/failure bit, so the rich reason

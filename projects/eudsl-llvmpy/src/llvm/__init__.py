@@ -21,3 +21,6 @@ from . import (
 from .dsl.values import install_value_casters as _install_value_casters
 
 _install_value_casters()
+
+# Attaches mir.ReadyQueueStrategy onto the mir submodule.
+from . import mir_strategies as _mir_strategies  # noqa: F401

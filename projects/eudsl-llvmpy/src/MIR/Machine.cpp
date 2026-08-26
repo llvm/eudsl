@@ -17,6 +17,7 @@
 #include <llvm/CodeGen/MachineModuleInfo.h>
 #include <llvm/CodeGen/MachineOperand.h>
 #include <llvm/CodeGen/MachineRegisterInfo.h>
+#include <llvm/CodeGen/MachineScheduler.h>
 #include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetOpcodes.h>
 #include <llvm/CodeGen/TargetPassConfig.h>
@@ -40,7 +41,9 @@
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
 
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
+#include <nanobind/stl/string.h>
 #include <nanobind/stl/variant.h>
 
 #include <memory>
@@ -48,6 +51,20 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+namespace eudsl {
+// Defined in PythonCodegen.cpp: the class registered under a scheduler name (an
+// invalid object if the name was not registered via register_scheduler), the
+// shared MachineSchedRegistry ctor those names share, and install/clear the
+// per-thread active class the ctor reads while the pipeline runs.
+nb::type_object schedulerClass(const std::string &name);
+llvm::MachineSchedRegistry::ScheduleDAGCtor registeredSchedCtor();
+void setActiveSchedClass(nb::type_object cls);
+void clearActiveSchedClass();
+} // namespace eudsl
+
+// Defined in PythonCodegen.cpp.
+void populate_python_codegen(nb::module_ &m);
 
 namespace {
 
@@ -351,7 +368,7 @@ public:
   // BuildOwned is consumed into an EmittedOwned, so "build-path only" and the
   // one-shot are enforced by the variant's active alternative rather than a
   // pair of runtime flags.
-  nb::bytes emitObject() {
+  nb::bytes emitObject(std::optional<std::string> scheduler) {
     if (std::holds_alternative<EmittedOwned>(state_))
       throw std::runtime_error("object already emitted");
     BuildOwned *build = std::get_if<BuildOwned>(&state_);
@@ -361,6 +378,15 @@ public:
     }
     llvm::TargetMachine *tm = build->tm;
     llvm::MachineModuleInfo *info = &build->mmiwp->getMMI();
+
+    llvm::MachineSchedRegistry::ScheduleDAGCtor schedCtor = nullptr;
+    nb::type_object schedClass;
+    if (scheduler) {
+      schedClass = eudsl::schedulerClass(*scheduler);
+      if (!schedClass.is_valid())
+        throw std::runtime_error("unknown scheduler: " + *scheduler);
+      schedCtor = eudsl::registeredSchedCtor();
+    }
 
     // Verify the hand-built MIR up front so malformed input (the prior PRs'
     // unchecked primitives can produce it: bogus properties, undefined vregs,
@@ -404,6 +430,39 @@ public:
     } restore{startAfter, saved};
     startAfter = "finalize-isel";
 
+    using SchedCtor = llvm::MachineSchedRegistry::ScheduleDAGCtor;
+    using SchedOpt =
+        llvm::cl::opt<SchedCtor, false,
+                      llvm::RegisterPassParser<llvm::MachineSchedRegistry>>;
+    struct RestoreSched {
+      SchedOpt *opt = nullptr;
+      SchedCtor value = nullptr;
+      ~RestoreSched() {
+        if (opt)
+          *opt = value;
+      }
+    } restoreSched;
+    struct RestoreActiveClass {
+      bool active = false;
+      ~RestoreActiveClass() {
+        if (active)
+          eudsl::clearActiveSchedClass();
+      }
+    } restoreActiveClass;
+    if (schedCtor) {
+      auto mischedIt = opts.find("misched");
+      // LCOV_EXCL_START -- misched is always registered by codegen
+      if (mischedIt == opts.end())
+        throw std::runtime_error("the -misched option is not registered");
+      // LCOV_EXCL_STOP
+      auto &misched = *static_cast<SchedOpt *>(mischedIt->second);
+      restoreSched.opt = &misched;
+      restoreSched.value = misched;
+      misched = schedCtor;
+      eudsl::setActiveSchedClass(schedClass);
+      restoreActiveClass.active = true;
+    }
+
     // Write straight into a SmallVector (raw_svector_ostream writes through, so
     // no deferred flush surprises when `pm` outlives here).
     llvm::SmallVector<char, 0> buf;
@@ -432,11 +491,22 @@ public:
     }
     // A codegen pass reports failure through the context diagnostic handler
     // (DS_Error -> stderr + exit under the default handler), not pm->run()'s
-    // value; capture it so it surfaces as an exception.
+    // value; capture it so it surfaces as an exception. runCodegenPipeline
+    // re-raises any Python exception a scheduler override stashed during the
+    // run.
     std::string diag;
     {
       eudsl::ScopedDiagnosticCapture capture(module_->getContext(), diag);
-      pm->run(*module_);
+      try {
+        eudsl::runCodegenPipeline(*pm, *module_);
+      } catch (...) {
+        // A scheduler override stashed a Python exception, now re-raised. The
+        // MMI wrapper already lives in `pm`, so consume into EmittedOwned (as
+        // the success path does) before propagating -- otherwise `state_` keeps
+        // a released (null) wrapper and `pm`/`info` would dangle.
+        state_ = EmittedOwned{std::move(pm), info};
+        throw;
+      }
     }
     // Consume the BuildOwned into an EmittedOwned: the released wrapper now
     // lives in `pm`, and a second emit_object sees EmittedOwned and refuses.
@@ -1203,10 +1273,14 @@ void populate_mir(nb::module_ &m) {
       .def("to_mir", &MirModule::toMIR,
            "Serialize the whole module (IR block + machine functions) as .mir "
            "text.")
-      .def("emit_object", &MirModule::emitObject,
-           "Emit a relocatable object file for the built (already-selected) "
-           "MIR by running the back half of codegen (regalloc, emission). "
-           "Verifies the MIR first, raising if it is malformed.");
+      .def(
+          "emit_object", &MirModule::emitObject, "scheduler"_a = nb::none(),
+          "Emit a relocatable object file for the built (already-selected) "
+          "MIR by running the back half of codegen (regalloc, emission). "
+          "Verifies the MIR first, raising if it is malformed. When "
+          "`scheduler` names a registered MachineSchedStrategy (see "
+          "register_scheduler), the pre-RA MachineScheduler runs it instead of "
+          "the target default; an unregistered name raises.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the
@@ -1712,4 +1786,6 @@ void populate_mir(nb::module_ &m) {
       },
       nb::rv_policy::reference,
       "The innermost MachineIRBuilder on the thread-local stack.");
+
+  populate_python_codegen(m);
 }
