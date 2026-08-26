@@ -53,11 +53,13 @@
 #include <vector>
 
 namespace eudsl {
-// Defined in PythonCodegen.cpp: the Python class registered under a scheduler
-// name (empty object if none), and install/clear the per-thread active class
-// the shared registry ctor reads while the pipeline runs.
-nb::object schedulerClass(const std::string &name);
-void setActiveSchedClass(nb::object cls);
+// Defined in PythonCodegen.cpp: the class registered under a scheduler name (an
+// invalid object if the name was not registered via register_scheduler), the
+// shared MachineSchedRegistry ctor those names share, and install/clear the
+// per-thread active class the ctor reads while the pipeline runs.
+nb::type_object schedulerClass(const std::string &name);
+llvm::MachineSchedRegistry::ScheduleDAGCtor registeredSchedCtor();
+void setActiveSchedClass(nb::type_object cls);
 void clearActiveSchedClass();
 } // namespace eudsl
 
@@ -374,25 +376,18 @@ public:
     llvm::TargetMachine *tm = build->tm;
     llvm::MachineModuleInfo *info = &build->mmiwp->getMMI();
 
-    // Resolve the requested scheduler against the MachineSchedRegistry before
-    // touching codegen state so an unknown name fails cleanly.
-    // register_scheduler added a node per name sharing the
-    // createRegisteredPyStrategy ctor; below we point -misched at that ctor and
-    // install the run's active class.
+    // Resolve the requested scheduler against the strategies registered via
+    // register_scheduler (not the whole MachineSchedRegistry, which also holds
+    // LLVM's built-ins) so an unknown -- or built-in -- name fails cleanly
+    // before any codegen state is touched. All registered names share the
+    // createRegisteredPyStrategy ctor, which -misched is pointed at below.
     llvm::MachineSchedRegistry::ScheduleDAGCtor schedCtor = nullptr;
-    nb::object schedClass;
+    nb::type_object schedClass;
     if (scheduler) {
-      for (llvm::MachineSchedRegistry *node =
-               llvm::MachineSchedRegistry::getList();
-           node; node = node->getNext()) {
-        if (node->getName() == *scheduler) {
-          schedCtor = node->getCtor();
-          break;
-        }
-      }
-      if (!schedCtor)
-        throw std::runtime_error("unknown scheduler: " + *scheduler);
       schedClass = eudsl::schedulerClass(*scheduler);
+      if (!schedClass.is_valid())
+        throw std::runtime_error("unknown scheduler: " + *scheduler);
+      schedCtor = eudsl::registeredSchedCtor();
     }
 
     // Verify the hand-built MIR up front so malformed input (the prior PRs'

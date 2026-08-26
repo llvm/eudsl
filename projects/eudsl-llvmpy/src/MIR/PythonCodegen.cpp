@@ -45,7 +45,7 @@ namespace {
 // (under the GIL) before the pipeline runs and cleared after, so the shared
 // registry ctor knows which class to instantiate per MachineFunction.
 // GIL-serialized, matching the process-global -misched handling in Machine.cpp.
-thread_local nb::object activeSchedClass;
+thread_local nb::type_object activeSchedClass;
 
 // C++ side of mir.MachineSchedStrategy. Each override forwards into the Python
 // object (nb_trampoline.base()) by name with the GIL held outside the try; a
@@ -244,27 +244,42 @@ createRegisteredPyStrategy(llvm::MachineSchedContext *c) {
   if (!activeSchedClass.is_valid())
     return llvm::createSchedLive(c);
   // LCOV_EXCL_STOP
-  auto strategy = std::make_unique<OwningPyStrategy>(activeSchedClass());
-  auto *dag = new llvm::ScheduleDAGMILive(c, std::move(strategy));
-  dag->addMutation(llvm::createCopyConstrainDAGMutation(dag->TII, dag->TRI));
-  return dag;
+  try {
+    auto strategy = std::make_unique<OwningPyStrategy>(activeSchedClass());
+    auto *dag = new llvm::ScheduleDAGMILive(c, std::move(strategy));
+    dag->addMutation(llvm::createCopyConstrainDAGMutation(dag->TII, dag->TRI));
+    return dag;
+  } catch (...) {
+    // Constructing the strategy runs the subclass __init__, which can raise.
+    // This ctor is called from inside pm.run (libLLVMCodeGen, -fno-exceptions),
+    // so stash the error and wind down with the default DAG; runCodegenPipeline
+    // re-raises after the run.
+    eudsl::pendingCodegenError = std::current_exception();
+    return llvm::createSchedLive(c);
+  }
 }
 
 } // namespace
 
 namespace eudsl {
 
-// Validate that cls defines the required methods, record it, and (if new) add a
-// MachineSchedRegistry node so -misched / the pipeline can select it by name.
-// Re-registering a name swaps the class.
-void registerScheduler(const std::string &name, nb::object cls) {
+// Validate that cls subclasses MachineSchedStrategy and defines the required
+// methods, record it, and (if new) add a MachineSchedRegistry node so the
+// pipeline can select it by name. Re-registering a name swaps the class.
+void registerScheduler(const std::string &name, nb::type_object cls) {
+  if (PyObject_IsSubclass(cls.ptr(),
+                          nb::type<llvm::MachineSchedStrategy>().ptr()) != 1) {
+    throw nb::type_error(
+        "scheduler class must subclass mir.MachineSchedStrategy");
+  }
   static const char *required[] = {"initialize",       "get_policy",
                                    "pick_node",        "sched_node",
                                    "release_top_node", "release_bottom_node"};
   for (const char *method : required) {
-    if (!nb::hasattr(cls, method))
+    if (!nb::hasattr(cls, method)) {
       throw nb::type_error(
           (std::string("scheduler class must define ") + method).c_str());
+    }
   }
   nb::dict classes = schedulerClasses();
   if (!classes.contains(name.c_str())) {
@@ -273,22 +288,28 @@ void registerScheduler(const std::string &name, nb::object cls) {
     schedRegistryNodes().push_back(std::make_unique<llvm::MachineSchedRegistry>(
         cname, cname, createRegisteredPyStrategy));
   }
-  classes[name.c_str()] = std::move(cls);
+  classes[name.c_str()] = cls;
 }
 
-// The class registered under `name`, or an empty object.
-nb::object schedulerClass(const std::string &name) {
+// The class registered under `name`, or an invalid object if `name` was not
+// registered via register_scheduler.
+nb::type_object schedulerClass(const std::string &name) {
   nb::dict classes = schedulerClasses();
   if (classes.contains(name.c_str()))
-    return classes[name.c_str()];
-  // LCOV_EXCL_START -- emit_object only calls this after resolving the name in
-  // the MachineSchedRegistry, and register_scheduler adds both together.
-  return nb::object();
-  // LCOV_EXCL_STOP
+    return nb::borrow<nb::type_object>(classes[name.c_str()]);
+  return nb::type_object();
 }
 
-void setActiveSchedClass(nb::object cls) { activeSchedClass = std::move(cls); }
-void clearActiveSchedClass() { activeSchedClass = nb::object(); }
+// The ctor every register_scheduler name shares, so emit_object can point
+// -misched at it without walking the registry.
+llvm::MachineSchedRegistry::ScheduleDAGCtor registeredSchedCtor() {
+  return createRegisteredPyStrategy;
+}
+
+void setActiveSchedClass(nb::type_object cls) {
+  activeSchedClass = std::move(cls);
+}
+void clearActiveSchedClass() { activeSchedClass = nb::type_object(); }
 
 } // namespace eudsl
 
@@ -345,13 +366,9 @@ void populate_python_codegen(nb::module_ &m) {
   m.def(
       "registered_schedulers",
       []() {
-        std::vector<std::string> names;
-        for (llvm::MachineSchedRegistry *node =
-                 llvm::MachineSchedRegistry::getList();
-             node; node = node->getNext())
-          names.emplace_back(node->getName().str());
-        return names;
+        return std::vector<std::string>(schedNames().begin(),
+                                        schedNames().end());
       },
-      "Names of the pre-RA MachineScheduler strategies registered in this "
-      "extension, selectable via emit_object(scheduler=...).");
+      "Names registered via register_scheduler, selectable with "
+      "emit_object(scheduler=...).");
 }

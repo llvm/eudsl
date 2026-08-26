@@ -22,8 +22,8 @@ namespace eudsl {
 // A Python exception raised in a scheduler override is stashed here rather than
 // thrown across llvm::legacy::PassManager::run: libLLVMCodeGen is
 // -fno-exceptions, so unwinding those frames std::terminates. Thread-local;
-// defined once in PythonCodegen.cpp (an inline thread_local would duplicate its
-// TLS init in every including TU).
+// declared extern with a single definition in PythonCodegen.cpp so there is one
+// TLS object and no per-TU TLS-init wrapper.
 extern thread_local std::exception_ptr pendingCodegenError;
 
 // Run a codegen pass manager, then re-raise any exception a scheduler override

@@ -133,7 +133,7 @@ def test_unknown_scheduler_name_raises():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
-        with pytest.raises(RuntimeError, match="scheduler"):
+        with pytest.raises(RuntimeError, match="unknown scheduler"):
             mmi.emit_object(scheduler="does-not-exist")
     assert_no_leaks()
 
@@ -210,22 +210,25 @@ def test_two_strategies_coexist():
 
 def test_fresh_instance_per_function():
     """The registry ctor constructs a fresh strategy instance per
-    MachineFunction (counted via the subclass __init__)."""
+    MachineFunction, not a reused singleton. Two emissions (each with one
+    MachineFunction) must construct two *distinct* instances."""
     instances = []
 
     class Counting(_TopDownFirstReady):
         def __init__(self):
             super().__init__()
-            instances.append(1)
+            instances.append(self)
 
     mir.register_scheduler("t6-perfunc", Counting)
-    with ir.Context() as ctx:
-        mod = ir.Module("m", ctx)
-        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
-        mmi = mir.create_machine_function(mod, tm, "add")
-        _build_selected_add(mmi)
-        mmi.emit_object(scheduler="t6-perfunc")
-    assert len(instances) == 1  # one MachineFunction -> one instance
+    for _ in range(2):
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(mod, tm, "add")
+            _build_selected_add(mmi)
+            mmi.emit_object(scheduler="t6-perfunc")
+    assert len(instances) == 2  # one instance per MachineFunction emitted
+    assert instances[0] is not instances[1]  # fresh, not a cached singleton
     assert_no_leaks()
 
 
@@ -263,7 +266,7 @@ def test_pick_node_bad_return_propagates():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError, match="bad_cast"):
             mmi.emit_object(scheduler="t6-badret")
     assert_no_leaks()
 
@@ -362,14 +365,33 @@ class _BottomUpStrategy(mir.MachineSchedStrategy):
         pass
 
 
-def test_bottom_up_strategy_emits_valid_object():
-    mir.register_scheduler("t8-bottomup", _BottomUpStrategy)
+def test_bottom_up_strategy_drives_scheduling():
+    """Witness that Python drove a *bottom-up* schedule: the recording subclass
+    sees nodes via release_bottom_node and returns them with is_top=False (a path
+    the top-down ReadyQueueStrategy helper cannot reach)."""
+    released_bottom = []
+    picks = []
+
+    class Recording(_BottomUpStrategy):
+        def release_bottom_node(self, su):
+            released_bottom.append(su.node_num)
+            super().release_bottom_node(su)
+
+        def pick_node(self):
+            choice = super().pick_node()
+            if choice is not None:
+                picks.append(choice[1])  # is_top_node
+            return choice
+
+    mir.register_scheduler("t8-bottomup", Recording)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         obj = mmi.emit_object(scheduler="t8-bottomup")
+        assert released_bottom  # nodes arrived via the bottom-ready path
+        assert picks and all(is_top is False for is_top in picks)  # is_top=False
         assert obj[:4] == b"\x7fELF"
     assert_no_leaks()
 
@@ -446,9 +468,10 @@ def test_override_raise_propagates(method):
     assert_no_leaks()
 
 
-def test_bottom_up_pick_raise_drains_bottom_shadow():
-    """A bottom-up strategy whose pick_node raises: the fallback drains the top
-    shadow, then the bottom shadow (the is_top=False fallback path)."""
+def test_bottom_up_pick_raise_propagates():
+    """A bottom-up strategy whose pick_node raises: the exception is stashed and
+    re-raised, and the single shadow ready-set drains (returning still-ready
+    nodes with is_top from isTopReady()) so the pipeline winds down cleanly."""
 
     class BottomBoom(_BottomUpStrategy):
         def pick_node(self):
@@ -490,4 +513,82 @@ def test_reregister_replaces_scheduler():
         _build_selected_add(mmi)
         mmi.emit_object(scheduler="t9-dup")
     assert "second" in picks and "first" not in picks
+    assert_no_leaks()
+
+
+def test_register_non_subclass_raises():
+    """A class with the right methods but not subclassing MachineSchedStrategy is
+    rejected (it would otherwise reach nb::inst_ptr on a non-bound object)."""
+
+    class NotAStrategy:  # duck-typed, but not a mir.MachineSchedStrategy
+        def initialize(self, dag): ...
+        def get_policy(self): ...
+        def pick_node(self): ...
+        def sched_node(self, su, is_top): ...
+        def release_top_node(self, su): ...
+        def release_bottom_node(self, su): ...
+
+    with pytest.raises(TypeError, match="subclass"):
+        mir.register_scheduler("t10-notsub", NotAStrategy)
+
+
+def test_raising_init_propagates():
+    """A subclass whose __init__ raises surfaces as a Python exception out of
+    emit_object rather than crashing across LLVM's -fno-exceptions frames (the
+    strategy-construction path is a stash site too)."""
+
+    class InitBoom(_TopDownFirstReady):
+        def __init__(self):
+            raise ValueError("ctor-boom")
+
+    mir.register_scheduler("t10-ctorboom", InitBoom)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(ValueError, match="ctor-boom"):
+            mmi.emit_object(scheduler="t10-ctorboom")
+    assert_no_leaks()
+
+
+def test_get_policy_wrong_type_propagates():
+    """get_policy returning a non-MachineSchedPolicy fails the trampoline cast;
+    the error is stashed and re-raised out of emit_object."""
+
+    class BadPolicy(_TopDownFirstReady):
+        def get_policy(self):
+            return 123  # not a MachineSchedPolicy
+
+    mir.register_scheduler("t10-badpolicy", BadPolicy)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(RuntimeError, match="bad_cast"):
+            mmi.emit_object(scheduler="t10-badpolicy")
+    assert_no_leaks()
+
+
+def test_pressure_tracking_emits_object():
+    """A strategy with should_track_pressure=True exercises the
+    shouldTrackPressure() true-branch through codegen (register-pressure
+    tracking) and still emits a well-formed object."""
+
+    class Pressure(_TopDownFirstReady):
+        def get_policy(self):
+            p = mir.MachineSchedPolicy()
+            p.only_top_down = True
+            p.should_track_pressure = True
+            return p
+
+    mir.register_scheduler("t10-pressure", Pressure)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        obj = mmi.emit_object(scheduler="t10-pressure")
+        assert obj[:4] == b"\x7fELF"
     assert_no_leaks()
