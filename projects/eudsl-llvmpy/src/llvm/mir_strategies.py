@@ -9,6 +9,12 @@ Importing this module attaches them to the `mir` submodule, so they read as
 
 from . import mir
 
+# name -> registered MachineSchedStrategy subclass; populated by
+# mir.register_scheduler (C++). Python owns this so classes are released at
+# interpreter teardown rather than pinned in a C++ static.
+_scheduler_classes = {}
+mir._scheduler_classes = _scheduler_classes
+
 
 class ReadyQueueStrategy(mir.MachineSchedStrategy):
     """Top-down strategy that maintains the ready queue for you.

@@ -23,7 +23,6 @@
 #include <nanobind/stl/vector.h>
 #include <nanobind/trampoline.h>
 
-#include <algorithm>
 #include <deque>
 #include <exception>
 #include <memory>
@@ -54,11 +53,11 @@ thread_local nb::object activeSchedClass;
 // returned, since LLVM's scheduler frames are -fno-exceptions.
 // runCodegenPipeline re-raises after the run.
 //
-// shadowTop/shadowBottom mirror the ready nodes LLVM releases, recorded before
-// the fallible Python call. They are the pick_node fallback after a stash: LLVM
-// only releases ready nodes and we drop the picked one, so the shadow front is
-// always a legal choice. The raw contract puts the real ready set in Python,
-// out of reach once it has failed -- this is the safety net.
+// shadow mirrors the ready nodes LLVM releases, recorded before the fallible
+// Python call. It is the pick_node fallback after a stash: LLVM only releases
+// ready nodes, so a still-unscheduled one is always a legal choice. The raw
+// contract puts the real ready set in Python, out of reach once it has failed
+// -- this is the safety net.
 class PySchedStrategy : public llvm::MachineSchedStrategy {
 public:
   NB_TRAMPOLINE(llvm::MachineSchedStrategy, 6);
@@ -81,8 +80,7 @@ public:
   }
 
   void initialize(llvm::ScheduleDAGMI *dag) override {
-    shadowTop.clear();
-    shadowBottom.clear();
+    shadow.clear();
     nb::gil_scoped_acquire gil;
     if (eudsl::pendingCodegenError)
       return;
@@ -95,7 +93,7 @@ public:
   }
 
   void releaseTopNode(llvm::SUnit *su) override {
-    shadowTop.push_back(su);
+    shadow.push_back(su);
     nb::gil_scoped_acquire gil;
     if (eudsl::pendingCodegenError)
       return;
@@ -108,7 +106,7 @@ public:
   }
 
   void releaseBottomNode(llvm::SUnit *su) override {
-    shadowBottom.push_back(su);
+    shadow.push_back(su);
     nb::gil_scoped_acquire gil;
     if (eudsl::pendingCodegenError)
       return;
@@ -137,15 +135,15 @@ public:
     }
     // Stash path (or draining after a prior stash): return a still-ready,
     // not-yet-scheduled node so the unskippable pipeline winds down to
-    // runCodegenPipeline's re-raise. A node released both top- and bottom-ready
-    // sits in both shadows, so skip any LLVM has already scheduled.
-    if (llvm::SUnit *su = popUnscheduled(shadowTop)) {
-      isTopNode = true;
-      return su;
-    }
-    if (llvm::SUnit *su = popUnscheduled(shadowBottom)) {
-      isTopNode = false;
-      return su;
+    // runCodegenPipeline's re-raise. LLVM only releases ready nodes; skip any
+    // it has since scheduled, and report the node's readiness direction.
+    while (!shadow.empty()) {
+      llvm::SUnit *su = shadow.front();
+      shadow.erase(shadow.begin());
+      if (!su->isScheduled) {
+        isTopNode = su->isTopReady();
+        return su;
+      }
     }
     return nullptr;
   }
@@ -163,20 +161,10 @@ public:
   }
 
 private:
-  // Pop shadow entries until an unscheduled node is found (LLVM marks a node
-  // scheduled once picked), or the shadow drains.
-  static llvm::SUnit *popUnscheduled(std::vector<llvm::SUnit *> &shadow) {
-    while (!shadow.empty()) {
-      llvm::SUnit *su = shadow.front();
-      shadow.erase(shadow.begin());
-      if (!su->isScheduled)
-        return su;
-    }
-    return nullptr;
-  }
-
-  std::vector<llvm::SUnit *> shadowTop;
-  std::vector<llvm::SUnit *> shadowBottom;
+  // Every ready node LLVM releases (top or bottom), recorded before the
+  // fallible Python call so the pick_node fallback above always has a legal
+  // choice.
+  std::vector<llvm::SUnit *> shadow;
 };
 
 // The strategy LLVM owns. nanobind refuses to move a Python-created instance
@@ -220,12 +208,21 @@ private:
   llvm::MachineSchedStrategy *inner;
 };
 
-// Registered name -> Python class. A leaked deque: deque never reallocates, so
-// the name c_str() handed to MachineSchedRegistry stays valid, and leaking
-// avoids dropping Python refs at interpreter shutdown.
-std::deque<std::pair<std::string, nb::object>> &schedClasses() {
-  static auto *classes = new std::deque<std::pair<std::string, nb::object>>();
-  return *classes;
+// Stable storage for registered names: a leaked deque (pure C++, no Python
+// refs) whose element c_str() the MachineSchedRegistry node borrows for process
+// lifetime.
+std::deque<std::string> &schedNames() {
+  static auto *names = new std::deque<std::string>();
+  return *names;
+}
+
+// name -> Python class, held in llvm.mir_strategies._scheduler_classes. Python
+// owns it, so the classes are released at interpreter teardown (a C++-held
+// nb::object static would pin the subclass types past nanobind's teardown and
+// trip its leak checker).
+nb::dict schedulerClasses() {
+  return nb::cast<nb::dict>(
+      nb::module_::import_("llvm.mir_strategies").attr("_scheduler_classes"));
 }
 
 // The live MachineSchedRegistry nodes, kept (leaked) so they stay registered
@@ -269,25 +266,25 @@ void registerScheduler(const std::string &name, nb::object cls) {
       throw nb::type_error(
           (std::string("scheduler class must define ") + method).c_str());
   }
-  for (auto &entry : schedClasses()) {
-    if (entry.first == name) {
-      entry.second = std::move(cls);
-      return;
-    }
+  nb::dict classes = schedulerClasses();
+  if (!classes.contains(name.c_str())) {
+    schedNames().push_back(name);
+    const char *cname = schedNames().back().c_str();
+    schedRegistryNodes().push_back(std::make_unique<llvm::MachineSchedRegistry>(
+        cname, cname, createRegisteredPyStrategy));
   }
-  schedClasses().emplace_back(name, std::move(cls));
-  const char *cname = schedClasses().back().first.c_str();
-  schedRegistryNodes().push_back(std::make_unique<llvm::MachineSchedRegistry>(
-      cname, cname, createRegisteredPyStrategy));
+  classes[name.c_str()] = std::move(cls);
 }
 
 // The class registered under `name`, or an empty object.
 nb::object schedulerClass(const std::string &name) {
-  for (auto &entry : schedClasses()) {
-    if (entry.first == name)
-      return entry.second;
-  }
+  nb::dict classes = schedulerClasses();
+  if (classes.contains(name.c_str()))
+    return classes[name.c_str()];
+  // LCOV_EXCL_START -- emit_object only calls this after resolving the name in
+  // the MachineSchedRegistry, and register_scheduler adds both together.
   return nb::object();
+  // LCOV_EXCL_STOP
 }
 
 void setActiveSchedClass(nb::object cls) { activeSchedClass = std::move(cls); }
