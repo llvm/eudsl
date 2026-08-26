@@ -26,6 +26,7 @@ after codegen winds down, never thrown across LLVM's -fno-exceptions frames.
 """
 
 import ctypes
+import math
 import platform
 
 import pytest
@@ -295,8 +296,8 @@ def test_python_select_callback_invoked_and_emits_object():
 def test_python_select_callback_receives_live_interval():
     """The LiveInterval marshalled to the callback exposes read-only accessors:
     the vreg id it covers (nonzero once the virtual-register flag bit is set),
-    its spill weight (a finite, non-negative float), and whether it is
-    spillable (a bool)."""
+    its spill weight (a non-negative float, or +inf for a must-not-spill
+    interval), and whether it is spillable (a bool)."""
     seen = []
 
     def cb(live_interval, candidates):
@@ -314,8 +315,9 @@ def test_python_select_callback_receives_live_interval():
         assert seen  # the callable ran and read the interval
         for reg, weight, is_spillable in seen:
             assert isinstance(reg, int) and reg > 0  # a real vreg id
-            assert isinstance(weight, float) and weight >= 0.0
+            assert isinstance(weight, float) and weight >= 0.0  # +inf allowed
             assert isinstance(is_spillable, bool)
+            assert is_spillable == math.isfinite(weight)  # inf <=> unspillable
     assert_no_leaks()
 
 
@@ -388,6 +390,25 @@ def test_python_select_callback_raise_propagates():
     assert_no_leaks()
 
 
+def test_python_select_callback_wrong_type_return_raises():
+    """A callable returning something that is neither None nor an int (e.g. a
+    string) is a type error, distinct from returning an out-of-set int: it
+    raises TypeError with a message naming the expected int id / None, stashed
+    and re-raised out of emit_object."""
+
+    def cb(live_interval, candidates):
+        return "not-an-int"
+
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        with pytest.raises(TypeError, match="int physreg id or None"):
+            mmi.emit_object(select=cb)
+    assert_no_leaks()
+
+
 def test_regalloc_and_select_are_mutually_exclusive():
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
@@ -443,8 +464,9 @@ class _FirstFreeAlloc:
 
 def test_register_regalloc_lists_and_replaces():
     """register_regalloc records the name (listed by registered_regallocs); a
-    class missing select_or_split is rejected, and re-registering a name
-    replaces the class without adding a duplicate registry entry."""
+    class missing select_or_split is rejected; and re-registering a name
+    replaces the class -- witnessed behaviorally: after re-registering, emitting
+    instantiates the *new* class, not the old one."""
 
     class Missing:
         pass
@@ -452,15 +474,37 @@ def test_register_regalloc_lists_and_replaces():
     with pytest.raises(TypeError, match="select_or_split"):
         mir.register_regalloc("ra-missing", Missing)
 
-    mir.register_regalloc("ra-listed", _FirstFreeAlloc)
-    assert "ra-listed" in mir.registered_regallocs()
-    before = mir.registered_regallocs().count("ra-listed")
+    instantiated = []
 
-    class Other(_FirstFreeAlloc):
-        pass
+    class First:
+        def __init__(self):
+            instantiated.append("first")
 
-    mir.register_regalloc("ra-listed", Other)  # replaces, no duplicate entry
-    assert mir.registered_regallocs().count("ra-listed") == before
+        def select_or_split(self, live_interval, candidates):
+            return candidates[0] if candidates else None
+
+    class Second:
+        def __init__(self):
+            instantiated.append("second")
+
+        def select_or_split(self, live_interval, candidates):
+            return candidates[0] if candidates else None
+
+    mir.register_regalloc("ra-replaced", First)
+    assert "ra-replaced" in mir.registered_regallocs()
+    before = mir.registered_regallocs().count("ra-replaced")
+
+    mir.register_regalloc("ra-replaced", Second)  # replaces First
+    assert mir.registered_regallocs().count("ra-replaced") == before  # no dup
+
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        mmi.emit_object(regalloc="ra-replaced")
+    assert instantiated == ["second"]  # the replacement class was instantiated
+    assert_no_leaks()
 
 
 def test_register_regalloc_drives_selectorsplit():
@@ -481,13 +525,16 @@ def test_register_regalloc_drives_selectorsplit():
 
 
 def test_register_regalloc_fresh_instance_per_emission():
-    """A fresh allocator instance is constructed for each emission (per
-    MachineFunction), so the two emits below record two distinct instances."""
-    seen_ids = []
+    """A fresh allocator instance is constructed for each emission: PyRegAlloc
+    instantiates the class in runOnMachineFunction (once per MachineFunction, and
+    the hand-built API builds one MachineFunction per module). Two emissions
+    therefore record two distinct instances. Instances are retained (not just
+    their id()) so a freed-then-reused id cannot mask a regression."""
+    seen = []
 
     class Recording:
         def __init__(self):
-            seen_ids.append(id(self))
+            seen.append(self)
 
         def select_or_split(self, live_interval, candidates):
             return candidates[0] if candidates else None
@@ -501,15 +548,19 @@ def test_register_regalloc_fresh_instance_per_emission():
             _build_selected_add(mmi)
             mmi.emit_object(regalloc="ra-fresh")
         assert_no_leaks()
-    assert len(seen_ids) == 2
-    assert seen_ids[0] != seen_ids[1]  # distinct instances
+    assert len(seen) == 2
+    assert seen[0] is not seen[1]  # distinct instances, one per emission
 
 
-def test_register_regalloc_priority_orders_queue():
+def test_register_regalloc_priority_consulted_per_interval():
     """A class defining priority(li) supplies the allocation-queue key (instead
-    of the default spill weight); priority runs for every enqueued interval and
-    the object still emits as a well-formed ELF."""
+    of the default spill weight). priority() is consulted once per enqueued
+    interval -- for exactly the set of intervals the allocator then assigns --
+    and the object emits as a well-formed ELF. (The queue *order* the key
+    produces is not observable through a semantics-preserving object, so this
+    witnesses that priority drives the key, not the resulting order.)"""
     priorities = []
+    selected = []
 
     class ByReg:
         def priority(self, live_interval):
@@ -517,6 +568,7 @@ def test_register_regalloc_priority_orders_queue():
             return float(live_interval.reg)  # order by vreg id
 
         def select_or_split(self, live_interval, candidates):
+            selected.append(live_interval.reg)
             return candidates[0] if candidates else None
 
     mir.register_regalloc("ra-priority", ByReg)
@@ -526,7 +578,10 @@ def test_register_regalloc_priority_orders_queue():
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         obj = mmi.emit_object(regalloc="ra-priority")
-        assert priorities  # priority() was consulted for the queue order
+        assert priorities  # priority() was consulted
+        assert len(priorities) == len(set(priorities))  # once per interval
+        # ...for exactly the intervals the allocator went on to assign.
+        assert set(priorities) == set(selected)
         assert obj[:4] == b"\x7fELF"
     assert_no_leaks()
 

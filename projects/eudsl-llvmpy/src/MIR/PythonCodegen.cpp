@@ -389,6 +389,15 @@ public:
     llvm::initializePyRegAllocPass(*llvm::PassRegistry::getPassRegistry());
   }
 
+  // Drop the held Python references under the GIL (matching OwningPyStrategy),
+  // so destruction is safe regardless of who releases the pass.
+  ~PyRegAlloc() override {
+    nb::gil_scoped_acquire gil;
+    selectCallback.reset();
+    allocatorClass.reset();
+    instance.reset();
+  }
+
   llvm::StringRef getPassName() const override {
     return "eudsl register allocator";
   }
@@ -464,8 +473,9 @@ PyRegAlloc::selectOrSplit(const llvm::LiveInterval &VirtReg,
   for (llvm::MCRegister PhysReg : Order) {
     assert(PhysReg.isValid());
     if (Matrix->checkInterference(VirtReg, PhysReg) ==
-        llvm::LiveRegMatrix::IK_Free)
+        llvm::LiveRegMatrix::IK_Free) {
       candidateRegs.push_back(PhysReg);
+    }
   }
 
   if (selectCallback && !eudsl::pendingCodegenError) {
@@ -483,14 +493,16 @@ PyRegAlloc::selectOrSplit(const llvm::LiveInterval &VirtReg,
       if (choice.is_none())
         return spillVirtReg(VirtReg, SplitVRegs);
       unsigned chosenId = 0;
-      if (nb::try_cast<unsigned>(choice, chosenId)) {
-        for (llvm::MCRegister PhysReg : candidateRegs) {
-          if (PhysReg.id() == chosenId)
-            return PhysReg;
-        }
+      if (!nb::try_cast<unsigned>(choice, chosenId)) {
+        throw nb::type_error(
+            "select_or_split must return an int physreg id or None");
       }
-      throw nb::value_error("selectOrSplit returned a register that is not one "
-                            "of the legal candidates");
+      for (llvm::MCRegister PhysReg : candidateRegs) {
+        if (PhysReg.id() == chosenId)
+          return PhysReg;
+      }
+      throw nb::value_error("select_or_split returned a register that is not "
+                            "one of the legal candidates");
     } catch (...) {
       // Stash and fall through to a legal native assignment so the pipeline
       // winds down to runCodegenPipeline's re-raise.
@@ -543,7 +555,8 @@ void PyRegAlloc::getAnalysisUsage(llvm::AnalysisUsage &AU) const {
   llvm::MachineFunctionPass::getAnalysisUsage(AU);
 }
 
-// Wire up the RegAllocBase driver, copied from RABasic::runOnMachineFunction.
+// Wire up the RegAllocBase driver, adapted from RABasic::runOnMachineFunction
+// (the instance-construction prologue below is ours).
 bool PyRegAlloc::runOnMachineFunction(llvm::MachineFunction &mf) {
   MF = &mf;
   // register_regalloc path: a fresh instance per function drives selectOrSplit

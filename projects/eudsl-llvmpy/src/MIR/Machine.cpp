@@ -528,6 +528,12 @@ public:
     if (regAllocCtor) {
       llvm::RegisterRegAlloc::FunctionPassCtor prev =
           llvm::RegisterRegAlloc::getDefault();
+      // LCOV_EXCL_START -- "default" is always registered by codegen, so this
+      // never fires; the guard turns a missing default into a loud, local error
+      // instead of a null ctor that crashes a later default emit.
+      if (!prev && !defaultRegAllocCtor)
+        throw std::runtime_error("no default register allocator to restore to");
+      // LCOV_EXCL_STOP
       restoreRegAlloc.value = prev ? prev : defaultRegAllocCtor;
       restoreRegAlloc.active = true;
       llvm::RegisterRegAlloc::setDefault(regAllocCtor);
