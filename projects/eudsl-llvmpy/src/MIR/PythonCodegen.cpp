@@ -291,15 +291,12 @@ createRegisteredPyStrategy(llvm::MachineSchedContext *c) {
 
 namespace eudsl {
 
-// Validate that cls subclasses MachineSchedStrategy and defines the required
-// methods, record it, and (if new) add a MachineSchedRegistry node so the
-// pipeline can select it by name. Re-registering a name swaps the class.
-void registerScheduler(const std::string &name, nb::type_object cls) {
-  if (PyObject_IsSubclass(cls.ptr(),
-                          nb::type<llvm::MachineSchedStrategy>().ptr()) != 1) {
-    throw nb::type_error(
-        "scheduler class must subclass mir.MachineSchedStrategy");
-  }
+// Validate that cls defines the required methods, record it, and (if new) add a
+// MachineSchedRegistry node so the pipeline can select it by name. The
+// type_object_t parameter makes nanobind reject a non-MachineSchedStrategy
+// class at the call boundary. Re-registering a name swaps the class.
+void registerScheduler(const std::string &name,
+                       nb::type_object_t<llvm::MachineSchedStrategy> cls) {
   static const char *required[] = {"initialize",       "get_policy",
                                    "pick_node",        "sched_node",
                                    "release_top_node", "release_bottom_node"};

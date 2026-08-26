@@ -527,7 +527,8 @@ def test_reregister_replaces_scheduler():
 
 def test_register_non_subclass_raises():
     """A class with the right methods but not subclassing MachineSchedStrategy is
-    rejected (it would otherwise reach nb::inst_ptr on a non-bound object)."""
+    rejected by the typed `cls` parameter at the call boundary (it would
+    otherwise reach nb::inst_ptr on a non-bound object)."""
 
     class NotAStrategy:  # duck-typed, but not a mir.MachineSchedStrategy
         def initialize(self, dag): ...
@@ -537,7 +538,7 @@ def test_register_non_subclass_raises():
         def release_top_node(self, su): ...
         def release_bottom_node(self, su): ...
 
-    with pytest.raises(TypeError, match="subclass"):
+    with pytest.raises(TypeError, match="incompatible function arguments"):
         mir.register_scheduler("t10-notsub", NotAStrategy)
 
 
