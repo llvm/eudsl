@@ -63,6 +63,9 @@ void setActiveSchedClass(nb::type_object cls);
 void clearActiveSchedClass();
 } // namespace eudsl
 
+// Defined in PythonCodegen.cpp.
+void populate_python_codegen(nb::module_ &m);
+
 namespace {
 
 // A machine register paired with the MachineFunction that owns it. A virtual
@@ -376,11 +379,6 @@ public:
     llvm::TargetMachine *tm = build->tm;
     llvm::MachineModuleInfo *info = &build->mmiwp->getMMI();
 
-    // Resolve the requested scheduler against the strategies registered via
-    // register_scheduler (not the whole MachineSchedRegistry, which also holds
-    // LLVM's built-ins) so an unknown -- or built-in -- name fails cleanly
-    // before any codegen state is touched. All registered names share the
-    // createRegisteredPyStrategy ctor, which -misched is pointed at below.
     llvm::MachineSchedRegistry::ScheduleDAGCtor schedCtor = nullptr;
     nb::type_object schedClass;
     if (scheduler) {
@@ -432,10 +430,6 @@ public:
     } restore{startAfter, saved};
     startAfter = "finalize-isel";
 
-    // Select the pre-RA MachineScheduler strategy, when one was requested:
-    // -misched is a process-global option whose value is the ScheduleDAGCtor
-    // the scheduler pass reads. Set+restore it under the same GIL-serialized
-    // assumption as -start-after; its value type is a constructor pointer.
     using SchedCtor = llvm::MachineSchedRegistry::ScheduleDAGCtor;
     using SchedOpt =
         llvm::cl::opt<SchedCtor, false,
@@ -542,9 +536,6 @@ private:
 };
 
 } // namespace
-
-// Defined in PythonCodegen.cpp.
-void populate_python_codegen(nb::module_ &m);
 
 // LowLevelType (LLT) is the generic-MIR type: a target-independent "bag of
 // bits" describing a scalar/pointer/vector operand, distinct from the uniqued

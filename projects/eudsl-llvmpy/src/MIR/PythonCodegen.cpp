@@ -2,13 +2,6 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-// Python-subclassable pre-RA MachineScheduler strategy.
-// mir.MachineSchedStrategy binds llvm::MachineSchedStrategy via a trampoline;
-// register_scheduler adds a MachineSchedRegistry node so
-// emit_object(scheduler="name") can select it. LLVM owns an OwningPyStrategy
-// adaptor that forwards into the Python instance, since nanobind won't move a
-// Python-created instance into a default-deleter unique_ptr.
-
 #include "IR/Common.h"
 #include "MIR/Diagnostics.h"
 
@@ -48,17 +41,6 @@ namespace {
 // GIL-serialized, matching the process-global -misched handling in Machine.cpp.
 thread_local nb::type_object activeSchedClass;
 
-// C++ side of mir.MachineSchedStrategy. Each override forwards into the Python
-// object (nb_trampoline.base()) by name with the GIL held outside the try; a
-// Python exception is stashed in pendingCodegenError and a legal value
-// returned, since LLVM's scheduler frames are -fno-exceptions.
-// runCodegenPipeline re-raises after the run.
-//
-// shadow mirrors the ready nodes LLVM releases, recorded before the fallible
-// Python call. It is the pick_node fallback after a stash: LLVM only releases
-// ready nodes, so a still-unscheduled one is always a legal choice. The raw
-// contract puts the real ready set in Python, out of reach once it has failed
-// -- this is the safety net.
 class PySchedStrategy : public llvm::MachineSchedStrategy {
 public:
   NB_TRAMPOLINE(llvm::MachineSchedStrategy, 9);
@@ -202,9 +184,11 @@ public:
   }
 
 private:
-  // Every ready node LLVM releases (top or bottom), recorded before the
-  // fallible Python call so the pick_node fallback above always has a legal
-  // choice.
+  // Mirrors the ready nodes LLVM releases, recorded before the fallible Python
+  // call. It is the pick_node fallback after a stash: LLVM only releases ready
+  // nodes, so a still-unscheduled one is always a legal choice. The raw
+  // contract puts the real ready set in Python, out of reach once it has failed
+  // -- this is the safety net.
   std::vector<llvm::SUnit *> shadow;
 };
 
@@ -391,12 +375,6 @@ void populate_python_codegen(nb::module_ &m) {
   // receives its nodes via release_top_node/release_bottom_node.
   nb::class_<llvm::ScheduleDAGMI>(m, "ScheduleDAGMI");
 
-  // The pre-RA MachineScheduler strategy interface, subclassable from Python.
-  // Override initialize(dag), get_policy() -> MachineSchedPolicy,
-  // release_top_node(su) / release_bottom_node(su) (maintain your own ready
-  // set), pick_node() -> (SUnit, is_top_node), and sched_node(su, is_top).
-  // Register with register_scheduler and select via
-  // emit_object(scheduler=name).
   nb::class_<llvm::MachineSchedStrategy, PySchedStrategy>(
       m, "MachineSchedStrategy")
       .def(nb::init<>());

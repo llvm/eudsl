@@ -30,8 +30,6 @@ if(EUDSLLLVM_STANDALONE_BUILD)
 
   set(LLVM_RUNTIME_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/bin)
   list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
-  # Match the distro's ABI-affecting flags (NDEBUG/assertions, ...); nanobind's
-  # per-target -fexceptions/-frtti below re-enable what the bindings need.
   include(HandleLLVMOptions)
   include(AddLLVM)
 endif()
