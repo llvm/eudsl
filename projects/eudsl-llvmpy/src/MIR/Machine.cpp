@@ -60,6 +60,11 @@ namespace eudsl {
 // under the GIL around the emission pipeline run below.
 void setPendingPickCallback(nb::callable cb);
 void clearPendingPickCallback();
+// Defined in TrivialRegAlloc.cpp: install / clear the per-thread Python select
+// callback the "eudsl-trivial" allocator reads at construction. Called under
+// the GIL around the same pipeline run.
+void setPendingSelectCallback(nb::callable cb);
+void clearPendingSelectCallback();
 } // namespace eudsl
 
 namespace {
@@ -372,14 +377,22 @@ public:
   // registered RegisterRegAlloc allocator, RegisterRegAlloc's default is
   // pointed at it (via setDefault) for the run so the codegen pipeline
   // allocates with it instead of the target default; an unregistered name
-  // raises. `regalloc` is independent of `scheduler`/`pick` -- a caller may set
-  // both.
+  // raises. When `select` is a Python callable, the "eudsl-trivial" allocator
+  // is selected the same way and routes each selectOrSplit choice through the
+  // callable; `regalloc` and `select` are mutually exclusive ways of choosing
+  // the allocator. `regalloc` / `select` are independent of `scheduler`/`pick`
+  // -- a caller may set both.
   nb::bytes emitObject(std::optional<std::string> scheduler,
                        std::optional<nb::callable> pick,
-                       std::optional<std::string> regalloc) {
+                       std::optional<std::string> regalloc,
+                       std::optional<nb::callable> select) {
     if (scheduler && pick) {
       throw nb::value_error(
           "emit_object accepts at most one of scheduler= and pick=");
+    }
+    if (regalloc && select) {
+      throw nb::value_error(
+          "emit_object accepts at most one of regalloc= and select=");
     }
     if (std::holds_alternative<EmittedOwned>(state_))
       throw std::runtime_error("object already emitted");
@@ -416,22 +429,26 @@ public:
     // registry the same way (walking its list by name), before touching codegen
     // state so an unknown name fails cleanly. The registry holds the allocator
     // pass constructors; a resolved one is installed as RegisterRegAlloc's
-    // default below so TargetPassConfig::createRegAllocPass picks it up. Also
-    // capture the ctor registered under "default" (LLVM's
-    // useDefaultRegisterAllocator sentinel): it is the valid baseline to
-    // restore to (see the RAII below).
+    // default below so TargetPassConfig::createRegAllocPass picks it up.
+    // `select` selects the "eudsl-trivial" allocator by that name and
+    // additionally installs the callable. Also capture the ctor registered
+    // under "default" (LLVM's useDefaultRegisterAllocator sentinel): it is the
+    // valid baseline to restore to (see the RAII below).
+    std::optional<std::string> allocName = regalloc;
+    if (select)
+      allocName = "eudsl-trivial";
     llvm::RegisterRegAlloc::FunctionPassCtor regAllocCtor = nullptr;
     llvm::RegisterRegAlloc::FunctionPassCtor defaultRegAllocCtor = nullptr;
-    if (regalloc) {
+    if (allocName) {
       for (llvm::RegisterRegAlloc *node = llvm::RegisterRegAlloc::getList();
            node; node = node->getNext()) {
-        if (node->getName() == *regalloc)
+        if (node->getName() == *allocName)
           regAllocCtor = node->getCtor();
         if (node->getName() == "default")
           defaultRegAllocCtor = node->getCtor();
       }
       if (!regAllocCtor)
-        throw std::runtime_error("unknown register allocator: " + *regalloc);
+        throw std::runtime_error("unknown register allocator: " + *allocName);
     }
 
     // Verify the hand-built MIR up front so malformed input (the prior PRs'
@@ -555,6 +572,24 @@ public:
     if (pick) {
       eudsl::setPendingPickCallback(*pick);
       restorePick.active = true;
+    }
+
+    // Install the Python select callback for the "eudsl-trivial" allocator, if
+    // one was given, and clear it once the pipeline has run so it never leaks
+    // into a later emit. The allocator pass is constructed while
+    // addPassesToEmitFile builds the pipeline below, on this thread, and copies
+    // the callback then; both the install and the clear touch Python refcounts
+    // and run under the GIL (held throughout emit).
+    struct RestoreSelect {
+      bool active = false;
+      ~RestoreSelect() {
+        if (active)
+          eudsl::clearPendingSelectCallback();
+      }
+    } restoreSelect;
+    if (select) {
+      eudsl::setPendingSelectCallback(*select);
+      restoreSelect.active = true;
     }
 
     // Write straight into a SmallVector (raw_svector_ostream writes through, so
@@ -1363,6 +1398,7 @@ void populate_mir(nb::module_ &m) {
       .def(
           "emit_object", &MirModule::emitObject, "scheduler"_a = nb::none(),
           "pick"_a = nb::none(), "regalloc"_a = nb::none(),
+          "select"_a = nb::none(),
           "Emit a relocatable object file for the built (already-selected) "
           "MIR by running the back half of codegen (regalloc, emission). "
           "Verifies the MIR first, raising if it is malformed. `scheduler` "
@@ -1372,7 +1408,11 @@ void populate_mir(nb::module_ &m) {
           "and returns the one to schedule next. `scheduler` and `pick` are "
           "mutually exclusive. `regalloc` selects a registered register "
           "allocator by name (e.g. \"eudsl-trivial\") for the run; an unknown "
-          "name raises. `regalloc` is independent of `scheduler`/`pick`.");
+          "name raises. `select` is a Python callable that drives the trivial "
+          "allocator's selectOrSplit: it receives the legal candidate physreg "
+          "ids as a list[int] and returns an id to assign or None to spill. "
+          "`regalloc` and `select` are mutually exclusive. `regalloc`/`select` "
+          "are independent of `scheduler`/`pick`.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the

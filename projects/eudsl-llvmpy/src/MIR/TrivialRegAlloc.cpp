@@ -46,6 +46,8 @@
 #include <llvm/Pass.h>
 #include <llvm/PassRegistry.h>
 
+#include <nanobind/nanobind.h>
+
 #include <atomic>
 #include <memory>
 #include <queue>
@@ -58,6 +60,8 @@ namespace llvm {
 // so the legacy pass manager can resolve the analyses selectOrSplit reads.
 void initializePyRegAllocPass(PassRegistry &);
 } // namespace llvm
+
+namespace nb = nanobind;
 
 namespace {
 // Counts selectOrSplit invocations across all PyRegAlloc instances. It exists
@@ -73,6 +77,15 @@ std::atomic<unsigned> selectOrSplitCount{0};
 // prove the spill path -- authored logic here, not in the driver -- actually
 // runs when register pressure exceeds the allocatable set.
 std::atomic<unsigned> spillCount{0};
+
+// The Python callable the allocator routes selectOrSplit through, when one is
+// installed. It is per-thread: emit_object installs it (under the GIL) for the
+// duration of one emission pipeline run and clears it afterward, so every
+// PyRegAlloc instance the run constructs copies the same callable and it never
+// leaks into a later, callback-less emit. There is no lock -- this relies on
+// the GIL serializing emit_object callers, matching the process-global
+// RegisterRegAlloc default handling in Machine.cpp.
+thread_local nb::callable pendingSelectCallback;
 
 // Order the priority queue by ascending spill weight, with the register number
 // as a stable tie-breaker for deterministic ordering (copied from RABasic's
@@ -107,10 +120,19 @@ class PyRegAlloc
                       std::vector<const llvm::LiveInterval *>, CompSpillWeight>
       Queue;
 
+  // The Python callable driving selectOrSplit, copied from
+  // pendingSelectCallback at construction so its refcount is managed for us (as
+  // the IR-pass PyFunctionPass and the python scheduler strategy do). Empty
+  // when no callback is installed, in which case selectOrSplit uses the native
+  // first-free policy.
+  nb::callable selectCallback;
+
 public:
   static char ID;
 
-  PyRegAlloc() : llvm::MachineFunctionPass(ID), llvm::RegAllocBase() {
+  PyRegAlloc()
+      : llvm::MachineFunctionPass(ID), llvm::RegAllocBase(),
+        selectCallback(pendingSelectCallback) {
     llvm::initializePyRegAllocPass(*llvm::PassRegistry::getPassRegistry());
   }
 
@@ -138,6 +160,13 @@ public:
   selectOrSplit(const llvm::LiveInterval &VirtReg,
                 llvm::SmallVectorImpl<llvm::Register> &SplitVRegs) override;
 
+  // Spill VirtReg itself (the native no-reassignment policy), returning 0 to
+  // tell the driver the vreg was replaced by the spill/reload vregs appended to
+  // SplitVRegs. Shared by the native path and the callback's spill signal.
+  llvm::MCRegister
+  spillVirtReg(const llvm::LiveInterval &VirtReg,
+               llvm::SmallVectorImpl<llvm::Register> &SplitVRegs);
+
   bool runOnMachineFunction(llvm::MachineFunction &mf) override;
 
   // Mirror RABasic: the incoming MIR is post-selection (no PHIs) and the
@@ -154,17 +183,54 @@ public:
 
 char PyRegAlloc::ID = 0;
 
-// The allocation heuristic. Assign the first physical register in VirtReg's
-// allocation order that does not interfere; if none is free, spill VirtReg
-// (unless it is unspillable, which is an allocation failure). The driver
-// (allocatePhysRegs) calls Matrix->assign for a returned physreg, and
-// re-enqueues any new virtual registers appended to SplitVRegs.
+// The allocation heuristic. When a Python callback is installed, present the
+// legal (non-interfering) candidate physregs for VirtReg to it as a list[int]
+// of physreg ids and honor its return: an id from that set is assigned; None
+// (or any non-id value that is not a candidate) is treated below. This step
+// assumes a well-behaved callback -- a return that is neither a candidate id
+// nor None falls back to the native policy rather than raising. With no
+// callback, or on that fallback, assign the first physical register in
+// VirtReg's allocation order that does not interfere; if none is free, spill
+// VirtReg. The driver (allocatePhysRegs) calls Matrix->assign for a returned
+// physreg, and re-enqueues any new virtual registers appended to SplitVRegs.
 llvm::MCRegister
 PyRegAlloc::selectOrSplit(const llvm::LiveInterval &VirtReg,
                           llvm::SmallVectorImpl<llvm::Register> &SplitVRegs) {
   selectOrSplitCount.fetch_add(1, std::memory_order_relaxed);
   auto Order =
       llvm::AllocationOrder::create(VirtReg.reg(), *VRM, RegClassInfo, Matrix);
+
+  if (selectCallback) {
+    // Marshal and dispatch under the GIL: building the candidate list and
+    // calling the callable both touch Python refcounts. Returning from inside
+    // this scope releases the GIL; the native fallback below does not need it.
+    nb::gil_scoped_acquire gil;
+    nb::list candidates;
+    llvm::SmallVector<llvm::MCRegister, 16> candidateRegs;
+    for (llvm::MCRegister PhysReg : Order) {
+      assert(PhysReg.isValid());
+      if (Matrix->checkInterference(VirtReg, PhysReg) ==
+          llvm::LiveRegMatrix::IK_Free) {
+        candidateRegs.push_back(PhysReg);
+        candidates.append(PhysReg.id());
+      }
+    }
+    nb::object choice = selectCallback(candidates);
+    unsigned chosenId = 0;
+    if (nb::try_cast<unsigned>(choice, chosenId)) {
+      // A chosen physreg id: honor it only if it is one of the presented
+      // candidates (the driver assigns it for us).
+      for (llvm::MCRegister PhysReg : candidateRegs) {
+        if (PhysReg.id() == chosenId)
+          return PhysReg;
+      }
+    } else if (choice.is_none()) {
+      return spillVirtReg(VirtReg, SplitVRegs);
+    }
+    // Uninterpretable return, or an id not among the candidates: fall through
+    // to the native policy so this call still returns a legal choice.
+  }
+
   for (llvm::MCRegister PhysReg : Order) {
     assert(PhysReg.isValid());
     if (Matrix->checkInterference(VirtReg, PhysReg) ==
@@ -172,11 +238,17 @@ PyRegAlloc::selectOrSplit(const llvm::LiveInterval &VirtReg,
       return PhysReg;
     }
   }
-  // No free physreg: spill VirtReg itself (never an interfering vreg -- this
-  // trivial policy does no reassignment), which the driver replaces with the
-  // new spill/reload vregs appended to SplitVRegs. Only an unspillable vreg
-  // (infinite spill weight) fails to allocate; a spillable one always spills to
-  // make forward progress.
+  return spillVirtReg(VirtReg, SplitVRegs);
+}
+
+// No free physreg (or the callback asked to spill): spill VirtReg itself (never
+// an interfering vreg -- this trivial policy does no reassignment), which the
+// driver replaces with the new spill/reload vregs appended to SplitVRegs. Only
+// an unspillable vreg (infinite spill weight) fails to allocate; a spillable
+// one always spills to make forward progress.
+llvm::MCRegister
+PyRegAlloc::spillVirtReg(const llvm::LiveInterval &VirtReg,
+                         llvm::SmallVectorImpl<llvm::Register> &SplitVRegs) {
   if (!VirtReg.isSpillable())
     return llvm::MCRegister(~0u); // LCOV_EXCL_LINE -- test vregs are spillable
   spillCount.fetch_add(1, std::memory_order_relaxed);
@@ -269,6 +341,16 @@ INITIALIZE_PASS_DEPENDENCY(LiveRegMatrixWrapperLegacy)
 INITIALIZE_PASS_DEPENDENCY(ProfileSummaryInfoWrapperPass)
 INITIALIZE_PASS_END(PyRegAlloc, "eudsl-regalloc-trivial",
                     "eudsl trivial register allocator", false, false)
+
+namespace eudsl {
+// Install / clear the per-thread select callback the allocator reads at
+// construction. Called from emit_object (a nanobind TU) around the emission
+// pipeline run; both touch Python refcounts, so the caller holds the GIL.
+void setPendingSelectCallback(nb::callable cb) {
+  pendingSelectCallback = std::move(cb);
+}
+void clearPendingSelectCallback() { pendingSelectCallback = nb::callable(); }
+} // namespace eudsl
 
 namespace eudsl {
 // Diagnostic accessors for the selectOrSplit counter above, called from the
