@@ -309,3 +309,25 @@ def test_jit_executes_python_scheduled_add():
         assert add(40, 2) == 42
         del j
     assert_no_leaks()
+
+
+def test_ready_queue_strategy_helper_pick():
+    """mir.ReadyQueueStrategy maintains the ready queue; the subclass only
+    overrides pick(ready)."""
+    picks = []
+
+    class LastReady(mir.ReadyQueueStrategy):
+        def pick(self, ready):
+            picks.append(len(ready))
+            return ready[-1]
+
+    mir.register_scheduler("t7-lastready", LastReady)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        obj = mmi.emit_object(scheduler="t7-lastready")
+        assert picks  # the helper's pick() hook ran
+        assert obj[:4] == b"\x7fELF"
+    assert_no_leaks()
