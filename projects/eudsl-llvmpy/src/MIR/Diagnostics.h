@@ -10,11 +10,33 @@
 #include <llvm/IR/DiagnosticInfo.h>
 #include <llvm/IR/DiagnosticPrinter.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <exception>
 #include <string>
 
 namespace eudsl {
+
+// A Python exception raised in a scheduler override is stashed here rather than
+// thrown across llvm::legacy::PassManager::run: libLLVMCodeGen is
+// -fno-exceptions, so unwinding those frames std::terminates. Thread-local;
+// defined once in PythonCodegen.cpp (an inline thread_local would duplicate its
+// TLS init in every including TU).
+extern thread_local std::exception_ptr pendingCodegenError;
+
+// Run a codegen pass manager, then re-raise any exception a scheduler override
+// stashed during the run (before the caller inspects captured diagnostics).
+inline void runCodegenPipeline(llvm::legacy::PassManager &pm, llvm::Module &m) {
+  pendingCodegenError = nullptr;
+  pm.run(m);
+  if (pendingCodegenError) {
+    std::exception_ptr e = pendingCodegenError;
+    pendingCodegenError = nullptr;
+    std::rethrow_exception(e);
+  }
+}
 
 // MIR parsing and codegen report failures through LLVMContext::diagnose --
 // their return values are only a bare success/failure bit, so the rich reason

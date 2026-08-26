@@ -467,6 +467,9 @@ private:
 
 } // namespace
 
+// Defined in PythonCodegen.cpp.
+void populate_python_codegen(nb::module_ &m);
+
 // LowLevelType (LLT) is the generic-MIR type: a target-independent "bag of
 // bits" describing a scalar/pointer/vector operand, distinct from the uniqued
 // llvm::Type hierarchy. It is a small value type (not context-owned and not
@@ -1712,4 +1715,6 @@ void populate_mir(nb::module_ &m) {
       },
       nb::rv_policy::reference,
       "The innermost MachineIRBuilder on the thread-local stack.");
+
+  populate_python_codegen(m);
 }

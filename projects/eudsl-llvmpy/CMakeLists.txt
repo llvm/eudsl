@@ -125,6 +125,7 @@ nanobind_add_module(eudslllvm_ext
   src/IR/JIT.cpp
   src/IR/Intrinsics.cpp
   src/MIR/Machine.cpp
+  src/MIR/PythonCodegen.cpp
 )
 
 set(eudslllvm_ext_libs
