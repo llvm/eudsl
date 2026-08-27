@@ -9,7 +9,7 @@ allocators are structured: the pass *is* the allocator, chosen by name. Three
 ways drive it:
 
 - emit_object(regalloc="eudsl-python") runs its native first-free/spill policy.
-- emit_object(select=<callable>) routes selectOrSplit through a one-shot Python
+- emit_object(regalloc_select_or_split=<callable>) routes selectOrSplit through a one-shot Python
   callable: it receives (live_interval, list[int] of legal candidate physreg
   ids) and returns an id to assign or None to spill.
 - register_regalloc(name, cls) + emit_object(regalloc=name) instantiates cls
@@ -262,12 +262,12 @@ def test_jit_executes_eudsl_regalloc_add():
 
 
 # ---------------------------------------------------------------------------
-# One-shot select= callable
+# One-shot regalloc_select_or_split= callable
 # ---------------------------------------------------------------------------
 
 
 def test_python_select_callback_invoked_and_emits_object():
-    """emit_object(select=cb) routes selectOrSplit through the callable: it
+    """emit_object(regalloc_select_or_split=cb) routes selectOrSplit through the callable: it
     receives the vreg's LiveInterval and the legal candidate physreg ids as a
     list[int], and returns the one to assign. A non-empty `picks` witnesses that
     Python drove the allocator; the emitted object is a well-formed ELF."""
@@ -283,7 +283,7 @@ def test_python_select_callback_invoked_and_emits_object():
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         _mir_ext._reset_regalloc_select_count()
-        obj = mmi.emit_object(select=cb)
+        obj = mmi.emit_object(regalloc_select_or_split=cb)
         assert picks  # the callable really ran
         assert all(cands for cands in picks)  # legal candidates were presented
         assert all(isinstance(r, int) for cands in picks for r in cands)
@@ -311,7 +311,7 @@ def test_python_select_callback_receives_live_interval():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
-        mmi.emit_object(select=cb)
+        mmi.emit_object(regalloc_select_or_split=cb)
         assert seen  # the callable ran and read the interval
         for reg, weight, is_spillable in seen:
             assert isinstance(reg, int) and reg > 0  # a real vreg id
@@ -338,7 +338,7 @@ def test_python_select_callback_spills_via_none():
         mmi = mir.create_machine_function(mod, tm, "hot")
         _build_high_pressure(mmi)
         _mir_ext._reset_regalloc_spill_count()
-        obj = mmi.emit_object(select=cb)
+        obj = mmi.emit_object(regalloc_select_or_split=cb)
         assert selects  # the callable ran
         assert 0 in selects  # at least once no candidate was free
         assert _mir_ext._regalloc_spill_count() > 0  # the None spill path ran
@@ -364,7 +364,7 @@ def test_python_select_callback_illegal_return_raises():
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         with pytest.raises(ValueError, match="not one of the legal candidates"):
-            mmi.emit_object(select=cb)
+            mmi.emit_object(regalloc_select_or_split=cb)
         assert picks  # the callable ran before its return was rejected
     assert_no_leaks()
 
@@ -385,7 +385,7 @@ def test_python_select_callback_raise_propagates():
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         with pytest.raises(ValueError, match="boom"):
-            mmi.emit_object(select=cb)
+            mmi.emit_object(regalloc_select_or_split=cb)
         assert picks  # the callable ran and raised
     assert_no_leaks()
 
@@ -405,7 +405,7 @@ def test_python_select_callback_wrong_type_return_raises():
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         with pytest.raises(TypeError, match="int physreg id or None"):
-            mmi.emit_object(select=cb)
+            mmi.emit_object(regalloc_select_or_split=cb)
     assert_no_leaks()
 
 
@@ -416,7 +416,9 @@ def test_regalloc_and_select_are_mutually_exclusive():
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         with pytest.raises(ValueError, match="regalloc"):
-            mmi.emit_object(regalloc="eudsl-python", select=lambda li, c: c[0])
+            mmi.emit_object(
+                regalloc="eudsl-python", regalloc_select_or_split=lambda li, c: c[0]
+            )
     assert_no_leaks()
 
 
@@ -436,7 +438,7 @@ def test_jit_executes_python_selected_add():
         tm = jit.TargetMachine()  # host triple -> object loadable in-process
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
-        obj = mmi.emit_object(select=cb)
+        obj = mmi.emit_object(regalloc_select_or_split=cb)
         assert picks  # the python callback drove selectOrSplit
 
         j = jit.LLJIT()
@@ -706,7 +708,7 @@ class _RecordingSched(mir.ReadyQueueStrategy):
 
 def test_regalloc_and_scheduler_are_independent():
     """A scheduler-side option (scheduler=) and an allocator-side option
-    (regalloc=/select=) drive one emission independently: the scheduler runs (its
+    (regalloc=/regalloc_select_or_split=) drive one emission independently: the scheduler runs (its
     recording list is non-empty) and the allocator counter fires, and the object
     is a well-formed ELF."""
     _RecordingSched.picks = []
@@ -725,7 +727,7 @@ def test_regalloc_and_scheduler_are_independent():
 
 
 def test_scheduler_and_select_drive_one_emit():
-    """select= (Python allocator) is independent of scheduler= (Python
+    """regalloc_select_or_split= (Python allocator) is independent of scheduler= (Python
     scheduler): both run in one emission and the object is a well-formed ELF."""
     _RecordingSched.picks = []
     selects = []
@@ -741,7 +743,9 @@ def test_scheduler_and_select_drive_one_emit():
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         _mir_ext._reset_regalloc_select_count()
-        obj = mmi.emit_object(scheduler="sched-with-select", select=select_cb)
+        obj = mmi.emit_object(
+            scheduler="sched-with-select", regalloc_select_or_split=select_cb
+        )
         assert _RecordingSched.picks and selects  # both Python callbacks ran
         assert _mir_ext._regalloc_select_count() > 0
         assert obj[:4] == b"\x7fELF"

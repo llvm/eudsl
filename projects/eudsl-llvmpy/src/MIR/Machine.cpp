@@ -376,10 +376,10 @@ public:
   // pair of runtime flags.
   nb::bytes emitObject(std::optional<std::string> scheduler,
                        std::optional<std::string> regalloc,
-                       std::optional<nb::callable> select) {
-    if (regalloc && select) {
-      throw nb::value_error(
-          "emit_object accepts at most one of regalloc= and select=");
+                       std::optional<nb::callable> regallocSelect) {
+    if (regalloc && regallocSelect) {
+      throw nb::value_error("emit_object accepts at most one of regalloc= and "
+                            "regalloc_select_or_split=");
     }
     if (std::holds_alternative<EmittedOwned>(state_))
       throw std::runtime_error("object already emitted");
@@ -402,12 +402,13 @@ public:
 
     // Resolve the requested register allocator against the RegisterRegAlloc
     // registry by name (built-ins, "eudsl-python", and register_regalloc names
-    // all live there) so an unknown name fails cleanly. select= chooses the
-    // built-in "eudsl-python" allocator and installs the callable; a name
-    // registered via register_regalloc additionally installs its class. Also
-    // capture the "default" ctor as the valid restore baseline (see the RAII).
+    // all live there) so an unknown name fails cleanly.
+    // regalloc_select_or_split= chooses the built-in "eudsl-python" allocator
+    // and installs the callable; a name registered via register_regalloc
+    // additionally installs its class. Also capture the "default" ctor as the
+    // valid restore baseline (see the RAII).
     std::optional<std::string> allocName = regalloc;
-    if (select)
+    if (regallocSelect)
       allocName = "eudsl-python";
     llvm::RegisterRegAlloc::FunctionPassCtor regAllocCtor = nullptr;
     llvm::RegisterRegAlloc::FunctionPassCtor defaultRegAllocCtor = nullptr;
@@ -554,8 +555,8 @@ public:
           eudsl::clearPendingSelectCallback();
       }
     } restoreSelect;
-    if (select) {
-      eudsl::setPendingSelectCallback(*select);
+    if (regallocSelect) {
+      eudsl::setPendingSelectCallback(*regallocSelect);
       restoreSelect.active = true;
     }
 
@@ -1371,7 +1372,7 @@ void populate_mir(nb::module_ &m) {
            "text.")
       .def(
           "emit_object", &MirModule::emitObject, "scheduler"_a = nb::none(),
-          "regalloc"_a = nb::none(), "select"_a = nb::none(),
+          "regalloc"_a = nb::none(), "regalloc_select_or_split"_a = nb::none(),
           "Emit a relocatable object file for the built (already-selected) "
           "MIR by running the back half of codegen (regalloc, emission). "
           "Verifies the MIR first, raising if it is malformed. When "
@@ -1380,8 +1381,9 @@ void populate_mir(nb::module_ &m) {
           "the target default; an unregistered name raises. When `regalloc` "
           "names a registered allocator (a built-in, \"eudsl-python\", or a "
           "register_regalloc name), it drives register allocation; an unknown "
-          "name raises. `select` is a one-shot callable driving the "
-          "\"eudsl-python\" allocator's selectOrSplit; regalloc and select are "
+          "name raises. `regalloc_select_or_split` is a one-shot callable "
+          "driving the \"eudsl-python\" allocator's selectOrSplit (not "
+          "instruction selection); regalloc and regalloc_select_or_split are "
           "mutually exclusive, and both are independent of scheduler.");
 
   // Run instruction selection on an IR module and hand back the MirModule that

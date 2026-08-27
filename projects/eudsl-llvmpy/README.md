@@ -422,7 +422,7 @@ obj = mmi.emit_object(regalloc="eudsl-python")
 # 2. One-shot callable for selectOrSplit: given the vreg's LiveInterval and the
 #    legal (non-interfering) candidate physreg ids, return one to assign or None
 #    to spill.
-obj = mmi.emit_object(select=lambda li, candidates: candidates[0] if candidates else None)
+obj = mmi.emit_object(regalloc_select_or_split=lambda li, candidates: candidates[0] if candidates else None)
 
 # 3. A named, class-based allocator: a fresh instance per MachineFunction.
 class MyAlloc:
@@ -435,7 +435,7 @@ mir.register_regalloc("myalloc", MyAlloc)
 obj = mmi.emit_object(regalloc="myalloc")
 ```
 
-`regalloc=` and `select=` are mutually exclusive, and both are independent of
+`regalloc=` and `regalloc_select_or_split=` are mutually exclusive, and both are independent of
 `scheduler=`. A callable/method that raises, or returns an id that is not a
 presented candidate, has its exception re-raised out of `emit_object` (stashed
 and re-raised after codegen winds down, never thrown across LLVM's
