@@ -418,9 +418,11 @@ mutates state through `self`: `allocation_order(li)` (physregs to try, in target
 order), `self.matrix` (`is_free`/`check_interference`/`assign`/`unassign`),
 `self.lis` (LiveIntervals: `instruction_index`, `mbb_start_index`,
 `mbb_end_index`, `has_interval`, `interval`), `self.vrm`, and
-`self.machine_function`. Optional overrides: `enqueue(li)`/`dequeue()` (drive the
-assignment order; the default is a spill-weight priority queue),
-`post_optimization()`, and `about_to_remove_interval(li)`.
+`self.machine_function`. Optional overrides: `enqueue(reg)`/`dequeue()` (drive
+the assignment order; both traffic in register ids -- stable across splitting,
+unlike interval objects -- and `dequeue` returns a reg id or `None`; the default
+is a spill-weight priority queue), `post_optimization()`, and
+`about_to_remove_interval(li)`.
 
 Register a subclass under a name and select it per emission. For the trivial
 first-free-or-spill allocator, use the built-in `mir.BasicRegAlloc`:
