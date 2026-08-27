@@ -383,6 +383,84 @@ def test_slot_index_and_live_intervals_accessors():
     assert_no_leaks()
 
 
+def _build_three_block(mmi):
+    """b0 defines v, b1 is empty (v live-through), b2 uses v: gives SplitAnalysis
+    one through block and two use blocks for v's interval."""
+    mf = mmi.machine_function("thru")
+    b = mir.MachineIRBuilder(mf)
+    gpr32 = mf.reg_class("GPR32")
+    w0 = mf.physreg("W0")
+    b0 = mf.blocks[0]
+    b1 = mf.create_block()
+    b2 = mf.create_block()
+    b0.add_livein(w0)
+    copy = mf.opcode("COPY")
+    br = mf.opcode("B")
+
+    b.set_block(b0)
+    v = mf.create_vreg(gpr32)
+    c = b.build_instr(copy)
+    c.add_reg(v, is_def=True)
+    c.add_reg(w0)
+    j0 = b.build_instr(br)
+    j0.add_mbb(b1)
+    b0.add_successor(b1)
+
+    b.set_block(b1)
+    j1 = b.build_instr(br)
+    j1.add_mbb(b2)
+    b1.add_successor(b2)
+
+    b.set_block(b2)
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(v)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+# -- SplitAnalysis ------------------------------------------------------------
+
+
+def test_split_analysis_use_and_through_blocks():
+    saw = {}
+
+    class Analyzer(mir.RegAllocBase):
+        def select_or_split(self, li):
+            if "use_blocks" not in saw:
+                sa = self.split_analysis
+                sa.analyze(li)
+                blocks = sa.use_blocks()
+                saw["use_blocks"] = len(blocks)
+                bi = blocks[0]
+                saw["mbb_num"] = bi.mbb.number
+                saw["first_valid"] = bi.first_instr.is_valid()
+                saw["last_valid"] = bi.last_instr.is_valid()
+                saw["first_def_valid"] = bi.first_def.is_valid()
+                saw["live_in"] = bi.live_in
+                saw["live_out"] = bi.live_out
+                saw["num_through"] = sa.num_through_blocks()
+                saw["through"] = sa.through_blocks()
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-split-analysis", Analyzer)
+    obj = _emit("ra-split-analysis", Analyzer, builder=_build_three_block, fn="thru")
+    assert obj[:4] == b"\x7fELF"
+    assert saw["use_blocks"] >= 1
+    assert saw["first_valid"] and saw["last_valid"]
+    assert saw["num_through"] == 1
+    assert len(saw["through"]) == 1
+    assert isinstance(saw["live_in"], bool) and isinstance(saw["live_out"], bool)
+    assert_no_leaks()
+
+
 # -- exception matrix ---------------------------------------------------------
 
 

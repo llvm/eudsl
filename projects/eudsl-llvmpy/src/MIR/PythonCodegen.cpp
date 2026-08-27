@@ -381,6 +381,7 @@ public:
   llvm::LiveIntervals *intervals() { return LIS; }
   llvm::VirtRegMap *virtRegMap() { return VRM; }
   llvm::MachineFunction *machineFunction() { return mf; }
+  llvm::SplitAnalysis *splitAnalysisPtr() { return splitAnalysis; }
 
   // Physregs, in target allocation order, that Python may try for `li`.
   std::vector<unsigned> allocationOrder(const llvm::LiveInterval &li) {
@@ -852,7 +853,12 @@ void populate_python_codegen(nb::module_ &m) {
           "machine_function",
           [](PyRegAllocBase &self) { return self.machineFunction(); },
           nb::rv_policy::reference_internal,
-          "The MachineFunction being allocated.");
+          "The MachineFunction being allocated.")
+      .def_prop_ro(
+          "split_analysis",
+          [](PyRegAllocBase &self) { return self.splitAnalysisPtr(); },
+          nb::rv_policy::reference_internal,
+          "The SplitAnalysis for planning live-range splits.");
 
   // A virtual register's live interval: the allocator receives one per
   // select_or_split call and queries/assigns it against the matrix.
@@ -928,6 +934,37 @@ void populate_python_codegen(nb::module_ &m) {
             return l.getInterval(llvm::Register(reg));
           },
           nb::rv_policy::reference_internal, "reg"_a);
+
+  // Splitting analysis: after analyze(li), it describes how `li` is used per
+  // block, guiding where the split editor should open/close intervals.
+  nb::class_<llvm::SplitAnalysis> sa(m, "SplitAnalysis");
+  nb::class_<llvm::SplitAnalysis::BlockInfo>(sa, "BlockInfo")
+      .def_prop_ro(
+          "mbb", [](const llvm::SplitAnalysis::BlockInfo &b) { return b.MBB; },
+          nb::rv_policy::reference)
+      .def_ro("first_instr", &llvm::SplitAnalysis::BlockInfo::FirstInstr)
+      .def_ro("last_instr", &llvm::SplitAnalysis::BlockInfo::LastInstr)
+      .def_ro("first_def", &llvm::SplitAnalysis::BlockInfo::FirstDef)
+      .def_ro("live_in", &llvm::SplitAnalysis::BlockInfo::LiveIn)
+      .def_ro("live_out", &llvm::SplitAnalysis::BlockInfo::LiveOut);
+  sa.def(
+        "analyze",
+        [](llvm::SplitAnalysis &s, const llvm::LiveInterval &li) {
+          s.analyze(&li);
+        },
+        "li"_a)
+      .def("use_blocks",
+           [](llvm::SplitAnalysis &s) {
+             return std::vector<llvm::SplitAnalysis::BlockInfo>(
+                 s.getUseBlocks().begin(), s.getUseBlocks().end());
+           })
+      .def("num_through_blocks", &llvm::SplitAnalysis::getNumThroughBlocks)
+      .def("through_blocks", [](llvm::SplitAnalysis &s) {
+        std::vector<unsigned> v;
+        for (unsigned b : s.getThroughBlocks().set_bits())
+          v.push_back(b);
+        return v;
+      });
 
   nb::enum_<llvm::LiveRegMatrix::InterferenceKind>(m, "InterferenceKind")
       .value("IK_Free", llvm::LiveRegMatrix::IK_Free)
