@@ -486,6 +486,55 @@ void populate_python_codegen(nb::module_ &m) {
 
   nb::class_<PyRegAllocBase>(m, "RegAllocBase").def(nb::init<>());
 
+  // A virtual register's live interval: the allocator receives one per
+  // select_or_split call and queries/assigns it against the matrix.
+  nb::class_<llvm::LiveInterval>(m, "LiveInterval")
+      .def_prop_ro("reg",
+                   [](const llvm::LiveInterval &li) { return li.reg().id(); })
+      .def_prop_ro("weight",
+                   [](const llvm::LiveInterval &li) { return li.weight(); })
+      .def_prop_ro("is_spillable", [](const llvm::LiveInterval &li) {
+        return li.isSpillable();
+      });
+
+  nb::class_<llvm::VirtRegMap>(m, "VirtRegMap");
+  nb::class_<llvm::Spiller>(m, "Spiller");
+  nb::class_<llvm::LiveIntervals>(m, "LiveIntervals");
+
+  nb::enum_<llvm::LiveRegMatrix::InterferenceKind>(m, "InterferenceKind")
+      .value("IK_Free", llvm::LiveRegMatrix::IK_Free)
+      .value("IK_VirtReg", llvm::LiveRegMatrix::IK_VirtReg)
+      .value("IK_RegUnit", llvm::LiveRegMatrix::IK_RegUnit)
+      .value("IK_RegMask", llvm::LiveRegMatrix::IK_RegMask);
+
+  nb::class_<llvm::LiveRegMatrix>(m, "LiveRegMatrix")
+      .def(
+          "check_interference",
+          [](llvm::LiveRegMatrix &mat, const llvm::LiveInterval &li,
+             unsigned preg) {
+            return mat.checkInterference(li, llvm::MCRegister(preg));
+          },
+          "li"_a, "physreg"_a)
+      .def(
+          "is_free",
+          [](llvm::LiveRegMatrix &mat, const llvm::LiveInterval &li,
+             unsigned preg) {
+            return mat.checkInterference(li, llvm::MCRegister(preg)) ==
+                   llvm::LiveRegMatrix::IK_Free;
+          },
+          "li"_a, "physreg"_a)
+      .def(
+          "assign",
+          [](llvm::LiveRegMatrix &mat, const llvm::LiveInterval &li,
+             unsigned preg) { mat.assign(li, llvm::MCRegister(preg)); },
+          "li"_a, "physreg"_a)
+      .def(
+          "unassign",
+          [](llvm::LiveRegMatrix &mat, const llvm::LiveInterval &li) {
+            mat.unassign(li);
+          },
+          "li"_a);
+
   m.def("register_regalloc", &registerRegAlloc, "name"_a, "cls"_a,
         "Register a RegAllocBase subclass under `name` so "
         "emit_object(regalloc=name) can select it. The class must define "
