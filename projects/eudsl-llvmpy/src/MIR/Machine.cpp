@@ -486,12 +486,19 @@ public:
     using RAOpt =
         llvm::cl::opt<RACtor, false,
                       llvm::RegisterPassParser<llvm::RegisterRegAlloc>>;
+    // createRegAllocPass reads RegisterRegAlloc::getDefault(), which the
+    // codegen pipeline caches process-globally via call_once the first time it
+    // runs -- the -regalloc cl::opt is only that cache's seed. So override
+    // getDefault() directly (the cl::opt is ignored once cached) and restore
+    // it, falling back to the cl::opt's value (the useDefaultRegisterAllocator
+    // sentinel) when nothing has seeded it yet, so a later default run never
+    // dereferences a null ctor.
     struct RestoreRegAlloc {
-      RAOpt *opt = nullptr;
+      bool active = false;
       RACtor value = nullptr;
       ~RestoreRegAlloc() {
-        if (opt)
-          *opt = value;
+        if (active)
+          llvm::RegisterRegAlloc::setDefault(value);
       }
     } restoreRegAlloc;
     struct RestoreActiveRegAllocClass {
@@ -502,15 +509,19 @@ public:
       }
     } restoreActiveRegAllocClass;
     if (regAllocCtor) {
-      auto regallocIt = opts.find("regalloc");
-      // LCOV_EXCL_START -- regalloc is always registered by codegen
-      if (regallocIt == opts.end())
-        throw std::runtime_error("the -regalloc option is not registered");
+      RACtor prev = llvm::RegisterRegAlloc::getDefault();
+      // LCOV_EXCL_START -- getDefault() is null only when no codegen pipeline
+      // has run yet in the process; the suite always emits before this point.
+      if (!prev) {
+        auto regallocIt = opts.find("regalloc");
+        if (regallocIt == opts.end())
+          throw std::runtime_error("the -regalloc option is not registered");
+        prev = *static_cast<RAOpt *>(regallocIt->second);
+      }
       // LCOV_EXCL_STOP
-      auto &regallocOpt = *static_cast<RAOpt *>(regallocIt->second);
-      restoreRegAlloc.opt = &regallocOpt;
-      restoreRegAlloc.value = regallocOpt;
-      regallocOpt = regAllocCtor;
+      restoreRegAlloc.value = prev;
+      restoreRegAlloc.active = true;
+      llvm::RegisterRegAlloc::setDefault(regAllocCtor);
       eudsl::setActiveRegAllocClass(regAllocClass);
       restoreActiveRegAllocClass.active = true;
     }

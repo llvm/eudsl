@@ -59,3 +59,23 @@ class ReadyQueueStrategy(mir.MachineSchedStrategy):
 
 
 mir.ReadyQueueStrategy = ReadyQueueStrategy
+
+
+class BasicRegAlloc(mir.RegAllocBase):
+    """First-free-or-spill allocator.
+
+    Relies on the C++ default spill-weight queue (no enqueue/dequeue override):
+    for each unassigned live interval, take the first interference-free physreg
+    in the target allocation order, else spill it and let the resulting split
+    vregs be re-enqueued.
+    """
+
+    def select_or_split(self, li):
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        self.spill(li)
+        return None
+
+
+mir.BasicRegAlloc = BasicRegAlloc
