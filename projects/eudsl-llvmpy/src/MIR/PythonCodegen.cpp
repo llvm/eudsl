@@ -8,7 +8,10 @@
 #include "MIR/RegAllocBase.h"
 #include "MIR/SplitKit.h"
 
+#include <llvm/Analysis/AliasAnalysis.h>
+#include <llvm/Analysis/ProfileSummaryInfo.h>
 #include <llvm/CodeGen/CalcSpillWeights.h>
+#include <llvm/CodeGen/LiveDebugVariables.h>
 #include <llvm/CodeGen/LiveInterval.h>
 #include <llvm/CodeGen/LiveIntervals.h>
 #include <llvm/CodeGen/LiveRangeEdit.h>
@@ -28,6 +31,7 @@
 #include <llvm/CodeGen/SlotIndexes.h>
 #include <llvm/CodeGen/Spiller.h>
 #include <llvm/CodeGen/VirtRegMap.h>
+#include <llvm/PassRegistry.h>
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/pair.h>
@@ -311,52 +315,26 @@ createRegisteredPyStrategy(llvm::MachineSchedContext *c) {
   }
 }
 
-// Trampoline letting Python subclass llvm::RegAllocBase. RegAllocBase is a
-// driver mixed into a MachineFunctionPass: its state (VRM/LIS/Matrix/...) and
-// the init()/allocatePhysRegs() driver are protected, so the harness pass
-// reaches them through the public py* wrappers below rather than owning an
-// adaptor (there is no unique_ptr sink to satisfy, unlike the scheduler).
-class PyRegAllocBase : public llvm::RegAllocBase {
+// A complete pure-C++ RegAllocBase: first-free-or-spill over the target
+// allocation order, driven by a spill-weight priority queue. It is both the
+// base for the Python trampoline (supplying the fallback each virtual defers
+// to) and the standalone allocator the harness runs when a Python __init__
+// raises, so the emitted MIR stays valid and the stashed exception can
+// re-raise.
+class NativeRegAlloc : public llvm::RegAllocBase {
 public:
-  NB_TRAMPOLINE(llvm::RegAllocBase, 6);
-
   // spiller() is pure and dereferenced by allocatePhysRegs; the harness injects
   // the concrete Spiller before driving, so this is never called with null.
   llvm::Spiller &spiller() override { return *injectedSpiller; }
 
-  // Always mirror the register into the native priority queue so the fallback
-  // set stays complete even when Python drives dequeue itself; then forward to
-  // an optional Python enqueue.
   void enqueueImpl(const llvm::LiveInterval *li) override {
     nativeQueue.push({li->weight(), li->reg()});
-    nb::gil_scoped_acquire gil;
-    nb::handle self = nb_trampoline.base();
-    if (eudsl::pendingCodegenError || !nb::hasattr(self, "enqueue"))
-      return;
-    try {
-      self.attr("enqueue")(nb::cast(const_cast<llvm::LiveInterval *>(li),
-                                    nb::rv_policy::reference));
-    } catch (...) {
-      eudsl::pendingCodegenError = std::current_exception();
-    }
   }
 
   const llvm::LiveInterval *dequeue() override {
-    nb::gil_scoped_acquire gil;
-    nb::handle self = nb_trampoline.base();
-    if (!eudsl::pendingCodegenError && nb::hasattr(self, "dequeue")) {
-      try {
-        nb::object choice = self.attr("dequeue")();
-        if (choice.is_none())
-          return nullptr;
-        return nb::cast<llvm::LiveInterval *>(choice);
-      } catch (...) {
-        eudsl::pendingCodegenError = std::current_exception();
-      }
-    }
-    // Native drain (default queue, or winding down after a stash): the queue
-    // holds (weight, reg) rather than pointers because splitting recreates
-    // intervals, so re-fetch and skip registers already assigned or gone.
+    // The queue holds (weight, reg) rather than pointers because splitting
+    // recreates intervals, so re-fetch and skip registers already assigned or
+    // gone (the spiller coalesces snippets).
     while (!nativeQueue.empty()) {
       QueueEntry e = nativeQueue.top();
       nativeQueue.pop();
@@ -370,57 +348,16 @@ public:
   llvm::MCRegister
   selectOrSplit(const llvm::LiveInterval &vreg,
                 llvm::SmallVectorImpl<llvm::Register> &splitLVRs) override {
-    currentSplit = &splitLVRs;
-    nb::gil_scoped_acquire gil;
-    if (!eudsl::pendingCodegenError) {
-      try {
-        nb::object r = nb_trampoline.base().attr("select_or_split")(nb::cast(
-            const_cast<llvm::LiveInterval *>(&vreg), nb::rv_policy::reference));
-        currentSplit = nullptr;
-        // None means Python handled it (spill/split appended new vregs); an int
-        // is the chosen physreg for the driver to assign.
-        if (r.is_none())
-          return llvm::MCRegister();
-        return llvm::MCRegister(nb::cast<unsigned>(r));
-      } catch (...) {
-        eudsl::pendingCodegenError = std::current_exception();
-      }
+    auto order =
+        llvm::AllocationOrder::create(vreg.reg(), *VRM, RegClassInfo, Matrix);
+    for (llvm::MCRegister phys : order) {
+      if (Matrix->checkInterference(vreg, phys) == llvm::LiveRegMatrix::IK_Free)
+        return phys;
     }
-    llvm::MCRegister phys = nativeSelectOrSplit(vreg, splitLVRs);
-    currentSplit = nullptr;
-    return phys;
-  }
-
-  void postOptimization() override {
-    nb::gil_scoped_acquire gil;
-    nb::handle self = nb_trampoline.base();
-    if (!eudsl::pendingCodegenError && nb::hasattr(self, "post_optimization")) {
-      try {
-        self.attr("post_optimization")();
-        return;
-      } catch (...) {
-        eudsl::pendingCodegenError = std::current_exception();
-      }
-    }
-    // No override, or winding down after a stash: run the base cleanup (spiller
-    // post-optimize + dead-remat removal) so the emitted MIR stays valid.
-    llvm::RegAllocBase::postOptimization();
-  }
-
-  // Called by allocatePhysRegs before it drops an interval the spiller left
-  // unused; forwarded to an optional Python about_to_remove_interval.
-  void aboutToRemoveInterval(const llvm::LiveInterval &li) override {
-    nb::gil_scoped_acquire gil;
-    nb::handle self = nb_trampoline.base();
-    if (eudsl::pendingCodegenError ||
-        !nb::hasattr(self, "about_to_remove_interval"))
-      return;
-    try {
-      self.attr("about_to_remove_interval")(nb::cast(
-          const_cast<llvm::LiveInterval *>(&li), nb::rv_policy::reference));
-    } catch (...) {
-      eudsl::pendingCodegenError = std::current_exception();
-    }
+    llvm::LiveRangeEdit lre(&vreg, splitLVRs, *mf, *LIS, VRM,
+                            /*delegate=*/nullptr, &DeadRemats);
+    injectedSpiller->spill(lre);
+    return llvm::MCRegister();
   }
 
   // Public wrappers the harness pass uses to reach the protected driver.
@@ -464,24 +401,7 @@ public:
 
   llvm::Spiller *injectedSpiller = nullptr;
 
-private:
-  // First-free-or-spill over the target allocation order; the only fallback
-  // once Python has raised, so it must always make forward progress.
-  llvm::MCRegister
-  nativeSelectOrSplit(const llvm::LiveInterval &vreg,
-                      llvm::SmallVectorImpl<llvm::Register> &splitLVRs) {
-    auto order =
-        llvm::AllocationOrder::create(vreg.reg(), *VRM, RegClassInfo, Matrix);
-    for (llvm::MCRegister phys : order) {
-      if (Matrix->checkInterference(vreg, phys) == llvm::LiveRegMatrix::IK_Free)
-        return phys;
-    }
-    llvm::LiveRangeEdit lre(&vreg, splitLVRs, *mf, *LIS, VRM,
-                            /*delegate=*/nullptr, &DeadRemats);
-    injectedSpiller->spill(lre);
-    return llvm::MCRegister();
-  }
-
+protected:
   struct QueueEntry {
     float weight;
     llvm::Register reg;
@@ -502,6 +422,104 @@ private:
   llvm::MachineFunction *mf = nullptr;
   llvm::SplitAnalysis *splitAnalysis = nullptr;
   llvm::SplitEditor *splitEditor = nullptr;
+};
+
+// Trampoline letting Python subclass the allocator. Each virtual calls the
+// Python override under the GIL and stashes on raise; when no override exists
+// or the run is already winding down after a stash, it defers to the
+// NativeRegAlloc base (which always makes forward progress), so the pipeline
+// reaches runCodegenPipeline's re-raise with valid MIR.
+class PyRegAllocBase : public NativeRegAlloc {
+public:
+  NB_TRAMPOLINE(NativeRegAlloc, 6);
+
+  // Keep the native fallback queue complete, then forward to an optional
+  // Python enqueue.
+  void enqueueImpl(const llvm::LiveInterval *li) override {
+    NativeRegAlloc::enqueueImpl(li);
+    nb::gil_scoped_acquire gil;
+    nb::handle self = nb_trampoline.base();
+    if (eudsl::pendingCodegenError || !nb::hasattr(self, "enqueue"))
+      return;
+    try {
+      self.attr("enqueue")(nb::cast(const_cast<llvm::LiveInterval *>(li),
+                                    nb::rv_policy::reference));
+    } catch (...) {
+      eudsl::pendingCodegenError = std::current_exception();
+    }
+  }
+
+  const llvm::LiveInterval *dequeue() override {
+    nb::gil_scoped_acquire gil;
+    nb::handle self = nb_trampoline.base();
+    if (!eudsl::pendingCodegenError && nb::hasattr(self, "dequeue")) {
+      try {
+        nb::object choice = self.attr("dequeue")();
+        if (choice.is_none())
+          return nullptr;
+        return nb::cast<llvm::LiveInterval *>(choice);
+      } catch (...) {
+        eudsl::pendingCodegenError = std::current_exception();
+      }
+    }
+    return NativeRegAlloc::dequeue();
+  }
+
+  llvm::MCRegister
+  selectOrSplit(const llvm::LiveInterval &vreg,
+                llvm::SmallVectorImpl<llvm::Register> &splitLVRs) override {
+    currentSplit = &splitLVRs;
+    nb::gil_scoped_acquire gil;
+    if (!eudsl::pendingCodegenError) {
+      try {
+        nb::object r = nb_trampoline.base().attr("select_or_split")(nb::cast(
+            const_cast<llvm::LiveInterval *>(&vreg), nb::rv_policy::reference));
+        currentSplit = nullptr;
+        // None means Python handled it (spill/split appended new vregs); an int
+        // is the chosen physreg for the driver to assign.
+        if (r.is_none())
+          return llvm::MCRegister();
+        return llvm::MCRegister(nb::cast<unsigned>(r));
+      } catch (...) {
+        eudsl::pendingCodegenError = std::current_exception();
+      }
+    }
+    llvm::MCRegister phys = NativeRegAlloc::selectOrSplit(vreg, splitLVRs);
+    currentSplit = nullptr;
+    return phys;
+  }
+
+  void postOptimization() override {
+    nb::gil_scoped_acquire gil;
+    nb::handle self = nb_trampoline.base();
+    if (!eudsl::pendingCodegenError && nb::hasattr(self, "post_optimization")) {
+      try {
+        self.attr("post_optimization")();
+        return;
+      } catch (...) {
+        eudsl::pendingCodegenError = std::current_exception();
+      }
+    }
+    // No override, or winding down after a stash: run the base cleanup (spiller
+    // post-optimize + dead-remat removal) so the emitted MIR stays valid.
+    llvm::RegAllocBase::postOptimization();
+  }
+
+  // Called by allocatePhysRegs before it drops an interval the spiller left
+  // unused; forwarded to an optional Python about_to_remove_interval.
+  void aboutToRemoveInterval(const llvm::LiveInterval &li) override {
+    nb::gil_scoped_acquire gil;
+    nb::handle self = nb_trampoline.base();
+    if (eudsl::pendingCodegenError ||
+        !nb::hasattr(self, "about_to_remove_interval"))
+      return;
+    try {
+      self.attr("about_to_remove_interval")(nb::cast(
+          const_cast<llvm::LiveInterval *>(&li), nb::rv_policy::reference));
+    } catch (...) {
+      eudsl::pendingCodegenError = std::current_exception();
+    }
+  }
 };
 
 // name -> Python RegAllocBase subclass, held in
@@ -536,7 +554,155 @@ void registerRegAlloc(const std::string &name,
   classes[name.c_str()] = cls;
 }
 
+// The fixed C++ MachineFunctionPass that hosts the Python allocator. It
+// occupies the register-allocator slot in the codegen pipeline (selected via
+// the -regalloc option), fetches the analyses a RegAllocBase driver needs,
+// builds the spiller + SplitAnalysis/SplitEditor, constructs a fresh Python
+// allocator per MachineFunction, and drives it through the public
+// pyInit/pyAllocate wrappers. Analysis wiring mirrors RABasic (the minimal
+// RegAllocBase user); the SplitAnalysis/SplitEditor it injects give Python the
+// greedy-style splitting primitives without RAGreedy's extra pass dependencies.
+class PyRegAllocDriver : public llvm::MachineFunctionPass {
+public:
+  static char ID;
+  PyRegAllocDriver() : llvm::MachineFunctionPass(ID) {}
+
+  ~PyRegAllocDriver() override {
+    if (heldInstance.is_valid()) {
+      nb::gil_scoped_acquire gil;
+      heldInstance.reset();
+    }
+  }
+
+  llvm::StringRef getPassName() const override {
+    return "eudsl Python register allocator";
+  }
+
+  void getAnalysisUsage(llvm::AnalysisUsage &au) const override {
+    au.setPreservesCFG();
+    au.addRequired<llvm::AAResultsWrapperPass>();
+    au.addPreserved<llvm::AAResultsWrapperPass>();
+    au.addRequired<llvm::LiveIntervalsWrapperPass>();
+    au.addPreserved<llvm::LiveIntervalsWrapperPass>();
+    au.addPreserved<llvm::SlotIndexesWrapperPass>();
+    au.addRequired<llvm::LiveDebugVariablesWrapperLegacy>();
+    au.addPreserved<llvm::LiveDebugVariablesWrapperLegacy>();
+    au.addRequired<llvm::LiveStacksWrapperLegacy>();
+    au.addPreserved<llvm::LiveStacksWrapperLegacy>();
+    au.addRequired<llvm::ProfileSummaryInfoWrapperPass>();
+    au.addRequired<llvm::MachineBlockFrequencyInfoWrapperPass>();
+    au.addRequired<llvm::MachineDominatorTreeWrapperPass>();
+    au.addRequiredID(llvm::MachineDominatorsID);
+    au.addRequired<llvm::MachineLoopInfoWrapperPass>();
+    au.addRequired<llvm::VirtRegMapWrapperLegacy>();
+    au.addPreserved<llvm::VirtRegMapWrapperLegacy>();
+    au.addRequired<llvm::LiveRegMatrixWrapperLegacy>();
+    au.addPreserved<llvm::LiveRegMatrixWrapperLegacy>();
+    llvm::MachineFunctionPass::getAnalysisUsage(au);
+  }
+
+  llvm::MachineFunctionProperties getRequiredProperties() const override {
+    return llvm::MachineFunctionProperties().set(
+        llvm::MachineFunctionProperties::Property::NoPHIs);
+  }
+
+  bool runOnMachineFunction(llvm::MachineFunction &mfn) override {
+    llvm::VirtRegMap &vrm =
+        getAnalysis<llvm::VirtRegMapWrapperLegacy>().getVRM();
+    llvm::LiveIntervals &lis =
+        getAnalysis<llvm::LiveIntervalsWrapperPass>().getLIS();
+    llvm::LiveRegMatrix &mat =
+        getAnalysis<llvm::LiveRegMatrixWrapperLegacy>().getLRM();
+    llvm::MachineBlockFrequencyInfo &mbfi =
+        getAnalysis<llvm::MachineBlockFrequencyInfoWrapperPass>().getMBFI();
+    llvm::LiveStacks &livestks =
+        getAnalysis<llvm::LiveStacksWrapperLegacy>().getLS();
+    llvm::MachineDominatorTree &mdt =
+        getAnalysis<llvm::MachineDominatorTreeWrapperPass>().getDomTree();
+    llvm::MachineLoopInfo &loops =
+        getAnalysis<llvm::MachineLoopInfoWrapperPass>().getLI();
+    llvm::ProfileSummaryInfo &psi =
+        getAnalysis<llvm::ProfileSummaryInfoWrapperPass>().getPSI();
+
+    nb::gil_scoped_acquire gil;
+    // LCOV_EXCL_START -- emit_object always sets the active class before
+    // running
+    if (!activeRegAllocClass.is_valid())
+      return false;
+    // LCOV_EXCL_STOP
+
+    // Analyses shared by whichever allocator drives this function.
+    llvm::VirtRegAuxInfo vrai(mfn, lis, vrm, loops, mbfi, &psi);
+    vrai.calculateSpillWeightsAndHints();
+    std::unique_ptr<llvm::Spiller> spiller(
+        llvm::createInlineSpiller({lis, livestks, mdt, mbfi}, mfn, vrm, vrai));
+    llvm::SplitAnalysis sa(vrm, lis, loops);
+    llvm::SplitEditor se(sa, lis, vrm, mdt, mbfi, vrai);
+
+    nb::object obj;
+    try {
+      obj = activeRegAllocClass();
+    } catch (...) {
+      // The subclass __init__ raised. Stash it and allocate natively so the MIR
+      // is valid and the pipeline reaches runCodegenPipeline's re-raise instead
+      // of aborting the rewriter on unallocated vregs.
+      eudsl::pendingCodegenError = std::current_exception();
+      NativeRegAlloc fallback;
+      fallback.pyInit(vrm, lis, mat, *spiller, mfn, &sa, &se);
+      fallback.pyAllocate();
+      return true;
+    }
+    auto *base =
+        static_cast<PyRegAllocBase *>(nb::inst_ptr<PyRegAllocBase>(obj));
+    base->pyInit(vrm, lis, mat, *spiller, mfn, &sa, &se);
+    base->pyAllocate();
+    // Hold the instance until the pass is destroyed so its C++ subobject (and
+    // any Python-recorded witness state) outlives this call; dropped under the
+    // GIL in the dtor.
+    heldInstance = std::move(obj);
+    return true;
+  }
+
+private:
+  nb::object heldInstance;
+};
+
+// The ctor every registered name shares; emit_object points the -regalloc
+// option at it (as it does -misched for the scheduler) and sets
+// activeRegAllocClass so this knows which subclass to instantiate.
+llvm::FunctionPass *createRegisteredPyRegAlloc() {
+  return new PyRegAllocDriver();
+}
+
 } // namespace
+
+// Declared here (rather than InitializePasses.h) since this pass lives in-tree;
+// the INITIALIZE_PASS block below defines it.
+namespace llvm {
+void initializePyRegAllocDriverPass(PassRegistry &);
+} // namespace llvm
+
+char PyRegAllocDriver::ID = 0;
+
+// INITIALIZE_PASS expands to unqualified PassRegistry/PassInfo/callDefaultCtor
+// (LLVM's macros assume an in-scope llvm namespace).
+using namespace llvm;
+
+INITIALIZE_PASS_BEGIN(PyRegAllocDriver, "eudsl-python-regalloc",
+                      "eudsl Python register allocator", false, false)
+INITIALIZE_PASS_DEPENDENCY(LiveDebugVariablesWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(SlotIndexesWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(LiveIntervalsWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(LiveStacksWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTreeWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(MachineLoopInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(VirtRegMapWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(LiveRegMatrixWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(ProfileSummaryInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(MachineBlockFrequencyInfoWrapperPass)
+INITIALIZE_PASS_END(PyRegAllocDriver, "eudsl-python-regalloc",
+                    "eudsl Python register allocator", false, false)
 
 namespace eudsl {
 
@@ -599,6 +765,12 @@ void setActiveRegAllocClass(nb::type_object cls) {
 }
 void clearActiveRegAllocClass() { activeRegAllocClass = nb::type_object(); }
 
+// The ctor emit_object points the -regalloc option at, mirroring
+// registeredSchedCtor for -misched.
+llvm::RegisterRegAlloc::FunctionPassCtor registeredRegAllocCtor() {
+  return createRegisteredPyRegAlloc;
+}
+
 } // namespace eudsl
 
 void populate_python_codegen(nb::module_ &m) {
@@ -653,6 +825,10 @@ void populate_python_codegen(nb::module_ &m) {
       },
       "Names registered via register_scheduler, selectable with "
       "emit_object(scheduler=...).");
+
+  // Register the harness pass (and its analysis dependencies) so the legacy
+  // PassManager can resolve them when the pipeline runs the allocator slot.
+  llvm::initializePyRegAllocDriverPass(*llvm::PassRegistry::getPassRegistry());
 
   nb::class_<PyRegAllocBase>(m, "RegAllocBase")
       .def(nb::init<>())

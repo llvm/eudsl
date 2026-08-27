@@ -18,6 +18,7 @@
 #include <llvm/CodeGen/MachineOperand.h>
 #include <llvm/CodeGen/MachineRegisterInfo.h>
 #include <llvm/CodeGen/MachineScheduler.h>
+#include <llvm/CodeGen/RegAllocRegistry.h>
 #include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetOpcodes.h>
 #include <llvm/CodeGen/TargetPassConfig.h>
@@ -61,6 +62,14 @@ nb::type_object schedulerClass(const std::string &name);
 llvm::MachineSchedRegistry::ScheduleDAGCtor registeredSchedCtor();
 void setActiveSchedClass(nb::type_object cls);
 void clearActiveSchedClass();
+
+// The regalloc analogues: the RegAllocBase subclass registered under a name,
+// the shared harness-pass ctor emit_object points the -regalloc option at, and
+// install/clear the per-thread active class the harness reads while it runs.
+nb::type_object regallocClass(const std::string &name);
+llvm::RegisterRegAlloc::FunctionPassCtor registeredRegAllocCtor();
+void setActiveRegAllocClass(nb::type_object cls);
+void clearActiveRegAllocClass();
 } // namespace eudsl
 
 // Defined in PythonCodegen.cpp.
@@ -368,7 +377,8 @@ public:
   // BuildOwned is consumed into an EmittedOwned, so "build-path only" and the
   // one-shot are enforced by the variant's active alternative rather than a
   // pair of runtime flags.
-  nb::bytes emitObject(std::optional<std::string> scheduler) {
+  nb::bytes emitObject(std::optional<std::string> scheduler,
+                       std::optional<std::string> regalloc) {
     if (std::holds_alternative<EmittedOwned>(state_))
       throw std::runtime_error("object already emitted");
     BuildOwned *build = std::get_if<BuildOwned>(&state_);
@@ -386,6 +396,15 @@ public:
       if (!schedClass.is_valid())
         throw std::runtime_error("unknown scheduler: " + *scheduler);
       schedCtor = eudsl::registeredSchedCtor();
+    }
+
+    llvm::RegisterRegAlloc::FunctionPassCtor regAllocCtor = nullptr;
+    nb::type_object regAllocClass;
+    if (regalloc) {
+      regAllocClass = eudsl::regallocClass(*regalloc);
+      if (!regAllocClass.is_valid())
+        throw std::runtime_error("unknown regalloc: " + *regalloc);
+      regAllocCtor = eudsl::registeredRegAllocCtor();
     }
 
     // Verify the hand-built MIR up front so malformed input (the prior PRs'
@@ -461,6 +480,39 @@ public:
       misched = schedCtor;
       eudsl::setActiveSchedClass(schedClass);
       restoreActiveClass.active = true;
+    }
+
+    using RACtor = llvm::RegisterRegAlloc::FunctionPassCtor;
+    using RAOpt =
+        llvm::cl::opt<RACtor, false,
+                      llvm::RegisterPassParser<llvm::RegisterRegAlloc>>;
+    struct RestoreRegAlloc {
+      RAOpt *opt = nullptr;
+      RACtor value = nullptr;
+      ~RestoreRegAlloc() {
+        if (opt)
+          *opt = value;
+      }
+    } restoreRegAlloc;
+    struct RestoreActiveRegAllocClass {
+      bool active = false;
+      ~RestoreActiveRegAllocClass() {
+        if (active)
+          eudsl::clearActiveRegAllocClass();
+      }
+    } restoreActiveRegAllocClass;
+    if (regAllocCtor) {
+      auto regallocIt = opts.find("regalloc");
+      // LCOV_EXCL_START -- regalloc is always registered by codegen
+      if (regallocIt == opts.end())
+        throw std::runtime_error("the -regalloc option is not registered");
+      // LCOV_EXCL_STOP
+      auto &regallocOpt = *static_cast<RAOpt *>(regallocIt->second);
+      restoreRegAlloc.opt = &regallocOpt;
+      restoreRegAlloc.value = regallocOpt;
+      regallocOpt = regAllocCtor;
+      eudsl::setActiveRegAllocClass(regAllocClass);
+      restoreActiveRegAllocClass.active = true;
     }
 
     // Write straight into a SmallVector (raw_svector_ostream writes through, so
@@ -1275,12 +1327,17 @@ void populate_mir(nb::module_ &m) {
            "text.")
       .def(
           "emit_object", &MirModule::emitObject, "scheduler"_a = nb::none(),
+          "regalloc"_a = nb::none(),
           "Emit a relocatable object file for the built (already-selected) "
           "MIR by running the back half of codegen (regalloc, emission). "
           "Verifies the MIR first, raising if it is malformed. When "
           "`scheduler` names a registered MachineSchedStrategy (see "
           "register_scheduler), the pre-RA MachineScheduler runs it instead of "
-          "the target default; an unregistered name raises.");
+          "the target default; an unregistered name raises. When `regalloc` "
+          "names a registered RegAllocBase subclass (see register_regalloc), "
+          "it "
+          "drives register allocation instead of the target default; an "
+          "unregistered name raises.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the
