@@ -3,13 +3,35 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include "IR/Common.h"
+#include "MIR/AllocationOrder.h"
 #include "MIR/Diagnostics.h"
+#include "MIR/RegAllocBase.h"
+#include "MIR/SplitKit.h"
 
+#include <llvm/Analysis/AliasAnalysis.h>
+#include <llvm/Analysis/ProfileSummaryInfo.h>
+#include <llvm/CodeGen/CalcSpillWeights.h>
+#include <llvm/CodeGen/LiveDebugVariables.h>
+#include <llvm/CodeGen/LiveInterval.h>
+#include <llvm/CodeGen/LiveIntervals.h>
+#include <llvm/CodeGen/LiveRangeEdit.h>
+#include <llvm/CodeGen/LiveRegMatrix.h>
+#include <llvm/CodeGen/LiveStacks.h>
 #include <llvm/CodeGen/MachineBasicBlock.h>
+#include <llvm/CodeGen/MachineBlockFrequencyInfo.h>
+#include <llvm/CodeGen/MachineDominators.h>
+#include <llvm/CodeGen/MachineFunctionPass.h>
 #include <llvm/CodeGen/MachineInstr.h>
+#include <llvm/CodeGen/MachineLoopInfo.h>
 #include <llvm/CodeGen/MachineScheduler.h>
+#include <llvm/CodeGen/Passes.h>
+#include <llvm/CodeGen/RegAllocRegistry.h>
 #include <llvm/CodeGen/ScheduleDAG.h>
 #include <llvm/CodeGen/ScheduleDAGMutation.h>
+#include <llvm/CodeGen/SlotIndexes.h>
+#include <llvm/CodeGen/Spiller.h>
+#include <llvm/CodeGen/VirtRegMap.h>
+#include <llvm/PassRegistry.h>
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/pair.h>
@@ -20,6 +42,7 @@
 #include <deque>
 #include <exception>
 #include <memory>
+#include <queue>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,6 +63,11 @@ namespace {
 // registry ctor knows which class to instantiate per MachineFunction.
 // GIL-serialized, matching the process-global -misched handling in Machine.cpp.
 thread_local nb::type_object activeSchedClass;
+
+// The Python RegAllocBase subclass emit_object selected for the current run,
+// set/cleared under the GIL. Mirrors activeSchedClass: the harness pass ctor is
+// a non-capturing function pointer, so it reads the class from here.
+thread_local nb::type_object activeRegAllocClass;
 
 class PySchedStrategy : public llvm::MachineSchedStrategy {
 public:
@@ -287,7 +315,481 @@ createRegisteredPyStrategy(llvm::MachineSchedContext *c) {
   }
 }
 
+// A complete pure-C++ RegAllocBase: first-free-or-spill over the target
+// allocation order, driven by a spill-weight priority queue. It is both the
+// base for the Python trampoline (supplying the fallback each virtual defers
+// to) and the standalone allocator the harness runs when a Python __init__
+// raises, so the emitted MIR stays valid and the stashed exception can
+// re-raise.
+class NativeRegAlloc : public llvm::RegAllocBase {
+public:
+  // spiller() is pure and dereferenced by allocatePhysRegs; the harness injects
+  // the concrete Spiller before driving, so this is never called with null.
+  llvm::Spiller &spiller() override { return *injectedSpiller; }
+
+  void enqueueImpl(const llvm::LiveInterval *li) override {
+    nativeQueue.push({li->weight(), li->reg()});
+  }
+
+  const llvm::LiveInterval *dequeue() override {
+    // The queue holds (weight, reg) rather than pointers because splitting
+    // recreates intervals, so re-fetch and skip registers already assigned or
+    // gone (the spiller coalesces snippets).
+    while (!nativeQueue.empty()) {
+      QueueEntry e = nativeQueue.top();
+      nativeQueue.pop();
+      if (VRM->hasPhys(e.reg) || !LIS->hasInterval(e.reg))
+        continue;
+      return &LIS->getInterval(e.reg);
+    }
+    return nullptr;
+  }
+
+  llvm::MCRegister
+  selectOrSplit(const llvm::LiveInterval &vreg,
+                llvm::SmallVectorImpl<llvm::Register> &splitLVRs) override {
+    auto order =
+        llvm::AllocationOrder::create(vreg.reg(), *VRM, RegClassInfo, Matrix);
+    for (llvm::MCRegister phys : order) {
+      if (Matrix->checkInterference(vreg, phys) == llvm::LiveRegMatrix::IK_Free)
+        return phys;
+    }
+    llvm::LiveRangeEdit lre(&vreg, splitLVRs, *mf, *LIS, VRM,
+                            /*delegate=*/nullptr, &DeadRemats);
+    injectedSpiller->spill(lre);
+    return llvm::MCRegister();
+  }
+
+  // Public wrappers the harness pass uses to reach the protected driver.
+  void pyInit(llvm::VirtRegMap &vrm, llvm::LiveIntervals &lis,
+              llvm::LiveRegMatrix &mat, llvm::Spiller &sp,
+              llvm::MachineFunction &mfn) {
+    injectedSpiller = &sp;
+    mf = &mfn;
+    init(vrm, lis, mat);
+  }
+  void pyAllocate() {
+    allocatePhysRegs();
+    postOptimization();
+  }
+
+protected:
+  struct QueueEntry {
+    float weight;
+    llvm::Register reg;
+  };
+  // Highest spill weight first; break ties on the lower register id so the
+  // default order is deterministic.
+  struct QueueLess {
+    bool operator()(const QueueEntry &a, const QueueEntry &b) const {
+      if (a.weight != b.weight)
+        return a.weight < b.weight;
+      return a.reg.id() > b.reg.id();
+    }
+  };
+
+  std::priority_queue<QueueEntry, std::vector<QueueEntry>, QueueLess>
+      nativeQueue;
+  llvm::MachineFunction *mf = nullptr;
+  llvm::Spiller *injectedSpiller = nullptr;
+};
+
+// Trampoline letting Python subclass the allocator. Each virtual calls the
+// Python override under the GIL and stashes on raise; when no override exists
+// or the run is already winding down after a stash, it defers to the
+// NativeRegAlloc base (which always makes forward progress), so the pipeline
+// reaches runCodegenPipeline's re-raise with valid MIR. It also carries the
+// Python-only splitting surface (split analysis/editor, the current split-vreg
+// vector, and the edit buffer) that the standalone NativeRegAlloc fallback has
+// no use for.
+class PyRegAllocBase : public NativeRegAlloc {
+public:
+  NB_TRAMPOLINE(NativeRegAlloc, 6);
+
+  // Keep the native fallback queue complete, then forward the register id (not
+  // the interval, which splitting can invalidate) to an optional Python
+  // enqueue.
+  void enqueueImpl(const llvm::LiveInterval *li) override {
+    NativeRegAlloc::enqueueImpl(li);
+    nb::gil_scoped_acquire gil;
+    nb::handle self = nb_trampoline.base();
+    if (eudsl::pendingCodegenError || !nb::hasattr(self, "enqueue"))
+      return;
+    try {
+      self.attr("enqueue")(li->reg().id());
+    } catch (...) {
+      eudsl::pendingCodegenError = std::current_exception();
+    }
+  }
+
+  const llvm::LiveInterval *dequeue() override {
+    nb::gil_scoped_acquire gil;
+    nb::handle self = nb_trampoline.base();
+    if (!eudsl::pendingCodegenError && nb::hasattr(self, "dequeue")) {
+      try {
+        // Python returns register ids (stable across splitting); re-fetch and
+        // skip any already assigned or removed, mirroring the native drain.
+        while (true) {
+          nb::object choice = self.attr("dequeue")();
+          if (choice.is_none())
+            return nullptr;
+          llvm::Register r(nb::cast<unsigned>(choice));
+          if (VRM->hasPhys(r) || !LIS->hasInterval(r))
+            continue;
+          return &LIS->getInterval(r);
+        }
+      } catch (...) {
+        eudsl::pendingCodegenError = std::current_exception();
+      }
+    }
+    return NativeRegAlloc::dequeue();
+  }
+
+  llvm::MCRegister
+  selectOrSplit(const llvm::LiveInterval &vreg,
+                llvm::SmallVectorImpl<llvm::Register> &splitLVRs) override {
+    currentSplit = &splitLVRs;
+    nb::gil_scoped_acquire gil;
+    if (!eudsl::pendingCodegenError) {
+      try {
+        nb::object r = nb_trampoline.base().attr("select_or_split")(nb::cast(
+            const_cast<llvm::LiveInterval *>(&vreg), nb::rv_policy::reference));
+        // None means Python handled it via spill/split (new vregs appended); an
+        // int is a physreg to assign, validated as a free candidate rather than
+        // letting Matrix::assign abort on a bad choice.
+        llvm::MCRegister phys;
+        if (!r.is_none())
+          phys = validatedPhysReg(vreg, nb::cast<unsigned>(r));
+        clearSplitContext();
+        return phys;
+      } catch (...) {
+        eudsl::pendingCodegenError = std::current_exception();
+      }
+    }
+    llvm::MCRegister phys = NativeRegAlloc::selectOrSplit(vreg, splitLVRs);
+    clearSplitContext();
+    return phys;
+  }
+
+  void postOptimization() override {
+    nb::gil_scoped_acquire gil;
+    nb::handle self = nb_trampoline.base();
+    if (!eudsl::pendingCodegenError && nb::hasattr(self, "post_optimization")) {
+      try {
+        self.attr("post_optimization")();
+        return;
+      } catch (...) {
+        eudsl::pendingCodegenError = std::current_exception();
+      }
+    }
+    // No override, or winding down after a stash: run the base cleanup (spiller
+    // post-optimize + dead-remat removal) so the emitted MIR stays valid.
+    llvm::RegAllocBase::postOptimization();
+  }
+
+  // Called by allocatePhysRegs before it drops an interval the spiller left
+  // unused; forwarded to an optional Python about_to_remove_interval.
+  void aboutToRemoveInterval(const llvm::LiveInterval &li) override {
+    nb::gil_scoped_acquire gil;
+    nb::handle self = nb_trampoline.base();
+    if (eudsl::pendingCodegenError ||
+        !nb::hasattr(self, "about_to_remove_interval"))
+      return;
+    try {
+      self.attr("about_to_remove_interval")(nb::cast(
+          const_cast<llvm::LiveInterval *>(&li), nb::rv_policy::reference));
+    } catch (...) {
+      eudsl::pendingCodegenError = std::current_exception();
+    }
+  }
+
+  void pyInit(llvm::VirtRegMap &vrm, llvm::LiveIntervals &lis,
+              llvm::LiveRegMatrix &mat, llvm::Spiller &sp,
+              llvm::MachineFunction &mfn, llvm::SplitAnalysis *sa,
+              llvm::SplitEditor *se) {
+    splitAnalysis = sa;
+    splitEditor = se;
+    NativeRegAlloc::pyInit(vrm, lis, mat, sp, mfn);
+  }
+
+  // Protected driver state, surfaced to the Python helpers. These borrow
+  // objects owned by the harness pass frame; the bindings hand them out with
+  // rv_policy::reference (not reference_internal) since the allocator does not
+  // own them, and they are valid only for the duration of an allocator
+  // callback.
+  llvm::LiveRegMatrix *matrix() { return Matrix; }
+  llvm::LiveIntervals *intervals() { return LIS; }
+  llvm::VirtRegMap *virtRegMap() { return VRM; }
+  llvm::MachineFunction *machineFunction() { return mf; }
+  llvm::SplitAnalysis *splitAnalysisPtr() { return splitAnalysis; }
+  llvm::SplitEditor *splitEditorPtr() { return splitEditor; }
+
+  // Physregs, in target allocation order, that Python may try for `li`.
+  std::vector<unsigned> allocationOrder(const llvm::LiveInterval &li) {
+    auto order =
+        llvm::AllocationOrder::create(li.reg(), *VRM, RegClassInfo, Matrix);
+    std::vector<unsigned> ids;
+    for (llvm::MCRegister r : order)
+      ids.push_back(r.id());
+    return ids;
+  }
+
+  // Spill `li` into the current select_or_split's split-vreg vector.
+  void spill(const llvm::LiveInterval &li) {
+    if (!currentSplit)
+      throw nb::value_error("spill() is only valid inside select_or_split");
+    llvm::LiveRangeEdit lre(&li, *currentSplit, *mf, *LIS, VRM,
+                            /*delegate=*/nullptr, &DeadRemats);
+    injectedSpiller->spill(lre);
+  }
+
+  // A LiveRangeEdit over the current split-vreg vector for the split editor to
+  // write into. Held so it outlives the SplitEditor reset/open/use/finish calls
+  // that reference it; cleared at the end of the select_or_split so it never
+  // outlives the loop-local vector it references nor lingers as an MRI delegate
+  // into later iterations.
+  llvm::LiveRangeEdit *newLiveRangeEdit(const llvm::LiveInterval &li) {
+    if (!currentSplit)
+      throw nb::value_error(
+          "new_live_range_edit() is only valid inside select_or_split");
+    heldEdit = std::make_unique<llvm::LiveRangeEdit>(
+        &li, *currentSplit, *mf, *LIS, VRM, /*delegate=*/nullptr, &DeadRemats);
+    return heldEdit.get();
+  }
+
+private:
+  // A returned physreg must be a free candidate in `vreg`'s allocation order;
+  // otherwise the driver's Matrix::assign would abort. Checking membership
+  // first keeps the checkInterference call on a valid physreg.
+  llvm::MCRegister validatedPhysReg(const llvm::LiveInterval &vreg,
+                                    unsigned id) {
+    llvm::MCRegister phys(id);
+    auto order =
+        llvm::AllocationOrder::create(vreg.reg(), *VRM, RegClassInfo, Matrix);
+    for (llvm::MCRegister cand : order) {
+      if (cand == phys) {
+        if (Matrix->checkInterference(vreg, phys) ==
+            llvm::LiveRegMatrix::IK_Free)
+          return phys;
+        break;
+      }
+    }
+    throw nb::value_error("select_or_split returned a physreg that is not a "
+                          "free candidate in the allocation order");
+  }
+
+  // End-of-select_or_split cleanup: the split-vreg vector and edit buffer both
+  // reference allocatePhysRegs's per-iteration loop-local storage, so neither
+  // may outlive this call.
+  void clearSplitContext() {
+    currentSplit = nullptr;
+    heldEdit.reset();
+  }
+
+  llvm::SmallVectorImpl<llvm::Register> *currentSplit = nullptr;
+  llvm::SplitAnalysis *splitAnalysis = nullptr;
+  llvm::SplitEditor *splitEditor = nullptr;
+  std::unique_ptr<llvm::LiveRangeEdit> heldEdit;
+};
+
+// name -> Python RegAllocBase subclass, held in
+// llvm.mir_strategies._regalloc_classes (Python owns it so the subclass types
+// are released at interpreter teardown, matching schedulerClasses()).
+nb::dict regallocClasses() {
+  return nb::cast<nb::dict>(
+      nb::module_::import_("llvm.mir_strategies").attr("_regalloc_classes"));
+}
+
+std::deque<std::string> &regallocNames() {
+  static std::deque<std::string> names;
+  return names;
+}
+
+// select_or_split is the one required override: the trampoline calls it
+// unconditionally, whereas enqueue/dequeue/post_optimization/
+// about_to_remove_interval are hasattr-guarded and fall back to the native
+// queue / base default. type_object_t rejects a non-RegAllocBase class at the
+// call boundary. Keyed on the trampoline (the bound value type) rather than
+// llvm::RegAllocBase because that class has a protected destructor, which
+// nanobind cannot bind as a value type.
+void registerRegAlloc(const std::string &name,
+                      nb::type_object_t<PyRegAllocBase> cls) {
+  if (!nb::hasattr(cls, "select_or_split")) {
+    throw nb::type_error(
+        "register allocator class must define select_or_split");
+  }
+  nb::dict classes = regallocClasses();
+  if (!classes.contains(name.c_str()))
+    regallocNames().push_back(name);
+  classes[name.c_str()] = cls;
+}
+
+// The fixed C++ MachineFunctionPass that hosts the Python allocator. It
+// occupies the register-allocator slot in the codegen pipeline (selected via
+// the -regalloc option), fetches the analyses a RegAllocBase driver needs,
+// builds the spiller + SplitAnalysis/SplitEditor, constructs a fresh Python
+// allocator per MachineFunction, and drives it through the public
+// pyInit/pyAllocate wrappers. Analysis wiring mirrors RABasic (the minimal
+// RegAllocBase user); the SplitAnalysis/SplitEditor it injects give Python the
+// greedy-style splitting primitives without RAGreedy's extra pass dependencies.
+class PyRegAllocDriver : public llvm::MachineFunctionPass {
+public:
+  static char ID;
+  PyRegAllocDriver() : llvm::MachineFunctionPass(ID) {}
+
+  ~PyRegAllocDriver() override {
+    if (heldInstance.is_valid()) {
+      nb::gil_scoped_acquire gil;
+      heldInstance.reset();
+    }
+  }
+
+  llvm::StringRef getPassName() const override {
+    return "eudsl Python register allocator";
+  }
+
+  void getAnalysisUsage(llvm::AnalysisUsage &au) const override {
+    au.setPreservesCFG();
+    au.addRequired<llvm::AAResultsWrapperPass>();
+    au.addPreserved<llvm::AAResultsWrapperPass>();
+    au.addRequired<llvm::LiveIntervalsWrapperPass>();
+    au.addPreserved<llvm::LiveIntervalsWrapperPass>();
+    au.addPreserved<llvm::SlotIndexesWrapperPass>();
+    au.addRequired<llvm::LiveDebugVariablesWrapperLegacy>();
+    au.addPreserved<llvm::LiveDebugVariablesWrapperLegacy>();
+    au.addRequired<llvm::LiveStacksWrapperLegacy>();
+    au.addPreserved<llvm::LiveStacksWrapperLegacy>();
+    au.addRequired<llvm::ProfileSummaryInfoWrapperPass>();
+    au.addRequired<llvm::MachineBlockFrequencyInfoWrapperPass>();
+    au.addRequired<llvm::MachineDominatorTreeWrapperPass>();
+    au.addRequiredID(llvm::MachineDominatorsID);
+    au.addRequired<llvm::MachineLoopInfoWrapperPass>();
+    au.addRequired<llvm::VirtRegMapWrapperLegacy>();
+    au.addPreserved<llvm::VirtRegMapWrapperLegacy>();
+    au.addRequired<llvm::LiveRegMatrixWrapperLegacy>();
+    au.addPreserved<llvm::LiveRegMatrixWrapperLegacy>();
+    llvm::MachineFunctionPass::getAnalysisUsage(au);
+  }
+
+  llvm::MachineFunctionProperties getRequiredProperties() const override {
+    return llvm::MachineFunctionProperties().set(
+        llvm::MachineFunctionProperties::Property::NoPHIs);
+  }
+
+  bool runOnMachineFunction(llvm::MachineFunction &mfn) override {
+    llvm::VirtRegMap &vrm =
+        getAnalysis<llvm::VirtRegMapWrapperLegacy>().getVRM();
+    llvm::LiveIntervals &lis =
+        getAnalysis<llvm::LiveIntervalsWrapperPass>().getLIS();
+    llvm::LiveRegMatrix &mat =
+        getAnalysis<llvm::LiveRegMatrixWrapperLegacy>().getLRM();
+    llvm::MachineBlockFrequencyInfo &mbfi =
+        getAnalysis<llvm::MachineBlockFrequencyInfoWrapperPass>().getMBFI();
+    llvm::LiveStacks &livestks =
+        getAnalysis<llvm::LiveStacksWrapperLegacy>().getLS();
+    llvm::MachineDominatorTree &mdt =
+        getAnalysis<llvm::MachineDominatorTreeWrapperPass>().getDomTree();
+    llvm::MachineLoopInfo &loops =
+        getAnalysis<llvm::MachineLoopInfoWrapperPass>().getLI();
+    llvm::ProfileSummaryInfo &psi =
+        getAnalysis<llvm::ProfileSummaryInfoWrapperPass>().getPSI();
+
+    nb::gil_scoped_acquire gil;
+    // LCOV_EXCL_START -- emit_object always sets the active class before
+    // running
+    if (!activeRegAllocClass.is_valid())
+      return false;
+    // LCOV_EXCL_STOP
+
+    // Analyses shared by whichever allocator drives this function.
+    llvm::VirtRegAuxInfo vrai(mfn, lis, vrm, loops, mbfi, &psi);
+    vrai.calculateSpillWeightsAndHints();
+    std::unique_ptr<llvm::Spiller> spiller(
+        llvm::createInlineSpiller({lis, livestks, mdt, mbfi}, mfn, vrm, vrai));
+    llvm::SplitAnalysis sa(vrm, lis, loops);
+    llvm::SplitEditor se(sa, lis, vrm, mdt, mbfi, vrai);
+
+    auto runNative = [&] {
+      NativeRegAlloc fallback;
+      fallback.pyInit(vrm, lis, mat, *spiller, mfn);
+      fallback.pyAllocate();
+    };
+
+    // LCOV_EXCL_START -- a module from create_machine_function holds exactly
+    // one MachineFunction, so this runs once per emit_object and a stash from
+    // an earlier function is never already pending. Defensive for a
+    // hypothetical multi-function module: don't re-enter Python (which would
+    // clobber the pending error); allocate natively so this function's MIR
+    // stays valid and the original error still re-raises.
+    if (eudsl::pendingCodegenError) {
+      runNative();
+      return true;
+    }
+    // LCOV_EXCL_STOP
+
+    nb::object obj;
+    try {
+      obj = activeRegAllocClass();
+    } catch (...) {
+      // The subclass __init__ raised; keep the first pending error if any, then
+      // allocate natively so the MIR is valid and the pipeline reaches
+      // runCodegenPipeline's re-raise instead of aborting on unallocated vregs.
+      if (!eudsl::pendingCodegenError)
+        eudsl::pendingCodegenError = std::current_exception();
+      runNative();
+      return true;
+    }
+    auto *base =
+        static_cast<PyRegAllocBase *>(nb::inst_ptr<PyRegAllocBase>(obj));
+    base->pyInit(vrm, lis, mat, *spiller, mfn, &sa, &se);
+    base->pyAllocate();
+    // Hold the instance until the pass is destroyed so its C++ subobject (and
+    // any Python-recorded witness state) outlives this call; dropped under the
+    // GIL in the dtor.
+    heldInstance = std::move(obj);
+    return true;
+  }
+
+private:
+  nb::object heldInstance;
+};
+
+// The ctor every registered name shares; emit_object points the -regalloc
+// option at it (as it does -misched for the scheduler) and sets
+// activeRegAllocClass so this knows which subclass to instantiate.
+llvm::FunctionPass *createRegisteredPyRegAlloc() {
+  return new PyRegAllocDriver();
+}
+
 } // namespace
+
+// Declared here (rather than InitializePasses.h) since this pass lives in-tree;
+// the INITIALIZE_PASS block below defines it.
+namespace llvm {
+void initializePyRegAllocDriverPass(PassRegistry &);
+} // namespace llvm
+
+char PyRegAllocDriver::ID = 0;
+
+// INITIALIZE_PASS expands to unqualified PassRegistry/PassInfo/callDefaultCtor
+// (LLVM's macros assume an in-scope llvm namespace).
+using namespace llvm;
+
+INITIALIZE_PASS_BEGIN(PyRegAllocDriver, "eudsl-python-regalloc",
+                      "eudsl Python register allocator", false, false)
+INITIALIZE_PASS_DEPENDENCY(LiveDebugVariablesWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(SlotIndexesWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(LiveIntervalsWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(LiveStacksWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTreeWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(MachineLoopInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(VirtRegMapWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(LiveRegMatrixWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(ProfileSummaryInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(MachineBlockFrequencyInfoWrapperPass)
+INITIALIZE_PASS_END(PyRegAllocDriver, "eudsl-python-regalloc",
+                    "eudsl Python register allocator", false, false)
 
 namespace eudsl {
 
@@ -335,6 +837,26 @@ void setActiveSchedClass(nb::type_object cls) {
   activeSchedClass = std::move(cls);
 }
 void clearActiveSchedClass() { activeSchedClass = nb::type_object(); }
+
+// The class registered under `name`, or an invalid object if `name` was not
+// registered via register_regalloc.
+nb::type_object regallocClass(const std::string &name) {
+  nb::dict classes = regallocClasses();
+  if (classes.contains(name.c_str()))
+    return nb::borrow<nb::type_object>(classes[name.c_str()]);
+  return nb::type_object();
+}
+
+void setActiveRegAllocClass(nb::type_object cls) {
+  activeRegAllocClass = std::move(cls);
+}
+void clearActiveRegAllocClass() { activeRegAllocClass = nb::type_object(); }
+
+// The ctor emit_object points the -regalloc option at, mirroring
+// registeredSchedCtor for -misched.
+llvm::RegisterRegAlloc::FunctionPassCtor registeredRegAllocCtor() {
+  return createRegisteredPyRegAlloc;
+}
 
 } // namespace eudsl
 
@@ -390,4 +912,273 @@ void populate_python_codegen(nb::module_ &m) {
       },
       "Names registered via register_scheduler, selectable with "
       "emit_object(scheduler=...).");
+
+  // Register the harness pass (and its analysis dependencies) so the legacy
+  // PassManager can resolve them when the pipeline runs the allocator slot.
+  llvm::initializePyRegAllocDriverPass(*llvm::PassRegistry::getPassRegistry());
+
+  nb::class_<PyRegAllocBase>(m, "RegAllocBase")
+      .def(nb::init<>())
+      .def("allocation_order", &PyRegAllocBase::allocationOrder, "li"_a,
+           "Physregs (as ids) to try for `li`, in target allocation order.")
+      .def("spill", &PyRegAllocBase::spill, "li"_a,
+           "Spill `li`; new split vregs are appended for re-enqueue. Only "
+           "valid inside select_or_split.")
+      .def_prop_ro(
+          "matrix", [](PyRegAllocBase &self) { return self.matrix(); },
+          nb::rv_policy::reference,
+          "The LiveRegMatrix for interference queries and assignment. Borrowed "
+          "and valid only within an allocator callback; do not retain.")
+      .def_prop_ro(
+          "lis", [](PyRegAllocBase &self) { return self.intervals(); },
+          nb::rv_policy::reference,
+          "The LiveIntervals analysis for this function. Borrowed and valid "
+          "only within an allocator callback; do not retain.")
+      .def_prop_ro(
+          "vrm", [](PyRegAllocBase &self) { return self.virtRegMap(); },
+          nb::rv_policy::reference,
+          "The VirtRegMap being populated with assignments. Borrowed and valid "
+          "only within an allocator callback; do not retain.")
+      .def_prop_ro(
+          "machine_function",
+          [](PyRegAllocBase &self) { return self.machineFunction(); },
+          nb::rv_policy::reference,
+          "The MachineFunction being allocated. Borrowed and valid only within "
+          "an allocator callback; do not retain.")
+      .def_prop_ro(
+          "split_analysis",
+          [](PyRegAllocBase &self) { return self.splitAnalysisPtr(); },
+          nb::rv_policy::reference,
+          "The SplitAnalysis for planning live-range splits. Borrowed and "
+          "valid only within an allocator callback; do not retain.")
+      .def_prop_ro(
+          "split_editor",
+          [](PyRegAllocBase &self) { return self.splitEditorPtr(); },
+          nb::rv_policy::reference,
+          "The SplitEditor for applying live-range splits (call reset(...) "
+          "before open_intv/use_intv). Borrowed and valid only within an "
+          "allocator callback; do not retain.")
+      .def(
+          "new_live_range_edit",
+          [](PyRegAllocBase &self, const llvm::LiveInterval &li) {
+            return self.newLiveRangeEdit(li);
+          },
+          nb::rv_policy::reference, "li"_a,
+          "A LiveRangeEdit over the current split-vreg vector, for "
+          "split_editor.reset. Only valid inside select_or_split; do not "
+          "retain past the call.");
+
+  // A virtual register's live interval: the allocator receives one per
+  // select_or_split call and queries/assigns it against the matrix.
+  nb::class_<llvm::LiveInterval>(m, "LiveInterval")
+      .def_prop_ro("reg",
+                   [](const llvm::LiveInterval &li) { return li.reg().id(); })
+      .def_prop_ro("weight",
+                   [](const llvm::LiveInterval &li) { return li.weight(); })
+      .def_prop_ro("is_spillable", [](const llvm::LiveInterval &li) {
+        return li.isSpillable();
+      });
+
+  nb::class_<llvm::VirtRegMap>(m, "VirtRegMap");
+  nb::class_<llvm::Spiller>(m, "Spiller");
+
+  // A program point. Live ranges and the split editor are expressed in terms of
+  // these; they order the instructions of a function.
+  nb::class_<llvm::SlotIndex>(m, "SlotIndex")
+      .def("is_valid", &llvm::SlotIndex::isValid)
+      .def(
+          "__lt__",
+          [](const llvm::SlotIndex &a, const llvm::SlotIndex &b) {
+            return a < b;
+          },
+          "other"_a)
+      .def(
+          "__eq__",
+          [](const llvm::SlotIndex &a, const llvm::SlotIndex &b) {
+            return a == b;
+          },
+          "other"_a)
+      .def("get_reg_slot",
+           [](const llvm::SlotIndex &i) { return i.getRegSlot(); })
+      .def("get_base_index",
+           [](const llvm::SlotIndex &i) { return i.getBaseIndex(); })
+      .def("get_boundary_index",
+           [](const llvm::SlotIndex &i) { return i.getBoundaryIndex(); })
+      .def("get_next_index",
+           [](const llvm::SlotIndex &i) { return i.getNextIndex(); })
+      .def("__repr__", [](const llvm::SlotIndex &i) {
+        return i.isValid() ? std::string("SlotIndex(valid)")
+                           : std::string("SlotIndex(invalid)");
+      });
+
+  nb::class_<llvm::LiveIntervals>(m, "LiveIntervals")
+      .def(
+          "instruction_index",
+          [](llvm::LiveIntervals &l, llvm::MachineInstr *mi) {
+            return l.getInstructionIndex(*mi);
+          },
+          "mi"_a)
+      .def(
+          "mbb_start_index",
+          [](llvm::LiveIntervals &l, llvm::MachineBasicBlock *mbb) {
+            return l.getMBBStartIdx(mbb);
+          },
+          "mbb"_a)
+      .def(
+          "mbb_end_index",
+          [](llvm::LiveIntervals &l, llvm::MachineBasicBlock *mbb) {
+            return l.getMBBEndIdx(mbb);
+          },
+          "mbb"_a)
+      .def(
+          "has_interval",
+          [](llvm::LiveIntervals &l, unsigned reg) {
+            return l.hasInterval(llvm::Register(reg));
+          },
+          "reg"_a)
+      .def(
+          "interval",
+          [](llvm::LiveIntervals &l, unsigned reg) -> llvm::LiveInterval & {
+            return l.getInterval(llvm::Register(reg));
+          },
+          nb::rv_policy::reference_internal, "reg"_a);
+
+  // Splitting analysis: after analyze(li), it describes how `li` is used per
+  // block, guiding where the split editor should open/close intervals.
+  nb::class_<llvm::SplitAnalysis> sa(m, "SplitAnalysis");
+  nb::class_<llvm::SplitAnalysis::BlockInfo>(sa, "BlockInfo")
+      .def_prop_ro(
+          "mbb", [](const llvm::SplitAnalysis::BlockInfo &b) { return b.MBB; },
+          nb::rv_policy::reference)
+      .def_ro("first_instr", &llvm::SplitAnalysis::BlockInfo::FirstInstr)
+      .def_ro("last_instr", &llvm::SplitAnalysis::BlockInfo::LastInstr)
+      .def_ro("first_def", &llvm::SplitAnalysis::BlockInfo::FirstDef)
+      .def_ro("live_in", &llvm::SplitAnalysis::BlockInfo::LiveIn)
+      .def_ro("live_out", &llvm::SplitAnalysis::BlockInfo::LiveOut);
+  sa.def(
+        "analyze",
+        [](llvm::SplitAnalysis &s, const llvm::LiveInterval &li) {
+          s.analyze(&li);
+        },
+        "li"_a)
+      .def("use_blocks",
+           [](llvm::SplitAnalysis &s) {
+             return std::vector<llvm::SplitAnalysis::BlockInfo>(
+                 s.getUseBlocks().begin(), s.getUseBlocks().end());
+           })
+      .def("num_through_blocks", &llvm::SplitAnalysis::getNumThroughBlocks)
+      .def(
+          "last_split_point",
+          [](llvm::SplitAnalysis &s, llvm::MachineBasicBlock *mbb) {
+            return s.getLastSplitPoint(mbb);
+          },
+          "mbb"_a)
+      .def("through_blocks", [](llvm::SplitAnalysis &s) {
+        std::vector<unsigned> v;
+        for (unsigned b : s.getThroughBlocks().set_bits())
+          v.push_back(b);
+        return v;
+      });
+
+  // The edit buffer the split editor writes new vregs into.
+  nb::class_<llvm::LiveRangeEdit>(m, "LiveRangeEdit")
+      .def("new_vregs", [](llvm::LiveRangeEdit &e) {
+        std::vector<unsigned> v;
+        for (llvm::Register r : e.regs())
+          v.push_back(r.id());
+        return v;
+      });
+
+  nb::enum_<llvm::SplitEditor::ComplementSpillMode>(m, "ComplementSpillMode")
+      .value("SM_Partition", llvm::SplitEditor::SM_Partition)
+      .value("SM_Size", llvm::SplitEditor::SM_Size)
+      .value("SM_Speed", llvm::SplitEditor::SM_Speed);
+
+  // Raw live-range splitting primitives (RAGreedy uses these internally); a
+  // Python allocator drives them to open/enter/use/leave an interval and
+  // finish, producing new vregs for re-enqueue.
+  nb::class_<llvm::SplitEditor>(m, "SplitEditor")
+      .def("reset", &llvm::SplitEditor::reset, "live_range_edit"_a,
+           "mode"_a = llvm::SplitEditor::SM_Partition)
+      .def("open_intv", &llvm::SplitEditor::openIntv)
+      .def("select_intv", &llvm::SplitEditor::selectIntv, "idx"_a)
+      .def("enter_intv_before", &llvm::SplitEditor::enterIntvBefore, "idx"_a)
+      .def("enter_intv_after", &llvm::SplitEditor::enterIntvAfter, "idx"_a)
+      .def(
+          "enter_intv_at_end",
+          [](llvm::SplitEditor &s, llvm::MachineBasicBlock *mbb) {
+            return s.enterIntvAtEnd(*mbb);
+          },
+          "mbb"_a)
+      .def(
+          "use_intv",
+          [](llvm::SplitEditor &s, llvm::SlotIndex a, llvm::SlotIndex b) {
+            s.useIntv(a, b);
+          },
+          "start"_a, "end"_a)
+      .def(
+          "use_intv_mbb",
+          [](llvm::SplitEditor &s, llvm::MachineBasicBlock *mbb) {
+            s.useIntv(*mbb);
+          },
+          "mbb"_a)
+      .def("leave_intv_after", &llvm::SplitEditor::leaveIntvAfter, "idx"_a)
+      .def("leave_intv_before", &llvm::SplitEditor::leaveIntvBefore, "idx"_a)
+      .def(
+          "leave_intv_at_top",
+          [](llvm::SplitEditor &s, llvm::MachineBasicBlock *mbb) {
+            return s.leaveIntvAtTop(*mbb);
+          },
+          "mbb"_a)
+      .def("overlap_intv", &llvm::SplitEditor::overlapIntv, "start"_a, "end"_a)
+      .def("finish", [](llvm::SplitEditor &s) { s.finish(nullptr); });
+
+  nb::enum_<llvm::LiveRegMatrix::InterferenceKind>(m, "InterferenceKind")
+      .value("IK_Free", llvm::LiveRegMatrix::IK_Free)
+      .value("IK_VirtReg", llvm::LiveRegMatrix::IK_VirtReg)
+      .value("IK_RegUnit", llvm::LiveRegMatrix::IK_RegUnit)
+      .value("IK_RegMask", llvm::LiveRegMatrix::IK_RegMask);
+
+  nb::class_<llvm::LiveRegMatrix>(m, "LiveRegMatrix")
+      .def(
+          "check_interference",
+          [](llvm::LiveRegMatrix &mat, const llvm::LiveInterval &li,
+             unsigned preg) {
+            return mat.checkInterference(li, llvm::MCRegister(preg));
+          },
+          "li"_a, "physreg"_a)
+      .def(
+          "is_free",
+          [](llvm::LiveRegMatrix &mat, const llvm::LiveInterval &li,
+             unsigned preg) {
+            return mat.checkInterference(li, llvm::MCRegister(preg)) ==
+                   llvm::LiveRegMatrix::IK_Free;
+          },
+          "li"_a, "physreg"_a)
+      .def(
+          "assign",
+          [](llvm::LiveRegMatrix &mat, const llvm::LiveInterval &li,
+             unsigned preg) { mat.assign(li, llvm::MCRegister(preg)); },
+          "li"_a, "physreg"_a)
+      .def(
+          "unassign",
+          [](llvm::LiveRegMatrix &mat, const llvm::LiveInterval &li) {
+            mat.unassign(li);
+          },
+          "li"_a);
+
+  m.def("register_regalloc", &registerRegAlloc, "name"_a, "cls"_a,
+        "Register a RegAllocBase subclass under `name` so "
+        "emit_object(regalloc=name) can select it. The class must define "
+        "select_or_split; enqueue, dequeue, and post_optimization are "
+        "optional. Re-registering a name replaces it.");
+
+  m.def(
+      "registered_regallocs",
+      []() {
+        return std::vector<std::string>(regallocNames().begin(),
+                                        regallocNames().end());
+      },
+      "Names registered via register_regalloc, selectable with "
+      "emit_object(regalloc=...).");
 }

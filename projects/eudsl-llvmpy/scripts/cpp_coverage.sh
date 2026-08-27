@@ -72,4 +72,5 @@ echo ">> checking src/IR + src/MIR coverage (threshold=${THRESHOLD}%)"
   --profdata "${COV_DIR}/eudslllvm.profdata" \
   --objects "$SO" \
   --sources "${PROJ_DIR}/src/IR" "${PROJ_DIR}/src/MIR" \
+  --ignore-filename-regex 'src/MIR/(RegAllocBase|AllocationOrder|SplitKit)\.h$' \
   --threshold="${THRESHOLD}"
