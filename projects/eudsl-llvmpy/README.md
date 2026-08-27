@@ -475,6 +475,17 @@ class RegionSplit(mir.RegAllocBase):
         return None
 ```
 
+For global (region) splitting, `self.edge_bundles` (an `EdgeBundles`:
+`get_bundle(mbb, out)`, `num_bundles()`, `get_blocks(bundle)`) and
+`self.spill_placer` (a `SpillPlacement` Hopfield network: `prepare(bit_vector)`,
+`add_constraints([BlockConstraint])`, `add_pref_spill`, `add_links`,
+`scan_active_bundles`, `iterate`, `get_recent_positive`, `finish`,
+`get_block_frequency`) expose the machinery RAGreedy's `splitAroundRegion`
+drives. Build `mir.BlockConstraint`s (with `mir.BorderConstraint` entry/exit
+prefs) from the live-through use blocks, iterate the network, and read the
+in-register edge bundles out of the `mir.BitVector` passed to `prepare` to
+choose split boundaries.
+
 A fresh allocator instance is constructed per `MachineFunction`. Because this
 build has assertions enabled, an invalid split aborts with a diagnostic rather
 than emitting bad code, and an exception raised in any override propagates out

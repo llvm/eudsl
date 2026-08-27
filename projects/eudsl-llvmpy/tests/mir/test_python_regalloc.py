@@ -1241,3 +1241,194 @@ def test_python_dequeue_skips_already_assigned():
         _pyskip["assigned"] not in _pyskip["selected"]
     ), "the already-assigned reg id from Python dequeue was skipped"
     assert_no_leaks()
+
+
+# -- SpillPlacement / EdgeBundles (global region splitting) -------------------
+
+
+_sp_saw = {}
+# When True, the allocator feeds the network a spill preference so it recommends
+# spilling (the value is kept on the stack, not split into a register).
+_sp_spill_bias = False
+
+
+class _SpillPlacementSplit(mir.RegAllocBase):
+    """Global-split allocator that consults the spill-placement network the way
+    RAGreedy's splitAroundRegion does: build entry/exit BlockConstraints from
+    the live-through use blocks, add the through blocks as transparent links,
+    iterate the Hopfield network to convergence, and read back which edge
+    bundles want a register. If the entry block's outgoing bundle is
+    recommended in-register, keep the value live across the through block with
+    a real SplitEditor region split; otherwise (e.g. under a spill bias) the
+    network recommends spilling and we fall through to first-free."""
+
+    split = False
+    planned = False
+
+    def select_or_split(self, li):
+        cls = type(self)
+        if not cls.planned:
+            sa = self.split_analysis
+            sa.analyze(li)
+            if sa.num_through_blocks() > 0:
+                cls.planned = True
+                cls.split = self._plan_and_split(li, sa)
+                if cls.split:
+                    return None
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        self.spill(li)
+        return None
+
+    def _plan_and_split(self, li, sa):
+        eb = self.edge_bundles
+        sp = self.spill_placer
+        mf = self.machine_function
+        b0, b1, b2 = mf.blocks[0], mf.blocks[1], mf.blocks[2]
+        pref = (
+            mir.BorderConstraint.PrefSpill
+            if _sp_spill_bias
+            else mir.BorderConstraint.PrefReg
+        )
+
+        reg_bundles = mir.BitVector()
+        sp.prepare(reg_bundles)
+        constraints = []
+        for b in sa.use_blocks():
+            bc = mir.BlockConstraint()
+            bc.number = b.mbb.number
+            bc.entry = pref if b.live_in else mir.BorderConstraint.DontCare
+            bc.exit = pref if b.live_out else mir.BorderConstraint.DontCare
+            bc.changes_value = b.first_def.is_valid()
+            constraints.append(bc)
+        sp.add_constraints(constraints)
+        # Read the constraint fields back (round-trips the entry/exit getters).
+        _sp_saw["c0_entry"] = constraints[0].entry
+        _sp_saw["c0_exit"] = constraints[0].exit
+        _sp_saw["c0_number"] = constraints[0].number
+        _sp_saw["c0_changes"] = constraints[0].changes_value
+        through = sa.through_blocks()
+        sp.add_links(through)
+        if _sp_spill_bias:
+            # Strongly bias the through blocks to spill so the network drops
+            # them from the in-register set.
+            sp.add_pref_spill(through, True)
+        any_positive = sp.scan_active_bundles()
+        recent = sp.get_recent_positive()
+        sp.iterate()
+        perfect = sp.finish()
+        inreg = reg_bundles.set_bits()
+
+        entry_out_bundle = eb.get_bundle(b0, True)
+        # get_blocks rejects an out-of-range bundle rather than reading OOB.
+        try:
+            eb.get_blocks(eb.num_bundles())
+            _sp_saw["get_blocks_oob_raised"] = False
+        except IndexError:
+            _sp_saw["get_blocks_oob_raised"] = True
+        _sp_saw.update(
+            num_bundles=eb.num_bundles(),
+            bundle_blocks=eb.get_blocks(entry_out_bundle),
+            entry_out_bundle=entry_out_bundle,
+            any_positive=any_positive,
+            recent=list(recent),
+            perfect=perfect,
+            inreg=inreg,
+            entry_freq=sp.get_block_frequency(b0),
+            bv_size=reg_bundles.size(),
+            bv_count=reg_bundles.count(),
+        )
+
+        # The network's recommendation gates the split: only keep the value in a
+        # register when its entry-out bundle is in the recommended set.
+        if entry_out_bundle not in inreg:
+            return False
+        _sp_saw["bv_test"] = reg_bundles.test(entry_out_bundle)
+        se = self.split_editor
+        se.reset(self.new_live_range_edit(li), mir.ComplementSpillMode.SM_Size)
+        idx = se.open_intv()
+        se.select_intv(idx)
+        se.enter_intv_at_end(b0)
+        se.use_intv_mbb(b1)
+        se.leave_intv_at_top(b2)
+        se.finish()
+        return True
+
+
+def test_spill_placement_guided_region_split_emits():
+    global _sp_spill_bias
+    _sp_spill_bias = False
+    _SpillPlacementSplit.split = False
+    _SpillPlacementSplit.planned = False
+    _sp_saw.clear()
+    mir.register_regalloc("ra-sp-split", _SpillPlacementSplit)
+    obj = _emit(
+        "ra-sp-split", _SpillPlacementSplit, builder=_build_three_block, fn="thru"
+    )
+    assert obj[:4] == b"\x7fELF"
+    assert _SpillPlacementSplit.split, "the spill-placement-guided split ran"
+    # The network was really consulted and returned a usable recommendation.
+    assert _sp_saw["num_bundles"] > 0
+    assert _sp_saw["any_positive"] is True
+    assert _sp_saw["perfect"] is True, "no pressure -> a perfect all-reg solution"
+    # scan_active_bundles found positive bundles, so recent is non-empty.
+    assert len(_sp_saw["recent"]) >= 1
+    assert _sp_saw["entry_out_bundle"] in _sp_saw["inreg"], "entry bundle in-reg"
+    assert _sp_saw["bv_test"] is True and _sp_saw["bv_count"] >= 1
+    assert _sp_saw["bv_size"] == _sp_saw["num_bundles"]
+    assert 0 in _sp_saw["bundle_blocks"], "entry block connects to its out bundle"
+    assert _sp_saw["entry_freq"].get_frequency() > 0
+    assert _sp_saw["get_blocks_oob_raised"], "get_blocks bounds-checks the bundle"
+    # The first use block is the def block (b0): live-out, not live-in, defs v.
+    assert _sp_saw["c0_number"] == 0
+    assert _sp_saw["c0_entry"] == mir.BorderConstraint.DontCare
+    assert _sp_saw["c0_exit"] == mir.BorderConstraint.PrefReg
+    assert _sp_saw["c0_changes"] is True
+    assert_no_leaks()
+
+
+def test_spill_placement_recommends_spill_and_falls_through():
+    """With a spill preference (PrefSpill + a strong add_pref_spill on the
+    through blocks), the network drops the entry bundle from the in-register
+    set, so the recommendation-gated split is *not* taken -- the negative
+    branch. The emission still succeeds via first-free allocation."""
+    global _sp_spill_bias
+    _sp_spill_bias = True
+    _SpillPlacementSplit.split = False
+    _SpillPlacementSplit.planned = False
+    _sp_saw.clear()
+    try:
+        mir.register_regalloc("ra-sp-spill", _SpillPlacementSplit)
+        obj = _emit(
+            "ra-sp-spill", _SpillPlacementSplit, builder=_build_three_block, fn="thru"
+        )
+    finally:
+        _sp_spill_bias = False
+    assert obj[:4] == b"\x7fELF"
+    assert _SpillPlacementSplit.planned, "the network was consulted"
+    assert _SpillPlacementSplit.split is False, "spill recommended -> no split"
+    assert _sp_saw["entry_out_bundle"] not in _sp_saw["inreg"], "bundle dropped"
+    assert _sp_saw["c0_exit"] == mir.BorderConstraint.PrefSpill
+    assert_no_leaks()
+
+
+@pytest.mark.skipif(not _IS_AARCH64, reason="executing hand-built AArch64 MIR")
+def test_spill_placement_guided_region_split_executes():
+    global _sp_spill_bias
+    _sp_spill_bias = False
+    _SpillPlacementSplit.split = False
+    _SpillPlacementSplit.planned = False
+    _sp_saw.clear()
+    mir.register_regalloc("ra-sp-split-x", _SpillPlacementSplit)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thru")
+        _build_three_block(mmi)
+        obj = mmi.emit_object(regalloc="ra-sp-split-x")
+        thru, j = _jit_call((ctypes.c_int32, ctypes.c_int32), "thru", obj)
+        assert thru(13) == 13 and thru(-6) == -6
+        del j
+    assert _SpillPlacementSplit.split, "the guided split drove the executed emission"
+    assert_no_leaks()

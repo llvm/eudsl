@@ -8,9 +8,11 @@
 #include "MIR/RegAllocBase.h"
 #include "MIR/SplitKit.h"
 
+#include <llvm/ADT/BitVector.h>
 #include <llvm/Analysis/AliasAnalysis.h>
 #include <llvm/Analysis/ProfileSummaryInfo.h>
 #include <llvm/CodeGen/CalcSpillWeights.h>
+#include <llvm/CodeGen/EdgeBundles.h>
 #include <llvm/CodeGen/LiveDebugVariables.h>
 #include <llvm/CodeGen/LiveInterval.h>
 #include <llvm/CodeGen/LiveIntervals.h>
@@ -29,6 +31,7 @@
 #include <llvm/CodeGen/ScheduleDAG.h>
 #include <llvm/CodeGen/ScheduleDAGMutation.h>
 #include <llvm/CodeGen/SlotIndexes.h>
+#include <llvm/CodeGen/SpillPlacement.h>
 #include <llvm/CodeGen/Spiller.h>
 #include <llvm/CodeGen/TargetRegisterInfo.h>
 #include <llvm/CodeGen/VirtRegMap.h>
@@ -509,10 +512,13 @@ public:
   void pyInit(llvm::VirtRegMap &vrm, llvm::LiveIntervals &lis,
               llvm::LiveRegMatrix &mat, llvm::Spiller &sp,
               llvm::MachineFunction &mfn, llvm::SplitAnalysis *sa,
-              llvm::SplitEditor *se, llvm::MachineBlockFrequencyInfo *mbfi) {
+              llvm::SplitEditor *se, llvm::MachineBlockFrequencyInfo *mbfi,
+              llvm::EdgeBundles *eb, llvm::SpillPlacement *spl) {
     splitAnalysis = sa;
     splitEditor = se;
     blockFreqInfo = mbfi;
+    edgeBundles = eb;
+    spillPlacer = spl;
     NativeRegAlloc::pyInit(vrm, lis, mat, sp, mfn);
   }
 
@@ -530,6 +536,8 @@ public:
   llvm::MachineBlockFrequencyInfo *blockFrequencyInfo() {
     return blockFreqInfo;
   }
+  llvm::EdgeBundles *edgeBundlesPtr() { return edgeBundles; }
+  llvm::SpillPlacement *spillPlacerPtr() { return spillPlacer; }
 
   // Physregs, in target allocation order, that Python may try for `li`.
   std::vector<unsigned> allocationOrder(const llvm::LiveInterval &li) {
@@ -618,6 +626,8 @@ private:
   llvm::SplitAnalysis *splitAnalysis = nullptr;
   llvm::SplitEditor *splitEditor = nullptr;
   llvm::MachineBlockFrequencyInfo *blockFreqInfo = nullptr;
+  llvm::EdgeBundles *edgeBundles = nullptr;
+  llvm::SpillPlacement *spillPlacer = nullptr;
   std::unique_ptr<llvm::LiveRangeEdit> heldEdit;
 };
 
@@ -697,6 +707,8 @@ public:
     au.addPreserved<llvm::VirtRegMapWrapperLegacy>();
     au.addRequired<llvm::LiveRegMatrixWrapperLegacy>();
     au.addPreserved<llvm::LiveRegMatrixWrapperLegacy>();
+    au.addRequired<llvm::EdgeBundlesWrapperLegacy>();
+    au.addRequired<llvm::SpillPlacementWrapperLegacy>();
     llvm::MachineFunctionPass::getAnalysisUsage(au);
   }
 
@@ -722,6 +734,10 @@ public:
         getAnalysis<llvm::MachineLoopInfoWrapperPass>().getLI();
     llvm::ProfileSummaryInfo &psi =
         getAnalysis<llvm::ProfileSummaryInfoWrapperPass>().getPSI();
+    llvm::EdgeBundles &edgeBundles =
+        getAnalysis<llvm::EdgeBundlesWrapperLegacy>().getEdgeBundles();
+    llvm::SpillPlacement &spillPlacer =
+        getAnalysis<llvm::SpillPlacementWrapperLegacy>().getResult();
 
     nb::gil_scoped_acquire gil;
     // LCOV_EXCL_START -- emit_object always sets the active class before
@@ -770,7 +786,8 @@ public:
     }
     auto *base =
         static_cast<PyRegAllocBase *>(nb::inst_ptr<PyRegAllocBase>(obj));
-    base->pyInit(vrm, lis, mat, *spiller, mfn, &sa, &se, &mbfi);
+    base->pyInit(vrm, lis, mat, *spiller, mfn, &sa, &se, &mbfi, &edgeBundles,
+                 &spillPlacer);
     base->pyAllocate();
     // Hold the instance until the pass is destroyed so its C++ subobject (and
     // any Python-recorded witness state) outlives this call; dropped under the
@@ -817,6 +834,8 @@ INITIALIZE_PASS_DEPENDENCY(VirtRegMapWrapperLegacy)
 INITIALIZE_PASS_DEPENDENCY(LiveRegMatrixWrapperLegacy)
 INITIALIZE_PASS_DEPENDENCY(ProfileSummaryInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(MachineBlockFrequencyInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(EdgeBundlesWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(SpillPlacementWrapperLegacy)
 INITIALIZE_PASS_END(PyRegAllocDriver, "eudsl-python-regalloc",
                     "eudsl Python register allocator", false, false)
 
@@ -1008,7 +1027,21 @@ void populate_python_codegen(nb::module_ &m) {
           nb::rv_policy::reference,
           "The MachineBlockFrequencyInfo for frequency-weighted cost models. "
           "Borrowed and valid only within an allocator callback; do not "
-          "retain.");
+          "retain.")
+      .def_prop_ro(
+          "edge_bundles",
+          [](PyRegAllocBase &self) { return self.edgeBundlesPtr(); },
+          nb::rv_policy::reference,
+          "The EdgeBundles partition of CFG edges, mapping blocks to the "
+          "bundles global splitting reasons about. Borrowed and valid only "
+          "within an allocator callback; do not retain.")
+      .def_prop_ro(
+          "spill_placer",
+          [](PyRegAllocBase &self) { return self.spillPlacerPtr(); },
+          nb::rv_policy::reference,
+          "The SpillPlacement network for choosing global-split boundaries "
+          "(the machinery RAGreedy's splitAroundRegion drives). Borrowed and "
+          "valid only within an allocator callback; do not retain.");
 
   // A virtual register's live interval: the allocator receives one per
   // select_or_split call and queries/assigns it against the matrix.
@@ -1087,6 +1120,142 @@ void populate_python_codegen(nb::module_ &m) {
           },
           "Frequency of the entry block (the denominator of the relative "
           "frequencies).");
+
+  // CFG edges partitioned into bundles: all edges leaving a block share one
+  // bundle, all edges entering it share another. Global region splitting
+  // reasons about which bundles keep the value in a register.
+  nb::class_<llvm::EdgeBundles>(m, "EdgeBundles")
+      .def(
+          "get_bundle",
+          [](llvm::EdgeBundles &eb, llvm::MachineBasicBlock *mbb, bool out) {
+            return eb.getBundle(mbb->getNumber(), out);
+          },
+          "mbb"_a, "out"_a,
+          "Bundle number for `mbb`'s incoming (out=False) or outgoing "
+          "(out=True) edges. Taking the block (not a raw number) keeps the "
+          "index in range by construction.")
+      .def("num_bundles", &llvm::EdgeBundles::getNumBundles,
+           "Total number of edge bundles in the CFG.")
+      .def(
+          "get_blocks",
+          [](llvm::EdgeBundles &eb, unsigned bundle) {
+            if (bundle >= eb.getNumBundles())
+              throw nb::index_error("bundle number out of range");
+            llvm::ArrayRef<unsigned> blocks = eb.getBlocks(bundle);
+            return std::vector<unsigned>(blocks.begin(), blocks.end());
+          },
+          "bundle"_a,
+          "Block numbers connected to `bundle` (0 <= bundle < "
+          "num_bundles).");
+
+  // The bit vector SpillPlacement writes its per-bundle register/spill decision
+  // into. prepare() retains it and finish() fills it, so the Python caller must
+  // keep it alive across the placement calls.
+  nb::class_<llvm::BitVector>(m, "BitVector")
+      .def(nb::init<>())
+      .def(
+          "test", [](llvm::BitVector &bv, unsigned i) { return bv.test(i); },
+          "i"_a, "Whether bit `i` is set.")
+      .def("count", &llvm::BitVector::count, "Number of set bits.")
+      .def("size", &llvm::BitVector::size, "Number of bits.")
+      .def(
+          "set_bits",
+          [](llvm::BitVector &bv) {
+            std::vector<unsigned> v;
+            for (unsigned i : bv.set_bits())
+              v.push_back(i);
+            return v;
+          },
+          "Indices of the set bits (the in-register edge bundles after "
+          "finish()).");
+
+  // Per-block entry/exit constraints for the spill-placement network.
+  nb::enum_<llvm::SpillPlacement::BorderConstraint>(m, "BorderConstraint")
+      .value("DontCare", llvm::SpillPlacement::DontCare)
+      .value("PrefReg", llvm::SpillPlacement::PrefReg)
+      .value("PrefSpill", llvm::SpillPlacement::PrefSpill)
+      .value("PrefBoth", llvm::SpillPlacement::PrefBoth)
+      .value("MustSpill", llvm::SpillPlacement::MustSpill);
+
+  nb::class_<llvm::SpillPlacement::BlockConstraint>(m, "BlockConstraint")
+      .def(nb::init<>())
+      .def_rw("number", &llvm::SpillPlacement::BlockConstraint::Number,
+              "Basic block number this constraint applies to.")
+      // Entry/Exit are bitfields, so bind them through accessors (their address
+      // cannot be taken for def_rw).
+      .def_prop_rw(
+          "entry",
+          [](const llvm::SpillPlacement::BlockConstraint &c) {
+            return c.Entry;
+          },
+          [](llvm::SpillPlacement::BlockConstraint &c,
+             llvm::SpillPlacement::BorderConstraint v) { c.Entry = v; },
+          "Constraint on block entry.")
+      .def_prop_rw(
+          "exit",
+          [](const llvm::SpillPlacement::BlockConstraint &c) { return c.Exit; },
+          [](llvm::SpillPlacement::BlockConstraint &c,
+             llvm::SpillPlacement::BorderConstraint v) { c.Exit = v; },
+          "Constraint on block exit.")
+      .def_rw("changes_value",
+              &llvm::SpillPlacement::BlockConstraint::ChangesValue,
+              "True when the block has a non-PHI def of the live range.");
+
+  // The Hopfield-network spill-placement solver RAGreedy uses to pick global
+  // split boundaries: prepare a result vector, add block constraints and
+  // transparent links, iterate to convergence, and finish to get the optimal
+  // per-bundle register/spill assignment.
+  nb::class_<llvm::SpillPlacement>(m, "SpillPlacement")
+      .def(
+          "prepare",
+          [](llvm::SpillPlacement &sp, llvm::BitVector &regBundles) {
+            sp.prepare(regBundles);
+          },
+          "reg_bundles"_a,
+          "Reset for a new computation; `reg_bundles` receives the result and "
+          "is retained (keep it alive until after finish()).")
+      .def(
+          "add_constraints",
+          [](llvm::SpillPlacement &sp,
+             const std::vector<llvm::SpillPlacement::BlockConstraint>
+                 &constraints) { sp.addConstraints(constraints); },
+          "constraints"_a,
+          "Add entry/exit constraints for blocks where the value is live.")
+      .def(
+          "add_pref_spill",
+          [](llvm::SpillPlacement &sp, const std::vector<unsigned> &blocks,
+             bool strong) { sp.addPrefSpill(blocks, strong); },
+          "blocks"_a, "strong"_a,
+          "Bias the listed blocks toward spilling on entry and exit.")
+      .def(
+          "add_links",
+          [](llvm::SpillPlacement &sp, const std::vector<unsigned> &links) {
+            sp.addLinks(links);
+          },
+          "links"_a, "Add transparent (through) blocks by number.")
+      .def("scan_active_bundles", &llvm::SpillPlacement::scanActiveBundles,
+           "Initial scan of activated bundles; returns whether any prefer a "
+           "register.")
+      .def("iterate", &llvm::SpillPlacement::iterate,
+           "Update the network until convergence.")
+      .def(
+          "get_recent_positive",
+          [](llvm::SpillPlacement &sp) {
+            llvm::ArrayRef<unsigned> pos = sp.getRecentPositive();
+            return std::vector<unsigned>(pos.begin(), pos.end());
+          },
+          "Bundles that turned positive during the last scan/iterate.")
+      .def("finish", &llvm::SpillPlacement::finish,
+           "Compute the optimal placement into the prepared vector; returns "
+           "True if a perfect (all-register) solution was found.")
+      .def(
+          "get_block_frequency",
+          [](llvm::SpillPlacement &sp, llvm::MachineBasicBlock *mbb) {
+            return sp.getBlockFrequency(mbb->getNumber());
+          },
+          "mbb"_a,
+          "Estimated execution frequency of `mbb` (per function invocation). "
+          "Taking the block keeps the index in range by construction.");
 
   // A program point. Live ranges and the split editor are expressed in terms of
   // these; they order the instructions of a function.
