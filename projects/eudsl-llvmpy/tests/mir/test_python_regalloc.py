@@ -174,9 +174,7 @@ def test_basic_regalloc_executes():
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         obj = mmi.emit_object(regalloc="ra-basic-x")
-        add, j = _jit_call(
-            (ctypes.c_int32, ctypes.c_int32, ctypes.c_int32), "add", obj
-        )
+        add, j = _jit_call((ctypes.c_int32, ctypes.c_int32, ctypes.c_int32), "add", obj)
         assert add(2, 3) == 5
         assert add(40, 2) == 42
         del j
@@ -461,6 +459,333 @@ def test_split_analysis_use_and_through_blocks():
     assert_no_leaks()
 
 
+# -- SplitEditor region splitting (the success bar) ---------------------------
+
+
+def _build_cbz(mmi):
+    """b0 defines v and uses it in a CBZW terminator (so v is live-out and its
+    last use sits at b0's last split point), b1 falls through, b2 uses v. This
+    is the shape that drives SplitEditor's overlap path."""
+    mf = mmi.machine_function("cbz")
+    b = mir.MachineIRBuilder(mf)
+    gpr32 = mf.reg_class("GPR32")
+    w0 = mf.physreg("W0")
+    b0 = mf.blocks[0]
+    b1 = mf.create_block()
+    b2 = mf.create_block()
+    b0.add_livein(w0)
+    copy = mf.opcode("COPY")
+    b.set_block(b0)
+    v = mf.create_vreg(gpr32)
+    c = b.build_instr(copy)
+    c.add_reg(v, is_def=True)
+    c.add_reg(w0)
+    cbz = b.build_instr(mf.opcode("CBZW"))
+    cbz.add_reg(v)
+    cbz.add_mbb(b2)
+    b0.add_successor(b1)
+    b0.add_successor(b2)
+    b.set_block(b1)
+    j = b.build_instr(mf.opcode("B"))
+    j.add_mbb(b2)
+    b1.add_successor(b2)
+    b.set_block(b2)
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(v)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+class _SingleBlockSplit(mir.RegAllocBase):
+    """Split around the last use block (enter_intv_before + leave_intv_after)."""
+
+    split = False
+
+    def select_or_split(self, li):
+        if not type(self).split:
+            sa = self.split_analysis
+            sa.analyze(li)
+            cand = [bi for bi in sa.use_blocks() if not bi.live_out]
+            if cand and sa.num_through_blocks() > 0:
+                bi = cand[-1]
+                se = self.split_editor
+                se.reset(self.new_live_range_edit(li))
+                se.open_intv()
+                start = se.enter_intv_before(bi.first_instr)
+                stop = se.leave_intv_after(bi.last_instr)
+                se.use_intv(start, stop)
+                se.finish()
+                type(self).split = True
+                return None
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        self.spill(li)
+        return None
+
+
+def test_region_split_single_block_emits():
+    _SingleBlockSplit.split = False
+    mir.register_regalloc("ra-split-1", _SingleBlockSplit)
+    obj = _emit("ra-split-1", _SingleBlockSplit, builder=_build_three_block, fn="thru")
+    assert obj[:4] == b"\x7fELF"
+    assert _SingleBlockSplit.split, "the split path ran"
+    assert_no_leaks()
+
+
+@pytest.mark.skipif(not _IS_AARCH64, reason="executing hand-built AArch64 MIR")
+def test_region_split_single_block_executes():
+    _SingleBlockSplit.split = False
+    mir.register_regalloc("ra-split-1x", _SingleBlockSplit)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thru")
+        _build_three_block(mmi)
+        obj = mmi.emit_object(regalloc="ra-split-1x")
+        thru, j = _jit_call((ctypes.c_int32, ctypes.c_int32), "thru", obj)
+        assert thru(5) == 5 and thru(-3) == -3
+        del j
+    assert_no_leaks()
+
+
+class _ThroughBlockSplit(mir.RegAllocBase):
+    """Keep the value in a register across the through block using the
+    block-level primitives (select_intv/enter_intv_at_end/use_intv_mbb/
+    leave_intv_at_top), with the SM_Size complement mode."""
+
+    split = False
+    new_vregs = 0
+
+    def select_or_split(self, li):
+        cls = type(self)
+        if not cls.split:
+            sa = self.split_analysis
+            sa.analyze(li)
+            if sa.num_through_blocks() > 0:
+                mf = self.machine_function
+                b0, b1, b2 = mf.blocks[0], mf.blocks[1], mf.blocks[2]
+                lre = self.new_live_range_edit(li)
+                se = self.split_editor
+                se.reset(lre, mir.ComplementSpillMode.SM_Size)
+                idx = se.open_intv()
+                se.select_intv(idx)
+                se.enter_intv_at_end(b0)
+                se.use_intv_mbb(b1)
+                se.leave_intv_at_top(b2)
+                se.finish()
+                cls.new_vregs = len(lre.new_vregs())
+                cls.split = True
+                return None
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        self.spill(li)
+        return None
+
+
+def test_region_split_through_block_emits():
+    _ThroughBlockSplit.split = False
+    mir.register_regalloc("ra-split-thru", _ThroughBlockSplit)
+    obj = _emit(
+        "ra-split-thru", _ThroughBlockSplit, builder=_build_three_block, fn="thru"
+    )
+    assert obj[:4] == b"\x7fELF"
+    assert _ThroughBlockSplit.split
+    assert _ThroughBlockSplit.new_vregs > 0
+    assert_no_leaks()
+
+
+@pytest.mark.skipif(not _IS_AARCH64, reason="executing hand-built AArch64 MIR")
+def test_region_split_through_block_executes():
+    _ThroughBlockSplit.split = False
+    mir.register_regalloc("ra-split-thru-x", _ThroughBlockSplit)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thru")
+        _build_three_block(mmi)
+        obj = mmi.emit_object(regalloc="ra-split-thru-x")
+        thru, j = _jit_call((ctypes.c_int32, ctypes.c_int32), "thru", obj)
+        assert thru(11) == 11
+        del j
+    assert_no_leaks()
+
+
+class _EnterAfterSplit(mir.RegAllocBase):
+    """Split out of the def block with enter_intv_after + leave_intv_before."""
+
+    split = False
+
+    def select_or_split(self, li):
+        cls = type(self)
+        if not cls.split:
+            sa = self.split_analysis
+            sa.analyze(li)
+            defblk = [bi for bi in sa.use_blocks() if bi.first_def.is_valid()]
+            if defblk and sa.num_through_blocks() > 0:
+                bi = defblk[0]
+                se = self.split_editor
+                se.reset(self.new_live_range_edit(li))
+                se.open_intv()
+                start = se.enter_intv_after(bi.first_def)
+                stop = se.leave_intv_before(sa.last_split_point(bi.mbb))
+                se.use_intv(start, stop)
+                se.finish()
+                cls.split = True
+                return None
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        self.spill(li)
+        return None
+
+
+def test_split_enter_after_leave_before_emits():
+    _EnterAfterSplit.split = False
+    mir.register_regalloc("ra-split-after", _EnterAfterSplit)
+    obj = _emit(
+        "ra-split-after", _EnterAfterSplit, builder=_build_three_block, fn="thru"
+    )
+    assert obj[:4] == b"\x7fELF"
+    assert _EnterAfterSplit.split
+    assert_no_leaks()
+
+
+class _OverlapSplit(mir.RegAllocBase):
+    """Split the def block whose last use is its terminator, driving the
+    overlap_intv path (last use at the last split point, value live-out)."""
+
+    split = False
+
+    def select_or_split(self, li):
+        cls = type(self)
+        if not cls.split:
+            sa = self.split_analysis
+            sa.analyze(li)
+            b0 = self.machine_function.blocks[0]
+            cand = [
+                bi
+                for bi in sa.use_blocks()
+                if bi.mbb.number == b0.number and bi.live_out
+            ]
+            if cand:
+                bi = cand[0]
+                lsp = sa.last_split_point(b0)
+                se = self.split_editor
+                se.reset(self.new_live_range_edit(li))
+                se.open_intv()
+                start = bi.first_instr if bi.first_instr < lsp else lsp
+                seg_start = se.enter_intv_before(start)
+                seg_stop = se.leave_intv_before(lsp)
+                se.use_intv(seg_start, seg_stop)
+                se.overlap_intv(seg_stop, bi.last_instr)
+                se.finish()
+                cls.split = True
+                return None
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        self.spill(li)
+        return None
+
+
+def test_split_overlap_intv_emits():
+    _OverlapSplit.split = False
+    mir.register_regalloc("ra-split-overlap", _OverlapSplit)
+    obj = _emit("ra-split-overlap", _OverlapSplit, builder=_build_cbz, fn="cbz")
+    assert obj[:4] == b"\x7fELF"
+    assert _OverlapSplit.split
+    assert_no_leaks()
+
+
+class _SplitRecordsRemoval(_ThroughBlockSplit):
+    """The through-block region split leaves the complement empty in a block, so
+    allocatePhysRegs drops that interval; an about_to_remove_interval override
+    witnesses the hook firing."""
+
+    removed = 0
+
+    def about_to_remove_interval(self, li):
+        type(self).removed += 1
+
+
+def test_about_to_remove_interval_forwarded_during_split():
+    _SplitRecordsRemoval.split = False
+    _SplitRecordsRemoval.removed = 0
+    mir.register_regalloc("ra-removal", _SplitRecordsRemoval)
+    obj = _emit(
+        "ra-removal",
+        _SplitRecordsRemoval,
+        builder=_build_three_block,
+        fn="thru",
+    )
+    assert obj[:4] == b"\x7fELF"
+    assert _SplitRecordsRemoval.removed > 0, "about_to_remove_interval fired"
+    assert_no_leaks()
+
+
+@pytest.mark.skipif(not _IS_AARCH64, reason="executing hand-built AArch64 MIR")
+def test_split_overlap_intv_executes():
+    _OverlapSplit.split = False
+    mir.register_regalloc("ra-split-overlap-x", _OverlapSplit)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "cbz")
+        _build_cbz(mmi)
+        obj = mmi.emit_object(regalloc="ra-split-overlap-x")
+        cbz, j = _jit_call((ctypes.c_int32, ctypes.c_int32), "cbz", obj)
+        assert cbz(5) == 5 and cbz(0) == 0
+        del j
+    assert_no_leaks()
+
+
+class _PreAssignAllocator(mir.RegAllocBase):
+    """Records enqueued regs (the native queue still drives dequeue) and, on its
+    first call, assigns a *different* still-queued interval out of order. When
+    the native queue later pops that already-assigned reg it is skipped -- the
+    stale-entry guard in the default dequeue."""
+
+    def __init__(self):
+        super().__init__()
+        self.queued = []
+        self.pre_assigned = False
+
+    def enqueue(self, li):
+        self.queued.append(li.reg)
+
+    def select_or_split(self, li):
+        if not self.pre_assigned:
+            for r in self.queued:
+                if r == li.reg or not self.lis.has_interval(r):
+                    continue
+                other = self.lis.interval(r)
+                for preg in self.allocation_order(other):
+                    if self.matrix.is_free(other, preg):
+                        self.matrix.assign(other, preg)
+                        self.pre_assigned = True
+                        break
+                if self.pre_assigned:
+                    break
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        self.spill(li)
+        return None
+
+
+def test_default_dequeue_skips_already_assigned():
+    mir.register_regalloc("ra-preassign", _PreAssignAllocator)
+    obj = _emit("ra-preassign", _PreAssignAllocator)
+    assert obj[:4] == b"\x7fELF"
+    assert_no_leaks()
+
+
 # -- exception matrix ---------------------------------------------------------
 
 
@@ -522,6 +847,18 @@ def test_init_raise_propagates():
 
     mir.register_regalloc("ra-init-boom", Boom)
     _expect_raise("ra-init-boom", Boom, "init boom")
+
+
+def test_about_to_remove_interval_raise_propagates():
+    class Boom(_ThroughBlockSplit):
+        def about_to_remove_interval(self, li):
+            raise ValueError("atr boom")
+
+    Boom.split = False
+    mir.register_regalloc("ra-atr-boom", Boom)
+    _expect_raise(
+        "ra-atr-boom", Boom, "atr boom", builder=_build_three_block, fn="thru"
+    )
 
 
 def test_post_optimization_raise_propagates():

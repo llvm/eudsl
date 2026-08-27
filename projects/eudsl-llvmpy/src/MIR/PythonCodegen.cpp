@@ -374,6 +374,10 @@ public:
   void pyAllocate() {
     allocatePhysRegs();
     postOptimization();
+    // Free any LiveRangeEdit handed to Python while MRI is still alive: its
+    // dtor calls MRI.resetDelegate, and MRI is torn down with the function once
+    // the harness returns.
+    heldEdit.reset();
   }
 
   // Protected RegAllocBase state, surfaced to the Python helpers.
@@ -983,6 +987,12 @@ void populate_python_codegen(nb::module_ &m) {
                  s.getUseBlocks().begin(), s.getUseBlocks().end());
            })
       .def("num_through_blocks", &llvm::SplitAnalysis::getNumThroughBlocks)
+      .def(
+          "last_split_point",
+          [](llvm::SplitAnalysis &s, llvm::MachineBasicBlock *mbb) {
+            return s.getLastSplitPoint(mbb);
+          },
+          "mbb"_a)
       .def("through_blocks", [](llvm::SplitAnalysis &s) {
         std::vector<unsigned> v;
         for (unsigned b : s.getThroughBlocks().set_bits())
