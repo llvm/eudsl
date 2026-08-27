@@ -3,13 +3,31 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include "IR/Common.h"
+#include "MIR/AllocationOrder.h"
 #include "MIR/Diagnostics.h"
+#include "MIR/RegAllocBase.h"
+#include "MIR/SplitKit.h"
 
+#include <llvm/CodeGen/CalcSpillWeights.h>
+#include <llvm/CodeGen/LiveInterval.h>
+#include <llvm/CodeGen/LiveIntervals.h>
+#include <llvm/CodeGen/LiveRangeEdit.h>
+#include <llvm/CodeGen/LiveRegMatrix.h>
+#include <llvm/CodeGen/LiveStacks.h>
 #include <llvm/CodeGen/MachineBasicBlock.h>
+#include <llvm/CodeGen/MachineBlockFrequencyInfo.h>
+#include <llvm/CodeGen/MachineDominators.h>
+#include <llvm/CodeGen/MachineFunctionPass.h>
 #include <llvm/CodeGen/MachineInstr.h>
+#include <llvm/CodeGen/MachineLoopInfo.h>
 #include <llvm/CodeGen/MachineScheduler.h>
+#include <llvm/CodeGen/Passes.h>
+#include <llvm/CodeGen/RegAllocRegistry.h>
 #include <llvm/CodeGen/ScheduleDAG.h>
 #include <llvm/CodeGen/ScheduleDAGMutation.h>
+#include <llvm/CodeGen/SlotIndexes.h>
+#include <llvm/CodeGen/Spiller.h>
+#include <llvm/CodeGen/VirtRegMap.h>
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/pair.h>
@@ -20,6 +38,7 @@
 #include <deque>
 #include <exception>
 #include <memory>
+#include <queue>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,6 +59,11 @@ namespace {
 // registry ctor knows which class to instantiate per MachineFunction.
 // GIL-serialized, matching the process-global -misched handling in Machine.cpp.
 thread_local nb::type_object activeSchedClass;
+
+// The Python RegAllocBase subclass emit_object selected for the current run,
+// set/cleared under the GIL. Mirrors activeSchedClass: the harness pass ctor is
+// a non-capturing function pointer, so it reads the class from here.
+thread_local nb::type_object activeRegAllocClass;
 
 class PySchedStrategy : public llvm::MachineSchedStrategy {
 public:
@@ -287,6 +311,61 @@ createRegisteredPyStrategy(llvm::MachineSchedContext *c) {
   }
 }
 
+// Trampoline letting Python subclass llvm::RegAllocBase. RegAllocBase is a
+// driver mixed into a MachineFunctionPass: its state (VRM/LIS/Matrix/...) and
+// the init()/allocatePhysRegs() driver are protected, so the harness pass
+// reaches them through the public py* wrappers below rather than owning an
+// adaptor (there is no unique_ptr sink to satisfy, unlike the scheduler).
+class PyRegAllocBase : public llvm::RegAllocBase {
+public:
+  NB_TRAMPOLINE(llvm::RegAllocBase, 6);
+
+  // spiller() is pure and dereferenced by allocatePhysRegs; the harness injects
+  // the concrete Spiller before driving, so this is never called with null.
+  llvm::Spiller &spiller() override { return *injectedSpiller; }
+  void enqueueImpl(const llvm::LiveInterval *) override {}
+  const llvm::LiveInterval *dequeue() override { return nullptr; }
+  llvm::MCRegister
+  selectOrSplit(const llvm::LiveInterval &,
+                llvm::SmallVectorImpl<llvm::Register> &) override {
+    return llvm::MCRegister();
+  }
+
+  llvm::Spiller *injectedSpiller = nullptr;
+};
+
+// name -> Python RegAllocBase subclass, held in
+// llvm.mir_strategies._regalloc_classes (Python owns it so the subclass types
+// are released at interpreter teardown, matching schedulerClasses()).
+nb::dict regallocClasses() {
+  return nb::cast<nb::dict>(
+      nb::module_::import_("llvm.mir_strategies").attr("_regalloc_classes"));
+}
+
+// Registered allocator names, in registration order.
+std::deque<std::string> &regallocNames() {
+  static auto *names = new std::deque<std::string>();
+  return *names;
+}
+
+// select_or_split is the one required override (RegAllocBase's only pure
+// heuristic hook without a default); enqueue/dequeue/post_optimization are
+// optional and fall back to the native queue / base default. type_object_t
+// rejects a non-RegAllocBase class at the call boundary. Keyed on the
+// trampoline (the bound value type) rather than llvm::RegAllocBase because that
+// class has a protected destructor, which nanobind cannot bind as a value type.
+void registerRegAlloc(const std::string &name,
+                      nb::type_object_t<PyRegAllocBase> cls) {
+  if (!nb::hasattr(cls, "select_or_split")) {
+    throw nb::type_error(
+        "register allocator class must define select_or_split");
+  }
+  nb::dict classes = regallocClasses();
+  if (!classes.contains(name.c_str()))
+    regallocNames().push_back(name);
+  classes[name.c_str()] = cls;
+}
+
 } // namespace
 
 namespace eudsl {
@@ -335,6 +414,20 @@ void setActiveSchedClass(nb::type_object cls) {
   activeSchedClass = std::move(cls);
 }
 void clearActiveSchedClass() { activeSchedClass = nb::type_object(); }
+
+// The class registered under `name`, or an invalid object if `name` was not
+// registered via register_regalloc.
+nb::type_object regallocClass(const std::string &name) {
+  nb::dict classes = regallocClasses();
+  if (classes.contains(name.c_str()))
+    return nb::borrow<nb::type_object>(classes[name.c_str()]);
+  return nb::type_object();
+}
+
+void setActiveRegAllocClass(nb::type_object cls) {
+  activeRegAllocClass = std::move(cls);
+}
+void clearActiveRegAllocClass() { activeRegAllocClass = nb::type_object(); }
 
 } // namespace eudsl
 
@@ -390,4 +483,21 @@ void populate_python_codegen(nb::module_ &m) {
       },
       "Names registered via register_scheduler, selectable with "
       "emit_object(scheduler=...).");
+
+  nb::class_<PyRegAllocBase>(m, "RegAllocBase").def(nb::init<>());
+
+  m.def("register_regalloc", &registerRegAlloc, "name"_a, "cls"_a,
+        "Register a RegAllocBase subclass under `name` so "
+        "emit_object(regalloc=name) can select it. The class must define "
+        "select_or_split; enqueue, dequeue, and post_optimization are "
+        "optional. Re-registering a name replaces it.");
+
+  m.def(
+      "registered_regallocs",
+      []() {
+        return std::vector<std::string>(regallocNames().begin(),
+                                        regallocNames().end());
+      },
+      "Names registered via register_regalloc, selectable with "
+      "emit_object(regalloc=...).");
 }

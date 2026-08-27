@@ -47,6 +47,14 @@ holds. Reach for `nb::object`/`nb::handle` only when the value is genuinely an
 arbitrary Python object with no more specific type — e.g. the ignored
 `exc_type`/`exc_value`/`traceback` parameters of `__exit__`.
 
+## Comments explain why, not what
+
+Do not write comments that restate what the code plainly does. Add a comment
+only when it documents *why* something non-obvious was done -- a workaround, a
+constraint imposed by an external API, a subtle ordering requirement, a reason a
+simpler-looking alternative fails. If the code is self-explanatory, leave it
+uncommented.
+
 ## No forward-reference comments
 
 Do not write comments that reference future work, later PRs, or task numbers

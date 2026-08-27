@@ -15,6 +15,10 @@ from . import mir
 # released at interpreter teardown rather than pinned in a C++ static.
 _scheduler_classes = {}
 
+# name -> registered RegAllocBase subclass; the regalloc analogue of
+# _scheduler_classes, owned by Python for the same teardown reason.
+_regalloc_classes = {}
+
 
 class ReadyQueueStrategy(mir.MachineSchedStrategy):
     """Top-down strategy that maintains the ready queue for you.
