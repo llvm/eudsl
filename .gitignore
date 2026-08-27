@@ -42,3 +42,4 @@
 /mlir_wheel/
 /mlir_wheel-*.whl
 /mlir_wheel-*.dist-info/
+docs/superpowers/
