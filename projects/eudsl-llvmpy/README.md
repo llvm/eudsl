@@ -423,7 +423,10 @@ eviction candidates),
 `self.lis` (LiveIntervals: `instruction_index`, `mbb_start_index`,
 `mbb_end_index`, `has_interval`, `interval`), `self.vrm` (VirtRegMap:
 `has_phys`/`get_phys`, to read an interferer's current physreg before evicting
-it),
+it; and, for the eviction cost model, `self.reg_allocation_hints(reg)` (a
+`(type, [ids])` pair) / `self.simple_hint(reg)` (broken-hint accounting),
+`self.matrix.is_phys_reg_used`,
+and `self.last_callee_saved_alias(physreg)`),
 `self.machine_function`, and `self.mbfi` (MachineBlockFrequencyInfo:
 `block_freq`, `block_freq_relative_to_entry_block`, `entry_freq`, for
 frequency-weighted spill/split cost models). The `li` passed in is a

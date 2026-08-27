@@ -615,6 +615,38 @@ public:
     return mf->getSubtarget().getInstrInfo()->isTriviallyReMaterializable(*mi);
   }
 
+  // Copy-hint registers for `reg` (physregs and/or vregs it is copy-related
+  // The register-allocation hints for virtual register `reg`: a (type, [ids])
+  // pair. `type` is the hint kind (0 = target-independent copy hints; nonzero
+  // = a target-specific hint the target expands), `ids` the hinted physregs.
+  // RAGreedy prefers a hinted physreg and counts "broken hints" in eviction
+  // cost. `reg` must be a virtual register. (0, []) if it has no hints.
+  std::pair<unsigned, std::vector<unsigned>> regAllocationHints(unsigned reg) {
+    unsigned type = 0;
+    std::vector<unsigned> ids;
+    const auto *hints =
+        mf->getRegInfo().getRegAllocationHints(llvm::Register(reg));
+    if (hints) {
+      type = hints->first;
+      for (llvm::Register h : hints->second)
+        ids.push_back(h.id());
+    }
+    return {type, ids};
+  }
+
+  // The single "simple" copy hint for virtual register `reg` (id, or 0 if
+  // none). `reg` must be a virtual register.
+  unsigned simpleHint(unsigned reg) {
+    return mf->getRegInfo().getSimpleHint(llvm::Register(reg)).id();
+  }
+
+  // The last callee-saved register aliasing `physreg` (id, or 0 if none) --
+  // RAGreedy's isUnusedCalleeSavedReg check, which biases against introducing a
+  // CSR spill.
+  unsigned lastCalleeSavedAlias(unsigned physreg) {
+    return RegClassInfo.getLastCalleeSavedAlias(llvm::MCRegister(physreg)).id();
+  }
+
   // Spill `li` into the current select_or_split's split-vreg vector.
   void spill(const llvm::LiveInterval &li) {
     if (!currentSplit)
@@ -1037,6 +1069,19 @@ void populate_python_codegen(nb::module_ &m) {
           &PyRegAllocBase::isTriviallyRematerializable, "mi"_a,
           "Whether `mi` (e.g. an interval's defining instruction) is trivially "
           "rematerializable.")
+      .def("reg_allocation_hints", &PyRegAllocBase::regAllocationHints, "reg"_a,
+           "The (type, [ids]) allocation hints for virtual register `reg`: "
+           "`type` is the hint kind (0 = target-independent copy hints), "
+           "`ids` the hinted physregs (a hinted physreg is preferred; evicting "
+           "a hinted assignment is a 'broken hint' in eviction cost). (0, []) "
+           "if none. `reg` must be a virtual register.")
+      .def("simple_hint", &PyRegAllocBase::simpleHint, "reg"_a,
+           "The single simple copy-hint reg id for virtual register `reg`, or "
+           "0 if none. `reg` must be a virtual register.")
+      .def("last_callee_saved_alias", &PyRegAllocBase::lastCalleeSavedAlias,
+           "physreg"_a,
+           "The last callee-saved register aliasing `physreg` (id, or 0) -- "
+           "biases against introducing a callee-saved spill.")
       .def("spill", &PyRegAllocBase::spill, "li"_a,
            "Spill `li`; new split vregs are appended for re-enqueue. Only "
            "valid inside select_or_split.")
@@ -1660,7 +1705,15 @@ void populate_python_codegen(nb::module_ &m) {
           [](llvm::LiveRegMatrix &mat, const llvm::LiveInterval &li) {
             mat.unassign(li);
           },
-          "li"_a);
+          "li"_a)
+      .def(
+          "is_phys_reg_used",
+          [](llvm::LiveRegMatrix &mat, unsigned physreg) {
+            return mat.isPhysRegUsed(llvm::MCRegister(physreg));
+          },
+          "physreg"_a,
+          "Whether any virtual register has been assigned to `physreg` yet "
+          "(used by the callee-saved eviction bias).");
 
   m.def("register_regalloc", &registerRegAlloc, "name"_a, "cls"_a,
         "Register a RegAllocBase subclass under `name` so "
