@@ -382,6 +382,16 @@ public:
   llvm::VirtRegMap *virtRegMap() { return VRM; }
   llvm::MachineFunction *machineFunction() { return mf; }
   llvm::SplitAnalysis *splitAnalysisPtr() { return splitAnalysis; }
+  llvm::SplitEditor *splitEditorPtr() { return splitEditor; }
+
+  // Build a LiveRangeEdit over the current split-vreg vector for the split
+  // editor to write into. Held so it outlives the SplitEditor reset/open/use/
+  // finish calls that reference it (all within one select_or_split).
+  llvm::LiveRangeEdit *newLiveRangeEdit(const llvm::LiveInterval &li) {
+    heldEdit = std::make_unique<llvm::LiveRangeEdit>(
+        &li, *currentSplit, *mf, *LIS, VRM, /*delegate=*/nullptr, &DeadRemats);
+    return heldEdit.get();
+  }
 
   // Physregs, in target allocation order, that Python may try for `li`.
   std::vector<unsigned> allocationOrder(const llvm::LiveInterval &li) {
@@ -423,6 +433,7 @@ protected:
   llvm::MachineFunction *mf = nullptr;
   llvm::SplitAnalysis *splitAnalysis = nullptr;
   llvm::SplitEditor *splitEditor = nullptr;
+  std::unique_ptr<llvm::LiveRangeEdit> heldEdit;
 };
 
 // Trampoline letting Python subclass the allocator. Each virtual calls the
@@ -858,7 +869,20 @@ void populate_python_codegen(nb::module_ &m) {
           "split_analysis",
           [](PyRegAllocBase &self) { return self.splitAnalysisPtr(); },
           nb::rv_policy::reference_internal,
-          "The SplitAnalysis for planning live-range splits.");
+          "The SplitAnalysis for planning live-range splits.")
+      .def_prop_ro(
+          "split_editor",
+          [](PyRegAllocBase &self) { return self.splitEditorPtr(); },
+          nb::rv_policy::reference_internal,
+          "The SplitEditor for applying live-range splits.")
+      .def(
+          "new_live_range_edit",
+          [](PyRegAllocBase &self, const llvm::LiveInterval &li) {
+            return self.newLiveRangeEdit(li);
+          },
+          nb::rv_policy::reference_internal, "li"_a,
+          "A LiveRangeEdit over the current split-vreg vector, for "
+          "split_editor.reset.");
 
   // A virtual register's live interval: the allocator receives one per
   // select_or_split call and queries/assigns it against the matrix.
@@ -965,6 +989,59 @@ void populate_python_codegen(nb::module_ &m) {
           v.push_back(b);
         return v;
       });
+
+  // The edit buffer the split editor writes new vregs into.
+  nb::class_<llvm::LiveRangeEdit>(m, "LiveRangeEdit")
+      .def("new_vregs", [](llvm::LiveRangeEdit &e) {
+        std::vector<unsigned> v;
+        for (llvm::Register r : e.regs())
+          v.push_back(r.id());
+        return v;
+      });
+
+  nb::enum_<llvm::SplitEditor::ComplementSpillMode>(m, "ComplementSpillMode")
+      .value("SM_Partition", llvm::SplitEditor::SM_Partition)
+      .value("SM_Size", llvm::SplitEditor::SM_Size)
+      .value("SM_Speed", llvm::SplitEditor::SM_Speed);
+
+  // Raw live-range splitting primitives (RAGreedy uses these internally); a
+  // Python allocator drives them to open/enter/use/leave an interval and
+  // finish, producing new vregs for re-enqueue.
+  nb::class_<llvm::SplitEditor>(m, "SplitEditor")
+      .def("reset", &llvm::SplitEditor::reset, "live_range_edit"_a,
+           "mode"_a = llvm::SplitEditor::SM_Partition)
+      .def("open_intv", &llvm::SplitEditor::openIntv)
+      .def("select_intv", &llvm::SplitEditor::selectIntv, "idx"_a)
+      .def("enter_intv_before", &llvm::SplitEditor::enterIntvBefore, "idx"_a)
+      .def("enter_intv_after", &llvm::SplitEditor::enterIntvAfter, "idx"_a)
+      .def(
+          "enter_intv_at_end",
+          [](llvm::SplitEditor &s, llvm::MachineBasicBlock *mbb) {
+            return s.enterIntvAtEnd(*mbb);
+          },
+          "mbb"_a)
+      .def(
+          "use_intv",
+          [](llvm::SplitEditor &s, llvm::SlotIndex a, llvm::SlotIndex b) {
+            s.useIntv(a, b);
+          },
+          "start"_a, "end"_a)
+      .def(
+          "use_intv_mbb",
+          [](llvm::SplitEditor &s, llvm::MachineBasicBlock *mbb) {
+            s.useIntv(*mbb);
+          },
+          "mbb"_a)
+      .def("leave_intv_after", &llvm::SplitEditor::leaveIntvAfter, "idx"_a)
+      .def("leave_intv_before", &llvm::SplitEditor::leaveIntvBefore, "idx"_a)
+      .def(
+          "leave_intv_at_top",
+          [](llvm::SplitEditor &s, llvm::MachineBasicBlock *mbb) {
+            return s.leaveIntvAtTop(*mbb);
+          },
+          "mbb"_a)
+      .def("overlap_intv", &llvm::SplitEditor::overlapIntv, "start"_a, "end"_a)
+      .def("finish", [](llvm::SplitEditor &s) { s.finish(nullptr); });
 
   nb::enum_<llvm::LiveRegMatrix::InterferenceKind>(m, "InterferenceKind")
       .value("IK_Free", llvm::LiveRegMatrix::IK_Free)
