@@ -519,6 +519,7 @@ public:
     blockFreqInfo = mbfi;
     edgeBundles = eb;
     spillPlacer = spl;
+    regCosts = mfn.getSubtarget().getRegisterInfo()->getRegisterCosts(mfn);
     NativeRegAlloc::pyInit(vrm, lis, mat, sp, mfn);
   }
 
@@ -568,6 +569,16 @@ public:
       }
     }
     return ids;
+  }
+
+  // Per-use cost of `physreg` (the CostPerUseLimit heuristic RAGreedy uses to
+  // decide whether a register is worth allocating). Indexed by physreg id. The
+  // cost table is an ArrayRef into the target's static tables (fixed for this
+  // function), cached in pyInit.
+  unsigned registerCost(unsigned physreg) {
+    if (physreg >= regCosts.size())
+      throw nb::index_error("physreg id out of range");
+    return regCosts[physreg];
   }
 
   // Spill `li` into the current select_or_split's split-vreg vector.
@@ -628,6 +639,7 @@ private:
   llvm::MachineBlockFrequencyInfo *blockFreqInfo = nullptr;
   llvm::EdgeBundles *edgeBundles = nullptr;
   llvm::SpillPlacement *spillPlacer = nullptr;
+  llvm::ArrayRef<uint8_t> regCosts;
   std::unique_ptr<llvm::LiveRangeEdit> heldEdit;
 };
 
@@ -975,6 +987,9 @@ void populate_python_codegen(nb::module_ &m) {
            "`physreg` -- those assigned to `physreg` or to a physreg aliasing "
            "it. Alias/subregister correct (queries every reg unit of "
            "`physreg`, de-duplicating). These are the eviction candidates.")
+      .def("register_cost", &PyRegAllocBase::registerCost, "physreg"_a,
+           "Per-use cost of `physreg` (the CostPerUseLimit heuristic; 0 on "
+           "targets with uniform register cost).")
       .def("spill", &PyRegAllocBase::spill, "li"_a,
            "Spill `li`; new split vregs are appended for re-enqueue. Only "
            "valid inside select_or_split.")
@@ -1050,9 +1065,31 @@ void populate_python_codegen(nb::module_ &m) {
                    [](const llvm::LiveInterval &li) { return li.reg().id(); })
       .def_prop_ro("weight",
                    [](const llvm::LiveInterval &li) { return li.weight(); })
-      .def_prop_ro("is_spillable", [](const llvm::LiveInterval &li) {
-        return li.isSpillable();
-      });
+      .def_prop_ro(
+          "is_spillable",
+          [](const llvm::LiveInterval &li) { return li.isSpillable(); })
+      .def_prop_ro(
+          "begin_index",
+          [](const llvm::LiveInterval &li) {
+            // beginIndex/endIndex assert on an empty range; raise a catchable
+            // error instead of aborting. Intervals reaching Python from
+            // select_or_split are always non-empty, so the guard is defensive.
+            if (li.empty())
+              throw nb::value_error("live interval is empty"); // LCOV_EXCL_LINE
+            return li.beginIndex();
+          },
+          "Lowest SlotIndex covered by this interval.")
+      .def_prop_ro(
+          "end_index",
+          [](const llvm::LiveInterval &li) {
+            if (li.empty())
+              throw nb::value_error("live interval is empty"); // LCOV_EXCL_LINE
+            return li.endIndex();
+          },
+          "Highest (exclusive) SlotIndex covered by this interval.")
+      .def_prop_ro(
+          "size", [](const llvm::LiveInterval &li) { return li.getSize(); },
+          "Total size in slot-index units (RAGreedy ranks priority by this).");
 
   // The virtual-to-physical assignment map. get_phys/has_phys let an eviction
   // policy read which physreg an interfering vreg currently holds before
@@ -1342,6 +1379,14 @@ void populate_python_codegen(nb::module_ &m) {
                  s.getUseBlocks().begin(), s.getUseBlocks().end());
            })
       .def("num_through_blocks", &llvm::SplitAnalysis::getNumThroughBlocks)
+      .def(
+          "get_use_slots",
+          [](llvm::SplitAnalysis &s) {
+            llvm::ArrayRef<llvm::SlotIndex> slots = s.getUseSlots();
+            return std::vector<llvm::SlotIndex>(slots.begin(), slots.end());
+          },
+          "SlotIndexes of the instructions using the analyzed interval "
+          "(needed for local/instruction splitting). Valid after analyze().")
       .def(
           "last_split_point",
           [](llvm::SplitAnalysis &s, llvm::MachineBasicBlock *mbb) {

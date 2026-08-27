@@ -1432,3 +1432,69 @@ def test_spill_placement_guided_region_split_executes():
         del j
     assert _SpillPlacementSplit.split, "the guided split drove the executed emission"
     assert_no_leaks()
+
+
+# -- RAGreedy-completion accessors (interval extent, use slots, reg cost) -----
+
+
+def test_ragreedy_completion_accessors():
+    """The read-only surface a faithful RAGreedy still needs: a LiveInterval's
+    own extent/size (RAGreedy ranks priority by size), the per-use SlotIndexes
+    (local/instruction splitting), and per-physreg cost (CostPerUseLimit)."""
+    saw = {}
+
+    class Reader(mir.RegAllocBase):
+        def select_or_split(self, li):
+            if not saw:
+                begin, end = li.begin_index, li.end_index
+                saw["ordered"] = begin < end
+                saw["begin_valid"] = begin.is_valid()
+                saw["end_valid"] = end.is_valid()
+                saw["size"] = li.size
+                sa = self.split_analysis
+                sa.analyze(li)
+                slots = sa.get_use_slots()
+                saw["num_use_slots"] = len(slots)
+                saw["slots_valid"] = all(s.is_valid() for s in slots)
+                # Every use lies within the interval's own extent (the last
+                # use sits at the exclusive end boundary).
+                saw["slots_in_extent"] = all(
+                    (begin < s or begin == s) and (s < end or s == end) for s in slots
+                )
+                # get_use_slots is sorted and (for this SSA value) spans the def
+                # contribution through the killing use, so its endpoints
+                # coincide with the interval's own begin/end -- a strong cross-
+                # binding check that begin_index/end_index track real slots.
+                saw["begin_is_first_slot"] = begin == slots[0]
+                saw["end_is_last_slot"] = end == slots[-1]
+                order = self.allocation_order(li)
+                saw["cost"] = self.register_cost(order[0])
+                # register_cost bounds-checks a fabricated physreg id.
+                try:
+                    self.register_cost(1 << 30)
+                    saw["cost_oob_raised"] = False
+                except IndexError:
+                    saw["cost_oob_raised"] = True
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-greedy-accessors", Reader)
+    obj = _emit("ra-greedy-accessors", Reader, builder=_build_three_block, fn="thru")
+    assert obj[:4] == b"\x7fELF"
+    assert saw["ordered"] and saw["begin_valid"] and saw["end_valid"]
+    assert saw["size"] > 0
+    # _build_three_block's value has exactly one def contribution + one killing
+    # use, so SplitAnalysis reports exactly two use slots.
+    assert saw["num_use_slots"] == 2
+    assert saw["slots_valid"] and saw["slots_in_extent"]
+    assert saw["begin_is_first_slot"] and saw["end_is_last_slot"]
+    # AArch64 has uniform register cost (all 0), so this is a smoke check that
+    # the accessor returns a valid non-negative cost; the OOB guard below is the
+    # meaningful behavioral assertion.
+    assert isinstance(saw["cost"], int) and saw["cost"] >= 0
+    assert saw["cost_oob_raised"], "register_cost bounds-checks the physreg id"
+    assert_no_leaks()
+    assert_no_leaks()

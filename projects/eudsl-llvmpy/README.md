@@ -418,6 +418,7 @@ mutates state through `self`: `allocation_order(li)` (physregs to try, in target
 order), `interfering_vregs(li, physreg)` (ids of vregs whose ranges interfere
 with `li` on that physreg -- assigned to it or to an aliasing physreg; the
 eviction candidates),
+`register_cost(physreg)` (per-use cost, the CostPerUseLimit heuristic),
 `self.matrix` (`is_free`/`check_interference`/`assign`/`unassign`),
 `self.lis` (LiveIntervals: `instruction_index`, `mbb_start_index`,
 `mbb_end_index`, `has_interval`, `interval`), `self.vrm` (VirtRegMap:
@@ -425,7 +426,9 @@ eviction candidates),
 it),
 `self.machine_function`, and `self.mbfi` (MachineBlockFrequencyInfo:
 `block_freq`, `block_freq_relative_to_entry_block`, `entry_freq`, for
-frequency-weighted spill/split cost models). Optional overrides: `enqueue(reg)`/`dequeue()` (drive
+frequency-weighted spill/split cost models). The `li` passed in is a
+`LiveInterval` exposing `reg`, `weight`, `is_spillable`, and its own extent
+(`begin_index`/`end_index`/`size`). Optional overrides: `enqueue(reg)`/`dequeue()` (drive
 the assignment order; both traffic in register ids -- stable across splitting,
 unlike interval objects -- and `dequeue` returns a reg id or `None`; the default
 is a spill-weight priority queue), `post_optimization()`, and
@@ -449,7 +452,7 @@ obj = mmi.emit_object(regalloc="first-free")   # drives FirstFree instead of gre
 
 For RAGreedy-style live-range splitting, `self.split_analysis` (a
 `SplitAnalysis`: `analyze(li)`, `use_blocks()`, `num_through_blocks()`,
-`through_blocks()`, `last_split_point(mbb)`) plans the split and
+`through_blocks()`, `get_use_slots()`, `last_split_point(mbb)`) plans the split and
 `self.split_editor` (a `SplitEditor`: `reset`, `open_intv`, `enter_intv_*`,
 `use_intv`/`use_intv_mbb`, `leave_intv_*`, `overlap_intv`, `finish`) applies it,
 writing into `self.new_live_range_edit(li)`:
