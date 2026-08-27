@@ -700,8 +700,10 @@ void populate_mir(nb::module_ &m) {
 
   // A target register class (e.g. AArch64 GPR32), looked up by name via
   // MachineFunction.reg_class. Opaque handle used when creating typed vregs for
-  // already-selected MIR.
-  nb::class_<llvm::TargetRegisterClass>(m, "TargetRegisterClass");
+  // already-selected MIR; `id` identifies the class (e.g. to compare two).
+  nb::class_<llvm::TargetRegisterClass>(m, "TargetRegisterClass")
+      .def_prop_ro(
+          "id", [](const llvm::TargetRegisterClass &rc) { return rc.getID(); });
 
   // MachineFunctionProperties::Property -- the flags a MachineFunction carries
   // (set with MachineFunction.set_property). Some mark progress through the

@@ -25,6 +25,7 @@
 #include <llvm/CodeGen/MachineFunctionPass.h>
 #include <llvm/CodeGen/MachineInstr.h>
 #include <llvm/CodeGen/MachineLoopInfo.h>
+#include <llvm/CodeGen/MachineRegisterInfo.h>
 #include <llvm/CodeGen/MachineScheduler.h>
 #include <llvm/CodeGen/Passes.h>
 #include <llvm/CodeGen/RegAllocRegistry.h>
@@ -33,6 +34,7 @@
 #include <llvm/CodeGen/SlotIndexes.h>
 #include <llvm/CodeGen/SpillPlacement.h>
 #include <llvm/CodeGen/Spiller.h>
+#include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetRegisterInfo.h>
 #include <llvm/CodeGen/VirtRegMap.h>
 #include <llvm/MC/LaneBitmask.h>
@@ -601,6 +603,18 @@ public:
     return regCosts[physreg];
   }
 
+  const llvm::TargetRegisterClass *regClass(unsigned reg) {
+    return mf->getRegInfo().getRegClass(llvm::Register(reg));
+  }
+
+  unsigned numAllocatableRegs(const llvm::TargetRegisterClass *rc) {
+    return RegClassInfo.getNumAllocatableRegs(rc);
+  }
+
+  bool isTriviallyRematerializable(llvm::MachineInstr *mi) {
+    return mf->getSubtarget().getInstrInfo()->isTriviallyReMaterializable(*mi);
+  }
+
   // Spill `li` into the current select_or_split's split-vreg vector.
   void spill(const llvm::LiveInterval &li) {
     if (!currentSplit)
@@ -1010,69 +1024,68 @@ void populate_python_codegen(nb::module_ &m) {
       .def("register_cost", &PyRegAllocBase::registerCost, "physreg"_a,
            "Per-use cost of `physreg` (the CostPerUseLimit heuristic; 0 on "
            "targets with uniform register cost).")
+      .def("reg_class", &PyRegAllocBase::regClass, nb::rv_policy::reference,
+           "reg"_a,
+           "The register class of virtual register `reg` (target-static; "
+           "borrowed).")
+      .def("num_allocatable_regs", &PyRegAllocBase::numAllocatableRegs,
+           "reg_class"_a,
+           "Number of actually-allocatable registers in `reg_class` (the "
+           "register-pressure denominator; reserved registers excluded).")
+      .def(
+          "is_trivially_rematerializable",
+          &PyRegAllocBase::isTriviallyRematerializable, "mi"_a,
+          "Whether `mi` (e.g. an interval's defining instruction) is trivially "
+          "rematerializable.")
       .def("spill", &PyRegAllocBase::spill, "li"_a,
            "Spill `li`; new split vregs are appended for re-enqueue. Only "
            "valid inside select_or_split.")
       .def_prop_ro(
-          "matrix", [](PyRegAllocBase &self) { return self.matrix(); },
-          nb::rv_policy::reference,
+          "matrix", &PyRegAllocBase::matrix, nb::rv_policy::reference,
           "The LiveRegMatrix for interference queries and assignment. Borrowed "
           "and valid only within an allocator callback; do not retain.")
       .def_prop_ro(
-          "lis", [](PyRegAllocBase &self) { return self.intervals(); },
-          nb::rv_policy::reference,
+          "lis", &PyRegAllocBase::intervals, nb::rv_policy::reference,
           "The LiveIntervals analysis for this function. Borrowed and valid "
           "only within an allocator callback; do not retain.")
       .def_prop_ro(
-          "vrm", [](PyRegAllocBase &self) { return self.virtRegMap(); },
-          nb::rv_policy::reference,
+          "vrm", &PyRegAllocBase::virtRegMap, nb::rv_policy::reference,
           "The VirtRegMap being populated with assignments. Borrowed and valid "
           "only within an allocator callback; do not retain.")
       .def_prop_ro(
-          "machine_function",
-          [](PyRegAllocBase &self) { return self.machineFunction(); },
+          "machine_function", &PyRegAllocBase::machineFunction,
           nb::rv_policy::reference,
           "The MachineFunction being allocated. Borrowed and valid only within "
           "an allocator callback; do not retain.")
       .def_prop_ro(
-          "split_analysis",
-          [](PyRegAllocBase &self) { return self.splitAnalysisPtr(); },
+          "split_analysis", &PyRegAllocBase::splitAnalysisPtr,
           nb::rv_policy::reference,
           "The SplitAnalysis for planning live-range splits. Borrowed and "
           "valid only within an allocator callback; do not retain.")
       .def_prop_ro(
-          "split_editor",
-          [](PyRegAllocBase &self) { return self.splitEditorPtr(); },
+          "split_editor", &PyRegAllocBase::splitEditorPtr,
           nb::rv_policy::reference,
           "The SplitEditor for applying live-range splits (call reset(...) "
           "before open_intv/use_intv). Borrowed and valid only within an "
           "allocator callback; do not retain.")
-      .def(
-          "new_live_range_edit",
-          [](PyRegAllocBase &self, const llvm::LiveInterval &li) {
-            return self.newLiveRangeEdit(li);
-          },
-          nb::rv_policy::reference, "li"_a,
-          "A LiveRangeEdit over the current split-vreg vector, for "
-          "split_editor.reset. Only valid inside select_or_split; do not "
-          "retain past the call.")
+      .def("new_live_range_edit", &PyRegAllocBase::newLiveRangeEdit,
+           nb::rv_policy::reference, "li"_a,
+           "A LiveRangeEdit over the current split-vreg vector, for "
+           "split_editor.reset. Only valid inside select_or_split; do not "
+           "retain past the call.")
       .def_prop_ro(
-          "mbfi",
-          [](PyRegAllocBase &self) { return self.blockFrequencyInfo(); },
-          nb::rv_policy::reference,
+          "mbfi", &PyRegAllocBase::blockFrequencyInfo, nb::rv_policy::reference,
           "The MachineBlockFrequencyInfo for frequency-weighted cost models. "
           "Borrowed and valid only within an allocator callback; do not "
           "retain.")
       .def_prop_ro(
-          "edge_bundles",
-          [](PyRegAllocBase &self) { return self.edgeBundlesPtr(); },
+          "edge_bundles", &PyRegAllocBase::edgeBundlesPtr,
           nb::rv_policy::reference,
           "The EdgeBundles partition of CFG edges, mapping blocks to the "
           "bundles global splitting reasons about. Borrowed and valid only "
           "within an allocator callback; do not retain.")
       .def_prop_ro(
-          "spill_placer",
-          [](PyRegAllocBase &self) { return self.spillPlacerPtr(); },
+          "spill_placer", &PyRegAllocBase::spillPlacerPtr,
           nb::rv_policy::reference,
           "The SpillPlacement network for choosing global-split boundaries "
           "(the machinery RAGreedy's splitAroundRegion drives). Borrowed and "
@@ -1369,6 +1382,13 @@ void populate_python_codegen(nb::module_ &m) {
            [](const llvm::SlotIndex &i) { return i.getBoundaryIndex(); })
       .def("get_next_index",
            [](const llvm::SlotIndex &i) { return i.getNextIndex(); })
+      .def("distance", &llvm::SlotIndex::distance, "other"_a,
+           "Number of slots between this and `other` (a raw distance in the "
+           "slot-index space).")
+      .def("get_approx_instr_distance",
+           &llvm::SlotIndex::getApproxInstrDistance, "other"_a,
+           "Approximate number of instructions between this and `other` (what "
+           "RAGreedy's size/gap heuristics measure).")
       .def("__repr__", [](const llvm::SlotIndex &i) {
         return i.isValid() ? std::string("SlotIndex(valid)")
                            : std::string("SlotIndex(invalid)");

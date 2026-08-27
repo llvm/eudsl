@@ -428,7 +428,12 @@ it),
 `block_freq`, `block_freq_relative_to_entry_block`, `entry_freq`, for
 frequency-weighted spill/split cost models). The `li` passed in is a
 `LiveInterval` exposing `reg`, `weight`, `is_spillable`, and its own extent
-(`begin_index`/`end_index`/`size`). Optional overrides: `enqueue(reg)`/`dequeue()` (drive
+(`begin_index`/`end_index`/`size`; `SlotIndex.distance` measures raw slot-space
+distance and `SlotIndex.get_approx_instr_distance` measures instruction-space
+gaps). For priority/pressure heuristics,
+`self.reg_class(reg)` (a `TargetRegisterClass` with `id`),
+`self.num_allocatable_regs(reg_class)`, and
+`self.is_trivially_rematerializable(mi)`. Optional overrides: `enqueue(reg)`/`dequeue()` (drive
 the assignment order; both traffic in register ids -- stable across splitting,
 unlike interval objects -- and `dequeue` returns a reg id or `None`; the default
 is a spill-weight priority queue), `post_optimization()`, and

@@ -1676,3 +1676,58 @@ def test_rematerialize_constant_at_use_executes():
         del j
     assert _remat_log["done"], "the remat path drove the executed emission"
     assert_no_leaks()
+
+
+# -- priority / pressure surface (getPriority) --------------------------------
+
+
+def test_priority_pressure_accessors():
+    """The read-only surface RAGreedy's getPriority weighs: a vreg's register
+    class + allocatable-reg count, the trivial-remat gate, and the distance
+    between program points in both slot and instruction space."""
+    saw = {}
+    remat = {}
+
+    class Reader(mir.RegAllocBase):
+        def select_or_split(self, li):
+            vni = li.get_vni_at(li.begin_index)
+            def_mi = self.lis.instr_from_index(vni.def_index)
+            # MOVi32imm (a constant def) is trivially rematerializable; the COPY
+            # of the live-in physreg is not.
+            remat[def_mi.opcode_name] = self.is_trivially_rematerializable(def_mi)
+            if not saw:
+                mf = self.machine_function
+                rc = self.reg_class(li.reg)
+                # Oracle: the class of a GPR32 vreg is exactly the name-resolved
+                # GPR32 class, and distinct from GPR64 -- a broken reg_class/id
+                # returning a constant fails one of these.
+                saw["is_gpr32"] = rc.id == mf.reg_class("GPR32").id
+                saw["not_gpr64"] = rc.id != mf.reg_class("GPR64").id
+                # Oracle: the allocatable-reg count equals the length of the
+                # allocation order (an independent path through AllocationOrder),
+                # so a wrong count can't hide inside a loose bound.
+                saw["num_alloc"] = self.num_allocatable_regs(rc)
+                saw["order_len"] = sum(1 for _ in self.allocation_order(li))
+                begin, end = li.begin_index, li.end_index
+                saw["distance"] = begin.distance(end)
+                saw["approx"] = begin.get_approx_instr_distance(end)
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-priority", Reader)
+    obj = _emit("ra-priority", Reader, builder=_build_remat_const, fn="rematc")
+    assert obj[:4] == b"\x7fELF"
+    assert saw["is_gpr32"] and saw["not_gpr64"]
+    assert saw["num_alloc"] > 0
+    assert saw["num_alloc"] == saw["order_len"]
+    # Slot space counts several slots per instruction, so the raw slot distance
+    # strictly exceeds the instruction-space distance -- a copy/paste swap that
+    # wired both to the same underlying method would collapse this.
+    assert saw["distance"] > saw["approx"] > 0
+    # The remat gate distinguishes a rematerializable def from a non-remat one.
+    assert remat["MOVi32imm"] is True
+    assert remat["COPY"] is False
+    assert_no_leaks()
