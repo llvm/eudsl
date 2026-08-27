@@ -867,7 +867,67 @@ void populate_python_codegen(nb::module_ &m) {
 
   nb::class_<llvm::VirtRegMap>(m, "VirtRegMap");
   nb::class_<llvm::Spiller>(m, "Spiller");
-  nb::class_<llvm::LiveIntervals>(m, "LiveIntervals");
+
+  // A program point. Live ranges and the split editor are expressed in terms of
+  // these; they order the instructions of a function.
+  nb::class_<llvm::SlotIndex>(m, "SlotIndex")
+      .def("is_valid", &llvm::SlotIndex::isValid)
+      .def(
+          "__lt__",
+          [](const llvm::SlotIndex &a, const llvm::SlotIndex &b) {
+            return a < b;
+          },
+          "other"_a)
+      .def(
+          "__eq__",
+          [](const llvm::SlotIndex &a, const llvm::SlotIndex &b) {
+            return a == b;
+          },
+          "other"_a)
+      .def("get_reg_slot",
+           [](const llvm::SlotIndex &i) { return i.getRegSlot(); })
+      .def("get_base_index",
+           [](const llvm::SlotIndex &i) { return i.getBaseIndex(); })
+      .def("get_boundary_index",
+           [](const llvm::SlotIndex &i) { return i.getBoundaryIndex(); })
+      .def("get_next_index",
+           [](const llvm::SlotIndex &i) { return i.getNextIndex(); })
+      .def("__repr__", [](const llvm::SlotIndex &i) {
+        return i.isValid() ? std::string("SlotIndex(valid)")
+                           : std::string("SlotIndex(invalid)");
+      });
+
+  nb::class_<llvm::LiveIntervals>(m, "LiveIntervals")
+      .def(
+          "instruction_index",
+          [](llvm::LiveIntervals &l, llvm::MachineInstr *mi) {
+            return l.getInstructionIndex(*mi);
+          },
+          "mi"_a)
+      .def(
+          "mbb_start_index",
+          [](llvm::LiveIntervals &l, llvm::MachineBasicBlock *mbb) {
+            return l.getMBBStartIdx(mbb);
+          },
+          "mbb"_a)
+      .def(
+          "mbb_end_index",
+          [](llvm::LiveIntervals &l, llvm::MachineBasicBlock *mbb) {
+            return l.getMBBEndIdx(mbb);
+          },
+          "mbb"_a)
+      .def(
+          "has_interval",
+          [](llvm::LiveIntervals &l, unsigned reg) {
+            return l.hasInterval(llvm::Register(reg));
+          },
+          "reg"_a)
+      .def(
+          "interval",
+          [](llvm::LiveIntervals &l, unsigned reg) -> llvm::LiveInterval & {
+            return l.getInterval(llvm::Register(reg));
+          },
+          nb::rv_policy::reference_internal, "reg"_a);
 
   nb::enum_<llvm::LiveRegMatrix::InterferenceKind>(m, "InterferenceKind")
       .value("IK_Free", llvm::LiveRegMatrix::IK_Free)

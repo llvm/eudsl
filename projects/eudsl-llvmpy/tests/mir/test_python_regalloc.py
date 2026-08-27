@@ -338,6 +338,51 @@ def test_high_pressure_executes():
     assert_no_leaks()
 
 
+# -- SlotIndex / LiveIntervals accessors --------------------------------------
+
+
+def test_slot_index_and_live_intervals_accessors():
+    """Read the program-point surface from inside select_or_split: block
+    start/end indices are valid and ordered, the interval is present, and the
+    SlotIndex value methods round-trip."""
+    saw = {}
+
+    class Reader(mir.RegAllocBase):
+        def select_or_split(self, li):
+            if not saw:
+                mbb = self.machine_function.blocks[0]
+                start = self.lis.mbb_start_index(mbb)
+                end = self.lis.mbb_end_index(mbb)
+                mi = list(mbb.instructions)[0]
+                idx = self.lis.instruction_index(mi)
+                saw["ordered"] = start < end
+                saw["eq"] = start == start
+                saw["valid"] = start.is_valid()
+                saw["idx_in_block"] = (start < idx) and (idx < end)
+                saw["reg_slot"] = idx.get_reg_slot().is_valid()
+                saw["base"] = idx.get_base_index().is_valid()
+                saw["boundary"] = idx.get_boundary_index().is_valid()
+                saw["next"] = idx.get_next_index().is_valid()
+                saw["repr"] = repr(start)
+                saw["has"] = self.lis.has_interval(li.reg)
+                saw["interval_reg"] = self.lis.interval(li.reg).reg
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-slots", Reader)
+    obj = _emit("ra-slots", Reader)
+    assert obj[:4] == b"\x7fELF"
+    assert saw["ordered"] and saw["eq"] and saw["valid"]
+    assert saw["idx_in_block"]
+    assert saw["reg_slot"] and saw["base"] and saw["boundary"] and saw["next"]
+    assert "SlotIndex" in saw["repr"]
+    assert saw["has"]
+    assert_no_leaks()
+
+
 # -- exception matrix ---------------------------------------------------------
 
 
