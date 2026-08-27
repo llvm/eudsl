@@ -49,6 +49,8 @@ jobs:
             projects/eudsl-llvmpy/src/MIR/RegAllocBase.h
           cp third_party/llvm-project/llvm/lib/CodeGen/AllocationOrder.h \
             projects/eudsl-llvmpy/src/MIR/AllocationOrder.h
+          cp third_party/llvm-project/llvm/lib/CodeGen/SplitKit.h \
+            projects/eudsl-llvmpy/src/MIR/SplitKit.h
 
       - name: "Regenerate Pipeline pass methods"
         run: |
