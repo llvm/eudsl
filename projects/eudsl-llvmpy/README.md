@@ -430,13 +430,17 @@ and `self.last_callee_saved_alias(physreg)`),
 `self.machine_function`, and `self.mbfi` (MachineBlockFrequencyInfo:
 `block_freq`, `block_freq_relative_to_entry_block`, `entry_freq`, for
 frequency-weighted spill/split cost models). The `li` passed in is a
-`LiveInterval` exposing `reg`, `weight`, `is_spillable`, and its own extent
+`LiveInterval` exposing `reg`, `weight`, `is_spillable`, its own extent
 (`begin_index`/`end_index`/`size`; `SlotIndex.distance` measures raw slot-space
 distance and `SlotIndex.get_approx_instr_distance` measures instruction-space
-gaps). For priority/pressure heuristics,
+gaps), its value numbers (`get_vni_at`, `num_val_nums`, `get_val_num_info`), and
+its `segments()` (each a `[start, end)` with a `valno`, for reconstructing
+per-block/per-gap interference). For priority/pressure heuristics,
 `self.reg_class(reg)` (a `TargetRegisterClass` with `id`),
-`self.num_allocatable_regs(reg_class)`, and
-`self.is_trivially_rematerializable(mi)`. Optional overrides: `enqueue(reg)`/`dequeue()` (drive
+`self.num_allocatable_regs(reg_class)`,
+`self.is_trivially_rematerializable(mi)`, and
+`self.calculate_spill_weight_and_hint(reg)` (recompute a split product's
+weight). Optional overrides: `enqueue(reg)`/`dequeue()` (drive
 the assignment order; both traffic in register ids -- stable across splitting,
 unlike interval objects -- and `dequeue` returns a reg id or `None`; the default
 is a spill-weight priority queue), `post_optimization()`, and

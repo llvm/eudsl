@@ -11,7 +11,7 @@ test-visible object witnesses that Python drove it; JIT-executed tests prove the
 result stays correct.
 """
 
-import ctypes, platform
+import ctypes, math, platform
 import pytest
 import llvm
 from llvm import ir, jit, mir
@@ -1790,4 +1790,101 @@ def test_eviction_cost_accessors():
     # The "none" contracts: no ids, type 0, and simple_hint 0.
     (u_type, u_ids), u_sh = hints[unhinted[0]]
     assert u_type == 0 and u_ids == [] and u_sh == 0
+    assert_no_leaks()
+
+
+# -- segments + spill-weight recompute (calcGapWeights / split products) -------
+
+
+_seg_saw = {}
+
+
+class _SegWeightSplit(mir.RegAllocBase):
+    """Reads the parent interval's segments (the surface calcGapWeights /
+    InterferenceCache reconstruction walk), performs a through-block split, and
+    recomputes a split product's spill weight the way RAGreedy does."""
+
+    done = False
+
+    def select_or_split(self, li):
+        cls = type(self)
+        if not cls.done:
+            sa = self.split_analysis
+            sa.analyze(li)
+            if sa.num_through_blocks() > 0:
+                cls.done = True
+                b, e = li.begin_index, li.end_index
+                segs = li.segments()
+                _seg_saw["nsegs"] = len(segs)
+                _seg_saw["ordered"] = all(s.start < s.end for s in segs)
+                # Boundaries pin the segments to the interval's own extent (not a
+                # tautology: b/e are the interval endpoints, and the segments
+                # must start/end exactly there) and successive segments must not
+                # overlap.
+                _seg_saw["starts_at_begin"] = segs[0].start == b
+                _seg_saw["ends_at_end"] = segs[-1].end == e
+                _seg_saw["non_overlapping"] = all(
+                    segs[i].end <= segs[i + 1].start for i in range(len(segs) - 1)
+                )
+                # Each segment's value number must be one of the interval's own.
+                own_vnos = {li.get_val_num_info(i).id for i in range(li.num_val_nums)}
+                _seg_saw["valno_ok"] = all(s.valno.id in own_vnos for s in segs)
+                mf = self.machine_function
+                b0, b1, b2 = mf.blocks[0], mf.blocks[1], mf.blocks[2]
+                lre = self.new_live_range_edit(li)
+                se = self.split_editor
+                se.reset(lre, mir.ComplementSpillMode.SM_Size)
+                idx = se.open_intv()
+                se.select_intv(idx)
+                se.enter_intv_at_end(b0)
+                se.use_intv_mbb(b1)
+                se.leave_intv_at_top(b2)
+                se.finish()
+                nvs = lre.new_vregs()
+                _seg_saw["nnew"] = len(nvs)
+                nv = nvs[0]
+                iv = self.lis.interval(nv)
+                # SplitEditor already gave the product a weight. Capture it as an
+                # independent oracle, poison the stored weight, then confirm the
+                # recompute writes the correct value back -- so a no-op binding
+                # (which would leave the poison value) is caught.
+                _seg_saw["framework_weight"] = iv.weight
+                iv.weight = -1.0
+                self.calculate_spill_weight_and_hint(nv)
+                _seg_saw["new_weight"] = self.lis.interval(nv).weight
+                # the recomputed product has segments of its own
+                _seg_saw["new_nsegs"] = len(self.lis.interval(nv).segments())
+                return None
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        self.spill(li)
+        return None
+
+
+def test_segments_and_spill_weight_recompute():
+    _SegWeightSplit.done = False
+    _seg_saw.clear()
+    mir.register_regalloc("ra-seg-weight", _SegWeightSplit)
+    obj = _emit("ra-seg-weight", _SegWeightSplit, builder=_build_three_block, fn="thru")
+    assert obj[:4] == b"\x7fELF"
+    # The through-block split branch (the only path that exercises the new
+    # surface) must actually have run -- otherwise the assertions below would
+    # vacuously pass on a stale/empty _seg_saw.
+    assert _SegWeightSplit.done, "through-block split path did not execute"
+    # Parent interval segments: the def-in-b0/through-b1/use-in-b2 shape is a
+    # single contiguous segment spanning the whole interval.
+    assert _seg_saw["nsegs"] == 1
+    assert _seg_saw["ordered"]
+    assert _seg_saw["starts_at_begin"] and _seg_saw["ends_at_end"]
+    assert _seg_saw["non_overlapping"]
+    assert _seg_saw["valno_ok"]
+    # The split produced new vregs; recomputing a product's weight overwrote
+    # the poisoned value with the same positive weight the framework's own
+    # calculation produced (so a no-op binding would fail here).
+    assert _seg_saw["nnew"] > 0
+    assert _seg_saw["new_nsegs"] >= 1
+    w = _seg_saw["new_weight"]
+    assert isinstance(w, float) and math.isfinite(w) and w > 0
+    assert w == _seg_saw["framework_weight"]
     assert_no_leaks()
