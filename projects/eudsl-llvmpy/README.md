@@ -489,6 +489,19 @@ prefs) from the live-through use blocks, iterate the network, and read the
 in-register edge bundles out of the `mir.BitVector` passed to `prepare` to
 choose split boundaries.
 
+For rematerialization (recomputing a value at its use instead of keeping it
+live), a value's def is reached through its value number: `li.get_vni_at(idx)` /
+`li.get_val_num_info(i)` return a `VNInfo` (`def_index`, `is_phi_def`,
+`is_unused`), and `self.lis.instr_from_index(vni.def_index)` gives the defining
+instruction. Build a `mir.LiveRangeEdit.Remat(vni)` with its `orig_mi` set, then
+`lre.rematerialize_at(mbb, before, dest_reg, remat)` clones the def into a fresh
+`lre.create()` vreg before a use; redirect the use with
+`use_mi.substitute_register(old, new)`, compute the clone's interval with
+`self.lis.compute_interval(new)`, and drop the now-dead original with
+`self.lis.shrink_to_uses(old)` feeding `lre.eliminate_dead_defs(dead)`. (Note the
+built-in spiller already rematerializes trivially-rematerializable defs inside
+`self.spill()`; this surface is for driving remat yourself.)
+
 A fresh allocator instance is constructed per `MachineFunction`. Because this
 build has assertions enabled, an invalid split aborts with a diagnostic rather
 than emitting bad code, and an exception raised in any override propagates out

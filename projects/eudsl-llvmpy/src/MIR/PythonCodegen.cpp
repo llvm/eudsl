@@ -35,6 +35,7 @@
 #include <llvm/CodeGen/Spiller.h>
 #include <llvm/CodeGen/TargetRegisterInfo.h>
 #include <llvm/CodeGen/VirtRegMap.h>
+#include <llvm/MC/LaneBitmask.h>
 #include <llvm/PassRegistry.h>
 
 #include <nanobind/nanobind.h>
@@ -64,7 +65,26 @@ thread_local std::exception_ptr pendingCodegenError;
 
 namespace {
 
-// The Python strategy class emit_object selected for the current run. Set
+// llvm::LiveIntervals::computeVirtRegInterval is private, but computing the
+// interval of a register whose def we just rematerialized (and whose empty
+// interval LiveRangeEdit::create already made) is exactly what the remat flow
+// needs. Reach it with the explicit-instantiation access trick: access control
+// is not applied to a pointer-to-member named as a template argument of an
+// explicit instantiation (per [temp.explicit], the "access checks that apply to
+// template-arguments" carve-out), so instantiating this emits a namespace-scope
+// friend that forwards to the private member.
+template <auto Member>
+struct AccessComputeVirtRegInterval {
+  friend bool eudslComputeVirtRegInterval(llvm::LiveIntervals &lis,
+                                          llvm::LiveInterval &li) {
+    return (lis.*Member)(li);
+  }
+};
+template struct AccessComputeVirtRegInterval<
+    &llvm::LiveIntervals::computeVirtRegInterval>;
+bool eudslComputeVirtRegInterval(llvm::LiveIntervals &lis,
+                                 llvm::LiveInterval &li);
+
 // (under the GIL) before the pipeline runs and cleared after, so the shared
 // registry ctor knows which class to instantiate per MachineFunction.
 // GIL-serialized, matching the process-global -misched handling in Machine.cpp.
@@ -1058,6 +1078,19 @@ void populate_python_codegen(nb::module_ &m) {
           "(the machinery RAGreedy's splitAroundRegion drives). Borrowed and "
           "valid only within an allocator callback; do not retain.");
 
+  // A value number: one definition of a virtual register's live interval.
+  // Rematerialization is keyed on the VNInfo whose defining instruction is
+  // re-cloned at a use.
+  nb::class_<llvm::VNInfo>(m, "VNInfo")
+      .def_prop_ro("id", [](const llvm::VNInfo &v) { return v.id; })
+      .def_prop_ro(
+          "def_index", [](const llvm::VNInfo &v) { return v.def; },
+          "SlotIndex where this value is defined.")
+      .def_prop_ro("is_phi_def",
+                   [](const llvm::VNInfo &v) { return v.isPHIDef(); })
+      .def_prop_ro("is_unused",
+                   [](const llvm::VNInfo &v) { return v.isUnused(); });
+
   // A virtual register's live interval: the allocator receives one per
   // select_or_split call and queries/assigns it against the matrix.
   nb::class_<llvm::LiveInterval>(m, "LiveInterval")
@@ -1089,7 +1122,25 @@ void populate_python_codegen(nb::module_ &m) {
           "Highest (exclusive) SlotIndex covered by this interval.")
       .def_prop_ro(
           "size", [](const llvm::LiveInterval &li) { return li.getSize(); },
-          "Total size in slot-index units (RAGreedy ranks priority by this).");
+          "Total size in slot-index units (RAGreedy ranks priority by this).")
+      .def(
+          "get_vni_at",
+          [](llvm::LiveInterval &li, llvm::SlotIndex idx) {
+            return li.getVNInfoAt(idx);
+          },
+          nb::rv_policy::reference, "idx"_a,
+          "The value number live at `idx`, or None. Borrowed; do not retain "
+          "across shrink_to_uses/eliminate_dead_defs, which recompute the "
+          "interval and free its value numbers.")
+      .def_prop_ro("num_val_nums", &llvm::LiveInterval::getNumValNums)
+      .def(
+          "get_val_num_info",
+          [](llvm::LiveInterval &li, unsigned i) {
+            return li.getValNumInfo(i);
+          },
+          nb::rv_policy::reference, "i"_a,
+          "Value number #`i` of this interval. Borrowed; do not retain across "
+          "shrink_to_uses/eliminate_dead_defs (see get_vni_at).");
 
   // The virtual-to-physical assignment map. get_phys/has_phys let an eviction
   // policy read which physreg an interfering vreg currently holds before
@@ -1353,7 +1404,40 @@ void populate_python_codegen(nb::module_ &m) {
           [](llvm::LiveIntervals &l, unsigned reg) -> llvm::LiveInterval & {
             return l.getInterval(llvm::Register(reg));
           },
-          nb::rv_policy::reference_internal, "reg"_a);
+          nb::rv_policy::reference_internal, "reg"_a)
+      .def(
+          "instr_from_index",
+          [](llvm::LiveIntervals &l, llvm::SlotIndex idx) {
+            return l.getInstructionFromIndex(idx);
+          },
+          nb::rv_policy::reference, "idx"_a,
+          "The MachineInstr at `idx`, or None. Borrowed; do not retain.")
+      .def(
+          "compute_interval",
+          [](llvm::LiveIntervals &l, unsigned reg) {
+            if (!l.hasInterval(llvm::Register(reg)))
+              throw nb::value_error("register has no live interval to compute");
+            return eudslComputeVirtRegInterval(
+                l, l.getInterval(llvm::Register(reg)));
+          },
+          "reg"_a,
+          "Compute `reg`'s (already-created) interval from its defs/uses -- "
+          "e.g. after rematerializing a def into the empty interval from "
+          "LiveRangeEdit.create and redirecting a use onto it. Returns True if "
+          "the interval needs splitting.")
+      .def(
+          "shrink_to_uses",
+          [](llvm::LiveIntervals &l, unsigned reg) {
+            if (!l.hasInterval(llvm::Register(reg)))
+              throw nb::value_error("register has no live interval to shrink");
+            llvm::SmallVector<llvm::MachineInstr *, 8> dead;
+            l.shrinkToUses(&l.getInterval(llvm::Register(reg)), &dead);
+            return std::vector<llvm::MachineInstr *>(dead.begin(), dead.end());
+          },
+          "reg"_a,
+          "Recompute `reg`'s interval from its remaining uses after "
+          "redirecting some, marking now-dead defs; returns those dead "
+          "instructions (feed them to LiveRangeEdit.eliminate_dead_defs).");
 
   // Splitting analysis: after analyze(li), it describes how `li` is used per
   // block, guiding where the split editor should open/close intervals.
@@ -1400,14 +1484,85 @@ void populate_python_codegen(nb::module_ &m) {
         return v;
       });
 
+  // A set of subregister lanes (llvm::LaneBitmask), forwarded to
+  // rematerialize_at to say which lanes are live at the remat point.
+  nb::class_<llvm::LaneBitmask>(m, "LaneBitmask")
+      .def(nb::init<uint64_t>(), "mask"_a)
+      .def_static("get_all", &llvm::LaneBitmask::getAll,
+                  "All lanes (the default when the whole register is live).")
+      .def_static("get_none", &llvm::LaneBitmask::getNone, "No lanes.")
+      .def("get_as_integer", &llvm::LaneBitmask::getAsInteger)
+      .def("none", &llvm::LaneBitmask::none)
+      .def("any", &llvm::LaneBitmask::any)
+      .def(nb::self == nb::self, "other"_a)
+      .def(nb::self != nb::self, "other"_a);
+
   // The edit buffer the split editor writes new vregs into.
-  nb::class_<llvm::LiveRangeEdit>(m, "LiveRangeEdit")
-      .def("new_vregs", [](llvm::LiveRangeEdit &e) {
-        std::vector<unsigned> v;
-        for (llvm::Register r : e.regs())
-          v.push_back(r.id());
-        return v;
-      });
+  nb::class_<llvm::LiveRangeEdit> lre(m, "LiveRangeEdit");
+  lre.def("new_vregs",
+          [](llvm::LiveRangeEdit &e) {
+            std::vector<unsigned> v;
+            for (llvm::Register r : e.regs())
+              v.push_back(r.id());
+            return v;
+          })
+      .def(
+          "create", [](llvm::LiveRangeEdit &e) { return e.create().id(); },
+          "Create a new vreg (same class as the parent) and append it for "
+          "re-enqueue; the destination for a rematerialized def.")
+      .def(
+          "rematerialize_at",
+          [](llvm::LiveRangeEdit &e, llvm::MachineBasicBlock *mbb,
+             llvm::MachineInstr *before, unsigned destReg,
+             const llvm::LiveRangeEdit::Remat &rm, bool late, unsigned subIdx,
+             llvm::MachineInstr *replaceIndexMI, llvm::LaneBitmask usedLanes) {
+            const llvm::TargetRegisterInfo *tri =
+                mbb->getParent()->getSubtarget().getRegisterInfo();
+            return e.rematerializeAt(*mbb, before->getIterator(),
+                                     llvm::Register(destReg), rm, *tri, late,
+                                     subIdx, replaceIndexMI, usedLanes);
+          },
+          "mbb"_a, "before"_a, "dest_reg"_a, "remat"_a, "late"_a = false,
+          "sub_idx"_a = 0, "replace_index_mi"_a.none() = nullptr,
+          "used_lanes"_a = llvm::LaneBitmask::getAll(),
+          "Clone rm's defining instruction into `dest_reg` just before "
+          "`before`; returns the def SlotIndex. `late` inserts after other "
+          "defs at the same slot, `sub_idx` writes a subregister, "
+          "`replace_index_mi` (if given) is replaced in the index map by the "
+          "new instruction, and `used_lanes` is the lane mask live at the "
+          "remat "
+          "point (forwarded to the target). Liveness is not updated -- call "
+          "compute_interval(dest_reg) after.")
+      .def(
+          "eliminate_dead_defs",
+          [](llvm::LiveRangeEdit &e, std::vector<llvm::MachineInstr *> dead,
+             std::vector<unsigned> regsBeingSpilled) {
+            llvm::SmallVector<llvm::MachineInstr *, 8> deadVec(dead.begin(),
+                                                               dead.end());
+            llvm::SmallVector<llvm::Register, 4> spilled;
+            for (unsigned r : regsBeingSpilled)
+              spilled.push_back(llvm::Register(r));
+            e.eliminateDeadDefs(deadVec, spilled);
+          },
+          "dead"_a, "regs_being_spilled"_a = std::vector<unsigned>(),
+          "Delete the given now-dead defining instructions and trim their "
+          "intervals (e.g. the original def after all its uses were "
+          "rematerialized). `regs_being_spilled` lists registers currently "
+          "being spilled, which must not be split into new intervals.");
+
+  // Information needed to rematerialize a value at a new location: the value
+  // number and (set by the caller) its defining instruction.
+  nb::class_<llvm::LiveRangeEdit::Remat>(lre, "Remat")
+      .def(nb::init<const llvm::VNInfo *>(), "parent_vni"_a)
+      .def_prop_rw(
+          "orig_mi",
+          [](const llvm::LiveRangeEdit::Remat &r) { return r.OrigMI; },
+          [](llvm::LiveRangeEdit::Remat &r, llvm::MachineInstr *mi) {
+            r.OrigMI = mi;
+          },
+          nb::rv_policy::reference,
+          "The instruction defining the value (its real expression); set "
+          "from lis.instr_from_index(vni.def_index).");
 
   nb::enum_<llvm::SplitEditor::ComplementSpillMode>(m, "ComplementSpillMode")
       .value("SM_Partition", llvm::SplitEditor::SM_Partition)

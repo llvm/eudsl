@@ -929,6 +929,19 @@ void populate_mir(nb::module_ &m) {
             return &self.getOperand(i);
           },
           "index"_a, nb::rv_policy::reference_internal)
+      .def(
+          "substitute_register",
+          [](llvm::MachineInstr &self, unsigned fromReg, unsigned toReg,
+             unsigned subIdx) {
+            const llvm::TargetRegisterInfo *tri =
+                self.getMF()->getSubtarget().getRegisterInfo();
+            self.substituteRegister(llvm::Register(fromReg),
+                                    llvm::Register(toReg), subIdx, *tri);
+          },
+          "from_reg"_a, "to_reg"_a, "sub_idx"_a = 0,
+          "Replace every use/def of `from_reg` in this instruction with "
+          "`to_reg` (composing `sub_idx` where set); redirects a use onto a "
+          "rematerialized register.")
       .def_prop_ro(
           "parent",
           [](llvm::MachineInstr &self) -> const llvm::MachineBasicBlock * {
