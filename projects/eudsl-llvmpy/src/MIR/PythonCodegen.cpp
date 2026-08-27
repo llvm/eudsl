@@ -600,10 +600,9 @@ nb::dict regallocClasses() {
       nb::module_::import_("llvm.mir_strategies").attr("_regalloc_classes"));
 }
 
-// Registered allocator names, in registration order.
 std::deque<std::string> &regallocNames() {
-  static auto *names = new std::deque<std::string>();
-  return *names;
+  static std::deque<std::string> names;
+  return names;
 }
 
 // select_or_split is the one required override: the trampoline calls it
