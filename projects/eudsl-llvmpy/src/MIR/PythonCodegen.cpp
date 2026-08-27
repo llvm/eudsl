@@ -30,6 +30,7 @@
 #include <llvm/CodeGen/ScheduleDAGMutation.h>
 #include <llvm/CodeGen/SlotIndexes.h>
 #include <llvm/CodeGen/Spiller.h>
+#include <llvm/CodeGen/TargetRegisterInfo.h>
 #include <llvm/CodeGen/VirtRegMap.h>
 #include <llvm/PassRegistry.h>
 
@@ -40,6 +41,7 @@
 #include <nanobind/stl/vector.h>
 #include <nanobind/trampoline.h>
 
+#include <algorithm>
 #include <deque>
 #include <exception>
 #include <memory>
@@ -539,6 +541,27 @@ public:
     return ids;
   }
 
+  // Virtual registers whose live ranges interfere with `li` on `physreg` --
+  // those assigned to `physreg` itself or to a physreg that aliases it. The
+  // enumeration eviction needs. Querying every reg unit of `physreg` (not a
+  // Python-side "physreg -> vreg" shadow) is what makes it alias/subregister-
+  // correct, which is what RAGreedy relies on; the same vreg surfacing on
+  // several of `physreg`'s units is de-duplicated.
+  std::vector<unsigned> interferingVRegs(const llvm::LiveInterval &li,
+                                         unsigned physreg) {
+    const llvm::TargetRegisterInfo *tri = mf->getSubtarget().getRegisterInfo();
+    std::vector<unsigned> ids;
+    for (llvm::MCRegUnit unit : tri->regunits(llvm::MCRegister(physreg))) {
+      for (const llvm::LiveInterval *intf :
+           Matrix->query(li, unit).interferingVRegs()) {
+        unsigned id = intf->reg().id();
+        if (std::find(ids.begin(), ids.end(), id) == ids.end())
+          ids.push_back(id);
+      }
+    }
+    return ids;
+  }
+
   // Spill `li` into the current select_or_split's split-vreg vector.
   void spill(const llvm::LiveInterval &li) {
     if (!currentSplit)
@@ -927,6 +950,12 @@ void populate_python_codegen(nb::module_ &m) {
       .def(nb::init<>())
       .def("allocation_order", &PyRegAllocBase::allocationOrder, "li"_a,
            "Physregs (as ids) to try for `li`, in target allocation order.")
+      .def("interfering_vregs", &PyRegAllocBase::interferingVRegs, "li"_a,
+           "physreg"_a,
+           "Ids of virtual registers whose live ranges interfere with `li` on "
+           "`physreg` -- those assigned to `physreg` or to a physreg aliasing "
+           "it. Alias/subregister correct (queries every reg unit of "
+           "`physreg`, de-duplicating). These are the eviction candidates.")
       .def("spill", &PyRegAllocBase::spill, "li"_a,
            "Spill `li`; new split vregs are appended for re-enqueue. Only "
            "valid inside select_or_split.")
@@ -992,7 +1021,24 @@ void populate_python_codegen(nb::module_ &m) {
         return li.isSpillable();
       });
 
-  nb::class_<llvm::VirtRegMap>(m, "VirtRegMap");
+  // The virtual-to-physical assignment map. get_phys/has_phys let an eviction
+  // policy read which physreg an interfering vreg currently holds before
+  // unassigning it.
+  nb::class_<llvm::VirtRegMap>(m, "VirtRegMap")
+      .def(
+          "has_phys",
+          [](llvm::VirtRegMap &vrm, unsigned reg) {
+            return vrm.hasPhys(llvm::Register(reg));
+          },
+          "reg"_a, "Whether virtual register `reg` currently has a physreg.")
+      .def(
+          "get_phys",
+          [](llvm::VirtRegMap &vrm, unsigned reg) {
+            return vrm.getPhys(llvm::Register(reg)).id();
+          },
+          "reg"_a,
+          "The physreg id assigned to `reg`, or 0 if unassigned (check "
+          "has_phys first).");
   nb::class_<llvm::Spiller>(m, "Spiller");
 
   // A block's estimated execution frequency as a fixed-point number scaled by
