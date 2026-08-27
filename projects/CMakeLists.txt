@@ -7,7 +7,4 @@ include_directories(common)
 
 add_subdirectory(eudsl-nbgen)
 add_subdirectory(eudsl-tblgen)
-if(NOT WIN32)
-  add_subdirectory(eudsl-py)
-endif()
 add_subdirectory(eudsl-llvmpy)
