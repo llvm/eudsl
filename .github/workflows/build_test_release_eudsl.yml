@@ -37,7 +37,6 @@ on:
       - ".github/workflows/build_test_release_eudsl.yml"
       - "projects/eudsl-tblgen/**"
       - "projects/eudsl-nbgen/**"
-      - "projects/eudsl-py/**"
       - "projects/eudsl-llvmpy/**"
   push:
     branches:
@@ -46,7 +45,6 @@ on:
       - ".github/workflows/build_test_release_eudsl.yml"
       - "projects/eudsl-tblgen/**"
       - "projects/eudsl-nbgen/**"
-      - "projects/eudsl-py/**"
       - "projects/eudsl-llvmpy/**"
 
 concurrency:
@@ -197,16 +195,6 @@ jobs:
             export PIP_FIND_LINKS=$PWD/wheelhouse
             $python3_command -m pip wheel "$PWD/projects/eudsl-nbgen" -w wheelhouse -v --no-build-isolation
           fi
-
-      - name: "Build eudsl-py"
-        if: (!startsWith(matrix.os, 'windows') && github.event_name != 'workflow_dispatch')
-        run: |
-
-          export CMAKE_PREFIX_PATH=$PWD/llvm-install
-          export PIP_FIND_LINKS=$PWD/wheelhouse
-          $python3_command -m pip install pytest eudsl-nbgen -f wheelhouse
-          $python3_command -m pip install "$PWD/projects/eudsl-py" -v --no-build-isolation
-          $python3_command -m pytest -rA --capture=tee-sys "$PWD/projects/eudsl-py/tests"
 
       # just to/make sure total build continues to work
       - name: "Build all of eudsl"
