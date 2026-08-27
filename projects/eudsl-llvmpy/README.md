@@ -407,6 +407,70 @@ obj = mmi.emit_object(scheduler="mysched")   # runs MySched as the pre-RA schedu
 For the common case, subclass `mir.ReadyQueueStrategy` and override only
 `pick(ready)`.
 
+### Python-driven register allocation
+
+`mir.RegAllocBase` is `llvm::RegAllocBase` — the register-allocation driver and
+interface — subclassable from Python. The one required override is
+`select_or_split(li)`: for each unassigned live interval, return a physical
+register id, or return `None` after handling it yourself (spill or split, which
+append new virtual registers that get re-enqueued). The allocator queries and
+mutates state through `self`: `allocation_order(li)` (physregs to try, in target
+order), `self.matrix` (`is_free`/`check_interference`/`assign`/`unassign`),
+`self.lis` (LiveIntervals: `instruction_index`, `mbb_start_index`,
+`mbb_end_index`, `has_interval`, `interval`), `self.vrm`, and
+`self.machine_function`. Optional overrides: `enqueue(li)`/`dequeue()` (drive the
+assignment order; the default is a spill-weight priority queue),
+`post_optimization()`, and `about_to_remove_interval(li)`.
+
+Register a subclass under a name and select it per emission. For the trivial
+first-free-or-spill allocator, use the built-in `mir.BasicRegAlloc`:
+
+```python
+class FirstFree(mir.RegAllocBase):
+    def select_or_split(self, li):
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        self.spill(li)        # append spill-code vregs; they get re-enqueued
+        return None
+
+mir.register_regalloc("first-free", FirstFree)
+obj = mmi.emit_object(regalloc="first-free")   # drives FirstFree instead of greedy
+```
+
+For RAGreedy-style live-range splitting, `self.split_analysis` (a
+`SplitAnalysis`: `analyze(li)`, `use_blocks()`, `num_through_blocks()`,
+`through_blocks()`, `last_split_point(mbb)`) plans the split and
+`self.split_editor` (a `SplitEditor`: `reset`, `open_intv`, `enter_intv_*`,
+`use_intv`/`use_intv_mbb`, `leave_intv_*`, `overlap_intv`, `finish`) applies it,
+writing into `self.new_live_range_edit(li)`:
+
+```python
+class RegionSplit(mir.RegAllocBase):
+    def select_or_split(self, li):
+        sa = self.split_analysis
+        sa.analyze(li)
+        if sa.num_through_blocks() > 0:                 # live across a block: split it out
+            se = self.split_editor
+            se.reset(self.new_live_range_edit(li))
+            se.open_intv()
+            bi = [b for b in sa.use_blocks() if not b.live_out][-1]
+            start = se.enter_intv_before(bi.first_instr)
+            se.use_intv(start, se.leave_intv_after(bi.last_instr))
+            se.finish()                                 # new vregs re-enqueued
+            return None
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        self.spill(li)
+        return None
+```
+
+A fresh allocator instance is constructed per `MachineFunction`. Because this
+build has assertions enabled, an invalid split aborts with a diagnostic rather
+than emitting bad code, and an exception raised in any override propagates out
+of `emit_object`.
+
 ## Limitations
 
 - **`break`, `continue`, and early `return` inside DSL control flow are not

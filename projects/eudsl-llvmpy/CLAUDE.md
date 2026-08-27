@@ -82,6 +82,23 @@ Every import goes at module top. No function-local imports. When a test exists
 to show that two extensions coexist, import both at module scope and assert on
 them in the body.
 
+## Tests: running the suite needs FileCheck
+
+Many `tests/` (the DSL/IR filecheck tests via `llvm.testing.filecheck_with_comments`)
+shell out to the LLVM `FileCheck` binary, located via `$FILECHECK`, then
+`$LLVM_BINDIR/FileCheck`, then `FileCheck` on `PATH`. If none resolves, those
+tests raise and their half-run leaves a Module alive, so the autouse leak
+fixture then reports `Module object(s) leaked past the test` — a confusing
+cascade whose real cause is the missing binary, not a leak or the code under
+test. Point the run at the wheel's tools when FileCheck is not on `PATH`:
+
+```
+LLVM_BINDIR="$PWD/../../mlir_wheel/bin" python -m pytest tests/ -p no:cacheprovider --no-cov
+```
+
+`scripts/cpp_coverage.sh` already exports `LLVM_BINDIR`, so the coverage gate
+runs the suite correctly; a bare `pytest tests/` does not.
+
 ## Tests: leak checking
 
 `llvm.testing.assert_no_leaks()` already runs `gc.collect()` before it checks
