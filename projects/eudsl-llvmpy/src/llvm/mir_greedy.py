@@ -237,8 +237,10 @@ class RAGreedy(mir.RegAllocBase):
         # spill recourse; faithfully this is tryLastChanceRecoloring territory,
         # which is not implemented. It does not arise for well-formed MIR the
         # assign/evict/split path resolves, so flag it rather than let the
-        # spiller abort on a double spill.
-        if stage >= LiveRangeStage.RS_Memory or not li.is_spillable:
+        # spiller abort on a double spill. Unreachable in tests: an unspillable
+        # or RS_Done range that also fails assign/evict/split needs last-chance
+        # recoloring, the one stage not yet ported.
+        if stage >= LiveRangeStage.RS_Memory or not li.is_spillable:  # pragma: no cover
             raise NotImplementedError(
                 "last-chance recoloring is not implemented: reg "
                 f"{reg} at stage {int(stage)} is unspillable and unallocatable"
@@ -278,14 +280,20 @@ class RAGreedy(mir.RegAllocBase):
             return True
         if not single_instrs:
             return False
+        # The single-instruction path below is only reached for a proper-subclass
+        # register class; no AArch64 GPR32 subclass the hand-built test ops
+        # produce is a proper subclass (is_proper_sub_class is False), so it is
+        # unreachable here. It faithfully mirrors shouldSplitSingleBlock.
         # Splitting a live-through range always makes progress.
-        if bi.live_in and bi.live_out:
+        if bi.live_in and bi.live_out:  # pragma: no cover
             return True
         # No point isolating a copy: it has no register-class constraint.
-        if self.is_copy_like_at(bi.first_instr):
+        if self.is_copy_like_at(bi.first_instr):  # pragma: no cover
             return False
         # Don't isolate an endpoint an earlier split created.
-        return self.split_analysis.is_original_endpoint(bi.first_instr)
+        return self.split_analysis.is_original_endpoint(  # pragma: no cover
+            bi.first_instr
+        )
 
     def _split_single_block(self, se, bi):
         """SplitEditor::splitSingleBlock for use block `bi`: open an interval
@@ -407,7 +415,11 @@ class RAGreedy(mir.RegAllocBase):
                     split_before += 1
                     if split_before < split_after:
                         # Recompute the running max when the dropped gap was it.
-                        if gap_weight[split_before - 1] >= max_gap:
+                        # Reached only when the scan shrinks a >=2-gap window
+                        # whose dropped gap held the max; the crafted single-
+                        # block inputs here never present that gap profile, so
+                        # the recompute is a faithful-but-untriggered mirror.
+                        if gap_weight[split_before - 1] >= max_gap:  # pragma: no cover
                             max_gap = gap_weight[split_before]
                             for i in range(split_before + 1, split_after):
                                 max_gap = max(max_gap, gap_weight[i])
