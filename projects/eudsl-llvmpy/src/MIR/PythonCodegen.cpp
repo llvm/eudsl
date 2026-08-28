@@ -535,12 +535,14 @@ public:
               llvm::LiveRegMatrix &mat, llvm::Spiller &sp,
               llvm::MachineFunction &mfn, llvm::SplitAnalysis *sa,
               llvm::SplitEditor *se, llvm::MachineBlockFrequencyInfo *mbfi,
-              llvm::EdgeBundles *eb, llvm::SpillPlacement *spl) {
+              llvm::EdgeBundles *eb, llvm::SpillPlacement *spl,
+              llvm::VirtRegAuxInfo *vrai) {
     splitAnalysis = sa;
     splitEditor = se;
     blockFreqInfo = mbfi;
     edgeBundles = eb;
     spillPlacer = spl;
+    auxInfo = vrai;
     regCosts = mfn.getSubtarget().getRegisterInfo()->getRegisterCosts(mfn);
     NativeRegAlloc::pyInit(vrm, lis, mat, sp, mfn);
   }
@@ -647,6 +649,13 @@ public:
     return RegClassInfo.getLastCalleeSavedAlias(llvm::MCRegister(physreg)).id();
   }
 
+  // Recompute the spill weight (and hint) of `reg` from its current defs/uses.
+  // RAGreedy does this for the vregs produced by a split so their enqueue
+  // priority reflects the new, shorter ranges.
+  void calculateSpillWeightAndHint(unsigned reg) {
+    auxInfo->calculateSpillWeightAndHint(LIS->getInterval(llvm::Register(reg)));
+  }
+
   // Spill `li` into the current select_or_split's split-vreg vector.
   void spill(const llvm::LiveInterval &li) {
     if (!currentSplit)
@@ -705,6 +714,7 @@ private:
   llvm::MachineBlockFrequencyInfo *blockFreqInfo = nullptr;
   llvm::EdgeBundles *edgeBundles = nullptr;
   llvm::SpillPlacement *spillPlacer = nullptr;
+  llvm::VirtRegAuxInfo *auxInfo = nullptr;
   llvm::ArrayRef<uint8_t> regCosts;
   std::unique_ptr<llvm::LiveRangeEdit> heldEdit;
 };
@@ -865,7 +875,7 @@ public:
     auto *base =
         static_cast<PyRegAllocBase *>(nb::inst_ptr<PyRegAllocBase>(obj));
     base->pyInit(vrm, lis, mat, *spiller, mfn, &sa, &se, &mbfi, &edgeBundles,
-                 &spillPlacer);
+                 &spillPlacer, &vrai);
     base->pyAllocate();
     // Hold the instance until the pass is destroyed so its C++ subobject (and
     // any Python-recorded witness state) outlives this call; dropped under the
@@ -1082,6 +1092,11 @@ void populate_python_codegen(nb::module_ &m) {
            "physreg"_a,
            "The last callee-saved register aliasing `physreg` (id, or 0) -- "
            "biases against introducing a callee-saved spill.")
+      .def("calculate_spill_weight_and_hint",
+           &PyRegAllocBase::calculateSpillWeightAndHint, "reg"_a,
+           "Recompute `reg`'s spill weight and hint from its current defs/uses "
+           "-- for the vregs a split produced, so their enqueue priority "
+           "reflects the new ranges.")
       .def("spill", &PyRegAllocBase::spill, "li"_a,
            "Spill `li`; new split vregs are appended for re-enqueue. Only "
            "valid inside select_or_split.")
@@ -1149,13 +1164,23 @@ void populate_python_codegen(nb::module_ &m) {
       .def_prop_ro("is_unused",
                    [](const llvm::VNInfo &v) { return v.isUnused(); });
 
+  nb::class_<llvm::LiveRange::Segment>(m, "LiveRangeSegment")
+      .def_ro("start", &llvm::LiveRange::Segment::start)
+      .def_ro("end", &llvm::LiveRange::Segment::end)
+      .def_prop_ro(
+          "valno", [](const llvm::LiveRange::Segment &s) { return s.valno; },
+          nb::rv_policy::reference,
+          "The value number this segment carries. Borrowed; do not retain "
+          "across interval-recomputing calls.");
+
   // A virtual register's live interval: the allocator receives one per
   // select_or_split call and queries/assigns it against the matrix.
   nb::class_<llvm::LiveInterval>(m, "LiveInterval")
       .def_prop_ro("reg",
                    [](const llvm::LiveInterval &li) { return li.reg().id(); })
-      .def_prop_ro("weight",
-                   [](const llvm::LiveInterval &li) { return li.weight(); })
+      .def_prop_rw(
+          "weight", [](const llvm::LiveInterval &li) { return li.weight(); },
+          [](llvm::LiveInterval &li, float w) { li.setWeight(w); })
       .def_prop_ro(
           "is_spillable",
           [](const llvm::LiveInterval &li) { return li.isSpillable(); })
@@ -1198,7 +1223,14 @@ void populate_python_codegen(nb::module_ &m) {
           },
           nb::rv_policy::reference, "i"_a,
           "Value number #`i` of this interval. Borrowed; do not retain across "
-          "shrink_to_uses/eliminate_dead_defs (see get_vni_at).");
+          "shrink_to_uses/eliminate_dead_defs (see get_vni_at).")
+      .def(
+          "segments",
+          [](const llvm::LiveInterval &li) {
+            return std::vector<llvm::LiveRange::Segment>(li.begin(), li.end());
+          },
+          "The [start, end) segments of this interval (each with its value "
+          "number) -- walk them to place interference per block/gap.");
 
   // The virtual-to-physical assignment map. get_phys/has_phys let an eviction
   // policy read which physreg an interfering vreg currently holds before
