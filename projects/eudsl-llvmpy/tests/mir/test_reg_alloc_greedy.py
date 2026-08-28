@@ -1148,3 +1148,36 @@ def test_global_split_candidate_reset():
     assert cand.phys_reg == 0
     assert cand.active_blocks == []
     assert cand.intv_idx == 0
+
+
+def test_add_split_constraints_builds_constraints():
+    saw = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            sa = self.split_analysis
+            sa.analyze(li)
+            if "done" not in saw and not self.interval_is_in_one_mbb(li.reg):
+                saw["done"] = True
+                cur = self.new_interference_cursor()
+                self.set_interference_physreg(
+                    cur, next(iter(self.allocation_order(li)))
+                )
+                self.spill_placer.prepare(mir.BitVector())
+                cost, positive = self._add_split_constraints(cur)
+                saw["ncons"] = len(self._split_constraints)
+                saw["positive"] = positive
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-asc", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thru")
+        _build_three_block(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-asc")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thru", obj)
+    assert fn(9) == 9
+    assert saw["ncons"] >= 1
+    assert isinstance(saw["positive"], bool)
+    assert_no_leaks()

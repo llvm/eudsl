@@ -1637,6 +1637,14 @@ void populate_python_codegen(nb::module_ &m) {
             return a == b;
           },
           "other"_a)
+      .def(
+          "is_earlier_instr",
+          [](const llvm::SlotIndex &a, const llvm::SlotIndex &b) {
+            return llvm::SlotIndex::isEarlierInstr(a, b);
+          },
+          "other"_a,
+          "Whether this and `other` are on different instructions and this is "
+          "earlier (SlotIndex::isEarlierInstr).")
       .def("get_reg_slot",
            [](const llvm::SlotIndex &i) { return i.getRegSlot(); })
       .def("get_base_index",

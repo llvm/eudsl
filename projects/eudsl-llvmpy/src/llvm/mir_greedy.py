@@ -102,6 +102,11 @@ _GROW_REGION_COMPLEXITY_BUDGET = 10000
 _NO_CAND = ~0
 
 
+def _earlier_instr(a, b):
+    """SlotIndex::isEarlierInstr(a, b)."""
+    return a.is_earlier_instr(b)
+
+
 class GlobalSplitCandidate:
     """A region-split candidate: one physreg's live-bundle solution, the
     through blocks it activated, its opened split-interval index, and an
@@ -149,6 +154,9 @@ class RAGreedy(mir.RegAllocBase):
         # across select_or_split calls.
         self._global_cand = []
         self._bundle_cand = []
+        # Per-use-block BlockConstraints built by _add_split_constraints and
+        # reused by _calc_global_split_cost (as C++ keeps SplitConstraints).
+        self._split_constraints = []
 
     # -- stage/cascade bookkeeping (RAGreedy::ExtraRegInfo) ------------------
     def _get_stage(self, reg):
@@ -484,6 +492,65 @@ class RAGreedy(mir.RegAllocBase):
                 if i < len(intv_map) and intv_map[i] == 1:
                     self._set_stage(r, LiveRangeStage.RS_Split2)
         return True
+
+    # -- region split (tryRegionSplit and its cost model) -------------------
+    def _add_split_constraints(self, intf):
+        """RAGreedy::addSplitConstraints. Build BlockConstraints for the use
+        blocks from `intf` (a cursor already pointed at the candidate physreg),
+        accumulate the static spill cost, add them to the SpillPlacement
+        network, and return (cost, any_positive)."""
+        sa = self.split_analysis
+        use_blocks = sa.use_blocks()
+        sp = self.spill_placer
+        self._split_constraints = []
+        static_cost = mir.BlockFrequency(0)
+        PrefReg = mir.BorderConstraint.PrefReg
+        PrefSpill = mir.BorderConstraint.PrefSpill
+        MustSpill = mir.BorderConstraint.MustSpill
+        DontCare = mir.BorderConstraint.DontCare
+        for bi in use_blocks:
+            bc = mir.BlockConstraint()
+            bc.number = bi.mbb.number
+            intf.move_to_block(bc.number)
+            bc.entry = PrefReg if bi.live_in else DontCare
+            # An implicit-def last instruction does not keep the value live out.
+            last_mi = self.lis.instr_from_index(bi.last_instr)
+            bc.exit = (
+                PrefReg if (bi.live_out and not last_mi.is_implicit_def) else DontCare
+            )
+            bc.changes_value = bi.first_def.is_valid()
+            if intf.has_interference():
+                ins = 0
+                mbb_start = self.lis.mbb_start_index(bi.mbb)
+                if bi.live_in:
+                    if not (mbb_start < intf.first()):  # first() <= start
+                        bc.entry = MustSpill
+                        ins += 1
+                    elif intf.first() < bi.first_instr:
+                        bc.entry = PrefSpill
+                        ins += 1
+                    elif intf.first() < bi.last_instr:
+                        ins += 1
+                    # Abort if the spill cannot be inserted at the block start.
+                    if bc.entry in (MustSpill, PrefSpill) and _earlier_instr(
+                        bi.first_instr, sa.first_split_point(bc.number)
+                    ):
+                        return static_cost, False
+                if bi.live_out:
+                    lsp = sa.last_split_point(bi.mbb)
+                    if not (intf.last() < lsp):  # last() >= last split point
+                        bc.exit = MustSpill
+                        ins += 1
+                    elif intf.last() > bi.last_instr:
+                        bc.exit = PrefSpill
+                        ins += 1
+                    elif intf.last() > bi.first_instr:
+                        ins += 1
+                for _ in range(ins):
+                    static_cost = static_cost + sp.get_block_frequency(bi.mbb)
+            self._split_constraints.append(bc)
+        sp.add_constraints(self._split_constraints)
+        return static_cost, sp.scan_active_bundles()
 
     # -- tryEvict / canEvictInterference ------------------------------------
     def _can_evict_interference(self, li, physreg):
