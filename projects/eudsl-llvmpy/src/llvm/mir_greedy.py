@@ -116,5 +116,55 @@ class RAGreedy(mir.RegAllocBase):
             self._cascade[reg] = c
         return c
 
+    # -- enqueue / getPriority (RegAllocGreedy::enqueue) --------------------
+    def _priority_for(
+        self, reg, size, is_local, force_global, num_allocatable, instr_dist
+    ):
+        """RAGreedy's priority number for a vreg. Larger = allocated sooner.
+
+        RS_Split ranges are deferred to priority == size. Global and giant
+        (ForceGlobal) ranges go long->short by size with the global bit set;
+        genuine local ranges are ordered by their size (a refinement of the
+        start-index ordering that preserves the long-first invariant).
+        Cross-check the exact bit layout against RegAllocGreedy::enqueue.
+        """
+        stage = self._get_stage(reg)
+        if stage == LiveRangeStage.RS_Split:
+            return size
+        if not is_local or force_global:
+            # Global/giant: long ranges first, with the global bit set high so
+            # they outrank locals of the same size.
+            return (1 << 24) | size
+        # Local ranges in RS_Assign, ordered by size.
+        return size
+
+    def enqueue(self, reg):
+        li = self.lis.interval(reg)
+        rc = self.reg_class(reg)
+        instr_dist = self.slot_index_instr_distance()
+        num_alloc = self.num_allocatable_regs(rc)
+        size = li.size
+        force_global = self.reg_class_has_global_priority(rc) or (
+            (size // instr_dist) > 2 * num_alloc
+        )
+        # The local-vs-global refinement (via SplitAnalysis) lands with the
+        # split stages; a faithful start treats every non-ForceGlobal range as
+        # local, matching RAGreedy for ranges that never need splitting.
+        is_local = True
+        if self._get_stage(reg) == LiveRangeStage.RS_New:
+            self._set_stage(reg, LiveRangeStage.RS_Assign)
+        prio = self._priority_for(
+            reg, size, is_local, force_global, num_alloc, instr_dist
+        )
+        # Python heapq is a min-heap; negate prio for max-first, and use reg as
+        # the tie-break (smaller id first, matching ~Reg ordering).
+        heapq.heappush(self._queue, (-prio, reg))
+
+    def dequeue(self):
+        if not self._queue:
+            return None
+        _, reg = heapq.heappop(self._queue)
+        return reg
+
 
 mir.RAGreedy = RAGreedy

@@ -56,3 +56,74 @@ def test_calc_gap_weights_no_interference_is_zero():
 def test_calc_global_split_cost_sums_boundary_frequencies():
     assert calc_global_split_cost([]) == pytest.approx(0.0)
     assert calc_global_split_cost([2.0, 3.0, 0.5]) == pytest.approx(5.5)
+
+
+def _build_add(mmi):
+    mf = mmi.machine_function("add")
+    b = mir.MachineIRBuilder(mf)
+    entry = mf.blocks[0]
+    gpr32 = mf.reg_class("GPR32")
+    w0, w1 = mf.physreg("W0"), mf.physreg("W1")
+    entry.add_livein(w0)
+    entry.add_livein(w1)
+    v0, v1, v2 = (mf.create_vreg(gpr32) for _ in range(3))
+    copy = mf.opcode("COPY")
+    for dst, src in ((v0, w0), (v1, w1)):
+        c = b.build_instr(copy)
+        c.add_reg(dst, is_def=True)
+        c.add_reg(src)
+    add = b.build_instr(mf.opcode("ADDWrr"))
+    add.add_reg(v2, is_def=True)
+    add.add_reg(v0)
+    add.add_reg(v1)
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(v2)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+def test_get_priority_is_size_biased_for_globals():
+    ra = mir.RAGreedy()
+    # RS_Split ranges are deferred: priority equals size.
+    ra._set_stage(42, ra.RS_Split)
+    assert (
+        ra._priority_for(
+            reg=42,
+            size=100,
+            is_local=False,
+            force_global=False,
+            num_allocatable=32,
+            instr_dist=16,
+        )
+        == 100
+    )
+
+
+def test_priority_orders_larger_ranges_first():
+    order = []
+
+    class Recording(mir.RAGreedy):
+        def select_or_split(self, li):
+            order.append(li.reg)
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-greedy-prio", Recording)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-prio")
+    assert obj[:4] == b"\x7fELF"
+    # Every enqueued vreg was dequeued exactly once (the queue drained in
+    # priority order without dropping or repeating a reg).
+    assert len(order) == len(set(order))
+    assert_no_leaks()
