@@ -1603,6 +1603,15 @@ void populate_python_codegen(nb::module_ &m) {
       .def("count", &llvm::BitVector::count, "Number of set bits.")
       .def("size", &llvm::BitVector::size, "Number of bits.")
       .def(
+          "resize", [](llvm::BitVector &bv, unsigned n) { bv.resize(n); },
+          "n"_a, "Grow/shrink to `n` bits (new bits cleared).")
+      .def(
+          "set", [](llvm::BitVector &bv, unsigned i) { bv.set(i); }, "i"_a,
+          "Set bit `i`.")
+      .def(
+          "reset", [](llvm::BitVector &bv, unsigned i) { bv.reset(i); }, "i"_a,
+          "Clear bit `i`.")
+      .def(
           "set_bits",
           [](llvm::BitVector &bv) {
             std::vector<unsigned> v;

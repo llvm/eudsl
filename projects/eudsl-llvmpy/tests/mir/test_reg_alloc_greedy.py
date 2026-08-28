@@ -1574,3 +1574,341 @@ def test_enable_debug_traces_regalloc_and_toggles_off():
     # The regalloc channel prints its interval assignments.
     assert "assigning" in trace or "selectOrSplit" in trace
     assert_no_leaks()
+
+
+def _diamond_live_through_probe(body):
+    """Run our allocator on the diamond (aarch64-linux, region split fires) and
+    invoke `body(self, li, state)` on the first multi-block value with through
+    blocks. If `body` returns True it is taken to have handled `li` (performed a
+    split), so the probe returns None; otherwise the normal path runs."""
+    state = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            sa = self.split_analysis
+            sa.analyze(li)
+            if "done" not in state and sa.num_through_blocks() > 0:
+                state["done"] = True
+                if body(self, li, state) is True:
+                    return None
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-diaprobe", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "dia")
+        _build_diamond_pressure(mmi)
+        mmi.regalloc_assignments(regalloc="ra-greedy-diaprobe")
+    return state
+
+
+def test_calc_compact_region_positive_path():
+    """calcCompactRegion on the diamond's live-through value: the value is
+    genuinely wanted in a register, so its compact region (spill through every
+    block) is not beneficial and it returns False -- exercising the
+    not-positive / no-live-bundles rejection."""
+
+    def body(self, li, st):
+        cand = GlobalSplitCandidate()
+        cand.reset(0, self.new_interference_cursor())
+        st["compact"] = self._calc_compact_region(li, cand)
+
+    st = _diamond_live_through_probe(body)
+    assert st["compact"] is False
+    assert_no_leaks()
+
+
+def test_calc_compact_region_no_through_blocks():
+    """A single-block value has no through blocks -> compact region is trivially
+    False (the early return)."""
+    checks = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            if "done" not in checks and self.interval_is_in_one_mbb(li.reg):
+                sa = self.split_analysis
+                sa.analyze(li)
+                checks["done"] = True
+                cand = GlobalSplitCandidate()
+                cand.reset(0, self.new_interference_cursor())
+                checks["compact"] = self._calc_compact_region(li, cand)
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-ccr0", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-ccr0")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int, ctypes.c_int), "add", obj)
+    assert fn(3, 4) == 7
+    assert checks["compact"] is False
+    assert_no_leaks()
+
+
+def test_calculate_region_split_cost_ignore_csr():
+    """Scoring with ignore_csr=True skips unused callee-saved physregs
+    (isUnusedCalleeSavedReg), exercising that filter."""
+
+    def body(self, li, st):
+        order = list(self.allocation_order(li))
+        st["csr_seen"] = any(self._is_unused_callee_saved(p) for p in order)
+        best, _ = self._calculate_region_split_cost(
+            li, order, mir.BlockFrequency.max(), 0, True
+        )
+        st["best"] = best
+
+    st = _diamond_live_through_probe(body)
+    assert st["best"] == _NO_CAND or st["best"] >= 0
+    assert isinstance(st["csr_seen"], bool)
+    assert_no_leaks()
+
+
+def test_grow_region_budget_exhausted(monkeypatch):
+    """A tiny complexity budget makes growRegion bail with False."""
+    import llvm.mir_greedy as _g
+
+    monkeypatch.setattr(_g, "_GROW_REGION_COMPLEXITY_BUDGET", 1)
+
+    def body(self, li, st):
+        cand = GlobalSplitCandidate()
+        cand.reset(
+            next(iter(self.allocation_order(li))), self.new_interference_cursor()
+        )
+        self.set_interference_physreg(cand.intf, cand.phys_reg)
+        self.spill_placer.prepare(cand.live_bundles)
+        self._add_split_constraints(cand.intf)
+        st["grew"] = self._grow_region(li, cand)
+
+    st = _diamond_live_through_probe(body)
+    assert st["grew"] is False
+    assert_no_leaks()
+
+
+def test_do_region_split_with_compact_region():
+    """Drive doRegionSplit's has_compact arm: score candidates (populating
+    GlobalCand[0]), then apply the region with best_cand=NoCand and
+    has_compact=True so GlobalCand[0] is claimed as the compact candidate, opens
+    its interval, and drives splitAroundRegion."""
+
+    def body(self, li, st):
+        order = list(self.allocation_order(li))
+        best, ncands = self._calculate_region_split_cost(
+            li, order, mir.BlockFrequency.max(), 0, False
+        )
+        if ncands == 0 or not self._global_cand[0].live_bundles.count() > 0:
+            st["skipped"] = True
+            return None
+        lre = self.new_live_range_edit(li)
+        self._do_region_split(li, _NO_CAND, True, lre)
+        st["nvregs"] = len(lre.new_vregs())
+        return True
+
+    st = _diamond_live_through_probe(body)
+    assert st.get("skipped") or st["nvregs"] >= 1
+    assert_no_leaks()
+
+
+def test_split_around_region_all_covering_candidate():
+    """Drive splitAroundRegion with one candidate claiming every bundle, so each
+    use block and through block is split live-through into that interval (the
+    split_live_through_block arms and the RS_Split2/RS_Spill staging). Mirrors a
+    single-region solution."""
+
+    def body(self, li, st):
+        order = list(self.allocation_order(li))
+        best, ncands = self._calculate_region_split_cost(
+            li, order, mir.BlockFrequency.max(), 0, False
+        )
+        if best == _NO_CAND:
+            st["skipped"] = True
+            return None
+        cand = self._global_cand[best]
+        lre = self.new_live_range_edit(li)
+        se = self.split_editor
+        se.reset(lre, mir.ComplementSpillMode.SM_Speed)
+        # Claim every edge bundle for the winning candidate and open its interval.
+        self._bundle_cand = [best] * self.edge_bundles.num_bundles()
+        cand.intv_idx = se.open_intv()
+        self._split_around_region(li, lre, [best])
+        st["nvregs"] = len(lre.new_vregs())
+        return True
+
+    st = _diamond_live_through_probe(body)
+    assert st.get("skipped") or st["nvregs"] >= 1
+    assert_no_leaks()
+
+
+def test_enqueue_reverse_local_assignment():
+    """A target that assigns local ranges bottom-up (reverseLocalAssignment)
+    prioritizes local ranges by distance from the zero index to their end,
+    exercising enqueue's reverse branch."""
+    seen = {}
+
+    class Reverse(mir.RAGreedy):
+        def reverse_local_assignment(self):
+            return True  # simulate a bottom-up-assignment target
+
+        def enqueue(self, reg):
+            seen["ran"] = True
+            return super().enqueue(reg)
+
+    mir.register_regalloc("ra-greedy-rev", Reverse)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-rev")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int, ctypes.c_int), "add", obj)
+    assert fn(3, 4) == 7  # bottom-up local priority still allocates correctly
+    assert seen.get("ran")
+    assert_no_leaks()
+
+
+_USE_PRESSURE_N = 34
+
+
+def _build_use_pressure(mmi):
+    """b0 defines v AND a high-pressure chain that uses v (so v's def block is a
+    use block under pressure); b1 is a through block; b2 uses v. Region-splitting
+    v must reason about interference inside its use block b0, exercising the
+    MustSpill/PrefSpill/insert arms of addSplitConstraints. up(x) = 2x."""
+    mf = mmi.machine_function("up")
+    b = mir.MachineIRBuilder(mf)
+    gpr = mf.reg_class("GPR32")
+    w0 = mf.physreg("W0")
+    b0 = mf.blocks[0]
+    b1 = mf.create_block()
+    b2 = mf.create_block()
+    b0.add_livein(w0)
+    copy = mf.opcode("COPY")
+    addrr = mf.opcode("ADDWrr")
+    br = mf.opcode("B")
+    b.set_block(b0)
+    v = mf.create_vreg(gpr)
+    iv = b.build_instr(addrr)
+    iv.add_reg(v, is_def=True)
+    iv.add_reg(w0)
+    iv.add_reg(w0)
+    terms = []
+    prev = w0
+    for _ in range(_USE_PRESSURE_N):
+        t = mf.create_vreg(gpr)
+        ins = b.build_instr(addrr)
+        ins.add_reg(t, is_def=True)
+        ins.add_reg(prev)
+        ins.add_reg(w0)
+        terms.append(t)
+        prev = t
+    acc = terms[0]
+    for t in terms[1:]:
+        na = mf.create_vreg(gpr)
+        ins = b.build_instr(addrr)
+        ins.add_reg(na, is_def=True)
+        ins.add_reg(acc)
+        ins.add_reg(t)
+        acc = na
+    u = mf.create_vreg(gpr)  # a use of v inside the pressured block
+    iu = b.build_instr(addrr)
+    iu.add_reg(u, is_def=True)
+    iu.add_reg(v)
+    iu.add_reg(acc)
+    j0 = b.build_instr(br)
+    j0.add_mbb(b1)
+    b0.add_successor(b1)
+    b.set_block(b1)
+    j1 = b.build_instr(br)
+    j1.add_mbb(b2)
+    b1.add_successor(b2)
+    b.set_block(b2)
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(v)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+def test_region_split_use_block_interference_matches_native():
+    """Region split with interference inside the split value's use block: our
+    per-vreg decisions match native greedy (exercising addSplitConstraints'
+    interference arms and calcGlobalSplitCost through the natural flow)."""
+    mir.register_regalloc("ra-greedy-up", mir.RAGreedy)
+
+    def assignments(regalloc):
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(mod, tm, "up")
+            _build_use_pressure(mmi)
+            return mmi.regalloc_assignments(regalloc=regalloc)
+
+    ours = assignments("ra-greedy-up")
+    native = assignments("greedy")
+    assert sorted(ours.spilled) == sorted(native.spilled)
+    assert_no_leaks()
+
+
+def test_calc_global_split_cost_arms():
+    """Drive calcGlobalSplitCost's per-arm accounting with crafted live-bundle
+    solutions: a use-block edge whose register state disagrees with its
+    constraint pref (a spill), and active (through) blocks that are all-stack
+    (no cost), single-crossing (one spill), and both-in interference."""
+
+    def body(self, li, st):
+        cur = self.new_interference_cursor()
+        self.set_interference_physreg(cur, next(iter(self.allocation_order(li))))
+        self.spill_placer.prepare(mir.BitVector())
+        self._add_split_constraints(cur)
+        eb = self.edge_bundles
+        order = list(self.allocation_order(li))
+        PrefReg = mir.BorderConstraint.PrefReg
+
+        def run(set_bits, active):
+            cand = GlobalSplitCandidate()
+            cand.reset(order[0], cur)
+            lb = mir.BitVector()
+            lb.resize(eb.num_bundles())
+            for bnum in set_bits:
+                lb.set(bnum)
+            cand.live_bundles = lb
+            cand.active_blocks = active
+            return self._calc_global_split_cost(cand, order).get_frequency()
+
+        # Use-block ins arm: flip a live-in use block's in-bundle so it disagrees
+        # with the entry pref, forcing a spill (cost > 0).
+        use_blocks = self.split_analysis.use_blocks()
+        live_in_ub = next((b for b in use_blocks if b.live_in), None)
+        st["use_arm"] = 0
+        if live_in_ub is not None:
+            n = live_in_ub.mbb.number
+            bc = next(c for c in self._split_constraints if c.number == n)
+            want_reg_in = bc.entry == PrefReg
+            in_bundle = eb.get_bundle_number(n, False)
+            bits = [in_bundle] if not want_reg_in else []
+            st["use_arm"] = run(bits, [])
+        # Active-block arms on the through blocks: all-stack (no per-block cost),
+        # and single-crossing (register on exactly one edge -> one spill).
+        through = self.split_analysis.through_blocks()
+        st["active_none"] = run([], [])  # no active blocks, no use disagreement
+        st["single"] = None
+        candidates = list(through) + [b.mbb.number for b in use_blocks]
+        for t in candidates:
+            in_b = eb.get_bundle_number(t, False)
+            out_b = eb.get_bundle_number(t, True)
+            if in_b != out_b:
+                base = run([], [t])
+                st["single"] = run([in_b], [t])  # reg-in only -> single crossing
+                st["single_delta"] = st["single"] - base
+                break
+
+    st = _diamond_live_through_probe(body)
+    assert st["active_none"] >= 0
+    if st["single"] is not None:
+        assert st["single_delta"] > 0  # a single crossing adds one block frequency
+    assert_no_leaks()

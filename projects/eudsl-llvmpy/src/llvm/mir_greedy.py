@@ -342,7 +342,7 @@ class RAGreedy(mir.RegAllocBase):
         # spiller abort on a double spill. Unreachable in tests: an unspillable
         # or RS_Done range that also fails assign/evict/split needs last-chance
         # recoloring, the one stage not yet ported.
-        if stage >= LiveRangeStage.RS_Memory or not li.is_spillable:  # pragma: no cover
+        if stage >= LiveRangeStage.RS_Memory or not li.is_spillable:
             raise NotImplementedError(
                 "last-chance recoloring is not implemented: reg "
                 f"{reg} at stage {int(stage)} is unspillable and unallocatable"
@@ -391,15 +391,13 @@ class RAGreedy(mir.RegAllocBase):
         # produce is a proper subclass (is_proper_sub_class is False), so it is
         # unreachable here. It faithfully mirrors shouldSplitSingleBlock.
         # Splitting a live-through range always makes progress.
-        if bi.live_in and bi.live_out:  # pragma: no cover
+        if bi.live_in and bi.live_out:
             return True
         # No point isolating a copy: it has no register-class constraint.
-        if self.is_copy_like_at(bi.first_instr):  # pragma: no cover
+        if self.is_copy_like_at(bi.first_instr):
             return False
         # Don't isolate an endpoint an earlier split created.
-        return self.split_analysis.is_original_endpoint(  # pragma: no cover
-            bi.first_instr
-        )
+        return self.split_analysis.is_original_endpoint(bi.first_instr)
 
     def _split_single_block(self, se, bi):
         """SplitEditor::splitSingleBlock for use block `bi`: open an interval
@@ -526,7 +524,7 @@ class RAGreedy(mir.RegAllocBase):
                         # whose dropped gap held the max; the crafted single-
                         # block inputs here never present that gap profile, so
                         # the recompute is a faithful-but-untriggered mirror.
-                        if gap_weight[split_before - 1] >= max_gap:  # pragma: no cover
+                        if gap_weight[split_before - 1] >= max_gap:
                             max_gap = gap_weight[split_before]
                             for i in range(split_before + 1, split_after):
                                 max_gap = max(max_gap, gap_weight[i])
