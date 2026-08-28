@@ -1004,3 +1004,36 @@ def test_local_split_shrink_recompute():
         )
     assert fn(2) == native(2)
     assert_no_leaks()
+
+
+def test_interference_cursor_reports_per_block_interference():
+    """The region-split interference cursor: point it at a physreg and query a
+    block. InterferenceCache reports fixed reg-unit interference too, not just
+    assigned vregs, so the entry block already shows interference for the first
+    allocatable physreg (the argument registers)."""
+    checks = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            if "done" not in checks:
+                checks["done"] = True
+                cur = self.new_interference_cursor()
+                preg = next(iter(self.allocation_order(li)))
+                self.set_interference_physreg(cur, preg)
+                cur.move_to_block(0)
+                checks["has"] = cur.has_interference()
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-cursor", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-cursor")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int, ctypes.c_int), "add", obj)
+    assert fn(3, 4) == 7
+    # Entry block carries fixed argument-register interference for w0 (the
+    # first allocatable physreg), so the cursor reports interference here.
+    assert checks["has"] is True
+    assert_no_leaks()

@@ -5,6 +5,7 @@
 #include "IR/Common.h"
 #include "MIR/AllocationOrder.h"
 #include "MIR/Diagnostics.h"
+#include "MIR/InterferenceCache.h"
 #include "MIR/RegAllocBase.h"
 #include "MIR/SplitKit.h"
 
@@ -563,6 +564,10 @@ public:
     auxInfo = vrai;
     regCosts = mfn.getSubtarget().getRegisterInfo()->getRegisterCosts(mfn);
     NativeRegAlloc::pyInit(vrm, lis, mat, sp, mfn);
+    // Matches RAGreedy::IntfCache.init: MF, the matrix's per-regunit unions,
+    // slot indexes, LIS, TRI.
+    intfCache.init(mf, Matrix->getLiveUnions(), LIS->getSlotIndexes(), LIS,
+                   mf->getSubtarget().getRegisterInfo());
   }
 
   // Protected driver state, surfaced to the Python helpers. These borrow
@@ -581,6 +586,21 @@ public:
   }
   llvm::EdgeBundles *edgeBundlesPtr() { return edgeBundles; }
   llvm::SpillPlacement *spillPlacerPtr() { return spillPlacer; }
+
+  // A cursor into the interference cache, for region-split cost queries. Point
+  // it at a physreg with set_interference_physreg, then move_to_block/first/
+  // last/has_interference per block. Copyable and refcounts its cache entry;
+  // valid only within an allocator callback, do not retain past it.
+  llvm::InterferenceCache::Cursor newInterferenceCursor() {
+    return llvm::InterferenceCache::Cursor();
+  }
+
+  // setPhysReg needs the driver's owned cache, which the free Cursor can't
+  // reach; do it through the driver.
+  void cursorSetPhysReg(llvm::InterferenceCache::Cursor &cur,
+                        unsigned physreg) {
+    cur.setPhysReg(intfCache, llvm::MCRegister(physreg));
+  }
 
   // Physregs, in target allocation order, that Python may try for `li`.
   std::vector<unsigned> allocationOrder(const llvm::LiveInterval &li) {
@@ -800,6 +820,10 @@ private:
   llvm::VirtRegAuxInfo *auxInfo = nullptr;
   llvm::ArrayRef<uint8_t> regCosts;
   std::unique_ptr<llvm::LiveRangeEdit> heldEdit;
+  // Per-block interference cache for region-split cost queries (RAGreedy's
+  // IntfCache). Owns cursors handed to Python; init'd in pyInit once the
+  // matrix/LIS are wired.
+  llvm::InterferenceCache intfCache;
 };
 
 // name -> Python RegAllocBase subclass, held in
@@ -1136,6 +1160,26 @@ void populate_python_codegen(nb::module_ &m) {
   // PassManager can resolve them when the pipeline runs the allocator slot.
   llvm::initializePyRegAllocDriverPass(*llvm::PassRegistry::getPassRegistry());
 
+  nb::class_<llvm::InterferenceCache::Cursor>(m, "InterferenceCursor")
+      .def(
+          "move_to_block",
+          [](llvm::InterferenceCache::Cursor &c, unsigned n) {
+            c.moveToBlock(n);
+          },
+          "mbb_number"_a, "Point the cursor at block `mbb_number`.")
+      .def(
+          "has_interference",
+          [](llvm::InterferenceCache::Cursor &c) {
+            return c.hasInterference();
+          },
+          "Whether the current block has any interference for this physreg.")
+      .def(
+          "first", [](llvm::InterferenceCache::Cursor &c) { return c.first(); },
+          "First interfering SlotIndex in the current block.")
+      .def(
+          "last", [](llvm::InterferenceCache::Cursor &c) { return c.last(); },
+          "Last interfering SlotIndex in the current block.");
+
   nb::class_<PyRegAllocBase>(m, "RegAllocBase")
       .def(nb::init<>())
       .def("allocation_order", &PyRegAllocBase::allocationOrder, "li"_a,
@@ -1260,7 +1304,14 @@ void populate_python_codegen(nb::module_ &m) {
           nb::rv_policy::reference,
           "The SpillPlacement network for choosing global-split boundaries "
           "(the machinery RAGreedy's splitAroundRegion drives). Borrowed and "
-          "valid only within an allocator callback; do not retain.");
+          "valid only within an allocator callback; do not retain.")
+      .def(
+          "new_interference_cursor", &PyRegAllocBase::newInterferenceCursor,
+          "A fresh interference-cache cursor (call set_interference_physreg to "
+          "point it at a physreg). Valid only within an allocator callback.")
+      .def("set_interference_physreg", &PyRegAllocBase::cursorSetPhysReg,
+           "cursor"_a, "physreg"_a,
+           "Point `cursor` at `physreg`'s per-block interference.");
 
   // A value number: one definition of a virtual register's live interval.
   // Rematerialization is keyed on the VNInfo whose defining instruction is
