@@ -24,6 +24,7 @@
 #include <llvm/CodeGen/TargetPassConfig.h>
 #include <llvm/CodeGen/TargetRegisterInfo.h>
 #include <llvm/CodeGen/TargetSubtargetInfo.h>
+#include <llvm/CodeGen/VirtRegMap.h>
 #include <llvm/CodeGenTypes/LowLevelType.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
@@ -36,16 +37,20 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
+#include <llvm/InitializePasses.h>
+#include <llvm/PassRegistry.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
 
+#include <nanobind/stl/map.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/variant.h>
+#include <nanobind/stl/vector.h>
 
 #include <memory>
 #include <string>
@@ -316,6 +321,61 @@ struct EmittedOwned {
   llvm::MachineModuleInfo *queryHandle() const { return mmi; }
 };
 
+// Post-RA snapshot: for each virtual register live at register allocation, its
+// assigned physreg id, or a record that it was spilled (no physreg in the
+// VirtRegMap). Populated by VRMCapturePass while the VirtRegMap analysis is
+// still live -- i.e. after the allocator but before the virtual-register
+// rewriter consumes it and deletes the virtual registers.
+struct RegAllocAssignments {
+  std::map<unsigned, unsigned> assignments; // vreg id -> physreg id
+  std::vector<unsigned> spilled;            // vreg ids with no physreg
+};
+
+// Copies the live VirtRegMap into a caller-owned RegAllocAssignments. Requires
+// VirtRegMap so the legacy PM schedules it (and the allocator that produces it)
+// before this pass; preserves everything so it never perturbs the pipeline.
+class VRMCapturePass : public llvm::MachineFunctionPass {
+public:
+  static char ID;
+  explicit VRMCapturePass(RegAllocAssignments *out = nullptr)
+      : llvm::MachineFunctionPass(ID), out(out) {}
+
+  // LCOV_EXCL_START -- diagnostic-only; the legacy PM does not print pass names
+  // in the non-debug pipeline this runs.
+  llvm::StringRef getPassName() const override { return "eudsl VRM capture"; }
+  // LCOV_EXCL_STOP
+
+  void getAnalysisUsage(llvm::AnalysisUsage &au) const override {
+    au.setPreservesAll();
+    au.addRequired<llvm::VirtRegMapWrapperLegacy>();
+    llvm::MachineFunctionPass::getAnalysisUsage(au);
+  }
+
+  bool runOnMachineFunction(llvm::MachineFunction &mfn) override {
+    llvm::VirtRegMap &vrm =
+        getAnalysis<llvm::VirtRegMapWrapperLegacy>().getVRM();
+    llvm::MachineRegisterInfo &mri = mfn.getRegInfo();
+    // Classify by the VirtRegMap, not by liveness: the spiller assigns a stack
+    // slot for a spilled vreg (which persists here) but rewrites its uses to
+    // fresh reload vregs, leaving the original reg_nodbg_empty -- so a
+    // liveness-based skip would silently drop exactly the spills `spilled` is
+    // meant to report. A vreg with neither a physreg nor a stack slot was never
+    // processed by the allocator (dead before RA) and is skipped.
+    for (unsigned i = 0, e = mri.getNumVirtRegs(); i != e; ++i) {
+      llvm::Register vreg = llvm::Register::index2VirtReg(i);
+      if (vrm.hasPhys(vreg))
+        out->assignments[vreg.id()] = vrm.getPhys(vreg).id();
+      else if (vrm.getStackSlot(vreg) != llvm::VirtRegMap::NO_STACK_SLOT)
+        out->spilled.push_back(vreg.id());
+    }
+    return false;
+  }
+
+private:
+  RegAllocAssignments *out;
+};
+char VRMCapturePass::ID = 0;
+
 // Owns everything the MachineFunctions transitively depend on, so none of it is
 // freed out from under them: the LLVMContext (pinned by `ctxKeepAlive`), the IR
 // Module (whose Functions the MachineFunctions reference), and -- through
@@ -583,6 +643,118 @@ public:
       throw std::runtime_error("object emission produced no output");
     // LCOV_EXCL_STOP
     return nb::bytes(buf.data(), buf.size());
+  }
+
+  // Run register allocation with the named allocator over the built
+  // (already-selected) MIR and return the post-RA vreg->physreg map, without
+  // emitting an object. The pipeline is just [allocator][capture]: a bare
+  // legacy PassManager auto-schedules the allocator's required analyses
+  // (LiveIntervals, VirtRegMap, LiveRegMatrix, ...) from its getAnalysisUsage,
+  // and VRMCapturePass reads VirtRegMap after the allocator but before the
+  // virtual-register rewriter would delete the virtual registers. Like
+  // emitObject this is build-path-only and one-shot: the build wrapper is
+  // adopted into the pipeline, so the BuildOwned is consumed into an
+  // EmittedOwned.
+  RegAllocAssignments regallocAssignments(const std::string &regalloc) {
+    if (std::holds_alternative<EmittedOwned>(state_))
+      throw std::runtime_error("object already emitted");
+    BuildOwned *build = std::get_if<BuildOwned>(&state_);
+    if (!build) {
+      throw std::runtime_error(
+          "regalloc_assignments requires a module built with "
+          "create_machine_function");
+    }
+    llvm::MachineModuleInfo *info = &build->mmiwp->getMMI();
+
+    // Resolve the allocator's pass constructor: a Python-registered class (via
+    // createRegisteredPyRegAlloc with the active class set), else a native
+    // RegisterRegAlloc entry (greedy/basic/fast). We call the ctor directly
+    // rather than through createRegAllocPass/getDefault, so no cl::opt dance is
+    // needed -- only the active-class handshake for the Python path.
+    llvm::RegisterRegAlloc::FunctionPassCtor raCtor = nullptr;
+    nb::type_object regAllocClass = eudsl::regallocClass(regalloc);
+    struct RestoreActiveRegAllocClass {
+      bool active = false;
+      ~RestoreActiveRegAllocClass() {
+        if (active)
+          eudsl::clearActiveRegAllocClass();
+      }
+    } restoreActiveRegAllocClass;
+    if (regAllocClass.is_valid()) {
+      raCtor = eudsl::registeredRegAllocCtor();
+      eudsl::setActiveRegAllocClass(regAllocClass);
+      restoreActiveRegAllocClass.active = true;
+    } else {
+      for (llvm::RegisterRegAlloc *r = llvm::RegisterRegAlloc::getList(); r;
+           r = r->getNext()) {
+        if (regalloc == r->getName()) {
+          raCtor = r->getCtor();
+          break;
+        }
+      }
+      if (!raCtor)
+        throw std::runtime_error("unknown regalloc: " + regalloc);
+    }
+
+    // Verify hand-built MIR up front (mirrors emitObject) so malformed input
+    // raises a catchable error instead of aborting inside the allocator.
+    std::string report;
+    llvm::raw_string_ostream reportOS(report);
+    bool ok = true;
+    for (llvm::Function &f : *module_) {
+      if (llvm::MachineFunction *mf = info->getMachineFunction(f)) {
+        ok &= mf->verify(/*p=*/nullptr, /*Banner=*/nullptr, &reportOS,
+                         /*AbortOnError=*/false);
+      }
+    }
+    if (!ok)
+      throw std::runtime_error(
+          eudsl::withDetail("hand-built MIR failed verification", report));
+
+    // Register allocation requires reserved registers to be frozen; the front
+    // of the normal pipeline does this, so do it here for the hand-built MIR.
+    for (llvm::Function &f : *module_) {
+      if (llvm::MachineFunction *mf = info->getMachineFunction(f))
+        mf->getRegInfo().freezeReservedRegs();
+    }
+
+    // The allocator's required codegen analyses (LiveIntervals, VirtRegMap,
+    // LiveRegMatrix, SpillPlacement, ...) must be registered in the legacy
+    // PassRegistry for the bare PassManager to schedule them; the normal
+    // pipeline gets this through TargetPassConfig, which we bypass here.
+    llvm::initializeCodeGen(*llvm::PassRegistry::getPassRegistry());
+
+    RegAllocAssignments out;
+    auto pm = std::make_unique<llvm::legacy::PassManager>();
+    // The wrapper (holding the built MachineFunctions) is adopted into `pm`;
+    // it provides the MMI the MachineFunctionPasses query. `info` stays valid
+    // because `pm` keeps the wrapper alive.
+    pm->add(build->mmiwp.release());
+    pm->add(raCtor());
+    pm->add(new VRMCapturePass(&out));
+
+    std::string diag;
+    {
+      eudsl::ScopedDiagnosticCapture capture(module_->getContext(), diag);
+      try {
+        eudsl::runCodegenPipeline(*pm, *module_);
+      } catch (...) {
+        // The wrapper already lives in `pm`; consume into EmittedOwned before
+        // propagating so `state_` never keeps a released (null) wrapper.
+        state_ = EmittedOwned{std::move(pm), info};
+        throw;
+      }
+    }
+    // Consume the BuildOwned into an EmittedOwned so a later query keeps `info`
+    // valid and a second run refuses cleanly.
+    state_ = EmittedOwned{std::move(pm), info};
+    // LCOV_EXCL_START -- eager verification makes a register-allocation failure
+    // from well-formed hand-built MIR unreachable.
+    if (!diag.empty())
+      throw std::runtime_error(
+          eudsl::withDetail("register allocation failed", diag));
+    // LCOV_EXCL_STOP
+    return out;
   }
 
 private:
@@ -1316,6 +1488,12 @@ void populate_mir(nb::module_ &m) {
   // The result of run_codegen_to_mir or parse_mir: owns the MachineFunctions
   // and everything they depend on. `machine_function` resolves one by its IR
   // Function name.
+  nb::class_<RegAllocAssignments>(m, "RegAllocAssignments")
+      .def_ro("assignments", &RegAllocAssignments::assignments,
+              "Map of virtual-register id -> assigned physical-register id.")
+      .def_ro("spilled", &RegAllocAssignments::spilled,
+              "Virtual-register ids that were spilled (no physreg assigned).");
+
   nb::class_<MirModule>(m, "MirModule")
       .def(
           "machine_function",
@@ -1363,7 +1541,15 @@ void populate_mir(nb::module_ &m) {
           "names a registered RegAllocBase subclass (see register_regalloc), "
           "it "
           "drives register allocation instead of the target default; an "
-          "unregistered name raises.");
+          "unregistered name raises.")
+      .def("regalloc_assignments", &MirModule::regallocAssignments,
+           "regalloc"_a,
+           "Run register allocation with the named allocator (a native name "
+           "like 'greedy', or a register_regalloc name) over the built MIR and "
+           "return the post-RA vreg->physreg assignment map, without emitting "
+           "an object. Verifies the MIR first, raising if it is malformed; an "
+           "unknown allocator name raises. Build-path-only and one-shot, like "
+           "emit_object.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the
