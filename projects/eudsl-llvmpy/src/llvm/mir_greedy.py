@@ -754,6 +754,120 @@ class RAGreedy(mir.RegAllocBase):
         num_cands += 1
         return best_cand, num_cands, best_cost
 
+    def _do_region_split(self, li, best_cand, has_compact, lre):
+        """RAGreedy::doRegionSplit. Assign edge bundles to the chosen
+        candidate(s), open their split intervals, then apply the region."""
+        se = self.split_editor
+        se.reset(lre, mir.ComplementSpillMode.SM_Speed)
+        num_bundles = self.edge_bundles.num_bundles()
+        self._bundle_cand = [_NO_CAND] * num_bundles
+        used_cands = []
+        if best_cand != _NO_CAND:
+            cand = self._global_cand[best_cand]
+            if self._cand_get_bundles(cand, best_cand) > 0:
+                used_cands.append(best_cand)
+                cand.intv_idx = se.open_intv()
+        if has_compact:
+            cand = self._global_cand[0]
+            if self._cand_get_bundles(cand, 0) > 0:
+                used_cands.append(0)
+                cand.intv_idx = se.open_intv()
+        self._split_around_region(li, lre, used_cands)
+
+    def _cand_get_bundles(self, cand, cand_index):
+        """GlobalSplitCandidate::getBundles: claim this candidate's live bundles
+        in the shared _bundle_cand map. Returns the number newly claimed."""
+        count = 0
+        for i in cand.live_bundles.set_bits():
+            if self._bundle_cand[i] == _NO_CAND:
+                self._bundle_cand[i] = cand_index
+                count += 1
+        return count
+
+    def _split_around_region(self, li, lre, used_cands):
+        """RAGreedy::splitAroundRegion. Drive the high-level SplitEditor calls
+        per use block and per through block, finish, and stage new intervals."""
+        se = self.split_editor
+        sa = self.split_analysis
+        eb = self.edge_bundles
+        # LREdit.size() at entry == one opened interval per used candidate.
+        num_global_intvs = len(used_cands)
+        single_instrs = self.is_proper_sub_class(li.reg)
+        # Use blocks.
+        for bi in sa.use_blocks():
+            number = bi.mbb.number
+            intv_in = intv_out = 0
+            intf_in = intf_out = None
+            if bi.live_in:
+                cand_in = self._bundle_cand[eb.get_bundle_number(number, False)]
+                if cand_in != _NO_CAND:
+                    cand = self._global_cand[cand_in]
+                    intv_in = cand.intv_idx
+                    cand.intf.move_to_block(number)
+                    intf_in = cand.intf.first()
+            if bi.live_out:
+                cand_out = self._bundle_cand[eb.get_bundle_number(number, True)]
+                if cand_out != _NO_CAND:
+                    cand = self._global_cand[cand_out]
+                    intv_out = cand.intv_idx
+                    cand.intf.move_to_block(number)
+                    intf_out = cand.intf.last()
+            if not intv_in and not intv_out:
+                if self._should_split_single_block(bi, single_instrs):
+                    se.split_single_block(bi)
+                continue
+            if intv_in and intv_out:
+                se.split_live_through_block(
+                    number, intv_in, intf_in, intv_out, intf_out
+                )
+            elif intv_in:
+                se.split_reg_in_block(bi, intv_in, intf_in)
+            else:
+                se.split_reg_out_block(bi, intv_out, intf_out)
+        # Through blocks (dedup across candidates).
+        todo = set(sa.through_blocks())
+        for used_cand in used_cands:
+            for number in self._global_cand[used_cand].active_blocks:
+                if number not in todo:
+                    continue
+                todo.discard(number)
+                intv_in = intv_out = 0
+                intf_in = intf_out = None
+                cand_in = self._bundle_cand[eb.get_bundle_number(number, False)]
+                if cand_in != _NO_CAND:
+                    cand = self._global_cand[cand_in]
+                    intv_in = cand.intv_idx
+                    cand.intf.move_to_block(number)
+                    intf_in = cand.intf.first()
+                cand_out = self._bundle_cand[eb.get_bundle_number(number, True)]
+                if cand_out != _NO_CAND:
+                    cand = self._global_cand[cand_out]
+                    intv_out = cand.intv_idx
+                    cand.intf.move_to_block(number)
+                    intf_out = cand.intf.last()
+                if not intv_in and not intv_out:
+                    continue
+                se.split_live_through_block(
+                    number, intv_in, intf_in, intv_out, intf_out
+                )
+        intv_map = se.finish()
+        # Stage the new intervals (matches splitAroundRegion's four kinds).
+        orig_blocks = sa.num_live_blocks()
+        new_vregs = lre.new_vregs()
+        for i, r in enumerate(new_vregs):
+            if self._get_stage(r) != LiveRangeStage.RS_New:
+                continue
+            m = intv_map[i] if i < len(intv_map) else 0
+            if m == 0:
+                self._set_stage(r, LiveRangeStage.RS_Spill)
+            elif m < num_global_intvs:
+                if (
+                    self.split_analysis.count_live_blocks(self.lis.interval(r))
+                    >= orig_blocks
+                ):
+                    self._set_stage(r, LiveRangeStage.RS_Split2)
+            # else: block-local / DCE leftovers stay RS_New.
+
     # -- tryEvict / canEvictInterference ------------------------------------
     def _can_evict_interference(self, li, physreg):
         """True if every vreg interfering with `li` on `physreg` can be evicted:

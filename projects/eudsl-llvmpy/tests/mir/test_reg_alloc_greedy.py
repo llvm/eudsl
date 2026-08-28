@@ -1340,3 +1340,37 @@ def test_calculate_region_split_cost_selects_candidate():
     assert fn(3) == _thru_pressure_closed_form(3)
     assert saw["best"] == _NO_CAND or saw["best"] >= 0
     assert_no_leaks()
+
+
+def test_do_region_split_produces_vregs():
+    saw = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            sa = self.split_analysis
+            sa.analyze(li)
+            if "done" not in saw and sa.num_through_blocks() > 0:
+                saw["done"] = True
+                order = list(self.allocation_order(li))
+                best_cost = mir.BlockFrequency.max()
+                best, ncands = self._calculate_region_split_cost(
+                    li, order, best_cost, 0, False
+                )
+                if best != _NO_CAND:
+                    lre = self.new_live_range_edit(li)
+                    self._do_region_split(li, best, False, lre)
+                    saw["nvregs"] = len(lre.new_vregs())
+                    return None
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-drs", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thrup")
+        _build_thru_pressure(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-drs")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thrup", obj)
+    assert fn(3) == _thru_pressure_closed_form(3)
+    assert saw.get("nvregs", 0) >= 1
+    assert_no_leaks()
