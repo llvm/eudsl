@@ -614,6 +614,30 @@ public:
     return loop->getHeader()->getNumber();
   }
 
+  // Slot index of the first non-debug instruction in block `n`, or an invalid
+  // SlotIndex if the block is empty (addThroughConstraints' abort guard).
+  llvm::SlotIndex firstNonDebugInstrIndex(unsigned n) {
+    llvm::MachineBasicBlock *mbb = mf->getBlockNumbered(n);
+    auto it = mbb->getFirstNonDebugInstr();
+    if (it == mbb->end())
+      return llvm::SlotIndex();
+    return LIS->getInstructionIndex(*it);
+  }
+
+  // The live-in insertion-point index for block `n` (SkipPHIsLabelsAndDebug for
+  // the analyzed interval's reg), matching addThroughConstraints' InsertIdx.
+  llvm::SlotIndex throughInsertIndex(unsigned n) {
+    llvm::MachineBasicBlock *mbb = mf->getBlockNumbered(n);
+    llvm::Register reg = splitAnalysis->getParent().reg();
+    auto insertPt = mbb->SkipPHIsLabelsAndDebug(mbb->begin(), reg);
+    return insertPt == mbb->end() ? LIS->getMBBEndIdx(mbb)
+                                  : LIS->getInstructionIndex(*insertPt);
+  }
+
+  llvm::SlotIndex mbbStartIndexByNumber(unsigned n) {
+    return LIS->getMBBStartIdx(mf->getBlockNumbered(n));
+  }
+
   // Physregs, in target allocation order, that Python may try for `li`.
   std::vector<unsigned> allocationOrder(const llvm::LiveInterval &li) {
     auto order =
@@ -1328,7 +1352,17 @@ void populate_python_codegen(nb::module_ &m) {
       .def("loop_header_number", &PyRegAllocBase::loopHeaderNumber,
            "mbb_number"_a,
            "Header block number of the innermost loop containing "
-           "`mbb_number`, or -1 if none.");
+           "`mbb_number`, or -1 if none.")
+      .def("first_nondebug_instr_index",
+           &PyRegAllocBase::firstNonDebugInstrIndex, "mbb_number"_a,
+           "SlotIndex of the first non-debug instruction in the block, or an "
+           "invalid index if empty.")
+      .def("through_insert_index", &PyRegAllocBase::throughInsertIndex,
+           "mbb_number"_a,
+           "Live-in insertion-point index for the analyzed interval's reg in "
+           "the block.")
+      .def("mbb_start_index_by_number", &PyRegAllocBase::mbbStartIndexByNumber,
+           "mbb_number"_a, "Start SlotIndex of the block.");
 
   // A value number: one definition of a virtual register's live interval.
   // Rematerialization is keyed on the VNInfo whose defining instruction is
@@ -1775,6 +1809,12 @@ void populate_python_codegen(nb::module_ &m) {
             return s.getLastSplitPoint(mbb);
           },
           "mbb"_a)
+      .def(
+          "last_split_point_number",
+          [](llvm::SplitAnalysis &s, unsigned n) {
+            return s.getLastSplitPoint(n);
+          },
+          "mbb_number"_a, "Last legal split point in block `mbb_number`.")
       .def(
           "first_split_point",
           [](llvm::SplitAnalysis &s, unsigned n) {

@@ -552,6 +552,49 @@ class RAGreedy(mir.RegAllocBase):
         sp.add_constraints(self._split_constraints)
         return static_cost, sp.scan_active_bundles()
 
+    def _add_through_constraints(self, intf, blocks):
+        """RAGreedy::addThroughConstraints. Interference-free through blocks
+        become transparent links; interfering ones get MustSpill/PrefSpill
+        entry/exit constraints. Returns False if a required spill cannot be
+        inserted at a block start."""
+        sa = self.split_analysis
+        sp = self.spill_placer
+        MustSpill = mir.BorderConstraint.MustSpill
+        PrefSpill = mir.BorderConstraint.PrefSpill
+        links = []
+        constraints = []
+        for number in blocks:
+            intf.move_to_block(number)
+            if not intf.has_interference():
+                links.append(number)
+                continue
+            bc = mir.BlockConstraint()
+            bc.number = number
+            # Abort if the spill cannot be inserted at the block start.
+            first_instr = self.first_nondebug_instr_index(number)
+            if first_instr.is_valid() and _earlier_instr(
+                first_instr, sa.first_split_point(number)
+            ):
+                return False
+            insert_idx = self.through_insert_index(number)
+            mbb_start = self.mbb_start_index_by_number(number)
+            if (not (mbb_start < intf.first())) or _earlier_instr(
+                intf.first(), insert_idx
+            ):
+                bc.entry = MustSpill
+            else:
+                bc.entry = PrefSpill
+            if not (intf.last() < sa.last_split_point_number(number)):
+                bc.exit = MustSpill
+            else:
+                bc.exit = PrefSpill
+            constraints.append(bc)
+        if links:
+            sp.add_links(links)
+        if constraints:
+            sp.add_constraints(constraints)
+        return True
+
     # -- tryEvict / canEvictInterference ------------------------------------
     def _can_evict_interference(self, li, physreg):
         """True if every vreg interfering with `li` on `physreg` can be evicted:

@@ -1181,3 +1181,34 @@ def test_add_split_constraints_builds_constraints():
     assert saw["ncons"] >= 1
     assert isinstance(saw["positive"], bool)
     assert_no_leaks()
+
+
+def test_add_through_constraints_links_clean_blocks():
+    saw = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            sa = self.split_analysis
+            sa.analyze(li)
+            if "done" not in saw and sa.num_through_blocks() > 0:
+                saw["done"] = True
+                cur = self.new_interference_cursor()
+                self.set_interference_physreg(
+                    cur, next(iter(self.allocation_order(li)))
+                )
+                self.spill_placer.prepare(mir.BitVector())
+                self._add_split_constraints(cur)
+                saw["ok"] = self._add_through_constraints(cur, sa.through_blocks())
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-atc", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thru")
+        _build_three_block(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-atc")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thru", obj)
+    assert fn(9) == 9
+    assert saw["ok"] is True
+    assert_no_leaks()
