@@ -1923,6 +1923,39 @@ void populate_python_codegen(nb::module_ &m) {
           "mbb"_a)
       .def("overlap_intv", &llvm::SplitEditor::overlapIntv, "start"_a, "end"_a)
       .def(
+          "split_single_block",
+          [](llvm::SplitEditor &s, const llvm::SplitAnalysis::BlockInfo &bi) {
+            s.splitSingleBlock(bi);
+          },
+          "block_info"_a,
+          "Split the analyzed interval around the uses in a single block "
+          "(part of a larger split; does not call finish).")
+      .def(
+          "split_live_through_block",
+          [](llvm::SplitEditor &s, unsigned n, unsigned intvIn,
+             llvm::SlotIndex intfIn, unsigned intvOut,
+             llvm::SlotIndex intfOut) {
+            s.splitLiveThroughBlock(n, intvIn, intfIn, intvOut, intfOut);
+          },
+          "mbb_number"_a, "intv_in"_a, "intf_in"_a, "intv_out"_a, "intf_out"_a,
+          "Split a live-through block: enter in `intv_in`, leave in "
+          "`intv_out` (interference-aware placement).")
+      .def(
+          "split_reg_in_block",
+          [](llvm::SplitEditor &s, const llvm::SplitAnalysis::BlockInfo &bi,
+             unsigned intvIn,
+             llvm::SlotIndex intfIn) { s.splitRegInBlock(bi, intvIn, intfIn); },
+          "block_info"_a, "intv_in"_a, "intf_in"_a,
+          "Split a block that enters in `intv_in` and leaves on the stack.")
+      .def(
+          "split_reg_out_block",
+          [](llvm::SplitEditor &s, const llvm::SplitAnalysis::BlockInfo &bi,
+             unsigned intvOut, llvm::SlotIndex intfOut) {
+            s.splitRegOutBlock(bi, intvOut, intfOut);
+          },
+          "block_info"_a, "intv_out"_a, "intf_out"_a,
+          "Split a block that enters on the stack and leaves in `intv_out`.")
+      .def(
           "finish",
           [](llvm::SplitEditor &s) {
             // Return the IntvMap: for each new vreg (in LiveRangeEdit order),

@@ -1074,3 +1074,66 @@ def test_region_split_analysis_accessors():
     assert saw["bundle"] >= 0
     assert saw["loop_hdr"] == -1  # straight-line CFG: no loop
     assert_no_leaks()
+
+
+def test_split_live_through_block_executes():
+    """Drive the high-level SplitEditor block splitters directly on
+    _build_three_block: route the whole live range through one new interval via
+    split_reg_out_block (the def block), split_live_through_block (the empty
+    middle block), and split_reg_in_block (the use block). This mirrors what
+    splitAroundRegion does for a single all-covering candidate, and confirms the
+    result still computes thru(x) == x. Driving split_live_through_block in
+    isolation (leaving the def/use blocks in the complement) is malformed -- the
+    value must stay coherent across the boundary blocks."""
+    done = {"v": False, "nvregs": 0}
+
+    class Force(mir.RAGreedy):
+        def select_or_split(self, li):
+            reg = li.reg
+            sa = self.split_analysis
+            sa.analyze(li)
+            if (
+                not done["v"]
+                and not self.interval_is_in_one_mbb(reg)
+                and sa.through_blocks()
+            ):
+                lre = self.new_live_range_edit(li)
+                se = self.split_editor
+                se.reset(lre, mir.ComplementSpillMode.SM_Speed)
+                idx = se.open_intv()
+                cur = self.new_interference_cursor()
+                self.set_interference_physreg(
+                    cur, next(iter(self.allocation_order(li)))
+                )
+                for bi in sa.use_blocks():
+                    n = bi.mbb.number
+                    cur.move_to_block(n)
+                    if bi.live_in and bi.live_out:
+                        se.split_live_through_block(
+                            n, idx, cur.first(), idx, cur.last()
+                        )
+                    elif bi.live_in:
+                        se.split_reg_in_block(bi, idx, cur.first())
+                    elif bi.live_out:
+                        se.split_reg_out_block(bi, idx, cur.last())
+                for n in sa.through_blocks():
+                    cur.move_to_block(n)
+                    se.split_live_through_block(n, idx, cur.first(), idx, cur.last())
+                se.finish()
+                done["nvregs"] = len(lre.new_vregs())
+                done["v"] = True
+                return None
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-sltb", Force)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thru")
+        _build_three_block(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-sltb")
+    assert done["v"]
+    assert done["nvregs"] >= 1  # the split produced a new interval
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thru", obj)
+    assert fn(9) == 9 and fn(-4) == -4
+    assert_no_leaks()
