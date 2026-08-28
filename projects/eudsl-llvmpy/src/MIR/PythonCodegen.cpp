@@ -34,6 +34,7 @@
 #include <llvm/PassRegistry.h>
 
 #include <nanobind/nanobind.h>
+#include <nanobind/operators.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
@@ -506,9 +507,10 @@ public:
   void pyInit(llvm::VirtRegMap &vrm, llvm::LiveIntervals &lis,
               llvm::LiveRegMatrix &mat, llvm::Spiller &sp,
               llvm::MachineFunction &mfn, llvm::SplitAnalysis *sa,
-              llvm::SplitEditor *se) {
+              llvm::SplitEditor *se, llvm::MachineBlockFrequencyInfo *mbfi) {
     splitAnalysis = sa;
     splitEditor = se;
+    blockFreqInfo = mbfi;
     NativeRegAlloc::pyInit(vrm, lis, mat, sp, mfn);
   }
 
@@ -523,6 +525,9 @@ public:
   llvm::MachineFunction *machineFunction() { return mf; }
   llvm::SplitAnalysis *splitAnalysisPtr() { return splitAnalysis; }
   llvm::SplitEditor *splitEditorPtr() { return splitEditor; }
+  llvm::MachineBlockFrequencyInfo *blockFrequencyInfo() {
+    return blockFreqInfo;
+  }
 
   // Physregs, in target allocation order, that Python may try for `li`.
   std::vector<unsigned> allocationOrder(const llvm::LiveInterval &li) {
@@ -589,6 +594,7 @@ private:
   llvm::SmallVectorImpl<llvm::Register> *currentSplit = nullptr;
   llvm::SplitAnalysis *splitAnalysis = nullptr;
   llvm::SplitEditor *splitEditor = nullptr;
+  llvm::MachineBlockFrequencyInfo *blockFreqInfo = nullptr;
   std::unique_ptr<llvm::LiveRangeEdit> heldEdit;
 };
 
@@ -741,7 +747,7 @@ public:
     }
     auto *base =
         static_cast<PyRegAllocBase *>(nb::inst_ptr<PyRegAllocBase>(obj));
-    base->pyInit(vrm, lis, mat, *spiller, mfn, &sa, &se);
+    base->pyInit(vrm, lis, mat, *spiller, mfn, &sa, &se, &mbfi);
     base->pyAllocate();
     // Hold the instance until the pass is destroyed so its C++ subobject (and
     // any Python-recorded witness state) outlives this call; dropped under the
@@ -966,7 +972,14 @@ void populate_python_codegen(nb::module_ &m) {
           nb::rv_policy::reference, "li"_a,
           "A LiveRangeEdit over the current split-vreg vector, for "
           "split_editor.reset. Only valid inside select_or_split; do not "
-          "retain past the call.");
+          "retain past the call.")
+      .def_prop_ro(
+          "mbfi",
+          [](PyRegAllocBase &self) { return self.blockFrequencyInfo(); },
+          nb::rv_policy::reference,
+          "The MachineBlockFrequencyInfo for frequency-weighted cost models. "
+          "Borrowed and valid only within an allocator callback; do not "
+          "retain.");
 
   // A virtual register's live interval: the allocator receives one per
   // select_or_split call and queries/assigns it against the matrix.
@@ -981,6 +994,53 @@ void populate_python_codegen(nb::module_ &m) {
 
   nb::class_<llvm::VirtRegMap>(m, "VirtRegMap");
   nb::class_<llvm::Spiller>(m, "Spiller");
+
+  // A block's estimated execution frequency as a fixed-point number scaled by
+  // the entry frequency (llvm::BlockFrequency). Comparable and additive so a
+  // cost model can weigh and combine frequencies directly.
+  nb::class_<llvm::BlockFrequency>(m, "BlockFrequency")
+      .def(nb::init<uint64_t>(), "freq"_a)
+      .def_static("max", &llvm::BlockFrequency::max,
+                  "The saturation value (maximum possible frequency).")
+      .def("get_frequency", &llvm::BlockFrequency::getFrequency,
+           "The raw fixed-point frequency value.")
+      .def(nb::self < nb::self, "other"_a)
+      .def(nb::self <= nb::self, "other"_a)
+      .def(nb::self > nb::self, "other"_a)
+      .def(nb::self >= nb::self, "other"_a)
+      .def(nb::self == nb::self, "other"_a)
+      .def(nb::self != nb::self, "other"_a)
+      .def(nb::self + nb::self, "other"_a)
+      .def(nb::self - nb::self, "other"_a)
+      .def("__repr__", [](const llvm::BlockFrequency &f) {
+        return "BlockFrequency(" + std::to_string(f.getFrequency()) + ")";
+      });
+
+  // Frequency estimates per block, driving frequency-weighted spill/split cost
+  // models (the weighting RAGreedy applies). Frequencies are relative to the
+  // entry block; block_freq_relative_to_entry_block gives the ratio directly.
+  nb::class_<llvm::MachineBlockFrequencyInfo>(m, "MachineBlockFrequencyInfo")
+      .def(
+          "block_freq",
+          [](llvm::MachineBlockFrequencyInfo &mbfi,
+             llvm::MachineBasicBlock *mbb) { return mbfi.getBlockFreq(mbb); },
+          "mbb"_a,
+          "Estimated frequency of `mbb` (compare against other blocks or "
+          "entry_freq).")
+      .def(
+          "block_freq_relative_to_entry_block",
+          [](llvm::MachineBlockFrequencyInfo &mbfi,
+             llvm::MachineBasicBlock *mbb) {
+            return mbfi.getBlockFreqRelativeToEntryBlock(mbb);
+          },
+          "mbb"_a, "Frequency of `mbb` as a ratio to the entry block (1.0).")
+      .def(
+          "entry_freq",
+          [](llvm::MachineBlockFrequencyInfo &mbfi) {
+            return mbfi.getEntryFreq();
+          },
+          "Frequency of the entry block (the denominator of the relative "
+          "frequencies).");
 
   // A program point. Live ranges and the split editor are expressed in terms of
   // these; they order the instructions of a function.

@@ -346,6 +346,65 @@ def test_high_pressure_executes():
     assert_no_leaks()
 
 
+# -- MachineBlockFrequencyInfo ------------------------------------------------
+
+
+def test_block_frequency_info_accessors():
+    """Read block frequencies from inside select_or_split: the entry block's
+    relative frequency is 1.0 and its BlockFrequency equals entry_freq, and a
+    conditionally-reached block is strictly less frequent than the entry (both
+    as a ratio and as a raw BlockFrequency)."""
+    saw = {}
+
+    class FreqReader(mir.RegAllocBase):
+        def select_or_split(self, li):
+            if not saw:
+                mbfi = self.mbfi
+                mf = self.machine_function
+                entry, b1 = mf.blocks[0], mf.blocks[1]
+                saw["entry_rel"] = mbfi.block_freq_relative_to_entry_block(entry)
+                saw["b1_rel"] = mbfi.block_freq_relative_to_entry_block(b1)
+                saw["entry_freq"] = mbfi.entry_freq()
+                saw["entry_block_freq"] = mbfi.block_freq(entry)
+                saw["b1_block_freq"] = mbfi.block_freq(b1)
+                # Exercise the BlockFrequency arithmetic/limit surface.
+                saw["sum"] = mbfi.block_freq(entry) + mbfi.block_freq(b1)
+                saw["diff"] = mbfi.block_freq(entry) - mbfi.block_freq(b1)
+                saw["max"] = mir.BlockFrequency.max()
+                saw["repr"] = repr(mbfi.block_freq(entry))
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-mbfi", FreqReader)
+    obj = _emit("ra-mbfi", FreqReader, builder=_build_cbz, fn="cbz")
+    assert obj[:4] == b"\x7fELF"
+    assert saw["entry_rel"] == 1.0
+    assert saw["entry_freq"].get_frequency() > 0
+    # The entry block's BlockFrequency equals the relative denominator
+    # (exercises BlockFrequency.__eq__).
+    assert saw["entry_block_freq"] == saw["entry_freq"]
+    # b1 is only reached on the not-taken branch, so it cannot exceed entry.
+    assert 0.0 < saw["b1_rel"] <= saw["entry_rel"]
+    # block_freq must actually depend on its mbb argument: the conditionally
+    # reached b1 is strictly less frequent than the entry (BlockFrequency.__lt__).
+    assert saw["b1_block_freq"] < saw["entry_block_freq"]
+    assert saw["b1_block_freq"] != saw["entry_block_freq"]
+    assert saw["entry_block_freq"] > saw["b1_block_freq"]
+    assert saw["entry_block_freq"] >= saw["b1_block_freq"]
+    assert saw["b1_block_freq"] <= saw["entry_block_freq"]
+    # BlockFrequency arithmetic and saturation limit.
+    ef = saw["entry_block_freq"].get_frequency()
+    bf = saw["b1_block_freq"].get_frequency()
+    assert saw["sum"].get_frequency() == ef + bf
+    assert saw["diff"].get_frequency() == ef - bf
+    assert saw["max"].get_frequency() > ef
+    assert saw["repr"] == f"BlockFrequency({ef})"
+    assert_no_leaks()
+
+
 # -- SlotIndex / LiveIntervals accessors --------------------------------------
 
 

@@ -417,8 +417,10 @@ append new virtual registers that get re-enqueued). The allocator queries and
 mutates state through `self`: `allocation_order(li)` (physregs to try, in target
 order), `self.matrix` (`is_free`/`check_interference`/`assign`/`unassign`),
 `self.lis` (LiveIntervals: `instruction_index`, `mbb_start_index`,
-`mbb_end_index`, `has_interval`, `interval`), `self.vrm`, and
-`self.machine_function`. Optional overrides: `enqueue(reg)`/`dequeue()` (drive
+`mbb_end_index`, `has_interval`, `interval`), `self.vrm`,
+`self.machine_function`, and `self.mbfi` (MachineBlockFrequencyInfo:
+`block_freq`, `block_freq_relative_to_entry_block`, `entry_freq`, for
+frequency-weighted spill/split cost models). Optional overrides: `enqueue(reg)`/`dequeue()` (drive
 the assignment order; both traffic in register ids -- stable across splitting,
 unlike interval objects -- and `dequeue` returns a reg id or `None`; the default
 is a spill-weight priority queue), `post_optimization()`, and
