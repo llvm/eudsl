@@ -78,6 +78,22 @@ def calc_global_split_cost(boundary_freqs):
     return float(sum(boundary_freqs))
 
 
+# RAGreedy's float-comparison hysteresis (2007/2048), so a marginally-better
+# split candidate doesn't oscillate the choice.
+_HYSTERESIS = 2007 / 2048.0
+
+# Stand-in for LLVM's huge_valf sentinel weight (uninhabitable gap).
+_HUGE_VALF = float("inf")
+
+
+def normalize_spill_weight(use_def_freq, size, instr_dist):
+    """VirtRegAuxInfo::normalizeSpillWeight: use/def frequency divided by the
+    interval size plus a fixed 25-instruction floor, so tiny intervals are
+    ranked by use count and large ones by use density. `size` and `instr_dist`
+    are in slot-index units. Mirrors CalcSpillWeights.h exactly."""
+    return use_def_freq / (size + 25 * instr_dist)
+
+
 class RAGreedy(mir.RegAllocBase):
     """Faithful reproduction of llvm::RegAllocGreedy."""
 
@@ -317,11 +333,112 @@ class RAGreedy(mir.RegAllocBase):
                 self._set_stage(r, LiveRangeStage.RS_Spill)
         return True
 
+    def _local_gap_weights(self, li, physreg, use_slots):
+        """calcGapWeights(PhysReg) for a local interval: for each gap between
+        consecutive `use_slots`, the largest interferer spill weight overlapping
+        it. Built from the vregs assigned to `physreg` that interfere with `li`;
+        their segments are mapped into the use-slot distance space and fed to the
+        pure calc_gap_weights helper.
+
+        Fidelity note: RAGreedy also marks gaps overlapping fixed reg-unit or
+        reg-mask interference as huge_valf. This reproduces the virtual-register
+        interference only; over the allocatable order (reserved regs excluded)
+        and call-free ranges, that is the whole picture."""
+        base = use_slots[0]
+        islots = [base.distance(u) for u in use_slots]
+        spans = []
+        for ivreg in self.interfering_vregs(li, physreg):
+            iv = self.lis.interval(ivreg)
+            w = iv.weight
+            for seg in iv.segments():
+                spans.append((base.distance(seg.start), base.distance(seg.end), w))
+        return calc_gap_weights(islots, spans)
+
     def _try_local_split(self, li):
-        """Local (single-block) splitting via the gap-weight scan. Not yet
-        implemented; falls through so the range spills. (Faithful version lands
-        with the calcGapWeights interference surface.)"""
-        return False
+        """Local (single-block) splitting: find the contiguous run of uses worth
+        keeping in a register (best estimated spill weight minus the largest gap
+        interference it must evict) and split around it. Returns True if a split
+        was applied. Faithful port of RegAllocGreedy::tryLocalSplit."""
+        sa = self.split_analysis
+        use_blocks = sa.use_blocks()
+        if len(use_blocks) != 1:
+            return False
+        bi = use_blocks[0]
+        uses = list(sa.get_use_slots())
+        if len(uses) <= 2:
+            return False
+        num_gaps = len(uses) - 1
+        instr_dist = self.slot_index_instr_distance()
+        progress_required = self._get_stage(li.reg) >= LiveRangeStage.RS_Split2
+
+        best_before, best_after, best_diff = num_gaps, 0, 0.0
+        block_freq = self.spill_placer.get_block_frequency(bi.mbb).get_frequency() * (
+            1.0 / self.mbfi.entry_freq().get_frequency()
+        )
+
+        for physreg in self.allocation_order(li):
+            gap_weight = self._local_gap_weights(li, physreg, uses)
+            split_before, split_after = 0, 1
+            max_gap = gap_weight[0]
+            while True:
+                live_before = split_before != 0 or bi.live_in
+                live_after = split_after != num_gaps or bi.live_out
+                if not live_before and not live_after:
+                    break
+                shrink = True
+                new_gaps = live_before + split_after - split_before + live_after
+                legal = (not progress_required) or new_gaps < num_gaps
+                if legal and max_gap < _HUGE_VALF:
+                    # Estimate the split range's spill weight: each kept
+                    # instruction reads or writes the register once.
+                    size = uses[split_before].distance(uses[split_after]) + (
+                        (live_before + live_after) * instr_dist
+                    )
+                    est_weight = normalize_spill_weight(
+                        block_freq * (new_gaps + 1), size, instr_dist
+                    )
+                    if est_weight * _HYSTERESIS >= max_gap:
+                        shrink = False
+                        diff = est_weight - max_gap
+                        if diff > best_diff:
+                            best_diff = _HYSTERESIS * diff
+                            best_before, best_after = split_before, split_after
+                if shrink:
+                    split_before += 1
+                    if split_before < split_after:
+                        # Recompute the running max when the dropped gap was it.
+                        if gap_weight[split_before - 1] >= max_gap:
+                            max_gap = gap_weight[split_before]
+                            for i in range(split_before + 1, split_after):
+                                max_gap = max(max_gap, gap_weight[i])
+                        continue
+                    max_gap = 0.0
+                if split_after >= num_gaps:
+                    break
+                max_gap = max(max_gap, gap_weight[split_after])
+                split_after += 1
+
+        if best_before == num_gaps:
+            return False  # no candidate window
+
+        lre = self.new_live_range_edit(li)
+        se = self.split_editor
+        se.reset(lre)
+        se.open_intv()
+        seg_start = se.enter_intv_before(uses[best_before])
+        seg_stop = se.leave_intv_after(uses[best_after])
+        se.use_intv(seg_start, seg_stop)
+        intv_map = se.finish()
+        # If the new range has as many instructions as before, mark it RS_Split2
+        # so a further split is forced to make progress (matching tryLocalSplit).
+        live_before = best_before != 0 or bi.live_in
+        live_after = best_after != num_gaps or bi.live_out
+        new_gaps = live_before + best_after - best_before + live_after
+        if new_gaps >= num_gaps:
+            for i, r in enumerate(lre.new_vregs()):
+                if i < len(intv_map) and intv_map[i] == 1:
+                    self._set_stage(r, LiveRangeStage.RS_Split2)
+        return True
 
     # -- tryEvict / canEvictInterference ------------------------------------
     def _can_evict_interference(self, li, physreg):

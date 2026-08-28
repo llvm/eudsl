@@ -310,3 +310,83 @@ def test_block_split_executes_under_pressure():
     assert fn(-4) == _thru_pressure_closed_form(-4)
     assert "split" in traces.values()
     assert_no_leaks()
+
+
+def _build_local_multiuse(mmi):
+    """Single block: v = COPY w0, then acc folded from v four times
+    (acc = v; acc = acc + v; ... = 5*v). v is a single-block interval with
+    several use slots -- the shape tryLocalSplit's gap scan operates on.
+    gaps(x) = 5x."""
+    mf = mmi.machine_function("gaps")
+    b = mir.MachineIRBuilder(mf)
+    gpr32 = mf.reg_class("GPR32")
+    w0 = mf.physreg("W0")
+    entry = mf.blocks[0]
+    entry.add_livein(w0)
+    copy = mf.opcode("COPY")
+    addrr = mf.opcode("ADDWrr")
+    v = mf.create_vreg(gpr32)
+    c = b.build_instr(copy)
+    c.add_reg(v, is_def=True)
+    c.add_reg(w0)
+    acc = v
+    for _ in range(4):
+        n = mf.create_vreg(gpr32)
+        ins = b.build_instr(addrr)
+        ins.add_reg(n, is_def=True)
+        ins.add_reg(acc)
+        ins.add_reg(v)
+        acc = n
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(acc)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+def test_local_split_executes():
+    """Faithful tryLocalSplit: the gap-weight scan picks a keep-in-register
+    window and the SplitEditor applies it, preserving semantics.
+
+    Fidelity note: local splitting only fires in the natural assign->evict->
+    split flow for a >2-use single-block interval that loses the register
+    competition -- which greedy's priority (large multi-use ranges are assigned
+    early) makes very hard to provoke on small hand-built MIR. Like the repo's
+    other split-machinery tests (ra-split-1, ra-split-thru), this harness forces
+    the stage on the first eligible interval to exercise the ported gap scan
+    end-to-end; the natural-flow path is covered by the differential oracle
+    against native greedy."""
+    forced = {"done": False}
+
+    class Force(mir.RAGreedy):
+        def select_or_split(self, li):
+            reg = li.reg
+            if not forced["done"]:
+                sa = self.split_analysis
+                sa.analyze(li)
+                if (
+                    self.interval_is_in_one_mbb(reg)
+                    and len(sa.use_blocks()) == 1
+                    and len(list(sa.get_use_slots())) > 2
+                    and self._try_local_split(li)
+                ):
+                    forced["done"] = True
+                    self.trace[reg] = "local_split"
+                    return None
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-localsplit", Force)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "gaps")
+        _build_local_multiuse(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-localsplit")
+    assert forced["done"], "the local-split gap scan produced a split"
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "gaps", obj)
+    assert fn(3) == 15  # 5 * 3
+    assert fn(-2) == -10
+    assert_no_leaks()
