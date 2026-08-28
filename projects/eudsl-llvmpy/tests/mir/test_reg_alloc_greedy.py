@@ -1952,6 +1952,122 @@ def test_split_around_region_isolated_and_through_arms():
     assert_no_leaks()
 
 
+def test_bitvector_reset_clears_bit():
+    """BitVector.reset(i) clears a previously-set bit (the mutator used to
+    un-claim an edge bundle)."""
+    bv = mir.BitVector()
+    bv.resize(4)
+    bv.set(1)
+    bv.set(3)
+    assert sorted(bv.set_bits()) == [1, 3]
+    bv.reset(1)
+    assert sorted(bv.set_bits()) == [3]
+    assert bv.count() == 1
+
+
+def _build_self_loop(mmi):
+    """b0 defines v; b1 is a self-looping header (CBNZW v branches back to
+    itself, falling through to b2); b2 uses v. Gives MachineLoopInfo a real
+    loop so loop_header_number resolves an enclosing header. Not executed (the
+    loop-invariant branch would not terminate)."""
+    mf = mmi.machine_function("loop")
+    b = mir.MachineIRBuilder(mf)
+    gpr32 = mf.reg_class("GPR32")
+    w0 = mf.physreg("W0")
+    b0 = mf.blocks[0]
+    b1 = mf.create_block()
+    b2 = mf.create_block()
+    b0.add_livein(w0)
+    copy = mf.opcode("COPY")
+    b.set_block(b0)
+    v = mf.create_vreg(gpr32)
+    c = b.build_instr(copy)
+    c.add_reg(v, is_def=True)
+    c.add_reg(w0)
+    j0 = b.build_instr(mf.opcode("B"))
+    j0.add_mbb(b1)
+    b0.add_successor(b1)
+    b.set_block(b1)
+    cbnz = b.build_instr(mf.opcode("CBNZW"))
+    cbnz.add_reg(v)
+    cbnz.add_mbb(b1)  # back-edge to self
+    b1.add_successor(b1)
+    b1.add_successor(b2)
+    b.set_block(b2)
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(v)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+def test_loop_header_number_resolves_enclosing_loop():
+    """loop_header_number returns the enclosing loop's header for a block inside
+    a loop (the non-trivial MachineLoopInfo path), and -1 for a block that is in
+    no loop."""
+    state = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            if "hdr" not in state:
+                # b1 (number 1) is the self-loop header; b0 (number 0) is not in
+                # any loop.
+                state["hdr"] = self.loop_header_number(1)
+                state["none"] = self.loop_header_number(0)
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-loop", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "loop")
+        _build_self_loop(mmi)
+        mmi.regalloc_assignments(regalloc="ra-greedy-loop")
+    assert state["hdr"] == 1  # the loop header block number
+    assert state["none"] == -1  # b0 is not in a loop
+    assert_no_leaks()
+
+
+def test_split_editor_split_single_block_executes():
+    """Drive the high-level SplitEditor::splitSingleBlock binding directly:
+    isolate each use block's uses into its own interval (what splitAroundRegion
+    does for a use block no candidate covers), finish, and confirm the result
+    still computes thru(x) == x."""
+    done = {"v": False, "nvregs": 0}
+
+    class Force(mir.RAGreedy):
+        def select_or_split(self, li):
+            sa = self.split_analysis
+            sa.analyze(li)
+            if not done["v"] and not self.interval_is_in_one_mbb(li.reg):
+                lre = self.new_live_range_edit(li)
+                se = self.split_editor
+                se.reset(lre, mir.ComplementSpillMode.SM_Speed)
+                for bi in sa.use_blocks():
+                    se.split_single_block(bi)
+                se.finish()
+                done["nvregs"] = len(lre.new_vregs())
+                done["v"] = True
+                return None
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-sssb", Force)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thru")
+        _build_three_block(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-sssb")
+    assert done["v"]
+    assert done["nvregs"] >= 1
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thru", obj)
+    assert fn(9) == 9 and fn(-4) == -4
+    assert_no_leaks()
+
+
 # --------------------------------------------------------------------------
 # Unit tests for the region-split cost-model branches that the hand-built MIR
 # corpus cannot steer precisely (edge bundles are shared across blocks, so a

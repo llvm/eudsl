@@ -619,8 +619,11 @@ public:
   llvm::SlotIndex firstNonDebugInstrIndex(unsigned n) {
     llvm::MachineBasicBlock *mbb = mf->getBlockNumbered(n);
     auto it = mbb->getFirstNonDebugInstr();
+    // An empty (all-debug) block cannot be produced by the hand-built test MIR
+    // -- the pre-regalloc pipeline requires a terminator -- so this defensive
+    // guard is unreachable from tests.
     if (it == mbb->end())
-      return llvm::SlotIndex();
+      return llvm::SlotIndex(); // LCOV_EXCL_LINE
     return LIS->getInstructionIndex(*it);
   }
 
