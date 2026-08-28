@@ -1731,3 +1731,63 @@ def test_priority_pressure_accessors():
     assert remat["MOVi32imm"] is True
     assert remat["COPY"] is False
     assert_no_leaks()
+
+
+# -- eviction cost surface (canEvictInterference / isUnusedCalleeSavedReg) -----
+
+
+def test_eviction_cost_accessors():
+    """The read-only surface RAGreedy's eviction cost model uses: copy hints
+    (broken-hint accounting), callee-saved aliasing, and whether a physreg has
+    been used yet."""
+    saw = {}
+    hints = {}
+
+    class Reader(mir.RegAllocBase):
+        def select_or_split(self, li):
+            hints[li.reg] = (
+                self.reg_allocation_hints(li.reg),
+                self.simple_hint(li.reg),
+            )
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    if "used_after" not in saw:
+                        # is_phys_reg_used flips False->True across the assign.
+                        saw["used_before"] = self.matrix.is_phys_reg_used(preg)
+                        self.matrix.assign(li, preg)
+                        saw["used_after"] = self.matrix.is_phys_reg_used(preg)
+                        # The GPR32 order mixes callee-saved and caller-saved.
+                        csr = [
+                            self.last_callee_saved_alias(p)
+                            for p in self.allocation_order(li)
+                        ]
+                        saw["csr_nonzero"] = any(x != 0 for x in csr)
+                        saw["csr_zero"] = any(x == 0 for x in csr)
+                        return None  # assigned manually
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-evict-cost", Reader)
+    # _build_remat_const has both a copy-related vreg (x0 = COPY w0, hinted) and
+    # a non-copy vreg (v = MOVi32imm, no hint), so both the hinted and "none"
+    # contracts are exercised.
+    obj = _emit("ra-evict-cost", Reader, builder=_build_remat_const, fn="rematc")
+    assert obj[:4] == b"\x7fELF"
+    assert saw["used_before"] is False and saw["used_after"] is True
+    assert saw["csr_nonzero"] and saw["csr_zero"]
+    # The copy of a physreg carries an allocation hint; the constant def does not.
+    hinted = [r for r, ((_t, ids), _sh) in hints.items() if ids]
+    unhinted = [r for r, ((_t, ids), _sh) in hints.items() if not ids]
+    assert hinted, "a copy-related vreg has an allocation hint"
+    assert unhinted, "a non-copy vreg has no allocation hint"
+    (htype, hids), sh = hints[hinted[0]]
+    # A plain copy hint is target-independent (type 0). getSimpleHint returns a
+    # nonzero id only when there is exactly one simple hint -- true for this
+    # single-copy fixture, so simple_hint is that one hinted physreg.
+    assert htype == 0
+    assert sh != 0 and sh in hids, "simple_hint is the copy-hinted physreg"
+    # The "none" contracts: no ids, type 0, and simple_hint 0.
+    (u_type, u_ids), u_sh = hints[unhinted[0]]
+    assert u_type == 0 and u_ids == [] and u_sh == 0
+    assert_no_leaks()
