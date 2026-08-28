@@ -26,6 +26,58 @@ class LiveRangeStage(enum.IntEnum):
     RS_Memory = 5
 
 
+# RAGreedy's cost of introducing a callee-saved register that wasn't used yet;
+# it dominates so eviction prefers not to widen the callee-saved set.
+CSR_FIRST_TIME_COST = 1e9
+
+# A broken copy hint costs a fixed increment on top of the interferer weights
+# (RAGreedy nudges away from evicting a hinted assignment).
+BROKEN_HINT_COST = 1.0
+
+
+def eviction_cost(interferer_weights, broken_hint, is_unused_callee_saved):
+    """Cost of evicting `interferer_weights` off a candidate physreg.
+
+    Sum of the interferers' spill weights, plus a broken-hint penalty and the
+    unused-callee-saved bias. Lower is cheaper; callers pick the least-cost
+    evictable physreg.
+    """
+    cost = float(sum(interferer_weights))
+    if broken_hint:
+        cost += BROKEN_HINT_COST
+    if is_unused_callee_saved:
+        cost += CSR_FIRST_TIME_COST
+    return cost
+
+
+def calc_gap_weights(use_slots, interferer_spans):
+    """Per-gap maximum interference weight for a local interval.
+
+    `use_slots` is the sorted list of use positions; the gaps are the
+    consecutive intervals between them. `interferer_spans` are (start, end,
+    weight) triples. Returns one weight per gap: the largest weight of any
+    interferer whose [start, end) overlaps that gap (0.0 if none). Mirrors
+    RAGreedy::calcGapWeights.
+    """
+    gaps = [0.0] * max(len(use_slots) - 1, 0)
+    for i in range(len(gaps)):
+        lo, hi = use_slots[i], use_slots[i + 1]
+        for start, end, weight in interferer_spans:
+            if start < hi and lo < end:  # half-open overlap
+                if weight > gaps[i]:
+                    gaps[i] = weight
+    return gaps
+
+
+def calc_global_split_cost(boundary_freqs):
+    """Cost of a global split: the summed block frequency at each split
+    boundary (where a copy is inserted). Mirrors the accounting in
+    RAGreedy::calcGlobalSplitCost; the caller supplies the per-boundary
+    frequencies read from MachineBlockFrequencyInfo.
+    """
+    return float(sum(boundary_freqs))
+
+
 class RAGreedy(mir.RegAllocBase):
     """Faithful reproduction of llvm::RegAllocGreedy."""
 
