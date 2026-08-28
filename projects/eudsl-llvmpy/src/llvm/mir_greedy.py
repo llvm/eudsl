@@ -676,6 +676,29 @@ class RAGreedy(mir.RegAllocBase):
             cost = cost + sp.get_block_frequency_by_number(number)
         return cost
 
+    def _calc_compact_region(self, li, cand):
+        """RAGreedy::calcCompactRegion. The compact region removes all
+        through blocks; needs no interference (PhysReg unset). Returns False if
+        the range is already compact or the compact region is trivial."""
+        sa = self.split_analysis
+        if sa.num_through_blocks() == 0:
+            return False
+        cand.reset(0, cand.intf)  # PhysReg = NoRegister
+        self.set_interference_physreg(cand.intf, 0)
+        sp = self.spill_placer
+        sp.prepare(cand.live_bundles)
+        # Static cost is zero (no interference); a False here means no positive
+        # bundles, i.e. nothing to keep in a register.
+        cost, positive = self._add_split_constraints(cand.intf)
+        if not positive:
+            return False
+        if not self._grow_region(li, cand):
+            return False
+        sp.finish()
+        if not cand.live_bundles.count() > 0:
+            return False
+        return True
+
     # -- tryEvict / canEvictInterference ------------------------------------
     def _can_evict_interference(self, li, physreg):
         """True if every vreg interfering with `li` on `physreg` can be evicted:

@@ -1282,3 +1282,30 @@ def test_calc_global_split_cost_nonnegative():
     assert fn(3) == _thru_pressure_closed_form(3)
     assert saw["freq"] >= 0
     assert_no_leaks()
+
+
+def test_calc_compact_region_returns_bool():
+    saw = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            sa = self.split_analysis
+            sa.analyze(li)
+            if "done" not in saw:
+                saw["done"] = True
+                cand = GlobalSplitCandidate()
+                cand.reset(0, self.new_interference_cursor())
+                saw["compact"] = self._calc_compact_region(li, cand)
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-ccr", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thrup")
+        _build_thru_pressure(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-ccr")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thrup", obj)
+    assert fn(3) == _thru_pressure_closed_form(3)
+    assert isinstance(saw["compact"], bool)
+    assert_no_leaks()
