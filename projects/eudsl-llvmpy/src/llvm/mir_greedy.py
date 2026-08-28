@@ -595,6 +595,50 @@ class RAGreedy(mir.RegAllocBase):
             sp.add_constraints(constraints)
         return True
 
+    def _grow_region(self, li, cand):
+        """RAGreedy::growRegion. Expand the candidate's active through-block set
+        until it stops growing, applying through constraints (or a loop-IV-aware
+        pref-spill for the compact region). Returns False if the complexity
+        budget is exhausted or a spill is uninsertable."""
+        sa = self.split_analysis
+        sp = self.spill_placer
+        eb = self.edge_bundles
+        todo = set(sa.through_blocks())
+        added_to = 0
+        budget = _GROW_REGION_COMPLEXITY_BUDGET
+        while True:
+            for bundle in sp.get_recent_positive():
+                blocks = eb.get_blocks(bundle)
+                if len(blocks) >= budget:
+                    return False
+                budget -= len(blocks)
+                for block in blocks:
+                    if block not in todo:
+                        continue
+                    todo.discard(block)
+                    cand.active_blocks.append(block)
+            if len(cand.active_blocks) == added_to:
+                break
+            new_blocks = cand.active_blocks[added_to:]
+            if cand.phys_reg:
+                if not self._add_through_constraints(cand.intf, new_blocks):
+                    return False
+            else:
+                # Compact region: bias through blocks to spill, except a loop
+                # header + its internal blocks (keep the IV live header<->latch).
+                pref_spill = True
+                if sa.looks_like_loop_iv() and len(new_blocks) >= 2:
+                    hdr = self.loop_header_number(new_blocks[0])
+                    if hdr == new_blocks[0] and all(
+                        self.loop_header_number(b) == hdr for b in new_blocks[1:]
+                    ):
+                        pref_spill = False
+                if pref_spill:
+                    sp.add_pref_spill(new_blocks, True)
+            added_to = len(cand.active_blocks)
+            sp.iterate()
+        return True
+
     # -- tryEvict / canEvictInterference ------------------------------------
     def _can_evict_interference(self, li, physreg):
         """True if every vreg interfering with `li` on `physreg` can be evicted:
