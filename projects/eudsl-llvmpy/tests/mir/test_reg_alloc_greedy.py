@@ -1037,3 +1037,40 @@ def test_interference_cursor_reports_per_block_interference():
     # first allocatable physreg), so the cursor reports interference here.
     assert checks["has"] is True
     assert_no_leaks()
+
+
+def test_region_split_analysis_accessors():
+    """The region-split SplitAnalysis/EdgeBundles/loop accessors read back."""
+    saw = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            if "done" not in saw and not self.interval_is_in_one_mbb(li.reg):
+                saw["done"] = True
+                sa = self.split_analysis
+                sa.analyze(li)
+                b0 = sa.use_blocks()[0].mbb.number
+                saw["fsp_valid"] = sa.first_split_point(b0).is_valid()
+                saw["num_live"] = sa.num_live_blocks()
+                saw["count_live"] = sa.count_live_blocks(li)
+                saw["loop_iv"] = sa.looks_like_loop_iv()
+                eb = self.edge_bundles
+                saw["bundle"] = eb.get_bundle_number(b0, True)
+                saw["loop_hdr"] = self.loop_header_number(b0)
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-rsa", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thru")
+        _build_three_block(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-rsa")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thru", obj)
+    assert fn(9) == 9
+    assert saw["num_live"] >= 2
+    assert saw["count_live"] >= 2
+    assert isinstance(saw["loop_iv"], bool)
+    assert saw["bundle"] >= 0
+    assert saw["loop_hdr"] == -1  # straight-line CFG: no loop
+    assert_no_leaks()

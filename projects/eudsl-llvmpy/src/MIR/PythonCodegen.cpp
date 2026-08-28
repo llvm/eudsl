@@ -555,13 +555,14 @@ public:
               llvm::MachineFunction &mfn, llvm::SplitAnalysis *sa,
               llvm::SplitEditor *se, llvm::MachineBlockFrequencyInfo *mbfi,
               llvm::EdgeBundles *eb, llvm::SpillPlacement *spl,
-              llvm::VirtRegAuxInfo *vrai) {
+              llvm::VirtRegAuxInfo *vrai, llvm::MachineLoopInfo *ml) {
     splitAnalysis = sa;
     splitEditor = se;
     blockFreqInfo = mbfi;
     edgeBundles = eb;
     spillPlacer = spl;
     auxInfo = vrai;
+    loops = ml;
     regCosts = mfn.getSubtarget().getRegisterInfo()->getRegisterCosts(mfn);
     NativeRegAlloc::pyInit(vrm, lis, mat, sp, mfn);
     // Matches RAGreedy::IntfCache.init: MF, the matrix's per-regunit unions,
@@ -600,6 +601,17 @@ public:
   void cursorSetPhysReg(llvm::InterferenceCache::Cursor &cur,
                         unsigned physreg) {
     cur.setPhysReg(intfCache, llvm::MCRegister(physreg));
+  }
+
+  // Header block number of the innermost loop containing `mbbNumber`, or -1 if
+  // none. Reproduces growRegion's looksLikeLoopIV header check without exposing
+  // the loop tree.
+  int loopHeaderNumber(unsigned mbbNumber) {
+    llvm::MachineBasicBlock *mbb = mf->getBlockNumbered(mbbNumber);
+    llvm::MachineLoop *loop = loops->getLoopFor(mbb);
+    if (!loop)
+      return -1;
+    return loop->getHeader()->getNumber();
   }
 
   // Physregs, in target allocation order, that Python may try for `li`.
@@ -818,6 +830,7 @@ private:
   llvm::EdgeBundles *edgeBundles = nullptr;
   llvm::SpillPlacement *spillPlacer = nullptr;
   llvm::VirtRegAuxInfo *auxInfo = nullptr;
+  llvm::MachineLoopInfo *loops = nullptr;
   llvm::ArrayRef<uint8_t> regCosts;
   std::unique_ptr<llvm::LiveRangeEdit> heldEdit;
   // Per-block interference cache for region-split cost queries (RAGreedy's
@@ -982,7 +995,7 @@ public:
     auto *base =
         static_cast<PyRegAllocBase *>(nb::inst_ptr<PyRegAllocBase>(obj));
     base->pyInit(vrm, lis, mat, *spiller, mfn, &sa, &se, &mbfi, &edgeBundles,
-                 &spillPlacer, &vrai);
+                 &spillPlacer, &vrai, &loops);
     base->pyAllocate();
     // Hold the instance until the pass is destroyed so its C++ subobject (and
     // any Python-recorded witness state) outlives this call; dropped under the
@@ -1311,7 +1324,11 @@ void populate_python_codegen(nb::module_ &m) {
           "point it at a physreg). Valid only within an allocator callback.")
       .def("set_interference_physreg", &PyRegAllocBase::cursorSetPhysReg,
            "cursor"_a, "physreg"_a,
-           "Point `cursor` at `physreg`'s per-block interference.");
+           "Point `cursor` at `physreg`'s per-block interference.")
+      .def("loop_header_number", &PyRegAllocBase::loopHeaderNumber,
+           "mbb_number"_a,
+           "Header block number of the innermost loop containing "
+           "`mbb_number`, or -1 if none.");
 
   // A value number: one definition of a virtual register's live interval.
   // Rematerialization is keyed on the VNInfo whose defining instruction is
@@ -1476,6 +1493,13 @@ void populate_python_codegen(nb::module_ &m) {
           "index in range by construction.")
       .def("num_bundles", &llvm::EdgeBundles::getNumBundles,
            "Total number of edge bundles in the CFG.")
+      .def(
+          "get_bundle_number",
+          [](llvm::EdgeBundles &eb, unsigned number, bool out) {
+            return eb.getBundle(number, out);
+          },
+          "mbb_number"_a, "out"_a,
+          "Edge bundle for block `mbb_number` (out-edges if `out`).")
       .def(
           "get_blocks",
           [](llvm::EdgeBundles &eb, unsigned bundle) {
@@ -1743,6 +1767,23 @@ void populate_python_codegen(nb::module_ &m) {
             return s.getLastSplitPoint(mbb);
           },
           "mbb"_a)
+      .def(
+          "first_split_point",
+          [](llvm::SplitAnalysis &s, unsigned n) {
+            return s.getFirstSplitPoint(n);
+          },
+          "mbb_number"_a, "First legal split point in block `mbb_number`.")
+      .def("num_live_blocks", &llvm::SplitAnalysis::getNumLiveBlocks,
+           "Number of blocks where the analyzed interval is live.")
+      .def(
+          "count_live_blocks",
+          [](llvm::SplitAnalysis &s, const llvm::LiveInterval &li) {
+            return s.countLiveBlocks(&li);
+          },
+          "li"_a, "Number of blocks where `li` is live (post-split check).")
+      .def("looks_like_loop_iv", &llvm::SplitAnalysis::looksLikeLoopIV,
+           "Whether the analyzed interval looks like a loop induction "
+           "variable.")
       .def(
           "is_original_endpoint",
           [](llvm::SplitAnalysis &s, llvm::SlotIndex idx) {
