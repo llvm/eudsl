@@ -1498,3 +1498,181 @@ def test_ragreedy_completion_accessors():
     assert saw["cost_oob_raised"], "register_cost bounds-checks the physreg id"
     assert_no_leaks()
     assert_no_leaks()
+
+
+# -- rematerialization write-path ---------------------------------------------
+
+
+_REMAT_CONST = 42
+_remat_log = {}
+
+
+def _build_remat_const(mmi):
+    """x in w0; v = MOVi32imm 42 (a rematerializable constant); r = x + v;
+    return r. v feeds an ADDWrr (not a copy to a physreg) so it survives
+    coalescing and reaches the allocator as a vreg needing a register."""
+    mf = mmi.machine_function("rematc")
+    b = mir.MachineIRBuilder(mf)
+    entry = mf.blocks[0]
+    gpr32 = mf.reg_class("GPR32")
+    w0 = mf.physreg("W0")
+    entry.add_livein(w0)
+    x0, v, r = (mf.create_vreg(gpr32) for _ in range(3))
+    c = b.build_instr(mf.opcode("COPY"))
+    c.add_reg(x0, is_def=True)
+    c.add_reg(w0)
+    mov = b.build_instr(mf.opcode("MOVi32imm"))
+    mov.add_reg(v, is_def=True)
+    mov.add_imm(_REMAT_CONST)
+    add = b.build_instr(mf.opcode("ADDWrr"))
+    add.add_reg(r, is_def=True)
+    add.add_reg(x0)
+    add.add_reg(v)
+    rc = b.build_instr(mf.opcode("COPY"))
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(r)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+class _RematAllocator(mir.RegAllocBase):
+    """When an interval's value is a rematerializable constant (a non-PHI
+    MOVi32imm def), rematerialize it at its use rather than keeping it in a
+    register: clone the def into a fresh vreg just before the use, redirect the
+    use onto it, compute the new interval, and eliminate the now-dead original
+    def. Every other interval allocates first-free."""
+
+    def select_or_split(self, li):
+        vni = li.get_vni_at(li.begin_index)
+        def_mi = self.lis.instr_from_index(vni.def_index)
+        remattable = (
+            def_mi is not None
+            and def_mi.opcode_name == "MOVi32imm"
+            and not vni.is_phi_def
+        )
+        if remattable and not _remat_log.get("done"):
+            entry = self.machine_function.blocks[0]
+            # Read the value-number surface before mutating -- shrink_to_uses /
+            # eliminate_dead_defs below invalidate li's value numbers.
+            vn_info = dict(
+                vni_id=vni.id,
+                num_val_nums=li.num_val_nums,
+                valno0_id=li.get_val_num_info(0).id,
+                is_unused=vni.is_unused,
+            )
+            # compute_interval/shrink_to_uses reject a reg with no interval
+            # instead of aborting (this virtual-register id -- high bit set,
+            # huge index -- has none).
+            bogus = (1 << 31) | (1 << 20)
+            guard_raised = 0
+            for probe in (self.lis.compute_interval, self.lis.shrink_to_uses):
+                try:
+                    probe(bogus)
+                except ValueError:
+                    guard_raised += 1
+            use_mi = None
+            for mi in entry.instructions:
+                for i in range(mi.num_operands):
+                    op = mi.operand(i)
+                    if (
+                        op.is_reg
+                        and op.is_use
+                        and op.reg.is_virtual
+                        and op.reg.id == li.reg
+                    ):
+                        use_mi = mi
+            assert use_mi is not None, "the constant's single use was located"
+            lre = self.new_live_range_edit(li)
+            rm = mir.LiveRangeEdit.Remat(vni)
+            rm.orig_mi = def_mi
+            orig_is_movi = rm.orig_mi.opcode_name == "MOVi32imm"
+            new_reg = lre.create()
+            slot = lre.rematerialize_at(
+                entry, use_mi, new_reg, rm, used_lanes=mir.LaneBitmask.get_all()
+            )
+            # A real rematerialized MOVi32imm was inserted at `slot` -- the
+            # structural proof remat happened (independent of the arithmetic).
+            remat_mi = self.lis.instr_from_index(slot)
+            remat_is_movi = remat_mi is not None and remat_mi.opcode_name == "MOVi32imm"
+            use_mi.substitute_register(li.reg, new_reg)
+            needs_split = self.lis.compute_interval(new_reg)
+            # The new reg's own value is defined exactly at the remat slot.
+            new_li = self.lis.interval(new_reg)
+            new_def_at_remat = new_li.get_vni_at(new_li.begin_index).def_index == slot
+            dead = self.lis.shrink_to_uses(li.reg)
+            lre.eliminate_dead_defs(dead, regs_being_spilled=[li.reg])
+            _remat_log.update(
+                done=True,
+                new_reg=new_reg,
+                slot_valid=slot.is_valid(),
+                ndead=len(dead),
+                needs_split=needs_split,
+                orig_is_movi=orig_is_movi,
+                remat_is_movi=remat_is_movi,
+                new_def_at_remat=new_def_at_remat,
+                guard_raised=guard_raised,
+                **vn_info,
+            )
+            return None
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        self.spill(li)
+        return None
+
+
+def test_rematerialize_constant_at_use_emits():
+    _remat_log.clear()
+    mir.register_regalloc("ra-remat", _RematAllocator)
+    obj = _emit("ra-remat", _RematAllocator, builder=_build_remat_const, fn="rematc")
+    assert obj[:4] == b"\x7fELF"
+    assert _remat_log["done"], "the rematerialization path ran"
+    assert _remat_log["slot_valid"], "the rematerialized def has a valid slot"
+    assert _remat_log["ndead"] >= 1, "the original constant def was eliminated"
+    # Structural proof (independent of the arithmetic result) that remat
+    # happened: a fresh MOVi32imm was inserted at the remat slot, and the new
+    # register's value is defined there.
+    assert _remat_log["remat_is_movi"], "a MOVi32imm was rematerialized at the use"
+    assert _remat_log["new_def_at_remat"], "the new reg is defined at the remat slot"
+    assert _remat_log["guard_raised"] == 2, "compute_interval/shrink_to_uses guard"
+    assert _remat_log["needs_split"] is False
+    assert _remat_log["num_val_nums"] == 1
+    assert _remat_log["valno0_id"] == _remat_log["vni_id"]
+    assert _remat_log["is_unused"] is False
+    assert _remat_log["orig_is_movi"], "orig_mi round-trips to the constant def"
+    assert_no_leaks()
+
+
+def test_lane_bitmask_surface():
+    """LaneBitmask (forwarded to rematerialize_at's used_lanes) is a usable
+    value type: all/none lanes, integer round-trip, and comparisons."""
+    all_lanes = mir.LaneBitmask.get_all()
+    no_lanes = mir.LaneBitmask.get_none()
+    assert all_lanes.any() and not all_lanes.none()
+    assert no_lanes.none() and not no_lanes.any()
+    assert all_lanes.get_as_integer() != 0
+    assert no_lanes.get_as_integer() == 0
+    assert all_lanes == mir.LaneBitmask(all_lanes.get_as_integer())
+    assert all_lanes != no_lanes
+    assert_no_leaks()
+
+
+@pytest.mark.skipif(not _IS_AARCH64, reason="executing hand-built AArch64 MIR")
+def test_rematerialize_constant_at_use_executes():
+    _remat_log.clear()
+    mir.register_regalloc("ra-remat-x", _RematAllocator)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "rematc")
+        _build_remat_const(mmi)
+        obj = mmi.emit_object(regalloc="ra-remat-x")
+        fn, j = _jit_call((ctypes.c_int32, ctypes.c_int32), "rematc", obj)
+        assert fn(5) == 5 + _REMAT_CONST
+        assert fn(100) == 100 + _REMAT_CONST
+        del j
+    assert _remat_log["done"], "the remat path drove the executed emission"
+    assert_no_leaks()
