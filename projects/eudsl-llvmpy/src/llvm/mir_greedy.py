@@ -180,20 +180,148 @@ class RAGreedy(mir.RegAllocBase):
         return None
 
     def select_or_split(self, li):
+        # Mirrors RegAllocGreedy::selectOrSplitImpl: assign -> evict -> wait for
+        # second round -> split -> spill. Returning a physreg makes the
+        # framework assign it; returning None with new vregs appended (via
+        # evict/split/spill) makes it re-enqueue those; returning None with
+        # nothing appended drops the range for this round.
         reg = li.reg
+
+        # First try assigning a free register.
         preg = self._try_assign(li)
         if preg is not None:
             self.trace[reg] = "assign"
             return preg
-        preg = self._try_evict(li)
-        if preg is not None:
-            self.trace[reg] = "evict"
-            return preg
-        # (split inserted by later tasks)
+
+        stage = self._get_stage(reg)
+
+        # Try to evict a less worthy range, but not for RS_Split ranges: they
+        # already failed to evict and must not get a second chance until split.
+        if stage != LiveRangeStage.RS_Split:
+            preg = self._try_evict(li)
+            if preg is not None:
+                self.trace[reg] = "evict"
+                return preg
+
+        # The first time we see a range, don't split or spill; wait until the
+        # second round, when all smaller ranges are allocated and the
+        # interference to split around is fully known.
+        if stage < LiveRangeStage.RS_Split:
+            self._set_stage(reg, LiveRangeStage.RS_Split)
+            self.enqueue(reg)
+            return None
+
+        # Second round: try splitting the range or its interferences.
+        if stage < LiveRangeStage.RS_Spill and li.size > 0:
+            if self._try_split(li):
+                self.trace[reg] = "split"
+                return None
+
+        # A range that is done (already a spill product) or not spillable has no
+        # spill recourse; faithfully this is tryLastChanceRecoloring territory,
+        # which is not implemented. It does not arise for well-formed MIR the
+        # assign/evict/split path resolves, so flag it rather than let the
+        # spiller abort on a double spill.
+        if stage >= LiveRangeStage.RS_Memory or not li.is_spillable:
+            raise NotImplementedError(
+                "last-chance recoloring is not implemented: reg "
+                f"{reg} at stage {int(stage)} is unspillable and unallocatable"
+            )
+
+        # Finally, spill the range itself; its reload/remat products go to the
+        # terminal RS_Memory stage (RAGreedy's RS_Done) so they are never split
+        # or spilled again.
         self.trace[reg] = "spill"
-        self.spill(li)
+        for product in self.spill(li):
+            self._set_stage(product, LiveRangeStage.RS_Memory)
         self._set_stage(reg, LiveRangeStage.RS_Memory)
         return None
+
+    # -- trySplit (RegAllocGreedy::trySplit) --------------------------------
+    def _try_split(self, li):
+        """Split `li` (local or global) so its pieces become assignable. Returns
+        True if new vregs were produced (the framework re-enqueues them). Region
+        splitting is not yet implemented, so multi-block ranges go straight to
+        per-block isolation (tryBlockSplit)."""
+        reg = li.reg
+        if self._get_stage(reg) >= LiveRangeStage.RS_Spill:
+            return False
+        sa = self.split_analysis
+        sa.analyze(li)
+        if self.interval_is_in_one_mbb(reg):
+            return self._try_local_split(li)
+        return self._try_block_split(li)
+
+    # -- tryBlockSplit (RegAllocGreedy::tryBlockSplit) ----------------------
+    def _should_split_single_block(self, bi, single_instrs):
+        """SplitAnalysis::shouldSplitSingleBlock for use block `bi`. Mirrors the
+        C++ predicate: always split multi-instruction blocks; for a single
+        instruction only split when the class is a proper subclass, and even
+        then not a lone copy nor a non-original endpoint."""
+        if not bi.is_one_instr():
+            return True
+        if not single_instrs:
+            return False
+        # Splitting a live-through range always makes progress.
+        if bi.live_in and bi.live_out:
+            return True
+        # No point isolating a copy: it has no register-class constraint.
+        if self.is_copy_like_at(bi.first_instr):
+            return False
+        # Don't isolate an endpoint an earlier split created.
+        return self.split_analysis.is_original_endpoint(bi.first_instr)
+
+    def _split_single_block(self, se, bi):
+        """SplitEditor::splitSingleBlock for use block `bi`: open an interval
+        spanning the block's uses, clamped to the block's last legal split
+        point, overlapping into a live-out tail when the last use is past it."""
+        se.open_intv()
+        last_sp = self.split_analysis.last_split_point(bi.mbb)
+        first = bi.first_instr
+        seg_start = se.enter_intv_before(first if first < last_sp else last_sp)
+        if (not bi.live_out) or bi.last_instr < last_sp:
+            se.use_intv(seg_start, se.leave_intv_after(bi.last_instr))
+        else:
+            # The last use is after the last valid split point.
+            seg_stop = se.leave_intv_before(last_sp)
+            se.use_intv(seg_start, seg_stop)
+            se.overlap_intv(seg_stop, bi.last_instr)
+
+    def _try_block_split(self, li):
+        """Isolate `li` around each use block SplitAnalysis says is worth
+        splitting. Returns True if any block was split (new vregs produced).
+        The remainder interval (IntvMap == 0) goes straight to spilling; the
+        new local ranges stay RS_New so they can re-compete. Mirrors
+        RAGreedy::tryBlockSplit."""
+        reg = li.reg
+        single_instrs = self.is_proper_sub_class(reg)
+        lre = self.new_live_range_edit(li)
+        se = self.split_editor
+        se.reset(lre, mir.ComplementSpillMode.SM_Speed)
+        for bi in self.split_analysis.use_blocks():
+            if self._should_split_single_block(bi, single_instrs):
+                self._split_single_block(se, bi)
+        new_vregs_before = lre.new_vregs()
+        if not new_vregs_before:
+            return False  # no blocks were split
+        intv_map = se.finish()
+        # The remainder (IntvMap[i] == 0) that is still RS_New goes to spilling;
+        # the isolated local ranges keep RS_New to re-compete.
+        new_vregs = lre.new_vregs()
+        for i, r in enumerate(new_vregs):
+            if (
+                i < len(intv_map)
+                and intv_map[i] == 0
+                and self._get_stage(r) == LiveRangeStage.RS_New
+            ):
+                self._set_stage(r, LiveRangeStage.RS_Spill)
+        return True
+
+    def _try_local_split(self, li):
+        """Local (single-block) splitting via the gap-weight scan. Not yet
+        implemented; falls through so the range spills. (Faithful version lands
+        with the calcGapWeights interference surface.)"""
+        return False
 
     # -- tryEvict / canEvictInterference ------------------------------------
     def _can_evict_interference(self, li, physreg):
@@ -201,8 +329,20 @@ class RAGreedy(mir.RegAllocBase):
         each must have a strictly smaller spill weight, and the cascade rule
         must not forbid it (an interferer whose cascade >= li's cannot be
         evicted by li). Mirrors canEvictInterference."""
+        # Only virtual-register interference is evictable. If `physreg` carries
+        # fixed, reg-unit, or reg-mask interference (checkInterference returns a
+        # kind worse than IK_VirtReg), it cannot be freed by eviction -- this is
+        # the first guard in canEvictInterferenceBasedOnCost. Without it a
+        # physreg with only non-vreg interference and no evictable vregs looks
+        # "evictable for free" and gets assigned over a live occupant.
+        kind = self.matrix.check_interference(li, physreg)
+        if kind.value > mir.InterferenceKind.IK_VirtReg.value:
+            return False
         li_cascade = self._get_cascade(li.reg)
-        for ivreg in self.interfering_vregs(li, physreg):
+        interferers = self.interfering_vregs(li, physreg)
+        if not interferers:
+            return False
+        for ivreg in interferers:
             iv = self.lis.interval(ivreg)
             if iv.weight >= li.weight:
                 return False
@@ -238,9 +378,10 @@ class RAGreedy(mir.RegAllocBase):
         for ivreg in list(self.interfering_vregs(li, best)):
             iv = self.lis.interval(ivreg)
             self.matrix.unassign(iv)
-            # The evicted range advances to RS_Split and inherits li's cascade
-            # so it can't evict li back within this cascade.
-            self._set_stage(ivreg, max(self._get_stage(ivreg), LiveRangeStage.RS_Split))
+            # Evicted ranges inherit li's cascade so they can't evict li back
+            # within this cascade (the infinite-eviction guard). Their stage is
+            # left unchanged -- mirroring evictInterference, which sets only the
+            # cascade; the range re-competes from wherever it already was.
             self._cascade[ivreg] = li_cascade
             self.enqueue(ivreg)
         # Evicting the interferers frees `best`; return it and let the framework
