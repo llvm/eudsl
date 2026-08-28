@@ -519,6 +519,41 @@ build has assertions enabled, an invalid split aborts with a diagnostic rather
 than emitting bad code, and an exception raised in any override propagates out
 of `emit_object`.
 
+#### `mir.RAGreedy`: a faithful RegAllocGreedy port
+
+`mir.RAGreedy` (in `llvm.mir_greedy`, attached to `mir` on import) is a
+reusable, faithful Python reproduction of `llvm::RegAllocGreedy` built on the
+surface above. It mirrors `RegAllocGreedy.cpp` method-for-method: a priority
+queue over `getPriority`, the `RS_New → RS_Assign → RS_Split → RS_Split2 →
+RS_Spill → RS_Memory` stage ladder with the cascade infinite-eviction guard, and
+`selectOrSplitImpl`'s `assign → evict → wait-for-second-round → split → spill`
+dispatch. `tryAssign`, `tryEvict`/`canEvictInterference`, `tryBlockSplit`, and
+`tryLocalSplit` (the gap-weight scan) are ported; the pure cost math
+(`eviction_cost`, `calc_gap_weights`, `calc_global_split_cost`,
+`normalize_spill_weight`) is module-level and unit-testable. Region (global)
+splitting is not yet ported — multi-block ranges fall through to per-block
+isolation.
+
+Select it like any registered allocator, or subclass it to observe/override:
+
+```python
+mir.register_regalloc("greedy-py", mir.RAGreedy)
+obj = mmi.emit_object(regalloc="greedy-py")   # faithful greedy, in Python
+```
+
+To read an allocator's decisions without emitting an object,
+`mmi.regalloc_assignments(regalloc=...)` runs it over the finalized MIR and
+returns a `RegAllocAssignments` with `.assignments` (a `vreg id → physreg id`
+map) and `.spilled` (vreg ids sent to the stack). It accepts a native allocator
+name (`"greedy"`, `"basic"`, `"fast"`) or a `register_regalloc` name, so a
+Python allocator can be diffed decision-for-decision against native greedy:
+
+```python
+native = mmi.regalloc_assignments(regalloc="greedy").assignments
+ours = other_mmi.regalloc_assignments(regalloc="greedy-py").assignments
+assert ours == native
+```
+
 ## Limitations
 
 - **`break`, `continue`, and early `return` inside DSL control flow are not
