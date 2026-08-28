@@ -5,12 +5,15 @@
 
 import ctypes
 import platform
+from types import SimpleNamespace
 import pytest
 import llvm
 from llvm import ir, jit, mir
+import llvm.mir_greedy as mg
 from llvm.mir_greedy import eviction_cost, calc_gap_weights, calc_global_split_cost
 from llvm.mir_greedy import GlobalSplitCandidate
 from llvm.mir_greedy import _NO_CAND
+from llvm.mir_greedy import LiveRangeStage
 from llvm.testing import assert_no_leaks
 
 pytestmark = pytest.mark.skipif(
@@ -1912,3 +1915,595 @@ def test_calc_global_split_cost_arms():
     if st["single"] is not None:
         assert st["single_delta"] > 0  # a single crossing adds one block frequency
     assert_no_leaks()
+
+
+def test_split_around_region_isolated_and_through_arms():
+    """splitAroundRegion arms: with a candidate claiming only the through
+    blocks, the use blocks are isolated (split_single_block / skipped) and the
+    through blocks are split live-through."""
+
+    def body(self, li, st):
+        order = list(self.allocation_order(li))
+        best, ncands = self._calculate_region_split_cost(
+            li, order, mir.BlockFrequency.max(), 0, False
+        )
+        if best == _NO_CAND:
+            st["skipped"] = True
+            return None
+        cand = self._global_cand[best]
+        eb = self.edge_bundles
+        lre = self.new_live_range_edit(li)
+        se = self.split_editor
+        se.reset(lre, mir.ComplementSpillMode.SM_Speed)
+        cand.intv_idx = se.open_intv()
+        cand.active_blocks = list(self.split_analysis.through_blocks())
+        # Claim only the through blocks' bundles; leave use blocks unclaimed so
+        # they are isolated.
+        self._bundle_cand = [_NO_CAND] * eb.num_bundles()
+        for n in cand.active_blocks:
+            self._bundle_cand[eb.get_bundle_number(n, False)] = best
+            self._bundle_cand[eb.get_bundle_number(n, True)] = best
+        self._split_around_region(li, lre, [best])
+        st["nvregs"] = len(lre.new_vregs())
+        return True
+
+    st = _diamond_live_through_probe(body)
+    assert st.get("skipped") or st["nvregs"] >= 1
+    assert_no_leaks()
+
+
+# --------------------------------------------------------------------------
+# Unit tests for the region-split cost-model branches that the hand-built MIR
+# corpus cannot steer precisely (edge bundles are shared across blocks, so a
+# use block cannot be isolated from its through neighbors by construction).
+# These drive the faithful methods directly with controlled stand-ins; the
+# *semantic* correctness of the same code is pinned by the differential and
+# decision-level oracles against native greedy above. No MIR/context is built,
+# so there is nothing to leak-check.
+# --------------------------------------------------------------------------
+class _FakeSlot:
+    """A SlotIndex stand-in supporting the comparisons the cost model uses."""
+
+    def __init__(self, v):
+        self.v = v
+
+    def is_earlier_instr(self, o):
+        return self.v < o.v
+
+    def is_valid(self):
+        return self.v >= 0
+
+    def distance(self, o):
+        return o.v - self.v
+
+    def __lt__(self, o):
+        return self.v < o.v
+
+    def __gt__(self, o):
+        return self.v > o.v
+
+    def __le__(self, o):
+        return self.v <= o.v
+
+    def __ge__(self, o):
+        return self.v >= o.v
+
+
+class _FakeIntf:
+    """An InterferenceCursor stand-in."""
+
+    def __init__(self, has, first=0, last=0):
+        self._has = has
+        self._first = _FakeSlot(first)
+        self._last = _FakeSlot(last)
+
+    def move_to_block(self, n):
+        pass
+
+    def has_interference(self):
+        return self._has
+
+    def first(self):
+        return self._first
+
+    def last(self):
+        return self._last
+
+
+class _FakeSP:
+    """A SpillPlacement stand-in recording what it was handed."""
+
+    def __init__(self, recent=()):
+        self.constraints = None
+        self.links = None
+        self.pref = []
+        self._recent = list(recent)
+
+    def get_block_frequency_by_number(self, n):
+        return mir.BlockFrequency(1)
+
+    def add_constraints(self, cs):
+        self.constraints = list(cs)
+
+    def add_links(self, links):
+        self.links = list(links)
+
+    def scan_active_bundles(self):
+        return True
+
+    def prepare(self, lb):
+        pass
+
+    def finish(self):
+        pass
+
+    def iterate(self):
+        pass
+
+    def add_pref_spill(self, blocks, b):
+        self.pref.append((list(blocks), b))
+
+    def get_recent_positive(self):
+        r = self._recent
+        self._recent = []
+        return r
+
+
+def _stage_helpers(initial=None):
+    """A dict-backed (_get_stage, _set_stage, stage) triple for a fake self."""
+    stage = dict(initial or {})
+    return (
+        lambda r: stage.get(r, LiveRangeStage.RS_New),
+        lambda r, s: stage.__setitem__(r, s),
+        stage,
+    )
+
+
+def test_select_or_split_last_chance_guard_raises():
+    """A range that is unspillable/RS_Done and fails assign+evict+split has no
+    recourse but last-chance recoloring (not ported), so the guard raises rather
+    than letting the spiller abort on a double spill."""
+
+    class LC(mir.RAGreedy):
+        def _try_assign(self, li):
+            return None
+
+        def _try_evict(self, li):
+            return None
+
+        def _try_split(self, li):
+            return False
+
+    lc = LC()
+    lc._set_stage(77, LiveRangeStage.RS_Memory)
+    li = SimpleNamespace(reg=77, size=8, is_spillable=True)
+    with pytest.raises(NotImplementedError):
+        lc.select_or_split(li)
+
+
+def test_should_split_single_block_proper_subclass_arms():
+    """shouldSplitSingleBlock's single-instruction (proper-subclass) arms: a
+    live-through instruction always splits; a copy never does; otherwise it
+    splits only at an original endpoint."""
+    fg = SimpleNamespace(
+        is_copy_like_at=lambda instr: fg._is_copy,
+        split_analysis=SimpleNamespace(is_original_endpoint=lambda i: fg._is_orig),
+    )
+
+    # Live-through single instruction: always worth splitting.
+    bi = SimpleNamespace(is_one_instr=lambda: True, live_in=True, live_out=True)
+    assert mg.RAGreedy._should_split_single_block(fg, bi, True) is True
+
+    # A lone copy: no register-class constraint, never split.
+    bi = SimpleNamespace(
+        is_one_instr=lambda: True,
+        live_in=False,
+        live_out=False,
+        first_instr=_FakeSlot(1),
+    )
+    fg._is_copy = True
+    assert mg.RAGreedy._should_split_single_block(fg, bi, True) is False
+
+    # Non-copy: split iff it is an original endpoint.
+    fg._is_copy = False
+    fg._is_orig = True
+    assert mg.RAGreedy._should_split_single_block(fg, bi, True) is True
+    fg._is_orig = False
+    assert mg.RAGreedy._should_split_single_block(fg, bi, True) is False
+
+
+def test_add_split_constraints_interference_insert_arm():
+    """addSplitConstraints: an interfering live-in use block whose interference
+    starts strictly inside the block (past the first use, before the last) still
+    charges one spill insertion (the third live-in arm) without escalating to
+    MustSpill/PrefSpill."""
+    bi = SimpleNamespace(
+        mbb=SimpleNamespace(number=0),
+        live_in=True,
+        live_out=False,
+        first_instr=_FakeSlot(3),
+        last_instr=_FakeSlot(10),
+        first_def=SimpleNamespace(is_valid=lambda: False),
+    )
+    sa = SimpleNamespace(
+        use_blocks=lambda: [bi],
+        first_split_point=lambda n: _FakeSlot(100),
+        last_split_point=lambda mbb: _FakeSlot(100),
+    )
+    lis = SimpleNamespace(
+        instr_from_index=lambda idx: SimpleNamespace(is_implicit_def=False),
+        mbb_start_index=lambda mbb: _FakeSlot(0),
+    )
+    fg = SimpleNamespace(split_analysis=sa, spill_placer=_FakeSP(), lis=lis)
+    # first()=5 is past the block start (0) and the first use (3) but before the
+    # last use (10): the "elif intf.first() < bi.last_instr" insert arm.
+    cost, positive = mg.RAGreedy._add_split_constraints(fg, _FakeIntf(True, first=5))
+    assert positive is True
+    assert cost.get_frequency() == 1  # exactly one insertion charged
+
+
+def test_add_split_constraints_aborts_when_spill_uninsertable():
+    """addSplitConstraints returns (cost, False) when a required entry spill
+    cannot be inserted at the block start (the first use precedes the block's
+    first split point)."""
+    bi = SimpleNamespace(
+        mbb=SimpleNamespace(number=0),
+        live_in=True,
+        live_out=False,
+        first_instr=_FakeSlot(3),
+        last_instr=_FakeSlot(10),
+        first_def=SimpleNamespace(is_valid=lambda: False),
+    )
+    sa = SimpleNamespace(
+        use_blocks=lambda: [bi],
+        first_split_point=lambda n: _FakeSlot(100),  # first_instr(3) is earlier
+        last_split_point=lambda mbb: _FakeSlot(100),
+    )
+    lis = SimpleNamespace(
+        instr_from_index=lambda idx: SimpleNamespace(is_implicit_def=False),
+        mbb_start_index=lambda mbb: _FakeSlot(5),  # start >= first() -> MustSpill
+    )
+    fg = SimpleNamespace(split_analysis=sa, spill_placer=_FakeSP(), lis=lis)
+    _, positive = mg.RAGreedy._add_split_constraints(fg, _FakeIntf(True, first=3))
+    assert positive is False
+
+
+def test_add_through_constraints_exit_mustspill_and_no_links():
+    """addThroughConstraints on an all-interfering block set: no clean links
+    (the links branch is skipped), and a MustSpill exit when interference reaches
+    the last split point."""
+    sa = SimpleNamespace(
+        first_split_point=lambda n: _FakeSlot(-1),  # first_instr not earlier
+        last_split_point_number=lambda n: _FakeSlot(10),  # last()>=lsp -> MustSpill
+    )
+    sp = _FakeSP()
+    fg = SimpleNamespace(
+        split_analysis=sa,
+        spill_placer=sp,
+        first_nondebug_instr_index=lambda n: _FakeSlot(3),
+        through_insert_index=lambda n: _FakeSlot(1),
+        mbb_start_index_by_number=lambda n: _FakeSlot(0),
+    )
+    ok = mg.RAGreedy._add_through_constraints(
+        fg, _FakeIntf(True, first=5, last=50), [7]
+    )
+    assert ok is True
+    assert sp.links is None  # no clean blocks -> add_links never called
+    assert sp.constraints and len(sp.constraints) == 1
+
+
+def test_add_through_constraints_aborts_when_spill_uninsertable():
+    """addThroughConstraints returns False when an interfering block's first
+    instruction precedes its first split point (spill cannot be inserted)."""
+    sa = SimpleNamespace(
+        first_split_point=lambda n: _FakeSlot(100),  # first_instr(3) earlier
+        last_split_point_number=lambda n: _FakeSlot(10),
+    )
+    fg = SimpleNamespace(
+        split_analysis=sa,
+        spill_placer=_FakeSP(),
+        first_nondebug_instr_index=lambda n: _FakeSlot(3),
+        through_insert_index=lambda n: _FakeSlot(1),
+        mbb_start_index_by_number=lambda n: _FakeSlot(0),
+    )
+    assert (
+        mg.RAGreedy._add_through_constraints(fg, _FakeIntf(True, first=5, last=50), [7])
+        is False
+    )
+
+
+def test_grow_region_through_constraint_failure_returns_false():
+    """growRegion bails (False) when addThroughConstraints fails on the newly
+    activated blocks of a physreg candidate."""
+    cand = GlobalSplitCandidate()
+    cand.reset(1, _FakeIntf(True))  # phys_reg = 1 (non-compact)
+    sa = SimpleNamespace(
+        through_blocks=lambda: [10, 11], looks_like_loop_iv=lambda: False
+    )
+    fg = SimpleNamespace(
+        split_analysis=sa,
+        spill_placer=_FakeSP(recent=[0]),
+        edge_bundles=SimpleNamespace(get_blocks=lambda b: [10, 11]),
+        _add_through_constraints=lambda intf, blocks: False,
+    )
+    assert mg.RAGreedy._grow_region(fg, object(), cand) is False
+
+
+def test_grow_region_compact_loop_iv_keeps_iv_live():
+    """growRegion's compact-region loop-IV bias: when the newly activated blocks
+    are a loop header and its internal blocks, they are NOT biased to spill
+    (pref_spill stays False, so add_pref_spill is skipped)."""
+    cand = GlobalSplitCandidate()
+    cand.reset(0, None)  # phys_reg = 0 -> compact region
+    sa = SimpleNamespace(
+        through_blocks=lambda: [10, 11], looks_like_loop_iv=lambda: True
+    )
+    sp = _FakeSP(recent=[0])
+    fg = SimpleNamespace(
+        split_analysis=sa,
+        spill_placer=sp,
+        edge_bundles=SimpleNamespace(get_blocks=lambda b: [10, 11]),
+        loop_header_number=lambda b: 10,  # both blocks map to header 10
+    )
+    assert mg.RAGreedy._grow_region(fg, object(), cand) is True
+    assert sp.pref == []  # loop IV kept live: no pref-spill applied
+
+
+def test_grow_region_compact_loop_iv_non_header_biases_spill():
+    """growRegion's compact loop-IV check: when the activated blocks look like a
+    loop IV but do NOT form a header + internal-block set, the blocks are still
+    biased to spill (pref_spill stays True -> add_pref_spill is applied)."""
+    cand = GlobalSplitCandidate()
+    cand.reset(0, None)  # phys_reg = 0 -> compact region
+    sa = SimpleNamespace(
+        through_blocks=lambda: [10, 11], looks_like_loop_iv=lambda: True
+    )
+    sp = _FakeSP(recent=[0])
+    fg = SimpleNamespace(
+        split_analysis=sa,
+        spill_placer=sp,
+        edge_bundles=SimpleNamespace(get_blocks=lambda b: [10, 11]),
+        loop_header_number=lambda b: 99,  # header (99) != first block (10)
+    )
+    assert mg.RAGreedy._grow_region(fg, object(), cand) is True
+    assert sp.pref == [([10, 11], True)]  # not a loop-IV region: biased to spill
+
+
+def test_calc_compact_region_not_positive_returns_false():
+    """calcCompactRegion returns False when the split constraints yield no
+    positive bundles (nothing worth keeping in a register)."""
+    cand = GlobalSplitCandidate()
+    cand.intf = _FakeIntf(False)
+    fg = SimpleNamespace(
+        split_analysis=SimpleNamespace(num_through_blocks=lambda: 1),
+        spill_placer=_FakeSP(),
+        set_interference_physreg=lambda c, p: None,
+        _add_split_constraints=lambda intf: (mir.BlockFrequency(0), False),
+    )
+    assert mg.RAGreedy._calc_compact_region(fg, object(), cand) is False
+
+
+def test_calc_compact_region_success_returns_true():
+    """calcCompactRegion returns True when constraints are positive, the region
+    grows, and live bundles remain (a viable compact region)."""
+
+    def grow(li, cand):
+        cand.live_bundles.resize(1)
+        cand.live_bundles.set(0)
+        return True
+
+    cand = GlobalSplitCandidate()
+    cand.intf = _FakeIntf(True)
+    fg = SimpleNamespace(
+        split_analysis=SimpleNamespace(num_through_blocks=lambda: 1),
+        spill_placer=_FakeSP(),
+        set_interference_physreg=lambda c, p: None,
+        _add_split_constraints=lambda intf: (mir.BlockFrequency(0), True),
+        _grow_region=grow,
+    )
+    assert mg.RAGreedy._calc_compact_region(fg, object(), cand) is True
+
+
+def test_calc_block_split_cost_charges_redefined_live_through():
+    """calcBlockSplitCost charges a second spill for a block where the value is
+    live-through AND redefined (live_in && live_out && first_def valid)."""
+    bi = SimpleNamespace(
+        mbb=SimpleNamespace(number=0),
+        live_in=True,
+        live_out=True,
+        first_def=SimpleNamespace(is_valid=lambda: True),
+    )
+    fg = SimpleNamespace(
+        split_analysis=SimpleNamespace(use_blocks=lambda: [bi]),
+        spill_placer=_FakeSP(),
+    )
+    # One block-isolation spill + one redefined-live-through spill = 2.
+    assert mg.RAGreedy._calc_block_split_cost(fg).get_frequency() == 2
+
+
+def test_try_region_split_compact_but_no_vregs_returns_false():
+    """tryRegionSplit with a compact region but no winning per-physreg candidate
+    and no new vregs produced by doRegionSplit returns False (nothing applied)."""
+    fg = SimpleNamespace(
+        allocation_order=lambda li: [1],
+        _calc_block_split_cost=lambda: mir.BlockFrequency(0),
+        _region_cand0=lambda: GlobalSplitCandidate(),
+        _calc_compact_region=lambda li, cand: True,  # has_compact
+        _calculate_region_split_cost=lambda *a: (_NO_CAND, 1),
+        new_live_range_edit=lambda li: SimpleNamespace(new_vregs=lambda: []),
+        _do_region_split=lambda *a: None,
+        trace={},
+    )
+    assert mg.RAGreedy._try_region_split(fg, SimpleNamespace(reg=1)) is False
+
+
+def test_do_region_split_skips_candidates_that_claim_no_bundles():
+    """doRegionSplit: a best_cand and a compact region that each claim zero
+    bundles are both skipped (neither opens an interval); splitAroundRegion is
+    still driven with the resulting empty used-candidate set."""
+    recorded = {}
+    se = SimpleNamespace(reset=lambda lre, mode: None, open_intv=lambda: 1)
+    fg = SimpleNamespace(
+        split_editor=se,
+        edge_bundles=SimpleNamespace(num_bundles=lambda: 4),
+        _global_cand=[GlobalSplitCandidate(), GlobalSplitCandidate()],
+        _cand_get_bundles=lambda cand, idx: 0,  # nobody claims a bundle
+        _split_around_region=lambda li, lre, uc: recorded.__setitem__("uc", list(uc)),
+    )
+    mg.RAGreedy._do_region_split(fg, object(), 0, True, object())
+    assert recorded["uc"] == []  # both candidates skipped
+
+
+def test_cand_get_bundles_skips_already_claimed():
+    """getBundles claims only bundles not already owned by another candidate;
+    an already-claimed bit is skipped (the loop-continue arm)."""
+    cand = GlobalSplitCandidate()
+    cand.live_bundles.resize(2)
+    cand.live_bundles.set(0)
+    cand.live_bundles.set(1)
+    fg = SimpleNamespace(_bundle_cand=[5, _NO_CAND])  # bundle 0 already claimed
+    count = mg.RAGreedy._cand_get_bundles(fg, cand, 3)
+    assert count == 1  # only bundle 1 newly claimed
+    assert fg._bundle_cand == [5, 3]
+
+
+def test_can_evict_interference_blocks_on_equal_or_newer_cascade():
+    """canEvictInterference refuses when the interferer's cascade is not strictly
+    older than li's (the eviction-loop guard)."""
+    li = SimpleNamespace(reg=1, weight=10.0)
+    iv = SimpleNamespace(weight=1.0)  # cheaper, so the weight guard passes
+    fg = SimpleNamespace(
+        matrix=SimpleNamespace(
+            check_interference=lambda a, b: mir.InterferenceKind.IK_VirtReg
+        ),
+        interfering_vregs=lambda a, b: [99],
+        lis=SimpleNamespace(interval=lambda r: iv),
+        _cascade_or_next=lambda reg: 5,
+        _get_cascade=lambda reg: 10,  # interferer cascade newer than li's (5)
+        _get_stage=lambda reg: LiveRangeStage.RS_Assign,
+    )
+    assert mg.RAGreedy._can_evict_interference(fg, li, 0) is False
+
+
+def test_try_local_split_shrink_recompute_running_max():
+    """tryLocalSplit's running-max recompute: when the scan shrinks the window
+    and the dropped gap held the max, the max is recomputed over the remaining
+    gaps (the inner recompute loop); a later shrink whose dropped gap was not the
+    max takes the skip arm."""
+    uses = [_FakeSlot(0), _FakeSlot(1), _FakeSlot(2), _FakeSlot(100)]
+    bi = SimpleNamespace(mbb=object(), live_in=False, live_out=True)
+    lre = SimpleNamespace(new_vregs=lambda: [])
+    calls = []
+    se = SimpleNamespace(
+        reset=lambda lre: None,
+        open_intv=lambda: calls.append("open"),
+        enter_intv_before=lambda s: s,
+        leave_intv_after=lambda s: s,
+        use_intv=lambda a, b: calls.append("use"),
+        finish=lambda: [],
+    )
+    get_stage, _set, _stage = _stage_helpers()
+    fg = SimpleNamespace(
+        split_analysis=SimpleNamespace(
+            use_blocks=lambda: [bi],
+            get_use_slots=lambda: uses,
+        ),
+        slot_index_instr_distance=lambda: 1,
+        _get_stage=get_stage,
+        spill_placer=SimpleNamespace(
+            get_block_frequency=lambda mbb: SimpleNamespace(get_frequency=lambda: 100)
+        ),
+        mbfi=SimpleNamespace(
+            entry_freq=lambda: SimpleNamespace(get_frequency=lambda: 1)
+        ),
+        allocation_order=lambda li: [1],
+        # gap[0]=10 is the front max; widening keeps it (g1,g2 < 10); the wide
+        # window's low est_weight forces a shrink that drops the max at gap[0].
+        _local_gap_weights=lambda li, preg, u: [10.0, 1.0, 5.0],
+        new_live_range_edit=lambda li: lre,
+        split_editor=se,
+        trace={},
+    )
+    assert mg.RAGreedy._try_local_split(fg, SimpleNamespace(reg=1)) is True
+    assert "use" in calls  # a window was chosen and applied
+
+
+def test_split_around_region_all_arms():
+    """splitAroundRegion across use blocks and through blocks: an unclaimed
+    live-in/live-out use block is isolated (split_single_block or skipped), a
+    fully-claimed use block is split live-through, through blocks are split or
+    skipped per their claimed edges, a block already handled by an earlier
+    candidate is deduped, and the new-interval staging kinds are applied."""
+    eb_map = {
+        (1, False): 10,
+        (1, True): 11,
+        (2, False): 20,
+        (2, True): 21,
+        (3, False): 30,
+        (3, True): 31,
+        (4, False): 40,
+        (4, True): 41,
+        (5, False): 50,
+        (5, True): 51,
+        (6, False): 60,
+        (6, True): 61,
+        (7, False): 70,
+        (7, True): 71,
+    }
+    ubA = SimpleNamespace(mbb=SimpleNamespace(number=1), live_in=True, live_out=False)
+    ubB = SimpleNamespace(mbb=SimpleNamespace(number=2), live_in=False, live_out=True)
+    ubC = SimpleNamespace(mbb=SimpleNamespace(number=3), live_in=True, live_out=True)
+
+    cand = GlobalSplitCandidate()
+    cand.reset(1, _FakeIntf(True, first=1, last=2))
+    cand.intv_idx = 1
+    cand.active_blocks = [4, 5, 6, 7]  # 7 is not a through block -> deduped
+
+    bundle_cand = [_NO_CAND] * 100
+    bundle_cand[eb_map[(3, False)]] = 0  # use block 3 fully claimed
+    bundle_cand[eb_map[(3, True)]] = 0
+    bundle_cand[eb_map[(4, False)]] = 0  # through block 4: reg-in only
+    bundle_cand[eb_map[(5, True)]] = 0  # through block 5: reg-out only
+    # block 6: neither edge claimed -> skipped
+
+    se_calls = []
+    se = SimpleNamespace(
+        split_single_block=lambda bi: se_calls.append(("single", bi.mbb.number)),
+        split_live_through_block=lambda n, ii, fi, io, fo: se_calls.append(("thru", n)),
+        split_reg_in_block=lambda bi, ii, fi: se_calls.append(("in", bi.mbb.number)),
+        split_reg_out_block=lambda bi, io, fo: se_calls.append(("out", bi.mbb.number)),
+        finish=lambda: [0, 1, 2, 5],  # spill, split2, RS_New-kept, ignored
+    )
+    get_stage, set_stage, stage = _stage_helpers({103: LiveRangeStage.RS_Spill})
+    fg = SimpleNamespace(
+        split_editor=se,
+        split_analysis=SimpleNamespace(
+            use_blocks=lambda: [ubA, ubB, ubC],
+            through_blocks=lambda: [4, 5, 6],
+            num_live_blocks=lambda: 3,
+            count_live_blocks=lambda iv: {101: 3, 102: 1}.get(iv, 0),
+        ),
+        edge_bundles=SimpleNamespace(get_bundle_number=lambda n, out: eb_map[(n, out)]),
+        _global_cand=[cand],
+        _bundle_cand=bundle_cand,
+        is_proper_sub_class=lambda reg: False,
+        lis=SimpleNamespace(interval=lambda r: r),
+        _get_stage=get_stage,
+        _set_stage=set_stage,
+        _should_split_single_block=lambda bi, single: bi.mbb.number == 1,
+    )
+    lre = SimpleNamespace(new_vregs=lambda: [100, 101, 102, 103])
+    mg.RAGreedy._split_around_region(fg, SimpleNamespace(reg=1), lre, [0])
+
+    assert ("single", 1) in se_calls  # ubA isolated (should-split True)
+    assert [k for k, _ in se_calls].count("single") == 1  # ubB skipped
+    assert ("thru", 3) in se_calls  # ubC split live-through
+    assert ("thru", 4) in se_calls and ("thru", 5) in se_calls  # claimed through
+    assert ("thru", 6) not in se_calls  # block 6 skipped (no claimed edge)
+    assert ("thru", 7) not in se_calls  # block 7 deduped (not a through block)
+    # Staging: m=0 -> spill; m=1 & enough live blocks -> split2; m=2 & too few
+    # live blocks -> unchanged; a pre-staged reg -> skipped.
+    assert stage[100] == LiveRangeStage.RS_Spill
+    assert stage[101] == LiveRangeStage.RS_Split2
+    assert 102 not in stage  # too few live blocks: left unchanged (RS_New)
+    assert stage[103] == LiveRangeStage.RS_Spill  # untouched (was not RS_New)
