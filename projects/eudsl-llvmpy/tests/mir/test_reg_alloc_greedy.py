@@ -127,3 +127,31 @@ def test_priority_orders_larger_ranges_first():
     # priority order without dropping or repeating a reg).
     assert len(order) == len(set(order))
     assert_no_leaks()
+
+
+def _jit_call(sig, fn, obj):
+    j = jit.LLJIT()
+    j.add_object(obj)
+    return ctypes.CFUNCTYPE(*sig)(j.lookup(fn)), j
+
+
+def test_assign_allocates_and_executes():
+    traces = {}
+
+    class Traced(mir.RAGreedy):
+        def select_or_split(self, li):
+            r = super().select_or_split(li)
+            traces.update(self.trace)
+            return r
+
+    mir.register_regalloc("ra-greedy-assign", Traced)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()  # host triple, so the object is JIT-executable
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-assign")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int, ctypes.c_int), "add", obj)
+    assert fn(3, 4) == 7  # semantics preserved
+    assert "assign" in traces.values()  # tryAssign fired
+    assert_no_leaks()

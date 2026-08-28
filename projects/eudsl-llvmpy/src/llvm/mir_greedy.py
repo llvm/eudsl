@@ -166,5 +166,30 @@ class RAGreedy(mir.RegAllocBase):
         _, reg = heapq.heappop(self._queue)
         return reg
 
+    # -- tryAssign (RegAllocGreedy::tryAssign) ------------------------------
+    def _try_assign(self, li):
+        """Return the first interference-free physreg in allocation order,
+        preferring the simple copy hint. None if every physreg interferes."""
+        hint = self.simple_hint(li.reg)
+        order = list(self.allocation_order(li))
+        if hint and hint in order and self.matrix.is_free(li, hint):
+            return hint
+        for preg in order:
+            if self.matrix.is_free(li, preg):
+                return preg
+        return None
+
+    def select_or_split(self, li):
+        reg = li.reg
+        preg = self._try_assign(li)
+        if preg is not None:
+            self.trace[reg] = "assign"
+            return preg
+        # (evict/split inserted by later tasks)
+        self.trace[reg] = "spill"
+        self.spill(li)
+        self._set_stage(reg, LiveRangeStage.RS_Memory)
+        return None
+
 
 mir.RAGreedy = RAGreedy
