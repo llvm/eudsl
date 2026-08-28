@@ -1245,3 +1245,40 @@ def test_grow_region_expands_and_returns():
     assert fn(3) == _thru_pressure_closed_form(3)
     assert saw["grew"] in (True, False)  # returns a bool; budget not exceeded
     assert_no_leaks()
+
+
+def test_calc_global_split_cost_nonnegative():
+    saw = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            sa = self.split_analysis
+            sa.analyze(li)
+            if "done" not in saw and sa.num_through_blocks() > 0:
+                saw["done"] = True
+                cand = GlobalSplitCandidate()
+                cand.reset(
+                    next(iter(self.allocation_order(li))),
+                    self.new_interference_cursor(),
+                )
+                self.set_interference_physreg(cand.intf, cand.phys_reg)
+                self.spill_placer.prepare(cand.live_bundles)
+                self._add_split_constraints(cand.intf)
+                self._grow_region(li, cand)
+                self.spill_placer.finish()
+                order = list(self.allocation_order(li))
+                cost = self._calc_global_split_cost(cand, order)
+                saw["freq"] = cost.get_frequency()
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-cgsc", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thrup")
+        _build_thru_pressure(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-cgsc")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thrup", obj)
+    assert fn(3) == _thru_pressure_closed_form(3)
+    assert saw["freq"] >= 0
+    assert_no_leaks()

@@ -1653,7 +1653,13 @@ void populate_python_codegen(nb::module_ &m) {
           },
           "mbb"_a,
           "Estimated execution frequency of `mbb` (per function invocation). "
-          "Taking the block keeps the index in range by construction.");
+          "Taking the block keeps the index in range by construction.")
+      .def(
+          "get_block_frequency_by_number",
+          [](llvm::SpillPlacement &sp, unsigned number) {
+            return sp.getBlockFrequency(number);
+          },
+          "mbb_number"_a, "Estimated frequency of block `mbb_number`.");
 
   // A program point. Live ranges and the split editor are expressed in terms of
   // these; they order the instructions of a function.

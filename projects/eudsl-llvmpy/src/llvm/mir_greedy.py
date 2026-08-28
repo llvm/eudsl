@@ -547,7 +547,9 @@ class RAGreedy(mir.RegAllocBase):
                     elif intf.last() > bi.first_instr:
                         ins += 1
                 for _ in range(ins):
-                    static_cost = static_cost + sp.get_block_frequency(bi.mbb)
+                    static_cost = static_cost + sp.get_block_frequency_by_number(
+                        bc.number
+                    )
             self._split_constraints.append(bc)
         sp.add_constraints(self._split_constraints)
         return static_cost, sp.scan_active_bundles()
@@ -638,6 +640,41 @@ class RAGreedy(mir.RegAllocBase):
             added_to = len(cand.active_blocks)
             sp.iterate()
         return True
+
+    def _calc_global_split_cost(self, cand, order):
+        """RAGreedy::calcGlobalSplitCost. Cost of the candidate's bundle
+        solution: a spill at each use-block edge whose in/out register state
+        disagrees with the constraint pref, plus through-block crossings."""
+        sp = self.spill_placer
+        eb = self.edge_bundles
+        lb = cand.live_bundles
+        PrefReg = mir.BorderConstraint.PrefReg
+        cost = mir.BlockFrequency(0)
+        use_blocks = self.split_analysis.use_blocks()
+        for bi, bc in zip(use_blocks, self._split_constraints):
+            reg_in = lb.test(eb.get_bundle_number(bc.number, False))
+            reg_out = lb.test(eb.get_bundle_number(bc.number, True))
+            ins = 0
+            cand.intf.move_to_block(bc.number)
+            if bi.live_in:
+                ins += int(reg_in != (bc.entry == PrefReg))
+            if bi.live_out:
+                ins += int(reg_out != (bc.exit == PrefReg))
+            for _ in range(ins):
+                cost = cost + sp.get_block_frequency_by_number(bc.number)
+        for number in cand.active_blocks:
+            reg_in = lb.test(eb.get_bundle_number(number, False))
+            reg_out = lb.test(eb.get_bundle_number(number, True))
+            if not reg_in and not reg_out:
+                continue
+            if reg_in and reg_out:
+                cand.intf.move_to_block(number)
+                if cand.intf.has_interference():
+                    cost = cost + sp.get_block_frequency_by_number(number)
+                    cost = cost + sp.get_block_frequency_by_number(number)
+                continue
+            cost = cost + sp.get_block_frequency_by_number(number)
+        return cost
 
     # -- tryEvict / canEvictInterference ------------------------------------
     def _can_evict_interference(self, li, physreg):
