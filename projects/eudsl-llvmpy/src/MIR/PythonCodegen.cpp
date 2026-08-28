@@ -714,6 +714,36 @@ public:
     return rc->GlobalPriority;
   }
 
+  // `rc`'s target-assigned allocation priority (RC.AllocationPriority), one of
+  // the fields getPriority packs into the enqueue key.
+  unsigned regClassAllocationPriority(const llvm::TargetRegisterClass *rc) {
+    return rc->AllocationPriority;
+  }
+
+  // Whether the target packs the register-class allocation priority above the
+  // globalness bit in the enqueue key (RAGreedy::RegClassPriorityTrumpsGlobal-
+  // ness).
+  bool regClassPriorityTrumpsGlobalness() {
+    return mf->getSubtarget()
+        .getRegisterInfo()
+        ->regClassPriorityTrumpsGlobalness(*mf);
+  }
+
+  // Whether `reg` has a known physreg preference (a copy hint the framework
+  // already resolved) -- getPriority boosts these.
+  bool hasKnownPreference(unsigned reg) {
+    return VRM->hasKnownPreference(llvm::Register(reg));
+  }
+
+  // The last / zero slot indexes of the function, for the instruction-order
+  // priority of local ranges (getApproxInstrDistance endpoints).
+  llvm::SlotIndex lastSlotIndex() {
+    return LIS->getSlotIndexes()->getLastIndex();
+  }
+  llvm::SlotIndex zeroSlotIndex() {
+    return LIS->getSlotIndexes()->getZeroIndex();
+  }
+
   bool regClassIsAllocatable(const llvm::TargetRegisterClass *rc) {
     return rc->isAllocatable();
   }
@@ -1256,6 +1286,22 @@ void populate_python_codegen(nb::module_ &m) {
           "ForceGlobal (the size-based disjunct is computed in enqueue).")
       .def("reg_class_is_allocatable", &PyRegAllocBase::regClassIsAllocatable,
            "reg_class"_a, "Whether `reg_class` is allocatable.")
+      .def("reg_class_allocation_priority",
+           &PyRegAllocBase::regClassAllocationPriority, "reg_class"_a,
+           "`reg_class`'s target allocation priority (getPriority's "
+           "AllocationPriority field).")
+      .def("reg_class_priority_trumps_globalness",
+           &PyRegAllocBase::regClassPriorityTrumpsGlobalness,
+           "Whether the target packs allocation priority above the globalness "
+           "bit in the enqueue key.")
+      .def("has_known_preference", &PyRegAllocBase::hasKnownPreference, "reg"_a,
+           "Whether `reg` has a known physreg preference (getPriority boosts "
+           "these).")
+      .def(
+          "last_slot_index", &PyRegAllocBase::lastSlotIndex,
+          "The last SlotIndex of the function (local-range priority endpoint).")
+      .def("zero_slot_index", &PyRegAllocBase::zeroSlotIndex,
+           "The zero SlotIndex of the function (reverse local-range endpoint).")
       .def("interval_is_in_one_mbb", &PyRegAllocBase::intervalIsInOneMBB,
            "reg"_a,
            "Whether `reg`'s whole live interval lies in a single block "

@@ -94,21 +94,36 @@ def _build_add(mmi):
     return mf
 
 
-def test_get_priority_is_size_biased_for_globals():
+def test_get_priority_bit_layout():
     ra = mir.RAGreedy()
-    # RS_Split ranges are deferred: priority equals size.
-    ra._set_stage(42, ra.RS_Split)
-    assert (
-        ra._priority_for(
-            reg=42,
-            size=100,
-            is_local=False,
-            force_global=False,
-            num_allocatable=32,
-            instr_dist=16,
+
+    def prio(stage, size, is_local_assign, local_prio, global_bit, has_pref=False):
+        # trumps_globalness=True (the AArch64 layout): AllocationPriority<<25,
+        # GlobalBit<<24.
+        return ra._priority_for(
+            stage,
+            size,
+            is_local_assign,
+            local_prio,
+            global_bit,
+            0,  # alloc_priority
+            True,  # trumps_globalness
+            has_pref,
         )
-        == 100
-    )
+
+    # RS_Split ranges are deferred: bare size, below the 1<<31 mark.
+    assert prio(ra.RS_Split, 100, False, 0, 0) == 100
+    # A global RS_Assign range: size in the low bits, GlobalBit<<24, 1<<31 mark.
+    g = prio(ra.RS_Assign, 100, False, 0, 1)
+    assert g == (1 << 31) | (1 << 24) | 100
+    # A local range carries no global bit, so it sorts below a same-size global.
+    lo = prio(ra.RS_Assign, 100, True, 100, 0)
+    assert lo == (1 << 31) | 100
+    assert g > lo
+    # Global and local both outrank any RS_Split range.
+    assert lo > prio(ra.RS_Split, 100, False, 0, 0)
+    # A known preference boosts with 1<<30.
+    assert prio(ra.RS_Assign, 100, False, 0, 1, has_pref=True) == g | (1 << 30)
 
 
 def test_priority_orders_larger_ranges_first():
@@ -293,6 +308,87 @@ _THRU_N = 40
 def _thru_pressure_closed_form(x):
     # vals[i] = (i+2)*x; b2 sums them all.
     return x * sum(i + 2 for i in range(_THRU_N))
+
+
+_DIAMOND_N = 40
+
+
+def _build_diamond_pressure(mmi):
+    """A diamond CFG where region split beats per-block isolation: b0 defines v
+    and a condition, branches to a high-pressure arm b1 (N live temps, v
+    live-through) or a low-pressure arm b2 (v live-through), joining at b3 which
+    returns v. Keeping v in a register through the cheap arm while isolating it
+    around the pressured arm is exactly what tryRegionSplit forms, so under
+    register pressure (the aarch64-linux allocatable set) v resolves via region
+    split. dia(x) = 2x (the b1 temps are dead; only v reaches b3)."""
+    mf = mmi.machine_function("dia")
+    b = mir.MachineIRBuilder(mf)
+    gpr32 = mf.reg_class("GPR32")
+    w0 = mf.physreg("W0")
+    b0 = mf.blocks[0]
+    b1 = mf.create_block()
+    b2 = mf.create_block()
+    b3 = mf.create_block()
+    b0.add_livein(w0)
+    copy = mf.opcode("COPY")
+    addrr = mf.opcode("ADDWrr")
+    br = mf.opcode("B")
+    cbz = mf.opcode("CBZW")
+
+    b.set_block(b0)
+    v = mf.create_vreg(gpr32)
+    iv = b.build_instr(addrr)  # v = w0 + w0
+    iv.add_reg(v, is_def=True)
+    iv.add_reg(w0)
+    iv.add_reg(w0)
+    cond = mf.create_vreg(gpr32)
+    ic = b.build_instr(copy)
+    ic.add_reg(cond, is_def=True)
+    ic.add_reg(w0)
+    cz = b.build_instr(cbz)
+    cz.add_reg(cond)
+    cz.add_mbb(b2)
+    b0.add_successor(b1)
+    b0.add_successor(b2)
+
+    b1.add_livein(w0)  # b1 uses w0 for its pressure chain
+    b.set_block(b1)
+    terms = []
+    prev = w0
+    for _ in range(_DIAMOND_N):
+        t = mf.create_vreg(gpr32)
+        ins = b.build_instr(addrr)
+        ins.add_reg(t, is_def=True)
+        ins.add_reg(prev)
+        ins.add_reg(w0)
+        terms.append(t)
+        prev = t
+    acc = terms[0]
+    for t in terms[1:]:
+        na = mf.create_vreg(gpr32)
+        ins = b.build_instr(addrr)
+        ins.add_reg(na, is_def=True)
+        ins.add_reg(acc)
+        ins.add_reg(t)
+        acc = na
+    j1 = b.build_instr(br)
+    j1.add_mbb(b3)
+    b1.add_successor(b3)
+
+    b.set_block(b2)  # low-pressure arm: v just lives through
+    j2 = b.build_instr(br)
+    j2.add_mbb(b3)
+    b2.add_successor(b3)
+
+    b.set_block(b3)
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(v)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
 
 
 def test_block_split_executes_under_pressure():
@@ -1381,6 +1477,12 @@ def test_do_region_split_produces_vregs():
 
 
 def test_region_split_fires_naturally():
+    """Region split must fire through the natural dispatcher on a CFG where it
+    beats per-block isolation (the diamond: a value live through a cheap arm and
+    a pressured arm). Under the aarch64-linux allocatable set this resolves via
+    region split, and its spill decisions match native greedy. (Straight-line
+    pressure like `thrup` block-splits instead -- matching native, see the
+    decision-level oracle.)"""
     traces = {}
 
     class Traced(mir.RAGreedy):
@@ -1390,13 +1492,85 @@ def test_region_split_fires_naturally():
             return r
 
     mir.register_regalloc("ra-greedy-regionnat", Traced)
-    with ir.Context() as ctx:
-        mod = ir.Module("m", ctx)
-        tm = jit.TargetMachine()
-        mmi = mir.create_machine_function(mod, tm, "thrup")
-        _build_thru_pressure(mmi)
-        obj = mmi.emit_object(regalloc="ra-greedy-regionnat")
-    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thrup", obj)
-    assert fn(9) == _thru_pressure_closed_form(9)
+
+    def assignments(regalloc):
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(mod, tm, "dia")
+            _build_diamond_pressure(mmi)
+            return mmi.regalloc_assignments(regalloc=regalloc)
+
+    ours = assignments("ra-greedy-regionnat")
+    native = assignments("greedy")
     assert "region_split" in traces.values()
+    assert sorted(ours.spilled) == sorted(native.spilled)
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize("x", [0, 1, 5, -3, 100])
+def test_region_split_matches_native_greedy(x):
+    mir.register_regalloc("ra-greedy-regiondiff", mir.RAGreedy)
+
+    def emit(regalloc):
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine()
+            mmi = mir.create_machine_function(mod, tm, "thrup")
+            _build_thru_pressure(mmi)
+            return mmi.emit_object(regalloc=regalloc)
+
+    native, j1 = _jit_call((ctypes.c_int, ctypes.c_int), "thrup", emit(None))
+    ours, j2 = _jit_call(
+        (ctypes.c_int, ctypes.c_int), "thrup", emit("ra-greedy-regiondiff")
+    )
+    assert ours(x) == native(x)
+    assert_no_leaks()
+
+
+def test_region_split_decision_level_matches_native():
+    mir.register_regalloc("ra-greedy-regiondec", mir.RAGreedy)
+
+    def assignments(regalloc):
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(mod, tm, "thrup")
+            _build_thru_pressure(mmi)
+            return mmi.regalloc_assignments(regalloc=regalloc)
+
+    native = assignments("greedy")
+    ours = assignments("ra-greedy-regiondec")
+    assert ours.assignments == native.assignments
+    assert sorted(ours.spilled) == sorted(native.spilled)
+    assert_no_leaks()
+
+
+def test_enable_debug_traces_regalloc_and_toggles_off():
+    """llvm.enable_debug turns on LLVM_DEBUG tracing (to stderr). Scope it to
+    "regalloc" and capture native greedy's trace at the fd level, then toggle it
+    back off so later work is quiet."""
+    import os
+    import tempfile
+
+    with tempfile.TemporaryFile(mode="w+b") as cap:
+        saved = os.dup(2)
+        os.dup2(cap.fileno(), 2)
+        try:
+            llvm.enable_debug(["regalloc"])
+            with ir.Context() as ctx:
+                mod = ir.Module("m", ctx)
+                tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+                mmi = mir.create_machine_function(mod, tm, "add")
+                _build_add(mmi)
+                mmi.regalloc_assignments(regalloc="greedy")
+            llvm.enable_debug()  # all types
+            llvm.enable_debug(enabled=False)  # back off, keep later output quiet
+        finally:
+            os.dup2(saved, 2)
+            os.close(saved)
+        cap.seek(0)
+        trace = cap.read().decode("utf-8", "replace")
+    # The regalloc channel prints its interval assignments.
+    assert "assigning" in trace or "selectOrSplit" in trace
     assert_no_leaks()

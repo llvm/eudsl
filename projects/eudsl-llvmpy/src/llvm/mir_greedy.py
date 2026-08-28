@@ -166,8 +166,20 @@ class RAGreedy(mir.RegAllocBase):
         self._stage[reg] = stage
 
     def _get_cascade(self, reg):
+        """RAGreedy ExtraRegInfo::getCascade: the range's raw cascade number, 0
+        if it has never been evicted. A 0-cascade range can evict anything and
+        be evicted by anything (the eviction-loop guard). Does NOT assign."""
+        return self._cascade.get(reg, 0)
+
+    def _cascade_or_next(self, reg):
+        """getCascadeOrCurrentNext: the range's cascade, or the next value to be
+        assigned (peeked, not consumed) if it has none."""
+        return self._cascade.get(reg) or self._next_cascade
+
+    def _assign_cascade(self, reg):
+        """getOrAssignNewCascade: assign and consume a fresh cascade if unset."""
         c = self._cascade.get(reg)
-        if c is None:
+        if not c:
             c = self._next_cascade
             self._next_cascade += 1
             self._cascade[reg] = c
@@ -175,25 +187,41 @@ class RAGreedy(mir.RegAllocBase):
 
     # -- enqueue / getPriority (RegAllocGreedy::enqueue) --------------------
     def _priority_for(
-        self, reg, size, is_local, force_global, num_allocatable, instr_dist
+        self,
+        stage,
+        size,
+        is_local_assign,
+        local_prio,
+        global_bit,
+        alloc_priority,
+        trumps_globalness,
+        has_pref,
     ):
-        """RAGreedy's priority number for a vreg. Larger = allocated sooner.
+        """Faithful RAGreedy DefaultPriorityAdvisor::getPriority. Larger =
+        allocated sooner. RS_Split ranges are deferred to bare `size` (below the
+        1<<31 mark). Everything else packs, from the low bits: the 24-bit
+        size/instruction-distance priority, then AllocationPriority and the
+        globalness bit (order set by `trumps_globalness`), the 1<<31 mark above
+        RS_Split, and a 1<<30 boost for a known physreg preference.
 
-        RS_Split ranges are deferred to priority == size. Global and giant
-        (ForceGlobal) ranges go long->short by size with the global bit set;
-        genuine local ranges are ordered by their size (a refinement of the
-        start-index ordering that preserves the long-first invariant).
-        Cross-check the exact bit layout against RegAllocGreedy::enqueue.
-        """
-        stage = self._get_stage(reg)
+        `local_prio` is the instruction-order priority for a local RS_Assign
+        range; `global_bit`/`is_local_assign` are computed by the caller (which
+        holds the SplitAnalysis/loop context). The bit layout mirrors
+        RegAllocGreedy.cpp exactly."""
         if stage == LiveRangeStage.RS_Split:
             return size
-        if not is_local or force_global:
-            # Global/giant: long ranges first, with the global bit set high so
-            # they outrank locals of the same size.
-            return (1 << 24) | size
-        # Local ranges in RS_Assign, ordered by size.
-        return size
+        prio = local_prio if is_local_assign else size
+        prio = min(prio, (1 << 24) - 1)  # maxUIntN(24)
+        if trumps_globalness:
+            prio |= (alloc_priority << 25) | (global_bit << 24)
+        else:
+            prio |= (global_bit << 29) | (alloc_priority << 24)
+        # Mark a higher bit to prioritize global and local above RS_Split.
+        prio |= 1 << 31
+        # Boost ranges that have a physical register hint.
+        if has_pref:
+            prio |= 1 << 30
+        return prio
 
     def enqueue(self, reg):
         li = self.lis.interval(reg)
@@ -201,20 +229,50 @@ class RAGreedy(mir.RegAllocBase):
         instr_dist = self.slot_index_instr_distance()
         num_alloc = self.num_allocatable_regs(rc)
         size = li.size
+        reverse = self.reverse_local_assignment()
+        # ForceGlobal: giant ranges fall back to the global heuristic (the
+        # size/InstrDist term only when not assigning locals bottom-up).
         force_global = self.reg_class_has_global_priority(rc) or (
-            (size // instr_dist) > 2 * num_alloc
+            not reverse and (size // instr_dist) > 2 * num_alloc
         )
-        # The local-vs-global refinement (via SplitAnalysis) lands with the
-        # split stages; a faithful start treats every non-ForceGlobal range as
-        # local, matching RAGreedy for ranges that never need splitting.
-        is_local = True
+        # enqueue sets the stage before getPriority reads it.
         if self._get_stage(reg) == LiveRangeStage.RS_New:
             self._set_stage(reg, LiveRangeStage.RS_Assign)
+        stage = self._get_stage(reg)
+        is_local_assign = (
+            stage == LiveRangeStage.RS_Assign
+            and not force_global
+            and size > 0  # not LI.empty(); guards interval_is_in_one_mbb below
+            and self.interval_is_in_one_mbb(reg)
+        )
+        global_bit = 0
+        local_prio = 0
+        if is_local_assign:
+            # Original local ranges in linear instruction order (optimal coloring
+            # absent global interference): forward from the range's begin, or
+            # bottom-up to its end when the target assigns locals in reverse.
+            if not reverse:
+                local_prio = li.begin_index.get_approx_instr_distance(
+                    self.last_slot_index()
+                )
+            else:
+                local_prio = self.zero_slot_index().get_approx_instr_distance(
+                    li.end_index
+                )
+        else:
+            global_bit = 1
         prio = self._priority_for(
-            reg, size, is_local, force_global, num_alloc, instr_dist
+            stage,
+            size,
+            is_local_assign,
+            local_prio,
+            global_bit,
+            self.reg_class_allocation_priority(rc),
+            self.reg_class_priority_trumps_globalness(),
+            self.has_known_preference(reg),
         )
         # Python heapq is a min-heap; negate prio for max-first, and use reg as
-        # the tie-break (smaller id first, matching ~Reg ordering).
+        # the tie-break (smaller id first, matching the ~Reg.id() ordering).
         heapq.heappush(self._queue, (-prio, reg))
 
     def dequeue(self):
@@ -225,13 +283,14 @@ class RAGreedy(mir.RegAllocBase):
 
     # -- tryAssign (RegAllocGreedy::tryAssign) ------------------------------
     def _try_assign(self, li):
-        """Return the first interference-free physreg in allocation order,
-        preferring the simple copy hint. None if every physreg interferes."""
-        hint = self.simple_hint(li.reg)
-        order = list(self.allocation_order(li))
-        if hint and hint in order and self.matrix.is_free(li, hint):
-            return hint
-        for preg in order:
+        """Return the first interference-free physreg in allocation order, or
+        None if every physreg interferes. Matches RAGreedy::tryAssign: a copy
+        hint is honored only because AllocationOrder front-loads it, so the
+        first free reg in order already is the hint when the hint is free -- no
+        separate hint check (which would prefer the hint over an earlier free
+        reg, diverging from native). CostPerUseLimit is uniform (0) for the
+        register classes here, so the cheaper-alternative eviction is a no-op."""
+        for preg in self.allocation_order(li):
             if self.matrix.is_free(li, preg):
                 return preg
         return None
@@ -847,8 +906,12 @@ class RAGreedy(mir.RegAllocBase):
         se = self.split_editor
         sa = self.split_analysis
         eb = self.edge_bundles
-        # LREdit.size() at entry == one opened interval per used candidate.
-        num_global_intvs = len(used_cands)
+        # C++ NumGlobalIntvs = LREdit.size() at entry: the new vregs already
+        # created by the openIntv calls in doRegionSplit (before splitSingleBlock
+        # adds any block-local ones). Do NOT use len(used_cands): openIntv can
+        # create more than one edit entry, and the IntvMap < NumGlobalIntvs
+        # staging check is off-by-one against len(used_cands).
+        num_global_intvs = len(lre.new_vregs())
         single_instrs = self.is_proper_sub_class(li.reg)
         # Use blocks.
         for bi in sa.use_blocks():
@@ -928,9 +991,11 @@ class RAGreedy(mir.RegAllocBase):
     # -- tryEvict / canEvictInterference ------------------------------------
     def _can_evict_interference(self, li, physreg):
         """True if every vreg interfering with `li` on `physreg` can be evicted:
-        each must have a strictly smaller spill weight, and the cascade rule
-        must not forbid it (an interferer whose cascade >= li's cannot be
-        evicted by li). Mirrors canEvictInterference."""
+        each must have a strictly smaller spill weight, must not be a spill
+        product, and must have a strictly older cascade. Mirrors
+        canEvictInterference: `li` uses its cascade-or-next (a range without a
+        cascade peeks the next value), interferers use their raw cascade (0 =
+        never evicted), and a range can evict anything with a lower cascade."""
         # Only virtual-register interference is evictable. If `physreg` carries
         # fixed, reg-unit, or reg-mask interference (checkInterference returns a
         # kind worse than IK_VirtReg), it cannot be freed by eviction -- this is
@@ -940,15 +1005,21 @@ class RAGreedy(mir.RegAllocBase):
         kind = self.matrix.check_interference(li, physreg)
         if kind.value > mir.InterferenceKind.IK_VirtReg.value:
             return False
-        li_cascade = self._get_cascade(li.reg)
+        cascade = self._cascade_or_next(li.reg)
         interferers = self.interfering_vregs(li, physreg)
         if not interferers:
             return False
         for ivreg in interferers:
             iv = self.lis.interval(ivreg)
+            # Never evict spill products (RS_Done); they cannot split or spill.
+            if self._get_stage(ivreg) >= LiveRangeStage.RS_Memory:
+                return False
             if iv.weight >= li.weight:
                 return False
-            if self._get_cascade(ivreg) >= li_cascade:
+            # Only evict strictly-older cascades (or cascade-less, cascade 0);
+            # an equal or newer cascade is the eviction-loop guard. We do not
+            # implement urgent cascade-breaking (a last-resort branch).
+            if cascade <= self._get_cascade(ivreg):
                 return False
         return True
 
@@ -976,7 +1047,9 @@ class RAGreedy(mir.RegAllocBase):
                 best, best_cost = preg, cost
         if best is None:
             return None
-        li_cascade = self._get_cascade(li.reg)
+        # Assign and consume li's cascade now that it actually evicts (matching
+        # evictInterference's getOrAssignNewCascade).
+        li_cascade = self._assign_cascade(li.reg)
         for ivreg in list(self.interfering_vregs(li, best)):
             iv = self.lis.interval(ivreg)
             self.matrix.unassign(iv)
