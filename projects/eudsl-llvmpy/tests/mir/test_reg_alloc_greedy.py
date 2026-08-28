@@ -9,6 +9,7 @@ import pytest
 import llvm
 from llvm import ir, jit, mir
 from llvm.mir_greedy import eviction_cost, calc_gap_weights, calc_global_split_cost
+from llvm.mir_greedy import GlobalSplitCandidate
 from llvm.testing import assert_no_leaks
 
 pytestmark = pytest.mark.skipif(
@@ -1137,3 +1138,13 @@ def test_split_live_through_block_executes():
     fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thru", obj)
     assert fn(9) == 9 and fn(-4) == -4
     assert_no_leaks()
+
+
+def test_global_split_candidate_reset():
+    ra = mir.RAGreedy()
+    cand = GlobalSplitCandidate()
+    cand.active_blocks.append(3)
+    cand.reset(physreg=0)  # compact region
+    assert cand.phys_reg == 0
+    assert cand.active_blocks == []
+    assert cand.intv_idx == 0

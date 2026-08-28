@@ -94,6 +94,35 @@ def normalize_spill_weight(use_def_freq, size, instr_dist):
     return use_def_freq / (size + 25 * instr_dist)
 
 
+# growRegion bails once its edge-walk budget is exhausted (matches
+# GrowRegionComplexityBudget); the value mirrors the LLVM default.
+_GROW_REGION_COMPLEXITY_BUDGET = 10000
+
+# Sentinel for "no candidate owns this edge bundle" (RAGreedy's NoCand).
+_NO_CAND = ~0
+
+
+class GlobalSplitCandidate:
+    """A region-split candidate: one physreg's live-bundle solution, the
+    through blocks it activated, its opened split-interval index, and an
+    interference cursor. Mirrors RAGreedy's GlobalSplitCandidate."""
+
+    def __init__(self):
+        self.phys_reg = 0  # 0 == compact region (no physreg)
+        self.live_bundles = mir.BitVector()
+        self.active_blocks = []  # through-block numbers, in discovery order
+        self.intv_idx = 0
+        self.intf = None  # an InterferenceCursor, set in reset()
+
+    def reset(self, physreg, cursor=None):
+        self.phys_reg = physreg
+        self.intv_idx = 0
+        self.active_blocks = []
+        self.live_bundles = mir.BitVector()
+        if cursor is not None:
+            self.intf = cursor
+
+
 class RAGreedy(mir.RegAllocBase):
     """Faithful reproduction of llvm::RegAllocGreedy."""
 
@@ -116,6 +145,10 @@ class RAGreedy(mir.RegAllocBase):
         self._queue = []
         # Optional test instrumentation: reg id -> stage name that resolved it.
         self.trace = {}
+        # Region-split scratch (RAGreedy's GlobalCand / BundleCand), reused
+        # across select_or_split calls.
+        self._global_cand = []
+        self._bundle_cand = []
 
     # -- stage/cascade bookkeeping (RAGreedy::ExtraRegInfo) ------------------
     def _get_stage(self, reg):
