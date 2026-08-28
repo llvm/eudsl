@@ -268,10 +268,12 @@ class RAGreedy(mir.RegAllocBase):
             self.enqueue(reg)
             return None
 
-        # Second round: try splitting the range or its interferences.
+        # Second round: try splitting the range or its interferences. The
+        # sub-methods record the finer trace ("region_split"/"block_split"/
+        # "local_split"); keep it rather than overwriting with a generic label.
         if stage < LiveRangeStage.RS_Spill and li.size > 0:
             if self._try_split(li):
-                self.trace[reg] = "split"
+                self.trace.setdefault(reg, "split")
                 return None
 
         # A range that is done (already a spill product) or not spillable has no
@@ -299,9 +301,10 @@ class RAGreedy(mir.RegAllocBase):
     # -- trySplit (RegAllocGreedy::trySplit) --------------------------------
     def _try_split(self, li):
         """Split `li` (local or global) so its pieces become assignable. Returns
-        True if new vregs were produced (the framework re-enqueues them). Region
-        splitting is not yet implemented, so multi-block ranges go straight to
-        per-block isolation (tryBlockSplit)."""
+        True if new vregs were produced (the framework re-enqueues them).
+        Single-block ranges take the local split; multi-block ranges try region
+        (global) split first, then per-block isolation (tryBlockSplit). RS_Split2
+        ranges skip region split straight to block split, matching trySplit."""
         reg = li.reg
         if self._get_stage(reg) >= LiveRangeStage.RS_Spill:
             return False
@@ -309,6 +312,9 @@ class RAGreedy(mir.RegAllocBase):
         sa.analyze(li)
         if self.interval_is_in_one_mbb(reg):
             return self._try_local_split(li)
+        if self._get_stage(reg) < LiveRangeStage.RS_Split2:
+            if self._try_region_split(li):
+                return True
         return self._try_block_split(li)
 
     # -- tryBlockSplit (RegAllocGreedy::tryBlockSplit) ----------------------
@@ -380,6 +386,7 @@ class RAGreedy(mir.RegAllocBase):
                 and self._get_stage(r) == LiveRangeStage.RS_New
             ):
                 self._set_stage(r, LiveRangeStage.RS_Spill)
+        self.trace[reg] = "block_split"
         return True
 
     def _local_gap_weights(self, li, physreg, use_slots):
@@ -491,6 +498,7 @@ class RAGreedy(mir.RegAllocBase):
             for i, r in enumerate(lre.new_vregs()):
                 if i < len(intv_map) and intv_map[i] == 1:
                     self._set_stage(r, LiveRangeStage.RS_Split2)
+        self.trace[li.reg] = "local_split"
         return True
 
     # -- region split (tryRegionSplit and its cost model) -------------------
@@ -753,6 +761,55 @@ class RAGreedy(mir.RegAllocBase):
             best_cost = cost
         num_cands += 1
         return best_cand, num_cands, best_cost
+
+    def _region_cand0(self):
+        """Ensure GlobalCand[0] (the compact-region candidate slot) exists with
+        an interference cursor, and return it. calcCompactRegion writes into it."""
+        if not self._global_cand:
+            self._global_cand.append(GlobalSplitCandidate())
+        cand = self._global_cand[0]
+        if cand.intf is None:
+            cand.intf = self.new_interference_cursor()
+        return cand
+
+    def _calc_block_split_cost(self):
+        """RAGreedy::calcBlockSplitCost: the cost of isolating each use block
+        instead of forming bundle regions -- one spill per use block, plus a
+        second for a block where the value is both live-through and redefined.
+        Region split must beat this fallback."""
+        cost = mir.BlockFrequency(0)
+        sp = self.spill_placer
+        for bi in self.split_analysis.use_blocks():
+            number = bi.mbb.number
+            cost = cost + sp.get_block_frequency_by_number(number)
+            if bi.live_in and bi.live_out and bi.first_def.is_valid():
+                cost = cost + sp.get_block_frequency_by_number(number)
+        return cost
+
+    def _try_region_split(self, li):
+        """RAGreedy::tryRegionSplit. Score region-split candidates (plus the
+        compact region), and if one beats spilling, apply it. Returns True if
+        new vregs were produced."""
+        order = list(self.allocation_order(li))
+        num_cands = 0
+        spill_cost = self._calc_block_split_cost()  # cost of isolating all blocks
+        has_compact = self._calc_compact_region(li, self._region_cand0())
+        if has_compact:
+            num_cands = 1
+            best_cost = mir.BlockFrequency.max()
+        else:
+            best_cost = spill_cost
+        best_cand, num_cands = self._calculate_region_split_cost(
+            li, order, best_cost, num_cands, False
+        )
+        if not has_compact and best_cand == _NO_CAND:
+            return False
+        lre = self.new_live_range_edit(li)
+        self._do_region_split(li, best_cand, has_compact, lre)
+        if len(lre.new_vregs()) > 0:
+            self.trace[li.reg] = "region_split"
+            return True
+        return False
 
     def _do_region_split(self, li, best_cand, has_compact, lre):
         """RAGreedy::doRegionSplit. Assign edge bundles to the chosen

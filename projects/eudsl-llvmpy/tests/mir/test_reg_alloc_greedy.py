@@ -316,7 +316,11 @@ def test_block_split_executes_under_pressure():
     # allocator does across the pressured block.
     assert fn(9) == _thru_pressure_closed_form(9)
     assert fn(-4) == _thru_pressure_closed_form(-4)
-    assert "split" in traces.values()
+    # Some split fired under pressure (region split now leads; per-block
+    # isolation may still handle the remainder).
+    assert any(
+        v in ("region_split", "block_split", "local_split") for v in traces.values()
+    )
     assert_no_leaks()
 
 
@@ -1373,4 +1377,26 @@ def test_do_region_split_produces_vregs():
     fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thrup", obj)
     assert fn(3) == _thru_pressure_closed_form(3)
     assert saw.get("nvregs", 0) >= 1
+    assert_no_leaks()
+
+
+def test_region_split_fires_naturally():
+    traces = {}
+
+    class Traced(mir.RAGreedy):
+        def select_or_split(self, li):
+            r = super().select_or_split(li)
+            traces.update(self.trace)
+            return r
+
+    mir.register_regalloc("ra-greedy-regionnat", Traced)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thrup")
+        _build_thru_pressure(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-regionnat")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thrup", obj)
+    assert fn(9) == _thru_pressure_closed_form(9)
+    assert "region_split" in traces.values()
     assert_no_leaks()
