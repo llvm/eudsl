@@ -346,6 +346,155 @@ def test_high_pressure_executes():
     assert_no_leaks()
 
 
+# -- eviction (interference query + VirtRegMap) -------------------------------
+
+
+_evict_log = []
+# reg ids handed to select_or_split, in order; a reg that is evicted, re-enqueued
+# and re-processed appears more than once.
+_evict_selected = []
+
+
+class _EvictingAllocator(mir.RegAllocBase):
+    """Greedy-style eviction: take a free physreg if one exists, else evict the
+    interfering (no-higher-weight) virtual registers off a candidate physreg,
+    re-enqueueing them onto the Python queue. Each register is evicted at most
+    once, which bounds the cascade so allocation terminates (a re-enqueued reg
+    that finds no free/evictable candidate spills)."""
+
+    def __init__(self):
+        super().__init__()
+        self.q = []
+        self.evicted_once = set()
+
+    def enqueue(self, reg):
+        self.q.append(reg)
+
+    def dequeue(self):
+        return self.q.pop(0) if self.q else None
+
+    def select_or_split(self, li):
+        _evict_selected.append(li.reg)
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                return preg
+        for preg in self.allocation_order(li):
+            intf = self.interfering_vregs(li, preg)
+            if (
+                intf
+                and all(r not in self.evicted_once for r in intf)
+                and all(self.vrm.has_phys(r) for r in intf)
+                and all(self.lis.interval(r).weight <= li.weight for r in intf)
+            ):
+                for r in intf:
+                    _evict_log.append((r, self.vrm.get_phys(r)))
+                    self.evicted_once.add(r)
+                    self.matrix.unassign(self.lis.interval(r))
+                    self.q.append(r)
+                return preg
+        self.spill(li)
+        return None
+
+
+def test_eviction_identifies_and_unassigns_interferer():
+    """Under forced interference the allocator enumerates the interfering vreg
+    on an occupied physreg (via interfering_vregs), reads its current physreg
+    (get_phys/has_phys), and evicts it -- exercising the eviction surface. The
+    re-enqueue path is witnessed: an evicted reg is later re-processed."""
+    _evict_log.clear()
+    _evict_selected.clear()
+    mir.register_regalloc("ra-evict", _EvictingAllocator)
+    obj = _emit("ra-evict", _EvictingAllocator, builder=_build_high_pressure, fn="hp")
+    assert obj[:4] == b"\x7fELF"
+    assert _evict_log, "an interferer was identified and evicted"
+    # Witness re-enqueue -> re-processing: at least one evicted reg was handed
+    # back to select_or_split a second time (it can't be re-processed unless the
+    # eviction actually re-enqueued it).
+    evicted = {r for r, _ in _evict_log}
+    assert any(
+        _evict_selected.count(r) >= 2 for r in evicted
+    ), "an evicted reg was re-enqueued and re-processed"
+    assert_no_leaks()
+
+
+@pytest.mark.skipif(not _IS_AARCH64, reason="executing hand-built AArch64 MIR")
+def test_eviction_executes():
+    _evict_log.clear()
+    mir.register_regalloc("ra-evict-x", _EvictingAllocator)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "hp")
+        _build_high_pressure(mmi)
+        obj = mmi.emit_object(regalloc="ra-evict-x")
+        hp, j = _jit_call((ctypes.c_int32, ctypes.c_int32), "hp", obj)
+        assert hp(3) == _hp_closed_form(3)
+        assert hp(7) == _hp_closed_form(7)
+        del j
+    assert _evict_log, "eviction path exercised during the executed emission"
+    assert_no_leaks()
+
+
+_alias_seen = {}
+
+
+class _AliasChecker(mir.RegAllocBase):
+    """Assigns GPR32 vregs (which land in W registers) and, once one is
+    assigned, queries interfering_vregs against each enclosing X (GPR64)
+    super-register. Finding the W-assigned vreg via an X query proves the query
+    walks every reg unit and reports aliasing/subregister interference -- it is
+    not a Python-side physreg->vreg shadow (which would only know about the W it
+    assigned, never the containing X)."""
+
+    def __init__(self):
+        super().__init__()
+        self.assigned = []
+
+    def select_or_split(self, li):
+        if "hit" not in _alias_seen and self.assigned:
+            mf = self.machine_function
+            for r, wphys in self.assigned:
+                if not self.lis.has_interval(r):
+                    continue
+                for xi in range(29):  # X0..X28 (X29/X30/X31 have special names)
+                    try:
+                        x = mf.physreg(f"X{xi}").id
+                    except KeyError:
+                        continue
+                    intf = self.interfering_vregs(li, x)
+                    if r in intf and x != wphys:
+                        # No duplicate ids even though a super-register query can
+                        # surface the same vreg across several reg units.
+                        assert len(intf) == len(set(intf))
+                        _alias_seen["hit"] = (r, wphys, xi)
+                        break
+                if "hit" in _alias_seen:
+                    break
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                self.matrix.assign(li, preg)
+                self.assigned.append((li.reg, preg))
+                return None
+        self.spill(li)
+        return None
+
+
+def test_interfering_vregs_reports_subregister_aliasing():
+    """A vreg assigned to a W register is reported when interfering_vregs is
+    queried against the enclosing X super-register -- exercising the every-reg-
+    unit / alias-correct behavior on a genuine sub/super-register pair (a shadow
+    map keyed on the assigned physreg could not find it)."""
+    _alias_seen.clear()
+    mir.register_regalloc("ra-alias", _AliasChecker)
+    obj = _emit("ra-alias", _AliasChecker, builder=_build_high_pressure, fn="hp")
+    assert obj[:4] == b"\x7fELF"
+    assert "hit" in _alias_seen, (
+        "a GPR32 vreg assigned to a W register was found by querying its "
+        "enclosing X super-register (interfering_vregs walks every reg unit)"
+    )
+    assert_no_leaks()
+
+
 # -- MachineBlockFrequencyInfo ------------------------------------------------
 
 

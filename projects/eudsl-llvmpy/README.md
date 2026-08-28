@@ -415,9 +415,14 @@ interface — subclassable from Python. The one required override is
 register id, or return `None` after handling it yourself (spill or split, which
 append new virtual registers that get re-enqueued). The allocator queries and
 mutates state through `self`: `allocation_order(li)` (physregs to try, in target
-order), `self.matrix` (`is_free`/`check_interference`/`assign`/`unassign`),
+order), `interfering_vregs(li, physreg)` (ids of vregs whose ranges interfere
+with `li` on that physreg -- assigned to it or to an aliasing physreg; the
+eviction candidates),
+`self.matrix` (`is_free`/`check_interference`/`assign`/`unassign`),
 `self.lis` (LiveIntervals: `instruction_index`, `mbb_start_index`,
-`mbb_end_index`, `has_interval`, `interval`), `self.vrm`,
+`mbb_end_index`, `has_interval`, `interval`), `self.vrm` (VirtRegMap:
+`has_phys`/`get_phys`, to read an interferer's current physreg before evicting
+it),
 `self.machine_function`, and `self.mbfi` (MachineBlockFrequencyInfo:
 `block_freq`, `block_freq_relative_to_entry_block`, `entry_freq`, for
 frequency-weighted spill/split cost models). Optional overrides: `enqueue(reg)`/`dequeue()` (drive
