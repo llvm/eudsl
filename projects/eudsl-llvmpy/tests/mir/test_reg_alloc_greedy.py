@@ -390,3 +390,60 @@ def test_local_split_executes():
     assert fn(3) == 15  # 5 * 3
     assert fn(-2) == -10
     assert_no_leaks()
+
+
+# -- Oracle 3: differential vs native greedy (semantic) -----------------------
+
+
+@pytest.mark.parametrize("x", [0, 1, 5, -3, 100])
+@pytest.mark.parametrize(
+    "builder,fn,sig",
+    [
+        (_build_add, "add", (ctypes.c_int, ctypes.c_int, ctypes.c_int)),
+        (_build_high_pressure, "hp", (ctypes.c_int, ctypes.c_int)),
+        (_build_thru_pressure, "thrup", (ctypes.c_int, ctypes.c_int)),
+    ],
+)
+def test_matches_native_greedy_semantics(builder, fn, sig, x):
+    """JIT-execute the object mir.RAGreedy produces and the one the target
+    default allocator (greedy) produces; the results must agree for every
+    input. A mismatch is a real allocation bug."""
+    mir.register_regalloc("ra-greedy-diff", mir.RAGreedy)
+
+    def emit(regalloc):
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine()
+            mmi = mir.create_machine_function(mod, tm, fn)
+            builder(mmi)
+            return mmi.emit_object(regalloc=regalloc)
+
+    native, j1 = _jit_call(sig, fn, emit(None))  # target default == greedy
+    ours, j2 = _jit_call(sig, fn, emit("ra-greedy-diff"))
+    args = [x] * (len(sig) - 1)
+    assert ours(*args) == native(*args)
+    assert_no_leaks()
+
+
+# -- Oracle 4: decision-level diff vs native greedy ---------------------------
+
+
+def test_decision_level_matches_native_on_small_input():
+    """On a small input where greedy trivially assigns, mir.RAGreedy must reach
+    the same vreg->physreg decisions as native greedy, read back through
+    regalloc_assignments (same manual [allocator][capture] pipeline for both)."""
+    mir.register_regalloc("ra-greedy-dec", mir.RAGreedy)
+
+    def assignments(regalloc):
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(mod, tm, "add")
+            _build_add(mmi)
+            return mmi.regalloc_assignments(regalloc=regalloc)
+
+    native = assignments("greedy")
+    ours = assignments("ra-greedy-dec")
+    assert ours.assignments == native.assignments
+    assert sorted(ours.spilled) == sorted(native.spilled)
+    assert_no_leaks()
