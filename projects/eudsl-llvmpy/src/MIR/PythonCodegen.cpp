@@ -613,6 +613,27 @@ public:
     return RegClassInfo.getNumAllocatableRegs(rc);
   }
 
+  // LLVM's fixed number of slot-index positions per instruction (SlotIndex::
+  // InstrDist) -- RAGreedy converts range size to instruction count with it.
+  unsigned slotIndexInstrDistance() { return llvm::SlotIndex::InstrDist; }
+
+  // Whether the target assigns local ranges in reverse instruction order
+  // (RAGreedy::enqueue orders local ranges by this).
+  bool reverseLocalAssignment() {
+    return mf->getSubtarget().getRegisterInfo()->reverseLocalAssignment();
+  }
+
+  // Whether `rc` forces the global (long->short) priority path regardless of
+  // size (RAGreedy's ForceGlobal input).
+  bool regClassHasGlobalPriority(const llvm::TargetRegisterClass *rc) {
+    return rc->GlobalPriority;
+  }
+
+  // Whether `rc` is an allocatable register class.
+  bool regClassIsAllocatable(const llvm::TargetRegisterClass *rc) {
+    return rc->isAllocatable();
+  }
+
   bool isTriviallyRematerializable(llvm::MachineInstr *mi) {
     return mf->getSubtarget().getInstrInfo()->isTriviallyReMaterializable(*mi);
   }
@@ -1074,6 +1095,15 @@ void populate_python_codegen(nb::module_ &m) {
            "reg_class"_a,
            "Number of actually-allocatable registers in `reg_class` (the "
            "register-pressure denominator; reserved registers excluded).")
+      .def("slot_index_instr_distance", &PyRegAllocBase::slotIndexInstrDistance,
+           "Slot positions per instruction (SlotIndex::InstrDist).")
+      .def("reverse_local_assignment", &PyRegAllocBase::reverseLocalAssignment,
+           "Whether the target assigns local ranges in reverse order.")
+      .def("reg_class_has_global_priority",
+           &PyRegAllocBase::regClassHasGlobalPriority, "reg_class"_a,
+           "Whether `reg_class` forces global priority (RAGreedy ForceGlobal).")
+      .def("reg_class_is_allocatable", &PyRegAllocBase::regClassIsAllocatable,
+           "reg_class"_a, "Whether `reg_class` is allocatable.")
       .def(
           "is_trivially_rematerializable",
           &PyRegAllocBase::isTriviallyRematerializable, "mi"_a,
