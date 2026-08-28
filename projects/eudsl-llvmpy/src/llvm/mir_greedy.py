@@ -185,11 +185,68 @@ class RAGreedy(mir.RegAllocBase):
         if preg is not None:
             self.trace[reg] = "assign"
             return preg
-        # (evict/split inserted by later tasks)
+        preg = self._try_evict(li)
+        if preg is not None:
+            self.trace[reg] = "evict"
+            return preg
+        # (split inserted by later tasks)
         self.trace[reg] = "spill"
         self.spill(li)
         self._set_stage(reg, LiveRangeStage.RS_Memory)
         return None
+
+    # -- tryEvict / canEvictInterference ------------------------------------
+    def _can_evict_interference(self, li, physreg):
+        """True if every vreg interfering with `li` on `physreg` can be evicted:
+        each must have a strictly smaller spill weight, and the cascade rule
+        must not forbid it (an interferer whose cascade >= li's cannot be
+        evicted by li). Mirrors canEvictInterference."""
+        li_cascade = self._get_cascade(li.reg)
+        for ivreg in self.interfering_vregs(li, physreg):
+            iv = self.lis.interval(ivreg)
+            if iv.weight >= li.weight:
+                return False
+            if self._get_cascade(ivreg) >= li_cascade:
+                return False
+        return True
+
+    def _eviction_cost_for(self, li, physreg):
+        """eviction_cost for evicting `li`'s interferers off `physreg`."""
+        interferers = self.interfering_vregs(li, physreg)
+        weights = [self.lis.interval(v).weight for v in interferers]
+        hint = self.simple_hint(li.reg)
+        broken_hint = bool(hint) and physreg != hint
+        csr = self.last_callee_saved_alias(physreg) != 0
+        unused_csr = csr and not self.matrix.is_phys_reg_used(physreg)
+        return eviction_cost(weights, broken_hint, unused_csr)
+
+    def _try_evict(self, li):
+        """Evict the interferers off the cheapest evictable physreg and assign
+        `li` there. Returns the physreg, or None if nothing is evictable."""
+        best, best_cost = None, None
+        for preg in self.allocation_order(li):
+            if self.matrix.is_free(li, preg):
+                continue  # tryAssign already tried the free ones
+            if not self._can_evict_interference(li, preg):
+                continue
+            cost = self._eviction_cost_for(li, preg)
+            if best_cost is None or cost < best_cost:
+                best, best_cost = preg, cost
+        if best is None:
+            return None
+        li_cascade = self._get_cascade(li.reg)
+        for ivreg in list(self.interfering_vregs(li, best)):
+            iv = self.lis.interval(ivreg)
+            self.matrix.unassign(iv)
+            # The evicted range advances to RS_Split and inherits li's cascade
+            # so it can't evict li back within this cascade.
+            self._set_stage(ivreg, max(self._get_stage(ivreg), LiveRangeStage.RS_Split))
+            self._cascade[ivreg] = li_cascade
+            self.enqueue(ivreg)
+        # Evicting the interferers frees `best`; return it and let the framework
+        # do the assignment (assigning here as well would double-assign and
+        # abort). `best` now passes select_or_split's free-candidate check.
+        return best
 
 
 mir.RAGreedy = RAGreedy

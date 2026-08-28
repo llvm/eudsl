@@ -155,3 +155,66 @@ def test_assign_allocates_and_executes():
     assert fn(3, 4) == 7  # semantics preserved
     assert "assign" in traces.values()  # tryAssign fired
     assert_no_leaks()
+
+
+_HP_N = 48
+
+
+def _hp_closed_form(x):
+    return _HP_N * x
+
+
+def _build_high_pressure(mmi):
+    mf = mmi.machine_function("hp")
+    b = mir.MachineIRBuilder(mf)
+    entry = mf.blocks[0]
+    gpr32 = mf.reg_class("GPR32")
+    w0 = mf.physreg("W0")
+    entry.add_livein(w0)
+    copy = mf.opcode("COPY")
+    addrr = mf.opcode("ADDWrr")
+    terms = []
+    for _ in range(_HP_N):
+        t = mf.create_vreg(gpr32)
+        ins = b.build_instr(copy)
+        ins.add_reg(t, is_def=True)
+        ins.add_reg(w0)
+        terms.append(t)
+    acc = terms[0]
+    for t in terms[1:]:
+        nacc = mf.create_vreg(gpr32)
+        ins = b.build_instr(addrr)
+        ins.add_reg(nacc, is_def=True)
+        ins.add_reg(acc)
+        ins.add_reg(t)
+        acc = nacc
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(acc)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+def test_evict_executes_and_preserves_semantics():
+    traces = {}
+
+    class Traced(mir.RAGreedy):
+        def select_or_split(self, li):
+            r = super().select_or_split(li)
+            traces.update(self.trace)
+            return r
+
+    mir.register_regalloc("ra-greedy-evict", Traced)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "hp")
+        _build_high_pressure(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-evict")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "hp", obj)
+    assert fn(5) == _hp_closed_form(5)
+    assert "evict" in traces.values()
+    assert_no_leaks()
