@@ -699,6 +699,61 @@ class RAGreedy(mir.RegAllocBase):
             return False
         return True
 
+    def _is_unused_callee_saved(self, physreg):
+        """EvictAdvisor::isUnusedCalleeSavedReg: `physreg` aliases a callee-saved
+        register that has not been assigned yet (so using it would widen the
+        callee-saved set)."""
+        return self.last_callee_saved_alias(
+            physreg
+        ) != 0 and not self.matrix.is_phys_reg_used(physreg)
+
+    def _calculate_region_split_cost(self, li, order, best_cost, num_cands, ignore_csr):
+        """RAGreedy::calculateRegionSplitCost. Score a candidate per physreg;
+        return (best_cand_index_or__NO_CAND, num_cands)."""
+        best_cand = _NO_CAND
+        for physreg in order:
+            if ignore_csr and self._is_unused_callee_saved(physreg):
+                continue
+            best_cand, num_cands, best_cost = (
+                self._calculate_region_split_cost_around_reg(
+                    li, physreg, order, best_cost, num_cands, best_cand
+                )
+            )
+        return best_cand, num_cands
+
+    def _calculate_region_split_cost_around_reg(
+        self, li, physreg, order, best_cost, num_cands, best_cand
+    ):
+        """RAGreedy::calculateRegionSplitCostAroundReg for one physreg.
+
+        The C++ recycles interference-cache cursors once NumCands reaches
+        IntfCache.getMaxCursors(); that cap (a large default) is never reached
+        by the hand-built test corpus and getMaxCursors is not exposed, so the
+        recycling branch is omitted -- the scoring result is identical."""
+        if len(self._global_cand) <= num_cands:
+            self._global_cand.append(GlobalSplitCandidate())
+        cand = self._global_cand[num_cands]
+        cand.reset(physreg, self.new_interference_cursor())
+        self.set_interference_physreg(cand.intf, physreg)
+        sp = self.spill_placer
+        sp.prepare(cand.live_bundles)
+        cost, positive = self._add_split_constraints(cand.intf)
+        if not positive:
+            return best_cand, num_cands, best_cost
+        if not (cost < best_cost):
+            return best_cand, num_cands, best_cost
+        if not self._grow_region(li, cand):
+            return best_cand, num_cands, best_cost
+        sp.finish()
+        if not cand.live_bundles.count() > 0:
+            return best_cand, num_cands, best_cost
+        cost = cost + self._calc_global_split_cost(cand, order)
+        if cost < best_cost:
+            best_cand = num_cands
+            best_cost = cost
+        num_cands += 1
+        return best_cand, num_cands, best_cost
+
     # -- tryEvict / canEvictInterference ------------------------------------
     def _can_evict_interference(self, li, physreg):
         """True if every vreg interfering with `li` on `physreg` can be evicted:

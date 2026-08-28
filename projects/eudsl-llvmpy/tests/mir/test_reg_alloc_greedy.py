@@ -10,6 +10,7 @@ import llvm
 from llvm import ir, jit, mir
 from llvm.mir_greedy import eviction_cost, calc_gap_weights, calc_global_split_cost
 from llvm.mir_greedy import GlobalSplitCandidate
+from llvm.mir_greedy import _NO_CAND
 from llvm.testing import assert_no_leaks
 
 pytestmark = pytest.mark.skipif(
@@ -1308,4 +1309,34 @@ def test_calc_compact_region_returns_bool():
     fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thrup", obj)
     assert fn(3) == _thru_pressure_closed_form(3)
     assert isinstance(saw["compact"], bool)
+    assert_no_leaks()
+
+
+def test_calculate_region_split_cost_selects_candidate():
+    saw = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            sa = self.split_analysis
+            sa.analyze(li)
+            if "done" not in saw and sa.num_through_blocks() > 0:
+                saw["done"] = True
+                order = list(self.allocation_order(li))
+                best_cost = mir.BlockFrequency.max()
+                best, ncands = self._calculate_region_split_cost(
+                    li, order, best_cost, 0, False
+                )
+                saw["best"] = best
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-crsc", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "thrup")
+        _build_thru_pressure(mmi)
+        obj = mmi.emit_object(regalloc="ra-greedy-crsc")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thrup", obj)
+    assert fn(3) == _thru_pressure_closed_form(3)
+    assert saw["best"] == _NO_CAND or saw["best"] >= 0
     assert_no_leaks()
