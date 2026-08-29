@@ -452,14 +452,11 @@ class RAGreedy(mir.RegAllocBase):
     def _local_gap_weights(self, li, physreg, use_slots):
         """calcGapWeights(PhysReg) for a local interval: for each gap between
         consecutive `use_slots`, the largest interferer spill weight overlapping
-        it. Built from the vregs assigned to `physreg` that interfere with `li`;
-        their segments are mapped into the use-slot distance space and fed to the
-        pure calc_gap_weights helper.
-
-        Fidelity note: RAGreedy also marks gaps overlapping fixed reg-unit or
-        reg-mask interference as huge_valf. This reproduces the virtual-register
-        interference only; over the allocatable order (reserved regs excluded)
-        and call-free ranges, that is the whole picture."""
+        it. Built from the vregs assigned to `physreg` that interfere with `li`,
+        plus fixed (physical) reg-unit interference on `physreg`, whose gaps are
+        marked huge_valf (a physreg clobbered mid-interval can't hold the value
+        across the clobber). Reg-mask (call) clobbers are applied by the caller,
+        which knows the regmask gaps. Mirrors RAGreedy::calcGapWeights."""
         base = use_slots[0]
         islots = [base.distance(u) for u in use_slots]
         spans = []
@@ -468,7 +465,40 @@ class RAGreedy(mir.RegAllocBase):
             w = iv.weight
             for seg in iv.segments():
                 spans.append((base.distance(seg.start), base.distance(seg.end), w))
+        # Fixed physical interference: mark covered gaps huge_valf.
+        for seg in self.fixed_interference_spans(li, physreg):
+            spans.append((base.distance(seg.start), base.distance(seg.end), _HUGE_VALF))
         return calc_gap_weights(islots, spans)
+
+    def _local_reg_mask_gaps(self, li, bi, uses, num_gaps):
+        """The gaps of a local interval that a register mask (call clobber)
+        crosses. Faithful port of the RegMaskGaps scan in
+        RegAllocGreedy::tryLocalSplit: walk the block's regmask slots alongside
+        the use slots and record each gap [Uses[i], Uses[i+1]] a mask falls in.
+        Empty when `li` crosses no register mask."""
+        if not self.check_reg_mask_interference(li):
+            return []
+        rms = list(self.reg_mask_slots_in_block(bi.mbb.number))
+        gaps = []
+        # lower_bound(rms, uses[0].get_reg_slot())
+        first = uses[0].get_reg_slot()
+        ri = 0
+        while ri < len(rms) and rms[ri] < first:
+            ri += 1
+        re = len(rms)
+        for i in range(num_gaps):
+            if ri == re:
+                break
+            if _earlier_instr(uses[i + 1], rms[ri]):
+                continue
+            # A regmask on the same instruction as the last use doesn't overlap.
+            if uses[i + 1].is_same_instr(rms[ri]) and i + 1 == num_gaps:
+                break
+            gaps.append(i)
+            # Advance past this gap; a regmask on a use counts in both gaps.
+            while ri != re and _earlier_instr(rms[ri], uses[i + 1]):
+                ri += 1
+        return gaps
 
     def _try_local_split(self, li):
         """Local (single-block) splitting: find the contiguous run of uses worth
@@ -491,9 +521,15 @@ class RAGreedy(mir.RegAllocBase):
         block_freq = self.spill_placer.get_block_frequency(bi.mbb).get_frequency() * (
             1.0 / self.mbfi.entry_freq().get_frequency()
         )
+        # Gaps that a register mask (call clobber) crosses; for a physreg that
+        # the mask clobbers, those gaps become uninhabitable (huge_valf).
+        reg_mask_gaps = self._local_reg_mask_gaps(li, bi, uses, num_gaps)
 
         for physreg in self.allocation_order(li):
             gap_weight = self._local_gap_weights(li, physreg, uses)
+            if reg_mask_gaps and self.check_reg_mask_interference_phys(li, physreg):
+                for g in reg_mask_gaps:
+                    gap_weight[g] = _HUGE_VALF
             split_before, split_after = 0, 1
             max_gap = gap_weight[0]
             while True:

@@ -672,6 +672,45 @@ public:
     return ids;
   }
 
+  // Fixed (physical) reg-unit interference for `physreg` overlapping `li`: the
+  // segments of LIS->getRegUnit(unit) for each of `physreg`'s reg units that
+  // overlap li's range. calcGapWeights marks gaps covered by these huge_valf --
+  // a physreg clobbered mid-interval can't hold the value across the clobber.
+  std::vector<llvm::LiveRange::Segment>
+  fixedInterferenceSpans(const llvm::LiveInterval &li, unsigned physreg) {
+    const llvm::TargetRegisterInfo *tri = mf->getSubtarget().getRegisterInfo();
+    llvm::SlotIndex start = li.beginIndex(), stop = li.endIndex();
+    std::vector<llvm::LiveRange::Segment> segs;
+    for (llvm::MCRegUnit unit : tri->regunits(llvm::MCRegister(physreg))) {
+      const llvm::LiveRange &lr = LIS->getRegUnit(unit);
+      for (const llvm::LiveRange::Segment &s : lr)
+        if (s.start < stop && start < s.end) // overlaps li
+          segs.push_back(s);
+    }
+    return segs;
+  }
+
+  // Whether `li` is live across any register-mask operand (a call clobber).
+  bool checkRegMaskInterferenceLI(const llvm::LiveInterval &li) {
+    return Matrix->checkRegMaskInterference(
+        const_cast<llvm::LiveInterval &>(li));
+  }
+
+  // Whether `physreg` is clobbered by a register mask that `li` crosses.
+  bool checkRegMaskInterferencePhys(const llvm::LiveInterval &li,
+                                    unsigned physreg) {
+    return Matrix->checkRegMaskInterference(
+        const_cast<llvm::LiveInterval &>(li), llvm::MCRegister(physreg));
+  }
+
+  // The register-mask slot indexes in block `mbbNumber` (tryLocalSplit finds the
+  // gaps overlapping these to mark call-clobbered).
+  std::vector<llvm::SlotIndex> regMaskSlotsInBlock(unsigned mbbNumber) {
+    llvm::ArrayRef<llvm::SlotIndex> rms =
+        LIS->getRegMaskSlotsInBlock(mbbNumber);
+    return std::vector<llvm::SlotIndex>(rms.begin(), rms.end());
+  }
+
   // Per-use cost of `physreg` (the CostPerUseLimit heuristic RAGreedy uses to
   // decide whether a register is worth allocating). Indexed by physreg id. The
   // cost table is an ArrayRef into the target's static tables (fixed for this
@@ -1287,6 +1326,18 @@ void populate_python_codegen(nb::module_ &m) {
       .def("register_cost", &PyRegAllocBase::registerCost, "physreg"_a,
            "Per-use cost of `physreg` (the CostPerUseLimit heuristic; 0 on "
            "targets with uniform register cost).")
+      .def("fixed_interference_spans", &PyRegAllocBase::fixedInterferenceSpans,
+           "li"_a, "physreg"_a,
+           "Fixed (physical) reg-unit interference segments for `physreg` "
+           "overlapping `li` -- calcGapWeights marks gaps they cover huge_valf.")
+      .def("check_reg_mask_interference", &PyRegAllocBase::checkRegMaskInterferenceLI,
+           "li"_a, "Whether `li` is live across any register-mask (call clobber).")
+      .def("check_reg_mask_interference_phys",
+           &PyRegAllocBase::checkRegMaskInterferencePhys, "li"_a, "physreg"_a,
+           "Whether `physreg` is clobbered by a register mask `li` crosses.")
+      .def("reg_mask_slots_in_block", &PyRegAllocBase::regMaskSlotsInBlock,
+           "mbb_number"_a,
+           "The register-mask slot indexes in block `mbb_number`.")
       .def("reg_class", &PyRegAllocBase::regClass, nb::rv_policy::reference,
            "reg"_a,
            "The register class of virtual register `reg` (target-static; "
@@ -1776,6 +1827,14 @@ void populate_python_codegen(nb::module_ &m) {
           "other"_a,
           "Whether this and `other` are on different instructions and this is "
           "earlier (SlotIndex::isEarlierInstr).")
+      .def(
+          "is_same_instr",
+          [](const llvm::SlotIndex &a, const llvm::SlotIndex &b) {
+            return llvm::SlotIndex::isSameInstr(a, b);
+          },
+          "other"_a,
+          "Whether this and `other` are on the same instruction "
+          "(SlotIndex::isSameInstr).")
       .def("get_reg_slot",
            [](const llvm::SlotIndex &i) { return i.getRegSlot(); })
       .def("get_base_index",

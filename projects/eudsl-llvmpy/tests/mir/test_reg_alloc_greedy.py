@@ -792,6 +792,113 @@ def test_local_split_gap_scan_with_interference():
     assert_no_leaks()
 
 
+def _build_local_clobber(mmi):
+    """Single block with a multi-use value that lives across (a) an explicit
+    physreg def ($w9 = COPY $w0), creating fixed reg-unit interference on W9, and
+    (b) an instruction carrying a call-preserved register mask, clobbering the
+    caller-saved registers. Drives calcGapWeights' fixed reg-unit and reg-mask
+    huge_valf marking. clob(x) = a linear function of x."""
+    mf = mmi.machine_function("clob")
+    b = mir.MachineIRBuilder(mf)
+    gpr32 = mf.reg_class("GPR32")
+    w0, w9 = mf.physreg("W0"), mf.physreg("W9")
+    e = mf.blocks[0]
+    e.add_livein(w0)
+    copy = mf.opcode("COPY")
+    addrr = mf.opcode("ADDWrr")
+    u = mf.create_vreg(gpr32)
+    cu = b.build_instr(copy)
+    cu.add_reg(u, is_def=True)
+    cu.add_reg(w0)
+    v = mf.create_vreg(gpr32)
+    cv = b.build_instr(copy)
+    cv.add_reg(v, is_def=True)
+    cv.add_reg(w0)
+    acc = u
+    for i in range(4):
+        n = mf.create_vreg(gpr32)
+        ins = b.build_instr(addrr)
+        ins.add_reg(n, is_def=True)
+        ins.add_reg(acc)
+        ins.add_reg(v if i % 2 else u)
+        acc = n
+    # A physreg def (fixed reg-unit interference on W9) that carries a call
+    # regmask (clobbering the caller-saved regs) -- v is live across it.
+    clob = b.build_instr(copy)
+    clob.add_reg(w9, is_def=True)
+    clob.add_reg(w0)
+    clob.add_reg_mask()
+    for i in range(4):
+        n = mf.create_vreg(gpr32)
+        ins = b.build_instr(addrr)
+        ins.add_reg(n, is_def=True)
+        ins.add_reg(acc)
+        ins.add_reg(v if i % 2 else u)
+        acc = n
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(acc)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+def test_local_split_fixed_and_regmask_interference():
+    """Local-split gap scan over an interval that crosses a physreg clobber
+    (fixed reg-unit interference) and a call register mask: calcGapWeights marks
+    the covered gaps huge_valf. Confirms both the reg-unit fixed-span path and
+    the reg-mask-gap path are exercised, and the split still matches native."""
+    state = {"assigned": 0, "forced": False, "fixed": False, "regmask": False}
+
+    class Force(mir.RAGreedy):
+        def fixed_interference_spans(self, li, physreg):
+            spans = super().fixed_interference_spans(li, physreg)
+            if spans:
+                state["fixed"] = True
+            return spans
+
+        def _local_reg_mask_gaps(self, li, bi, uses, num_gaps):
+            gaps = super()._local_reg_mask_gaps(li, bi, uses, num_gaps)
+            if gaps:
+                state["regmask"] = True
+            return gaps
+
+        def select_or_split(self, li):
+            reg = li.reg
+            sa = self.split_analysis
+            sa.analyze(li)
+            multi = (
+                self.interval_is_in_one_mbb(reg)
+                and len(sa.use_blocks()) == 1
+                and len(list(sa.get_use_slots())) > 2
+            )
+            if multi and state["assigned"] == 0:
+                for p in self.allocation_order(li):
+                    if self.matrix.is_free(li, p):
+                        state["assigned"] = 1
+                        return p
+            if multi and state["assigned"] >= 1 and not state["forced"]:
+                if self._try_local_split(li):
+                    state["forced"] = True
+                    return None
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-greedy-clob", Force)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "clob")
+        _build_local_clobber(mmi)
+        mmi.regalloc_assignments(regalloc="ra-greedy-clob")
+    # The gap scan saw both fixed reg-unit interference (the W9 def) and the
+    # call regmask, marking their gaps huge_valf.
+    assert state["fixed"], "fixed reg-unit interference reached the gap scan"
+    assert state["regmask"], "the call regmask produced regmask gaps"
+    assert_no_leaks()
+
+
 def test_local_split_progress_required():
     """Force a local split on an interval already at RS_Split2 (progress
     required), so the gap scan must find a strictly-shorter window: exercises
@@ -2131,6 +2238,12 @@ class _FakeSlot:
     def is_earlier_instr(self, o):
         return self.v < o.v
 
+    def is_same_instr(self, o):
+        return self.v == o.v
+
+    def get_reg_slot(self):
+        return self
+
     def is_valid(self):
         return self.v >= 0
 
@@ -2596,6 +2709,8 @@ def test_try_local_split_shrink_recompute_running_max():
         mbfi=SimpleNamespace(
             entry_freq=lambda: SimpleNamespace(get_frequency=lambda: 1)
         ),
+        check_reg_mask_interference=lambda li: False,
+        _local_reg_mask_gaps=lambda li, bi, uses, ng: [],
         allocation_order=lambda li: [1],
         # gap[0]=10 is the front max; widening keeps it (g1,g2 < 10); the wide
         # window's low est_weight forces a shrink that drops the max at gap[0],
@@ -2692,3 +2807,30 @@ def test_split_around_region_all_arms():
     assert stage[101] == LiveRangeStage.RS_Split2
     assert 102 not in stage  # too few live blocks: left unchanged (RS_New)
     assert stage[103] == LiveRangeStage.RS_Spill  # untouched (was not RS_New)
+
+
+def test_local_reg_mask_gaps_arms():
+    """RegMaskGaps scan (tryLocalSplit): the lower-bound skip of regmasks before
+    the interval, recording a gap a mask falls in, skipping a gap with no mask,
+    the last-use-same-instr break, running off the regmask list, and normal
+    loop completion. Driven with crafted regmask/use slots."""
+
+    def gaps(rms_vals, use_vals, interfere=True):
+        rms = [_FakeSlot(v) for v in rms_vals]
+        uses = [_FakeSlot(v) for v in use_vals]
+        fg = SimpleNamespace(
+            check_reg_mask_interference=lambda li: interfere,
+            reg_mask_slots_in_block=lambda n: rms,
+        )
+        bi = SimpleNamespace(mbb=SimpleNamespace(number=0))
+        return mg.RAGreedy._local_reg_mask_gaps(fg, object(), bi, uses, len(uses) - 1)
+
+    # No regmask interference -> empty (early return).
+    assert gaps([5], [0, 10, 20], interfere=False) == []
+    # A regmask before the first use is skipped (lower bound); a later gap with a
+    # mask is recorded; the last mask lands on the final use -> break.
+    assert gaps([-1, 15, 30], [0, 10, 20, 30]) == [1]
+    # A gap whose mask makes the regmask list run out mid-scan (ri == re break).
+    assert gaps([5], [0, 10, 20]) == [0]
+    # Every mask sits past the remaining uses -> continue to normal completion.
+    assert gaps([100], [0, 10, 20]) == []

@@ -1271,6 +1271,19 @@ void populate_mir(nb::module_ &m) {
                             llvm::MachineOperand::CreateMBB(mbb));
           },
           "block"_a, "Append a machine-basic-block operand.")
+      .def(
+          "add_reg_mask",
+          [](llvm::MachineInstr &self) {
+            llvm::MachineFunction &mf = *self.getMF();
+            const llvm::TargetRegisterInfo *tri =
+                mf.getSubtarget().getRegisterInfo();
+            const uint32_t *mask = tri->getCallPreservedMask(
+                mf, mf.getFunction().getCallingConv());
+            self.addOperand(mf, llvm::MachineOperand::CreateRegMask(mask));
+          },
+          "Append the target's call-preserved register mask -- a call clobber "
+          "of the caller-saved registers (what makes an instruction interfere "
+          "with live ranges crossing it via checkRegMaskInterference).")
       .def("__str__",
            [](llvm::MachineInstr &self) { return eudsl::toString(self); });
 
