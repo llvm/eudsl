@@ -729,6 +729,19 @@ public:
     return VRM->hasKnownPreference(llvm::Register(reg));
   }
 
+  // Whether `reg` is currently assigned to its preferred physreg (a satisfied,
+  // unbroken copy hint): canEvictInterferenceBasedOnCost charges BrokenHints
+  // when evicting such a range would break that hint.
+  bool hasPreferredPhys(unsigned reg) {
+    return VRM->hasPreferredPhys(llvm::Register(reg));
+  }
+
+  // TargetRegisterClass::getCopyCost -- the per-broken-hint weight the eviction
+  // cost model adds to BrokenHints.
+  int regClassCopyCost(const llvm::TargetRegisterClass *rc) {
+    return rc->getCopyCost();
+  }
+
   // The last / zero slot indexes of the function, for the instruction-order
   // priority of local ranges (getApproxInstrDistance endpoints).
   llvm::SlotIndex lastSlotIndex() {
@@ -1307,6 +1320,12 @@ void populate_python_codegen(nb::module_ &m) {
       .def("has_known_preference", &PyRegAllocBase::hasKnownPreference, "reg"_a,
            "Whether `reg` has a known physreg preference (getPriority boosts "
            "these).")
+      .def("has_preferred_phys", &PyRegAllocBase::hasPreferredPhys, "reg"_a,
+           "Whether `reg` is assigned to its preferred physreg (a satisfied copy "
+           "hint) -- evicting it breaks that hint (eviction BrokenHints).")
+      .def("reg_class_copy_cost", &PyRegAllocBase::regClassCopyCost, "reg_class"_a,
+           "TargetRegisterClass::getCopyCost -- the per-broken-hint weight in the "
+           "eviction cost model.")
       .def(
           "last_slot_index", &PyRegAllocBase::lastSlotIndex,
           "The last SlotIndex of the function (local-range priority endpoint).")

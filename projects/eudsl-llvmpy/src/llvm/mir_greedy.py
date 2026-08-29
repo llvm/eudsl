@@ -31,20 +31,23 @@ class LiveRangeStage(enum.IntEnum):
 EVICT_INTERFERENCE_CUTOFF = 10
 
 
-def eviction_cost(interferer_weights):
-    """RAGreedy's eviction cost: the MAXIMUM interferer spill weight (not their
-    sum), matching EvictionCost::MaxWeight in canEvictInterferenceBasedOnCost.
-    The caller picks the physreg with the least such cost. 0.0 for no
-    interferers.
-
-    LLVM's EvictionCost is lexicographically ``(BrokenHints, MaxWeight)``, with
-    BrokenHints the primary key. We use MaxWeight only: BrokenHints is derived
-    from each interferer's VRM preferred-phys (hint-satisfaction) state, and this
-    allocator does not reproduce that state bit-for-bit (it omits tryAssign's
-    occupied-hint eviction path), so charging it made eviction *diverge* from
-    native greedy on the test corpus rather than match it. MaxWeight alone
-    reproduces native's decisions here (verified by the decision-level oracle)."""
-    return max(interferer_weights, default=0.0)
+def eviction_cost(interferers):
+    """RAGreedy's EvictionCost, ``(broken_hints, max_weight)``, compared
+    lexicographically (Python tuple order, BrokenHints primary). `interferers`
+    is a list of ``(weight, breaks_hint, copy_cost)`` triples: ``broken_hints``
+    sums the copy cost of each interferer whose satisfied hint the eviction would
+    break, ``max_weight`` is the largest interferer spill weight (NOT their sum).
+    Mirrors canEvictInterferenceBasedOnCost's cost accumulation; the caller picks
+    the physreg with the least such cost. No callee-saved term: unused-CSR
+    avoidance lives in tryAssignCSRFirstTime, not eviction."""
+    broken_hints = 0.0
+    max_weight = 0.0
+    for weight, breaks_hint, copy_cost in interferers:
+        if breaks_hint:
+            broken_hints += copy_cost
+        if weight > max_weight:
+            max_weight = weight
+    return (broken_hints, max_weight)
 
 
 def calc_gap_weights(use_slots, interferer_spans):
@@ -1037,12 +1040,20 @@ class RAGreedy(mir.RegAllocBase):
         return True
 
     def _eviction_cost_for(self, li, physreg):
-        """Eviction cost (max interferer weight) for evicting `li`'s interferers
-        off `physreg`. Mirrors EvictionCost::MaxWeight."""
-        weights = [
-            self.lis.interval(v).weight for v in self.interfering_vregs(li, physreg)
-        ]
-        return eviction_cost(weights)
+        """EvictionCost (broken_hints, max_weight) for evicting `li`'s
+        interferers off `physreg`: each interferer at its preferred physreg
+        (has_preferred_phys) contributes its class copy cost to broken_hints, and
+        max_weight is the heaviest interferer. Mirrors
+        canEvictInterferenceBasedOnCost's per-interferer accumulation."""
+        triples = []
+        for v in self.interfering_vregs(li, physreg):
+            weight = self.lis.interval(v).weight
+            breaks_hint = self.has_preferred_phys(v)
+            copy_cost = (
+                self.reg_class_copy_cost(self.reg_class(v)) if breaks_hint else 0.0
+            )
+            triples.append((weight, breaks_hint, copy_cost))
+        return eviction_cost(triples)
 
     def _try_evict(self, li):
         """Evict the interferers off the cheapest evictable physreg and assign
