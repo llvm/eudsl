@@ -18,6 +18,7 @@
 #include <llvm/CodeGen/MachineOperand.h>
 #include <llvm/CodeGen/MachineRegisterInfo.h>
 #include <llvm/CodeGen/MachineScheduler.h>
+#include <llvm/CodeGen/Passes.h>
 #include <llvm/CodeGen/RegAllocRegistry.h>
 #include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetOpcodes.h>
@@ -651,18 +652,17 @@ public:
 
   // Run register allocation with the named allocator over the built
   // (already-selected) MIR and return the post-RA vreg->physreg map, without
-  // emitting an object. The pipeline is just [allocator][capture]: a bare
-  // legacy PassManager auto-schedules the allocator's required analyses
-  // (LiveIntervals, VirtRegMap, LiveRegMatrix, ...) from its getAnalysisUsage,
-  // and VRMCapturePass reads VirtRegMap after the allocator but before the
-  // virtual-register rewriter would delete the virtual registers. We
-  // deliberately omit the pre-RA transforms emit_object runs (RegisterCoalescer
-  // especially): coalescing would fold the copy-connected vregs into physregs,
-  // leaving no virtual registers for a Python allocator to be diffed against a
-  // native one -- the whole point of this entry point. So the reported physregs
-  // are for decision-level comparison on identical MIR, not a match for llc.
-  // Like emitObject this is build-path-only and one-shot: the build wrapper is
-  // adopted into the pipeline, so the BuildOwned is consumed into an
+  // emitting an object. The pipeline is [two-address][coalescer][allocator]
+  // [capture]: a bare legacy PassManager auto-schedules the allocator's required
+  // analyses (LiveIntervals, VirtRegMap, LiveRegMatrix, ...) from its
+  // getAnalysisUsage, and VRMCapturePass reads VirtRegMap after the allocator but
+  // before the virtual-register rewriter would delete the virtual registers. We
+  // run TwoAddressInstruction + RegisterCoalescer first, matching the pre-RA
+  // transforms emit_object/llc run, so the reported physregs correspond to
+  // allocation over the same coalesced MIR (a range diffed against a native
+  // allocator sees identical input on both sides). Like emitObject this is
+  // build-path-only and one-shot: the build wrapper is adopted into the
+  // pipeline, so the BuildOwned is consumed into an
   // EmittedOwned.
   RegAllocAssignments regallocAssignments(const std::string &regalloc) {
     if (std::holds_alternative<EmittedOwned>(state_))
@@ -739,6 +739,20 @@ public:
     // it provides the MMI the MachineFunctionPasses query. `info` stays valid
     // because `pm` keeps the wrapper alive.
     pm->add(build->mmiwp.release());
+    // Run the pre-RA transforms the real codegen pipeline runs before the
+    // allocator -- TwoAddressInstruction then RegisterCoalescer -- so the
+    // reported assignments reflect allocation over the same coalesced MIR that
+    // emit_object/llc allocate over (copy-connected vregs folded into their
+    // hinted physreg), not the raw pre-coalescing copies. Added by PassInfo
+    // since these passes have no public factory; the legacy PM schedules their
+    // required analyses (LiveIntervals, SlotIndexes, ...) from getAnalysisUsage.
+    llvm::PassRegistry *pr = llvm::PassRegistry::getPassRegistry();
+    for (const void *id :
+         {static_cast<const void *>(&llvm::TwoAddressInstructionPassID),
+          static_cast<const void *>(&llvm::RegisterCoalescerID)}) {
+      if (const llvm::PassInfo *pi = pr->getPassInfo(id))
+        pm->add(pi->createPass());
+    }
     pm->add(raCtor());
     // The capture pass owns its result; read it back after the run so nothing
     // outlives a borrowed pointer once `pm` is parked in EmittedOwned.
@@ -1563,15 +1577,14 @@ void populate_mir(nb::module_ &m) {
            "an object. Verifies the MIR first, raising if it is malformed; an "
            "unknown allocator name raises. Build-path-only and one-shot, like "
            "emit_object.\n\n"
-           "The pipeline is [allocator][capture] only: it deliberately does NOT "
-           "run the pre-RA transforms (RegisterCoalescer, TwoAddressInstruction, "
-           "...) that emit_object/llc run before allocation. That keeps the "
-           "virtual registers intact so a Python allocator's decisions can be "
-           "diffed vreg-for-vreg against a native allocator on identical MIR "
-           "(coalescing would fold copies into physregs, leaving nothing to "
-           "compare). Consequently the returned physregs need not match those in "
-           "emit_object() output or llc -- both sides here allocate over the "
-           "given, un-coalesced MIR.");
+           "The pipeline runs the pre-RA transforms (TwoAddressInstruction, "
+           "RegisterCoalescer) before the allocator, matching what "
+           "emit_object/llc do, so the reported physregs correspond to "
+           "allocation over the same coalesced MIR. A Python allocator's "
+           "decisions can still be diffed against a native allocator: both run "
+           "this identical pipeline. Note that coalescing folds copy-connected "
+           "vregs into their hinted physreg, so those vregs no longer appear in "
+           "the map (they are gone before RA, exactly as in real codegen).");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the
