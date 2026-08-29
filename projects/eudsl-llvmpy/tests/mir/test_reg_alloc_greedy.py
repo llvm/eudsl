@@ -30,16 +30,23 @@ def test_ragreedy_is_exported_and_constructs():
     assert_no_leaks()
 
 
-def test_eviction_cost_sums_weights_and_penalties():
-    # No penalties: cost is just the summed interferer weight.
-    assert eviction_cost(
-        [1.0, 2.0], broken_hint=False, is_unused_callee_saved=False
-    ) == pytest.approx(3.0)
-    # A broken hint adds a strictly positive penalty.
-    base = eviction_cost([1.0], broken_hint=False, is_unused_callee_saved=False)
-    assert eviction_cost([1.0], broken_hint=True, is_unused_callee_saved=False) > base
-    # Introducing an unused callee-saved reg is dominated by the CSR bias.
-    assert eviction_cost([1.0], broken_hint=False, is_unused_callee_saved=True) > base
+def test_eviction_cost_is_max_weight_not_sum():
+    # RAGreedy's eviction cost is the MAX interferer weight, not the sum: a
+    # physreg with one heavy interferer costs more than one with several light
+    # ones (the opposite of a sum), matching EvictionCost::MaxWeight.
+    assert eviction_cost([1.0, 2.0]) == pytest.approx(2.0)
+    assert eviction_cost([3.0]) > eviction_cost([1.0, 1.0, 1.0])  # max, not sum
+    assert eviction_cost([]) == pytest.approx(0.0)  # no interferers
+
+
+def test_assign_cascade_consumes_once_per_reg():
+    """getOrAssignNewCascade assigns a fresh cascade the first time and returns
+    the existing one on repeat (the already-assigned branch), consuming a new
+    number only for a fresh reg."""
+    ra = mir.RAGreedy()
+    c1 = ra._assign_cascade(5)
+    assert ra._assign_cascade(5) == c1  # already assigned: no new consume
+    assert ra._assign_cascade(6) == c1 + 1  # fresh reg gets the next cascade
 
 
 def test_calc_gap_weights_per_gap_max_interference():
@@ -1336,6 +1343,7 @@ def test_grow_region_expands_and_returns():
                 self.spill_placer.prepare(cand.live_bundles)
                 self._add_split_constraints(cand.intf)
                 saw["grew"] = self._grow_region(li, cand)
+                saw["active"] = list(cand.active_blocks)
             return super().select_or_split(li)
 
     mir.register_regalloc("ra-greedy-grow", Probe)
@@ -1347,7 +1355,9 @@ def test_grow_region_expands_and_returns():
         obj = mmi.emit_object(regalloc="ra-greedy-grow")
     fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thrup", obj)
     assert fn(3) == _thru_pressure_closed_form(3)
-    assert saw["grew"] in (True, False)  # returns a bool; budget not exceeded
+    # growRegion succeeds (budget not exceeded) and activates the through blocks.
+    assert saw["grew"] is True
+    assert saw["active"], "the region grew to cover at least one through block"
     assert_no_leaks()
 
 
@@ -1430,6 +1440,12 @@ def test_calculate_region_split_cost_selects_candidate():
                     li, order, best_cost, 0, False
                 )
                 saw["best"] = best
+                saw["ncands"] = ncands
+                saw["bundles"] = (
+                    self._global_cand[best].live_bundles.count()
+                    if best != _NO_CAND
+                    else 0
+                )
             return super().select_or_split(li)
 
     mir.register_regalloc("ra-greedy-crsc", Probe)
@@ -1441,7 +1457,10 @@ def test_calculate_region_split_cost_selects_candidate():
         obj = mmi.emit_object(regalloc="ra-greedy-crsc")
     fn, j = _jit_call((ctypes.c_int, ctypes.c_int), "thrup", obj)
     assert fn(3) == _thru_pressure_closed_form(3)
-    assert saw["best"] == _NO_CAND or saw["best"] >= 0
+    # thrup has a live-through value under pressure, so a region candidate wins.
+    assert saw["best"] != _NO_CAND and saw["best"] >= 0
+    assert saw["ncands"] >= 1
+    assert saw["bundles"] > 0  # the winning candidate keeps bundles in-register
     assert_no_leaks()
 
 
@@ -1653,18 +1672,24 @@ def test_calc_compact_region_no_through_blocks():
 
 def test_calculate_region_split_cost_ignore_csr():
     """Scoring with ignore_csr=True skips unused callee-saved physregs
-    (isUnusedCalleeSavedReg), exercising that filter."""
+    (isUnusedCalleeSavedReg): it scores a subset of what ignore_csr=False does,
+    so it never yields more candidates."""
 
     def body(self, li, st):
         order = list(self.allocation_order(li))
         st["csr_seen"] = any(self._is_unused_callee_saved(p) for p in order)
-        best, _ = self._calculate_region_split_cost(
+        best_f, nc_f = self._calculate_region_split_cost(
+            li, order, mir.BlockFrequency.max(), 0, False
+        )
+        self._global_cand = []  # reset scratch between scorings
+        best_t, nc_t = self._calculate_region_split_cost(
             li, order, mir.BlockFrequency.max(), 0, True
         )
-        st["best"] = best
+        st["nc_false"], st["nc_true"] = nc_f, nc_t
 
     st = _diamond_live_through_probe(body)
-    assert st["best"] == _NO_CAND or st["best"] >= 0
+    # Ignoring CSRs scores a subset -> no more candidates than the full scan.
+    assert st["nc_true"] <= st["nc_false"]
     assert isinstance(st["csr_seen"], bool)
     assert_no_leaks()
 
@@ -1701,16 +1726,21 @@ def test_do_region_split_with_compact_region():
         best, ncands = self._calculate_region_split_cost(
             li, order, mir.BlockFrequency.max(), 0, False
         )
-        if ncands == 0 or not self._global_cand[0].live_bundles.count() > 0:
-            st["skipped"] = True
+        st["found"] = ncands >= 1 and self._global_cand[0].live_bundles.count() > 0
+        if not st["found"]:
             return None
+        # GlobalCand[0] is the top-scoring candidate; reuse it as the compact
+        # slot (the diamond has no beneficial true-compact region) to drive
+        # doRegionSplit's has_compact plumbing -- claiming its bundles and
+        # opening its interval.
         lre = self.new_live_range_edit(li)
         self._do_region_split(li, _NO_CAND, True, lre)
         st["nvregs"] = len(lre.new_vregs())
         return True
 
     st = _diamond_live_through_probe(body)
-    assert st.get("skipped") or st["nvregs"] >= 1
+    assert st["found"], "region scoring must find a candidate on the diamond"
+    assert st["nvregs"] >= 1
     assert_no_leaks()
 
 
@@ -1725,8 +1755,8 @@ def test_split_around_region_all_covering_candidate():
         best, ncands = self._calculate_region_split_cost(
             li, order, mir.BlockFrequency.max(), 0, False
         )
-        if best == _NO_CAND:
-            st["skipped"] = True
+        st["found"] = best != _NO_CAND
+        if not st["found"]:
             return None
         cand = self._global_cand[best]
         lre = self.new_live_range_edit(li)
@@ -1740,7 +1770,8 @@ def test_split_around_region_all_covering_candidate():
         return True
 
     st = _diamond_live_through_probe(body)
-    assert st.get("skipped") or st["nvregs"] >= 1
+    assert st["found"], "region scoring must find a candidate on the diamond"
+    assert st["nvregs"] >= 1
     assert_no_leaks()
 
 
@@ -1927,8 +1958,8 @@ def test_split_around_region_isolated_and_through_arms():
         best, ncands = self._calculate_region_split_cost(
             li, order, mir.BlockFrequency.max(), 0, False
         )
-        if best == _NO_CAND:
-            st["skipped"] = True
+        st["found"] = best != _NO_CAND
+        if not st["found"]:
             return None
         cand = self._global_cand[best]
         eb = self.edge_bundles
@@ -1948,7 +1979,8 @@ def test_split_around_region_isolated_and_through_arms():
         return True
 
     st = _diamond_live_through_probe(body)
-    assert st.get("skipped") or st["nvregs"] >= 1
+    assert st["found"], "region scoring must find a candidate on the diamond"
+    assert st["nvregs"] >= 1
     assert_no_leaks()
 
 
@@ -2202,7 +2234,7 @@ def test_should_split_single_block_proper_subclass_arms():
     live-through instruction always splits; a copy never does; otherwise it
     splits only at an original endpoint."""
     fg = SimpleNamespace(
-        is_copy_like_at=lambda instr: fg._is_copy,
+        is_copy_like_instr_at=lambda instr: fg._is_copy,
         split_analysis=SimpleNamespace(is_original_endpoint=lambda i: fg._is_orig),
     )
 
@@ -2306,6 +2338,11 @@ def test_add_through_constraints_exit_mustspill_and_no_links():
     assert ok is True
     assert sp.links is None  # no clean blocks -> add_links never called
     assert sp.constraints and len(sp.constraints) == 1
+    bc = sp.constraints[0]
+    # first()=5 is past the block start/insert point -> PrefSpill entry; last()=50
+    # reaches the last split point (10) -> MustSpill exit.
+    assert bc.entry == mir.BorderConstraint.PrefSpill
+    assert bc.exit == mir.BorderConstraint.MustSpill
 
 
 def test_add_through_constraints_aborts_when_spill_uninsertable():
@@ -2441,6 +2478,7 @@ def test_try_region_split_compact_but_no_vregs_returns_false():
     """tryRegionSplit with a compact region but no winning per-physreg candidate
     and no new vregs produced by doRegionSplit returns False (nothing applied)."""
     fg = SimpleNamespace(
+        should_region_split_for_virt_reg=lambda reg: True,
         allocation_order=lambda li: [1],
         _calc_block_split_cost=lambda: mir.BlockFrequency(0),
         _region_cand0=lambda: GlobalSplitCandidate(),
@@ -2451,6 +2489,18 @@ def test_try_region_split_compact_but_no_vregs_returns_false():
         trace={},
     )
     assert mg.RAGreedy._try_region_split(fg, SimpleNamespace(reg=1)) is False
+
+
+def test_try_region_split_target_opts_out_returns_false():
+    """When the target's shouldRegionSplitForVirtReg is False, tryRegionSplit
+    bails immediately without scoring."""
+    scored = []
+    fg = SimpleNamespace(
+        should_region_split_for_virt_reg=lambda reg: False,
+        allocation_order=lambda li: scored.append("scored") or [1],
+    )
+    assert mg.RAGreedy._try_region_split(fg, SimpleNamespace(reg=1)) is False
+    assert scored == []  # no scoring happened
 
 
 def test_do_region_split_skips_candidates_that_claim_no_bundles():
@@ -2510,11 +2560,12 @@ def test_try_local_split_shrink_recompute_running_max():
     bi = SimpleNamespace(mbb=object(), live_in=False, live_out=True)
     lre = SimpleNamespace(new_vregs=lambda: [])
     calls = []
+    picked = {}
     se = SimpleNamespace(
         reset=lambda lre: None,
         open_intv=lambda: calls.append("open"),
-        enter_intv_before=lambda s: s,
-        leave_intv_after=lambda s: s,
+        enter_intv_before=lambda s: picked.__setitem__("before", s) or s,
+        leave_intv_after=lambda s: picked.__setitem__("after", s) or s,
         use_intv=lambda a, b: calls.append("use"),
         finish=lambda: [],
     )
@@ -2534,7 +2585,8 @@ def test_try_local_split_shrink_recompute_running_max():
         ),
         allocation_order=lambda li: [1],
         # gap[0]=10 is the front max; widening keeps it (g1,g2 < 10); the wide
-        # window's low est_weight forces a shrink that drops the max at gap[0].
+        # window's low est_weight forces a shrink that drops the max at gap[0],
+        # triggering the running-max recompute over the remaining gaps.
         _local_gap_weights=lambda li, preg, u: [10.0, 1.0, 5.0],
         new_live_range_edit=lambda li: lre,
         split_editor=se,
@@ -2542,6 +2594,10 @@ def test_try_local_split_shrink_recompute_running_max():
     )
     assert mg.RAGreedy._try_local_split(fg, SimpleNamespace(reg=1)) is True
     assert "use" in calls  # a window was chosen and applied
+    # Pin the selected window: [use 0, use 2] -- the best-scoring run before the
+    # shrink-and-recompute. A window-selection regression changes these.
+    assert picked["before"] is uses[0]
+    assert picked["after"] is uses[2]
 
 
 def test_split_around_region_all_arms():

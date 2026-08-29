@@ -723,15 +723,6 @@ public:
     return rc->AllocationPriority;
   }
 
-  // Whether the target packs the register-class allocation priority above the
-  // globalness bit in the enqueue key (RAGreedy::RegClassPriorityTrumpsGlobal-
-  // ness).
-  bool regClassPriorityTrumpsGlobalness() {
-    return mf->getSubtarget()
-        .getRegisterInfo()
-        ->regClassPriorityTrumpsGlobalness(*mf);
-  }
-
   // Whether `reg` has a known physreg preference (a copy hint the framework
   // already resolved) -- getPriority boosts these.
   bool hasKnownPreference(unsigned reg) {
@@ -775,6 +766,26 @@ public:
       return false; // LCOV_EXCL_LINE -- a use slot always has an instruction
     const llvm::TargetInstrInfo *tii = mf->getSubtarget().getInstrInfo();
     return tii->isCopyInstr(*mi).has_value() || mi->isSubregToReg();
+  }
+
+  // MachineInstr::isCopyLike() for the instruction at `idx` -- exactly the
+  // predicate SplitAnalysis::shouldSplitSingleBlock uses (generic COPY or
+  // SUBREG_TO_REG only). Unlike isCopyLikeAt, this does NOT match target-
+  // specific copies (TII::isCopyInstr), so it is the faithful test there.
+  bool isCopyLikeInstrAt(llvm::SlotIndex idx) {
+    llvm::MachineInstr *mi = LIS->getInstructionFromIndex(idx);
+    if (!mi)
+      return false; // LCOV_EXCL_LINE -- a use slot always has an instruction
+    return mi->isCopyLike();
+  }
+
+  // TargetRegisterInfo::shouldRegionSplitForVirtReg -- a target hook (default
+  // true) that tryRegionSplit consults before attempting a region split.
+  bool shouldRegionSplitForVirtReg(unsigned reg) {
+    const llvm::TargetRegisterInfo *tri =
+        mf->getSubtarget().getRegisterInfo();
+    return tri->shouldRegionSplitForVirtReg(
+        *mf, LIS->getInterval(llvm::Register(reg)));
   }
 
   bool isTriviallyRematerializable(llvm::MachineInstr *mi) {
@@ -1293,10 +1304,6 @@ void populate_python_codegen(nb::module_ &m) {
            &PyRegAllocBase::regClassAllocationPriority, "reg_class"_a,
            "`reg_class`'s target allocation priority (getPriority's "
            "AllocationPriority field).")
-      .def("reg_class_priority_trumps_globalness",
-           &PyRegAllocBase::regClassPriorityTrumpsGlobalness,
-           "Whether the target packs allocation priority above the globalness "
-           "bit in the enqueue key.")
       .def("has_known_preference", &PyRegAllocBase::hasKnownPreference, "reg"_a,
            "Whether `reg` has a known physreg preference (getPriority boosts "
            "these).")
@@ -1313,8 +1320,15 @@ void populate_python_codegen(nb::module_ &m) {
            "Whether `reg`'s class is a proper subclass of its allocation "
            "superclass (shouldSplitSingleBlock's SingleInstrs input).")
       .def("is_copy_like_at", &PyRegAllocBase::isCopyLikeAt, "idx"_a,
-           "Whether the instruction at slot `idx` is a COPY or SUBREG_TO_REG "
-           "(shouldSplitSingleBlock won't isolate a lone copy).")
+           "Whether the instruction at slot `idx` is copy-like including "
+           "target-specific copies (TII::isCopyInstr, or SUBREG_TO_REG).")
+      .def("is_copy_like_instr_at", &PyRegAllocBase::isCopyLikeInstrAt, "idx"_a,
+           "MachineInstr::isCopyLike() at slot `idx` (generic COPY / "
+           "SUBREG_TO_REG only) -- the exact test shouldSplitSingleBlock uses.")
+      .def("should_region_split_for_virt_reg",
+           &PyRegAllocBase::shouldRegionSplitForVirtReg, "reg"_a,
+           "TargetRegisterInfo::shouldRegionSplitForVirtReg (default true) -- "
+           "tryRegionSplit's target-hook guard.")
       .def(
           "is_trivially_rematerializable",
           &PyRegAllocBase::isTriviallyRematerializable, "mi"_a,

@@ -671,6 +671,12 @@ def test_split_analysis_use_and_through_blocks():
                 saw["one_instr"] = [b.is_one_instr() for b in blocks]
                 def_bi = next(b for b in blocks if b.first_def.is_valid())
                 saw["def_is_copy_like"] = self.is_copy_like_at(def_bi.first_instr)
+                # isCopyLike() (generic COPY / SUBREG_TO_REG) also holds for the
+                # `v = COPY w0` def; and the target-hook region-split guard.
+                saw["def_is_copy_like_instr"] = self.is_copy_like_instr_at(
+                    def_bi.first_instr
+                )
+                saw["region_split_ok"] = self.should_region_split_for_virt_reg(li.reg)
                 saw["def_orig_endpoint"] = sa.is_original_endpoint(def_bi.first_instr)
             for preg in self.allocation_order(li):
                 if self.matrix.is_free(li, preg):
@@ -690,6 +696,8 @@ def test_split_analysis_use_and_through_blocks():
     assert all(isinstance(x, bool) for x in saw["one_instr"])
     # The def is `v = COPY w0`, so its defining instruction is copy-like.
     assert saw["def_is_copy_like"] is True
+    assert saw["def_is_copy_like_instr"] is True  # a generic COPY
+    assert saw["region_split_ok"] is True  # AArch64 default
     assert isinstance(saw["def_orig_endpoint"], bool)
     assert_no_leaks()
 

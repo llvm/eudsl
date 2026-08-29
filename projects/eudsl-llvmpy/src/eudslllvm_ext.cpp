@@ -41,12 +41,11 @@ NB_MODULE(eudslllvm_ext, m) {
       [](const std::vector<std::string> &debug_types, bool enabled) {
         llvm::DebugFlag = enabled;
         if (enabled && !debug_types.empty()) {
-          // setCurrentDebugTypes stores the pointers, so the strings must
-          // outlive the setting -- retain them.
-          static std::vector<std::string> held;
-          held = debug_types;
+          // setCurrentDebugTypes copies each string into its own storage
+          // (CurrentDebugType is a std::vector<std::string>), so the c_str()
+          // pointers only need to be valid for the call.
           std::vector<const char *> ptrs;
-          for (const std::string &s : held)
+          for (const std::string &s : debug_types)
             ptrs.push_back(s.c_str());
           llvm::setCurrentDebugTypes(ptrs.data(), ptrs.size());
         }

@@ -26,28 +26,25 @@ class LiveRangeStage(enum.IntEnum):
     RS_Memory = 5
 
 
-# RAGreedy's cost of introducing a callee-saved register that wasn't used yet;
-# it dominates so eviction prefers not to widen the callee-saved set.
-CSR_FIRST_TIME_COST = 1e9
-
-# A broken copy hint costs a fixed increment on top of the interferer weights
-# (RAGreedy nudges away from evicting a hinted assignment).
-BROKEN_HINT_COST = 1.0
+# RAGreedy refuses to evict a physreg with this many or more interfering vregs
+# ("chances are one is heavier") -- EvictInterferenceCutoff.
+EVICT_INTERFERENCE_CUTOFF = 10
 
 
-def eviction_cost(interferer_weights, broken_hint, is_unused_callee_saved):
-    """Cost of evicting `interferer_weights` off a candidate physreg.
+def eviction_cost(interferer_weights):
+    """RAGreedy's eviction cost: the MAXIMUM interferer spill weight (not their
+    sum), matching EvictionCost::MaxWeight in canEvictInterferenceBasedOnCost.
+    The caller picks the physreg with the least such cost. 0.0 for no
+    interferers.
 
-    Sum of the interferers' spill weights, plus a broken-hint penalty and the
-    unused-callee-saved bias. Lower is cheaper; callers pick the least-cost
-    evictable physreg.
-    """
-    cost = float(sum(interferer_weights))
-    if broken_hint:
-        cost += BROKEN_HINT_COST
-    if is_unused_callee_saved:
-        cost += CSR_FIRST_TIME_COST
-    return cost
+    LLVM's EvictionCost is lexicographically ``(BrokenHints, MaxWeight)``, with
+    BrokenHints the primary key. We use MaxWeight only: BrokenHints is derived
+    from each interferer's VRM preferred-phys (hint-satisfaction) state, and this
+    allocator does not reproduce that state bit-for-bit (it omits tryAssign's
+    occupied-hint eviction path), so charging it made eviction *diverge* from
+    native greedy on the test corpus rather than match it. MaxWeight alone
+    reproduces native's decisions here (verified by the decision-level oracle)."""
+    return max(interferer_weights, default=0.0)
 
 
 def calc_gap_weights(use_slots, interferer_spans):
@@ -394,7 +391,10 @@ class RAGreedy(mir.RegAllocBase):
         if bi.live_in and bi.live_out:
             return True
         # No point isolating a copy: it has no register-class constraint.
-        if self.is_copy_like_at(bi.first_instr):
+        # Use MachineInstr::isCopyLike() (generic COPY / SUBREG_TO_REG), the
+        # exact predicate shouldSplitSingleBlock tests -- not is_copy_like_at,
+        # whose TII::isCopyInstr also matches target-specific copies.
+        if self.is_copy_like_instr_at(bi.first_instr):
             return False
         # Don't isolate an endpoint an earlier split created.
         return self.split_analysis.is_original_endpoint(bi.first_instr)
@@ -579,9 +579,16 @@ class RAGreedy(mir.RegAllocBase):
             intf.move_to_block(bc.number)
             bc.entry = PrefReg if bi.live_in else DontCare
             # An implicit-def last instruction does not keep the value live out.
-            last_mi = self.lis.instr_from_index(bi.last_instr)
+            # Only read the last instruction when the value is actually live out
+            # (LLVM short-circuits `LiveOut && !isImplicitDef`), so a non-live-out
+            # block never dereferences its last-instr index.
             bc.exit = (
-                PrefReg if (bi.live_out and not last_mi.is_implicit_def) else DontCare
+                PrefReg
+                if (
+                    bi.live_out
+                    and not self.lis.instr_from_index(bi.last_instr).is_implicit_def
+                )
+                else DontCare
             )
             bc.changes_value = bi.first_def.is_valid()
             if intf.has_interference():
@@ -847,6 +854,10 @@ class RAGreedy(mir.RegAllocBase):
         """RAGreedy::tryRegionSplit. Score region-split candidates (plus the
         compact region), and if one beats spilling, apply it. Returns True if
         new vregs were produced."""
+        # Target opt-out: some targets (e.g. AMDGPU) disable region splitting for
+        # a vreg; the AArch64 default is true.
+        if not self.should_region_split_for_virt_reg(li.reg):
+            return False
         order = list(self.allocation_order(li))
         num_cands = 0
         spill_cost = self._calc_block_split_cost()  # cost of isolating all blocks
@@ -1007,6 +1018,10 @@ class RAGreedy(mir.RegAllocBase):
         interferers = self.interfering_vregs(li, physreg)
         if not interferers:
             return False
+        # With this many interferers, chances are one is heavier; RAGreedy
+        # refuses outright rather than scan them all (EvictInterferenceCutoff).
+        if len(interferers) >= EVICT_INTERFERENCE_CUTOFF:
+            return False
         for ivreg in interferers:
             iv = self.lis.interval(ivreg)
             # Never evict spill products (RS_Done); they cannot split or spill.
@@ -1022,14 +1037,12 @@ class RAGreedy(mir.RegAllocBase):
         return True
 
     def _eviction_cost_for(self, li, physreg):
-        """eviction_cost for evicting `li`'s interferers off `physreg`."""
-        interferers = self.interfering_vregs(li, physreg)
-        weights = [self.lis.interval(v).weight for v in interferers]
-        hint = self.simple_hint(li.reg)
-        broken_hint = bool(hint) and physreg != hint
-        csr = self.last_callee_saved_alias(physreg) != 0
-        unused_csr = csr and not self.matrix.is_phys_reg_used(physreg)
-        return eviction_cost(weights, broken_hint, unused_csr)
+        """Eviction cost (max interferer weight) for evicting `li`'s interferers
+        off `physreg`. Mirrors EvictionCost::MaxWeight."""
+        weights = [
+            self.lis.interval(v).weight for v in self.interfering_vregs(li, physreg)
+        ]
+        return eviction_cost(weights)
 
     def _try_evict(self, li):
         """Evict the interferers off the cheapest evictable physreg and assign
