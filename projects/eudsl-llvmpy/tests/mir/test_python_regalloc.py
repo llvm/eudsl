@@ -1902,6 +1902,7 @@ def test_priority_scalars():
                 rc = self.reg_class(li.reg)
                 saw["instr_dist"] = self.slot_index_instr_distance()
                 saw["reverse_local"] = self.reverse_local_assignment()
+                saw["trumps_globalness"] = self.reg_class_priority_trumps_globalness()
                 saw["global_priority"] = self.reg_class_has_global_priority(rc)
                 saw["allocatable"] = self.reg_class_is_allocatable(rc)
             for preg in self.allocation_order(li):
@@ -1917,6 +1918,7 @@ def test_priority_scalars():
     # and (on AArch64) not a GlobalPriority class.
     assert saw["instr_dist"] == 16
     assert isinstance(saw["reverse_local"], bool)
+    assert isinstance(saw["trumps_globalness"], bool)
     assert saw["allocatable"] is True
     assert isinstance(saw["global_priority"], bool)
     assert_no_leaks()

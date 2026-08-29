@@ -331,14 +331,16 @@ struct RegAllocAssignments {
   std::vector<unsigned> spilled;            // vreg ids with no physreg
 };
 
-// Copies the live VirtRegMap into a caller-owned RegAllocAssignments. Requires
-// VirtRegMap so the legacy PM schedules it (and the allocator that produces it)
-// before this pass; preserves everything so it never perturbs the pipeline.
+// Copies the live VirtRegMap into a result it OWNS. Requires VirtRegMap so the
+// legacy PM schedules it (and the allocator that produces it) before this pass;
+// preserves everything so it never perturbs the pipeline. Owning the result
+// (rather than borrowing a caller pointer) means the pass -- which outlives the
+// call inside the pipeline retained by EmittedOwned -- never holds a dangling
+// pointer, so re-running it would be harmless.
 class VRMCapturePass : public llvm::MachineFunctionPass {
 public:
   static char ID;
-  explicit VRMCapturePass(RegAllocAssignments *out = nullptr)
-      : llvm::MachineFunctionPass(ID), out(out) {}
+  VRMCapturePass() : llvm::MachineFunctionPass(ID) {}
 
   // LCOV_EXCL_START -- diagnostic-only; the legacy PM does not print pass names
   // in the non-debug pipeline this runs.
@@ -364,15 +366,17 @@ public:
     for (unsigned i = 0, e = mri.getNumVirtRegs(); i != e; ++i) {
       llvm::Register vreg = llvm::Register::index2VirtReg(i);
       if (vrm.hasPhys(vreg))
-        out->assignments[vreg.id()] = vrm.getPhys(vreg).id();
+        result.assignments[vreg.id()] = vrm.getPhys(vreg).id();
       else if (vrm.getStackSlot(vreg) != llvm::VirtRegMap::NO_STACK_SLOT)
-        out->spilled.push_back(vreg.id());
+        result.spilled.push_back(vreg.id());
     }
     return false;
   }
 
+  RegAllocAssignments &getResult() { return result; }
+
 private:
-  RegAllocAssignments *out;
+  RegAllocAssignments result;
 };
 char VRMCapturePass::ID = 0;
 
@@ -651,8 +655,13 @@ public:
   // legacy PassManager auto-schedules the allocator's required analyses
   // (LiveIntervals, VirtRegMap, LiveRegMatrix, ...) from its getAnalysisUsage,
   // and VRMCapturePass reads VirtRegMap after the allocator but before the
-  // virtual-register rewriter would delete the virtual registers. Like
-  // emitObject this is build-path-only and one-shot: the build wrapper is
+  // virtual-register rewriter would delete the virtual registers. We
+  // deliberately omit the pre-RA transforms emit_object runs (RegisterCoalescer
+  // especially): coalescing would fold the copy-connected vregs into physregs,
+  // leaving no virtual registers for a Python allocator to be diffed against a
+  // native one -- the whole point of this entry point. So the reported physregs
+  // are for decision-level comparison on identical MIR, not a match for llc.
+  // Like emitObject this is build-path-only and one-shot: the build wrapper is
   // adopted into the pipeline, so the BuildOwned is consumed into an
   // EmittedOwned.
   RegAllocAssignments regallocAssignments(const std::string &regalloc) {
@@ -731,7 +740,10 @@ public:
     // because `pm` keeps the wrapper alive.
     pm->add(build->mmiwp.release());
     pm->add(raCtor());
-    pm->add(new VRMCapturePass(&out));
+    // The capture pass owns its result; read it back after the run so nothing
+    // outlives a borrowed pointer once `pm` is parked in EmittedOwned.
+    auto *capturePass = new VRMCapturePass();
+    pm->add(capturePass);
 
     std::string diag;
     {
@@ -745,6 +757,7 @@ public:
         throw;
       }
     }
+    out = std::move(capturePass->getResult());
     // Consume the BuildOwned into an EmittedOwned so a later query keeps `info`
     // valid and a second run refuses cleanly.
     state_ = EmittedOwned{std::move(pm), info};
@@ -1549,7 +1562,16 @@ void populate_mir(nb::module_ &m) {
            "return the post-RA vreg->physreg assignment map, without emitting "
            "an object. Verifies the MIR first, raising if it is malformed; an "
            "unknown allocator name raises. Build-path-only and one-shot, like "
-           "emit_object.");
+           "emit_object.\n\n"
+           "The pipeline is [allocator][capture] only: it deliberately does NOT "
+           "run the pre-RA transforms (RegisterCoalescer, TwoAddressInstruction, "
+           "...) that emit_object/llc run before allocation. That keeps the "
+           "virtual registers intact so a Python allocator's decisions can be "
+           "diffed vreg-for-vreg against a native allocator on identical MIR "
+           "(coalescing would fold copies into physregs, leaving nothing to "
+           "compare). Consequently the returned physregs need not match those in "
+           "emit_object() output or llc -- both sides here allocate over the "
+           "given, un-coalesced MIR.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the

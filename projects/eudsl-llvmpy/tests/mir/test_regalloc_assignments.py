@@ -99,16 +99,42 @@ def test_regalloc_assignments_native_greedy():
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
-        _build_add(mmi)
+        mf = _build_add(mmi)
+        w0, w1 = mf.physreg("W0").id, mf.physreg("W1").id
         result = mmi.regalloc_assignments(regalloc="greedy")
+        assignments = dict(result.assignments)
+        spilled = list(result.spilled)
     # Every virtual register present at RA is accounted for: assigned or spilled.
     assert isinstance(result.assignments, dict)
     assert isinstance(result.spilled, list)
-    # This function has no spills; every vreg got a physreg, and the assigned
-    # physregs are real (nonzero) ids.
-    assert result.assignments
-    assert all(p != 0 for p in result.assignments.values())
-    assert result.spilled == []
+    # No coalescing runs here, so all three vregs (the two argument copies and
+    # the add result) survive to RA and are assigned; none spill. Pin the actual
+    # physregs: the argument copies land in their live-in registers (W0, W1) and
+    # the result reuses W0. vreg ids are assigned in creation order (v0, v1, v2).
+    v0, v1, v2 = sorted(assignments)
+    assert assignments[v0] == w0
+    assert assignments[v1] == w1
+    assert assignments[v2] == w0
+    assert assignments[v0] != assignments[v1]  # v0, v1 are simultaneously live
+    assert spilled == []
+    assert_no_leaks()
+
+
+def test_regalloc_assignments_greedy_matches_basic():
+    """On this pressure-free function greedy and basic must reach the same
+    coloring; a decision-level oracle that the capture reports real per-vreg
+    decisions, not allocator-specific noise."""
+
+    def assignments(alloc):
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(mod, tm, "add")
+            _build_add(mmi)
+            return dict(mmi.regalloc_assignments(regalloc=alloc).assignments)
+
+    mir.register_regalloc("ra-basic-oracle", mir.BasicRegAlloc)
+    assert assignments("greedy") == assignments("ra-basic-oracle")
     assert_no_leaks()
 
 
@@ -158,6 +184,22 @@ def test_regalloc_assignments_one_shot():
         mmi.regalloc_assignments(regalloc="greedy")
         with pytest.raises(Exception, match="already emitted"):
             mmi.regalloc_assignments(regalloc="greedy")
+    assert_no_leaks()
+
+
+def test_regalloc_assignments_result_outlives_module():
+    """The capture pass owns its result, so the returned snapshot is a
+    standalone value -- still readable after the context (and the captured MIR
+    it was read from) are torn down. Guards against the pass borrowing a pointer
+    that dangles once the one-shot pipeline is parked."""
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        result = mmi.regalloc_assignments(regalloc="greedy")
+    assert dict(result.assignments)  # readable after teardown
+    assert result.spilled == []
     assert_no_leaks()
 
 
