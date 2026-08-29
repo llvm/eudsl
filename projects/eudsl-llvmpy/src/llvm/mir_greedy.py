@@ -370,6 +370,21 @@ class RAGreedy(mir.RegAllocBase):
         sa = self.split_analysis
         sa.analyze(li)
         if self.interval_is_in_one_mbb(reg):
+            # LLVM's trySplit falls back to tryInstructionSplit here when
+            # tryLocalSplit finds no window. That is deliberately NOT ported: it
+            # splits a range whose class is a *proper subclass* (to relax the
+            # constraint by copying to a larger class) or, on targets with
+            # sub-register liveness, a range with subranges. Neither arises on
+            # AArch64 -- RegClassInfo.isProperSubClass is false for every
+            # allocatable AArch64 class the hand-built MIR can produce, and
+            # AArch64 does not enable sub-register liveness (GPR64 has no
+            # disjunct subregs), so hasSubRanges is always false. Its body is
+            # therefore unreachable and untestable on the only linked target, so
+            # its helper bindings (getLargestLegalSuperClass, isFullCopyInstr,
+            # getNumAllocatableRegsForConstraints, hasSubRanges, readsLaneSubset)
+            # are left unbound. It would apply on e.g. X86 (proper subclasses)
+            # or AMDGPU (sub-register liveness); porting it needs a test on such
+            # a target to exercise it without a coverage pragma.
             return self._try_local_split(li)
         if self._get_stage(reg) < LiveRangeStage.RS_Split2:
             if self._try_region_split(li):
