@@ -4,14 +4,16 @@
 import llvm
 
 
-def test_only_host_targets_are_linked():
+def test_linked_targets():
     # TargetRegistry reports the short target names (lowercase), not the LLVM
     # library names (AArch64/X86).
     targets = llvm.jit.registered_targets()
     # Host targets are present.
     assert any(t in targets for t in ("aarch64", "x86", "x86-64", "arm64"))
-    # The GPU backends were dropped from the default build.
-    assert "amdgcn" not in targets
-    assert "r600" not in targets
+    # AMDGPU is linked when the LLVM provides it: it is the one target with
+    # sub-register liveness, which mir.RAGreedy's tryInstructionSplit test needs
+    # (see CMakeLists.txt). It is in the default distribution.
+    assert "amdgcn" in targets
+    # NVPTX is still not linked (its target-init lacks an AsmParser).
     assert "nvptx" not in targets
     assert "nvptx64" not in targets

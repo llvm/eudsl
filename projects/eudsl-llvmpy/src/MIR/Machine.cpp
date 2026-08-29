@@ -1426,6 +1426,20 @@ void populate_mir(nb::module_ &m) {
           "name"_a, nb::rv_policy::reference,
           "Look up a target register class by name (e.g. \"GPR32\").")
       .def(
+          "subreg_index",
+          [](llvm::MachineFunction &self, const std::string &name) -> unsigned {
+            const llvm::TargetRegisterInfo &tri = requireTRI(self);
+            for (unsigned i = 1, e = tri.getNumSubRegIndices(); i < e; ++i) {
+              if (name == tri.getSubRegIndexName(i))
+                return i;
+            }
+            throw nb::key_error(
+                ("no sub-register index named '" + name + "'").c_str());
+          },
+          "name"_a,
+          "Look up a sub-register index by name (e.g. \"sub_8bit\", "
+          "\"sub_32\"); pass it as add_reg(..., sub_reg=...).")
+      .def(
           "physreg",
           [](llvm::MachineFunction &self,
              const std::string &name) -> TypedRegister {

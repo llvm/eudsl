@@ -21,6 +21,14 @@ pytestmark = pytest.mark.skipif(
     reason="AArch64 backend not linked",
 )
 _AARCH64_LINUX = "aarch64-unknown-linux-gnu"
+_AMDGPU = "amdgcn-amd-amdhsa"
+# AMDGPU has sub-register liveness (which AArch64 lacks), so tryInstructionSplit's
+# sub-register arm is only reachable there. It is in the default LLVM
+# distribution and the extension links it whenever available; skip if it isn't.
+_HAS_AMDGPU = "amdgcn" in llvm.jit.registered_targets()
+_skip_no_amdgpu = pytest.mark.skipif(
+    not _HAS_AMDGPU, reason="AMDGPU backend not linked"
+)
 
 
 def test_ragreedy_is_exported_and_constructs():
@@ -2834,3 +2842,280 @@ def test_local_reg_mask_gaps_arms():
     assert gaps([5], [0, 10, 20]) == [0]
     # Every mask sits past the remaining uses -> continue to normal completion.
     assert gaps([100], [0, 10, 20]) == []
+
+
+def _build_amdgpu_subrange(mmi, *, sub0_uses=3):
+    """AMDGPU single block: a 64-bit value v (VReg_64) whose low 32-bit
+    sub-register (sub0) is read by `sub0_uses` V_ADD_U32 instructions. AMDGPU
+    tracks sub-register liveness, so v has subranges, and each sub0 use reads
+    only a lane subset -- exactly what tryInstructionSplit's sub-register arm
+    isolates. The def copy is skipped (full copy). Decision-level only (not
+    executed on a non-AMDGPU host)."""
+    mf = mmi.machine_function("f")
+    b = mir.MachineIRBuilder(mf)
+    src = mf.physreg("VGPR0_VGPR1")
+    e = mf.blocks[0]
+    e.add_livein(src)
+    copy = mf.opcode("COPY")
+    sub0 = mf.subreg_index("sub0")
+    v = mf.create_vreg(mf.reg_class("VReg_64"))
+    c = b.build_instr(copy)
+    c.add_reg(v, is_def=True)
+    c.add_reg(src)
+    for _ in range(sub0_uses):
+        n = mf.create_vreg(mf.reg_class("VGPR_32"))
+        ins = b.build_instr(mf.opcode("V_ADD_U32_e32"))
+        ins.add_reg(n, is_def=True)
+        ins.add_reg(v, sub_reg=sub0)
+        ins.add_reg(v, sub_reg=sub0)
+    end = b.build_instr(mf.opcode("S_ENDPGM"))
+    end.add_imm(0)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+def _run_instr_split_amdgpu(builder, want):
+    """Drive tryInstructionSplit on the first subrange single-block value of an
+    AMDGPU function and record whether it split. Decision-level."""
+    st = {}
+
+    class Force(mir.RAGreedy):
+        def select_or_split(self, li):
+            sa = self.split_analysis
+            sa.analyze(li)
+            if (
+                "done" not in st
+                and self.lis.interval(li.reg).has_sub_ranges
+                and self.interval_is_in_one_mbb(li.reg)
+            ):
+                st["done"] = True
+                st["split"] = self._try_instruction_split(li)
+                st["trace"] = dict(self.trace)
+                if st["split"]:
+                    return None
+            for p in self.allocation_order(li):
+                if self.matrix.is_free(li, p):
+                    return p
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-instr-amd", Force)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AMDGPU, cpu="gfx900")
+        mmi = mir.create_machine_function(mod, tm, "f")
+        builder(mmi)
+        mmi.regalloc_assignments(regalloc="ra-instr-amd")
+    assert st.get("done"), "a subrange single-block value was seen"
+    assert st["split"] is want
+    return st
+
+
+@_skip_no_amdgpu
+def test_instruction_split_amdgpu_splits_lane_subset_uses():
+    """tryInstructionSplit on AMDGPU: a 64-bit value whose low sub-register is
+    read (a lane subset) is split around those uses (the def copy is skipped),
+    producing new RS_Spill ranges."""
+    st = _run_instr_split_amdgpu(_build_amdgpu_subrange, want=True)
+    assert st["trace"].get(2147483648) == "instruction_split"
+
+
+def test_instruction_split_no_split_when_whole_value_read():
+    """When the only non-copy uses read the whole live value (readsLaneSubset
+    False), tryInstructionSplit isolates nothing and returns False. Driven with
+    a stand-in: a real subrange value always has a lane-subset (splitting) use,
+    so the all-skipped path isn't reachable via constructible MIR."""
+    calls = []
+    se = SimpleNamespace(
+        reset=lambda lre, mode: None,
+        open_intv=lambda: calls.append("open"),
+    )
+    fg = SimpleNamespace(
+        lis=SimpleNamespace(interval=lambda reg: SimpleNamespace(has_sub_ranges=True)),
+        new_live_range_edit=lambda li: SimpleNamespace(new_vregs=lambda: []),
+        split_editor=se,
+        split_analysis=SimpleNamespace(
+            get_use_slots=lambda: [_FakeSlot(0), _FakeSlot(1)]
+        ),
+        is_full_copy_instr_at=lambda u: u.v == 0,  # first use is a full copy
+        reads_lane_subset=lambda li, u: False,  # second reads the whole value
+    )
+    assert mg.RAGreedy._try_instruction_split(fg, SimpleNamespace(reg=1)) is False
+    assert calls == []  # both uses skipped -> nothing opened
+
+
+def test_instruction_split_one_use_slot_returns_false():
+    """tryInstructionSplit's <=1-use-slot guard: driven with a stand-in whose
+    analysis reports a single use slot (real MIR always yields >=2: SplitAnalysis
+    counts the def slot too)."""
+    fg = SimpleNamespace(
+        lis=SimpleNamespace(interval=lambda reg: SimpleNamespace(has_sub_ranges=True)),
+        new_live_range_edit=lambda li: SimpleNamespace(new_vregs=lambda: []),
+        split_editor=SimpleNamespace(reset=lambda lre, mode: None),
+        split_analysis=SimpleNamespace(get_use_slots=lambda: [_FakeSlot(0)]),
+    )
+    assert mg.RAGreedy._try_instruction_split(fg, SimpleNamespace(reg=1)) is False
+
+
+def test_instruction_split_no_subranges_returns_false():
+    """tryInstructionSplit early-returns for a range without subranges (the
+    AArch64 case: no sub-register liveness)."""
+    st = {}
+
+    class Force(mir.RAGreedy):
+        def select_or_split(self, li):
+            if "done" not in st and self.interval_is_in_one_mbb(li.reg):
+                st["done"] = True
+                st["sub"] = self.lis.interval(li.reg).has_sub_ranges
+                st["split"] = self._try_instruction_split(li)
+            return super().select_or_split(li)
+
+    mir.register_regalloc("ra-instr-nosub", Force)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine()
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        obj = mmi.emit_object(regalloc="ra-instr-nosub")
+    fn, j = _jit_call((ctypes.c_int, ctypes.c_int, ctypes.c_int), "add", obj)
+    assert fn(3, 4) == 7
+    assert st["sub"] is False and st["split"] is False
+    assert_no_leaks()
+
+
+def test_subreg_index_lookup_and_unknown_raises():
+    """MachineFunction.subreg_index resolves a known sub-register index and
+    raises for an unknown name."""
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        mf = _build_add(mmi)
+        assert mf.subreg_index("sub_32") > 0  # AArch64 W-within-X
+        with pytest.raises(Exception, match="no sub-register index"):
+            mf.subreg_index("not_a_subreg")
+    assert_no_leaks()
+
+
+def _build_amdgpu_regseq(mmi):
+    """AMDGPU single block exercising every MachineOperand kind readsLaneSubset
+    (getInstReadLaneMask) inspects. A VReg_64 ``v`` is assembled by REG_SEQUENCE
+    from two VGPR_32 halves; the register coalescer folds those halves into
+    sub-register defs of ``v`` (``v.sub0`` undef, ``v.sub1``). ``v.sub0`` is then
+    read by a V_ADD_U32 (a sub-register use), and V_ADD_U64_PSEUDO reads ``v``
+    twice -- once as an undef full-register use, once as a real full-register
+    use. AMDGPU tracks sub-register liveness, so ``v`` has subranges. This puts a
+    sub-register def, a sub-register use, an undef full use, and a real full use
+    of one subrange value in a single block. Decision-level only."""
+    mf = mmi.machine_function("f")
+    b = mir.MachineIRBuilder(mf)
+    vgpr32 = mf.reg_class("VGPR_32")
+    vreg64 = mf.reg_class("VReg_64")
+    sub0 = mf.subreg_index("sub0")
+    sub1 = mf.subreg_index("sub1")
+    lo = mf.create_vreg(vgpr32)
+    dlo = b.build_instr(mf.opcode("V_MOV_B32_e32"))
+    dlo.add_reg(lo, is_def=True)
+    dlo.add_imm(1)
+    hi = mf.create_vreg(vgpr32)
+    dhi = b.build_instr(mf.opcode("V_MOV_B32_e32"))
+    dhi.add_reg(hi, is_def=True)
+    dhi.add_imm(2)
+    v = mf.create_vreg(vreg64)
+    rs = b.build_instr(mf.opcode("REG_SEQUENCE"))
+    rs.add_reg(v, is_def=True)
+    rs.add_reg(lo)
+    rs.add_imm(sub0)
+    rs.add_reg(hi)
+    rs.add_imm(sub1)
+    n = mf.create_vreg(vgpr32)
+    u = b.build_instr(mf.opcode("V_ADD_U32_e32"))
+    u.add_reg(n, is_def=True)
+    u.add_reg(v, sub_reg=sub0)
+    u.add_reg(v, sub_reg=sub0)
+    w = mf.create_vreg(vreg64)
+    fu = b.build_instr(mf.opcode("V_ADD_U64_PSEUDO"))
+    fu.add_reg(w, is_def=True)
+    fu.add_reg(v, is_undef=True)  # undef full-register use -> skipped
+    fu.add_reg(v)  # real full-register use -> reads the whole value
+    end = b.build_instr(mf.opcode("S_ENDPGM"))
+    end.add_imm(0)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+@_skip_no_amdgpu
+def test_reads_lane_subset_operand_kinds():
+    """readsLaneSubset (getInstReadLaneMask) over every MachineOperand kind of a
+    sub-register value. Drives the real binding at each instruction's slot on the
+    coalesced MIR: the sub-register def (``v.sub1``) and sub-register use
+    (V_ADD_U32) read a lane subset; the undef sub-register def (``v.sub0``) is
+    skipped; the full-register read (V_ADD_U64_PSEUDO, one undef operand skipped,
+    one real full read) covers the subReg==0 use arm; S_ENDPGM reads nothing."""
+    rows = []
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            iv = self.lis.interval(li.reg)
+            if not rows and iv.has_sub_ranges and self.interval_is_in_one_mbb(li.reg):
+                for bb in self.machine_function.blocks:
+                    for mi in bb.instructions:
+                        idx = self.lis.instruction_index(mi)
+                        rows.append((mi.opcode_name, self.reads_lane_subset(iv, idx)))
+            for p in self.allocation_order(li):
+                if self.matrix.is_free(li, p):
+                    return p
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-rls-kinds", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AMDGPU, cpu="gfx900")
+        mmi = mir.create_machine_function(mod, tm, "f")
+        _build_amdgpu_regseq(mmi)
+        mmi.regalloc_assignments(regalloc="ra-rls-kinds")
+    assert rows, "the subrange value reached select_or_split"
+    # The undef sub-register def reads no lanes; the real sub-register def and use
+    # read a subset; the full read (both lanes) does too once its undef operand is
+    # skipped; a def-less terminator reads nothing.
+    assert ("V_MOV_B32_e32", False) in rows  # undef sub-register def -> continue
+    assert ("V_MOV_B32_e32", True) in rows  # sub-register def -> readMask |= ~mask
+    assert ("V_ADD_U32_e32", True) in rows  # sub-register use -> readMask |= mask
+    assert ("V_ADD_U64_PSEUDO", True) in rows  # full use (undef op skipped first)
+    assert ("S_ENDPGM", False) in rows
+
+
+@_skip_no_amdgpu
+def test_reads_lane_subset_matching_subreg_copy():
+    """readsLaneSubset short-circuits to False on a copy whose destination and
+    source sub-registers match (here a full copy, both sub-register 0): such a
+    copy reads exactly the lanes it writes, so it never forces an instruction
+    split. Probes the real binding at the defining copy's slot."""
+    result = {}
+
+    class Probe(mir.RAGreedy):
+        def select_or_split(self, li):
+            iv = self.lis.interval(li.reg)
+            if "copy" not in result and iv.has_sub_ranges:
+                for bb in self.machine_function.blocks:
+                    for mi in bb.instructions:
+                        if mi.is_copy:
+                            idx = self.lis.instruction_index(mi)
+                            result["copy"] = self.reads_lane_subset(iv, idx)
+            for p in self.allocation_order(li):
+                if self.matrix.is_free(li, p):
+                    return p
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-rls-copy", Probe)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AMDGPU, cpu="gfx900")
+        mmi = mir.create_machine_function(mod, tm, "f")
+        _build_amdgpu_subrange(mmi)
+        mmi.regalloc_assignments(regalloc="ra-rls-copy")
+    assert result.get("copy") is False

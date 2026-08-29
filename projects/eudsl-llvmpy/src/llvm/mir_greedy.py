@@ -370,22 +370,13 @@ class RAGreedy(mir.RegAllocBase):
         sa = self.split_analysis
         sa.analyze(li)
         if self.interval_is_in_one_mbb(reg):
-            # LLVM's trySplit falls back to tryInstructionSplit here when
-            # tryLocalSplit finds no window. That is deliberately NOT ported: it
-            # splits a range whose class is a *proper subclass* (to relax the
-            # constraint by copying to a larger class) or, on targets with
-            # sub-register liveness, a range with subranges. Neither arises on
-            # AArch64 -- RegClassInfo.isProperSubClass is false for every
-            # allocatable AArch64 class the hand-built MIR can produce, and
-            # AArch64 does not enable sub-register liveness (GPR64 has no
-            # disjunct subregs), so hasSubRanges is always false. Its body is
-            # therefore unreachable and untestable on the only linked target, so
-            # its helper bindings (getLargestLegalSuperClass, isFullCopyInstr,
-            # getNumAllocatableRegsForConstraints, hasSubRanges, readsLaneSubset)
-            # are left unbound. It would apply on e.g. X86 (proper subclasses)
-            # or AMDGPU (sub-register liveness); porting it needs a test on such
-            # a target to exercise it without a coverage pragma.
-            return self._try_local_split(li)
+            # Single-block: local split, then instruction split as a fallback
+            # (RAGreedy::trySplit). Instruction split fires here only for a range
+            # with subranges (sub-register liveness), i.e. AMDGPU; on AArch64 it
+            # returns False.
+            if self._try_local_split(li):
+                return True
+            return self._try_instruction_split(li)
         if self._get_stage(reg) < LiveRangeStage.RS_Split2:
             if self._try_region_split(li):
                 return True
@@ -610,6 +601,47 @@ class RAGreedy(mir.RegAllocBase):
                 if i < len(intv_map) and intv_map[i] == 1:
                     self._set_stage(r, LiveRangeStage.RS_Split2)
         self.trace[li.reg] = "local_split"
+        return True
+
+    def _try_instruction_split(self, li):
+        """RAGreedy::tryInstructionSplit's sub-register arm. On a target with
+        sub-register liveness (AMDGPU), split a range that has subranges around
+        each instruction reading only a lane subset, so the pieces can be
+        recolored per-lane -- like spilling to a wider class. Returns True if new
+        vregs were produced.
+
+        LLVM's other arm splits a range whose register class is a *proper
+        subclass* (the X86/ARM mechanism). That is omitted: no linked target
+        produces a proper subclass -- RegClassInfo.isProperSubClass is false for
+        every allocatable class on AArch64 and AMDGPU, so that arm is unreachable
+        and untestable here. hasSubRanges is likewise always false on AArch64
+        (no sub-register liveness), so this returns False there."""
+        reg = li.reg
+        if not self.lis.interval(reg).has_sub_ranges:
+            return False
+        lre = self.new_live_range_edit(li)
+        se = self.split_editor
+        se.reset(lre, mir.ComplementSpillMode.SM_Size)
+        uses = list(self.split_analysis.get_use_slots())
+        if len(uses) <= 1:
+            return False
+        for use in uses:
+            # Split around every non-copy instruction that reads only a subset of
+            # the value's live lanes; a full copy (uncoalescable) or a use that
+            # reads the whole live value gains nothing from splitting.
+            if self.is_full_copy_instr_at(use) or not self.reads_lane_subset(li, use):
+                continue
+            se.open_intv()
+            seg_start = se.enter_intv_before(use)
+            seg_stop = se.leave_intv_after(use)
+            se.use_intv(seg_start, seg_stop)
+        if not lre.new_vregs():
+            return False  # all uses were copies / read the whole value
+        se.finish()
+        # This was the last split chance: all new ranges go straight to spilling.
+        for r in lre.new_vregs():
+            self._set_stage(r, LiveRangeStage.RS_Spill)
+        self.trace[reg] = "instruction_split"
         return True
 
     # -- region split (tryRegionSplit and its cost model) -------------------
