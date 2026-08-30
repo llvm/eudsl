@@ -393,7 +393,18 @@ jobs:
         run: |
 
           export TESTS_DIR="$PWD/projects/eudsl-llvmpy/tests"
-          python -m pytest -rA --capture=tee-sys $TESTS_DIR
+          # pyproject enforces --cov-fail-under=99. The mir.RAGreedy suite builds
+          # AArch64 MachineIR and is skipped where AArch64 is not the linked host
+          # target (the x86_64/windows wheels link X86), so mir_greedy.py cannot
+          # be covered there. Enforce the Python coverage gate only where the full
+          # suite runs (AArch64 hosts: aarch64/macos); elsewhere run the same
+          # tests but drop the fail-under (the command line overrides addopts).
+          COV_FAIL_UNDER=99
+          case "${{ matrix.name }}" in
+            ubuntu_x86_64|windows_amd64) COV_FAIL_UNDER=0 ;;
+          esac
+          python -m pytest -rA --capture=tee-sys \
+            --cov-fail-under=$COV_FAIL_UNDER $TESTS_DIR
 
   coverage-eudsl-llvmpy:
 
