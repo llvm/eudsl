@@ -487,9 +487,10 @@ public:
                          /*AbortOnError=*/false);
       }
     }
-    if (!ok)
+    if (!ok) {
       throw std::runtime_error(
           eudsl::withDetail("hand-built MIR failed verification", report));
+    }
 
     // Run only the back half of codegen (regalloc, prologue/epilogue, object
     // emission) over the already-selected MachineFunctions:
@@ -716,9 +717,10 @@ public:
                          /*AbortOnError=*/false);
       }
     }
-    if (!ok)
+    if (!ok) {
       throw std::runtime_error(
           eudsl::withDetail("hand-built MIR failed verification", report));
+    }
 
     // Register allocation requires reserved registers to be frozen; the front
     // of the normal pipeline does this, so do it here for the hand-built MIR.
@@ -744,16 +746,11 @@ public:
     // reported assignments reflect allocation over the same coalesced MIR that
     // emit_object/llc allocate over (copy-connected vregs folded into their
     // hinted physreg), not the raw pre-coalescing copies. Added by PassInfo
-    // since these passes have no public factory; the legacy PM schedules their
-    // required analyses (LiveIntervals, SlotIndexes, ...) from
-    // getAnalysisUsage.
+    // since these passes have no public factory; initializeCodeGen above
+    // registered both, so getPassInfo is non-null.
     llvm::PassRegistry *pr = llvm::PassRegistry::getPassRegistry();
-    for (const void *id :
-         {static_cast<const void *>(&llvm::TwoAddressInstructionPassID),
-          static_cast<const void *>(&llvm::RegisterCoalescerID)}) {
-      if (const llvm::PassInfo *pi = pr->getPassInfo(id))
-        pm->add(pi->createPass());
-    }
+    pm->add(pr->getPassInfo(&llvm::TwoAddressInstructionPassID)->createPass());
+    pm->add(pr->getPassInfo(&llvm::RegisterCoalescerID)->createPass());
     pm->add(raCtor());
     // The capture pass owns its result; read it back after the run so nothing
     // outlives a borrowed pointer once `pm` is parked in EmittedOwned.
@@ -1570,22 +1567,14 @@ void populate_mir(nb::module_ &m) {
           "it "
           "drives register allocation instead of the target default; an "
           "unregistered name raises.")
-      .def(
-          "regalloc_assignments", &MirModule::regallocAssignments, "regalloc"_a,
-          "Run register allocation with the named allocator (a native name "
-          "like 'greedy', or a register_regalloc name) over the built MIR and "
-          "return the post-RA vreg->physreg assignment map, without emitting "
-          "an object. Verifies the MIR first, raising if it is malformed; an "
-          "unknown allocator name raises. Build-path-only and one-shot, like "
-          "emit_object.\n\n"
-          "The pipeline runs the pre-RA transforms (TwoAddressInstruction, "
-          "RegisterCoalescer) before the allocator, matching what "
-          "emit_object/llc do, so the reported physregs correspond to "
-          "allocation over the same coalesced MIR. A Python allocator's "
-          "decisions can still be diffed against a native allocator: both run "
-          "this identical pipeline. Note that coalescing folds copy-connected "
-          "vregs into their hinted physreg, so those vregs no longer appear in "
-          "the map (they are gone before RA, exactly as in real codegen).");
+      .def("regalloc_assignments", &MirModule::regallocAssignments,
+           "regalloc"_a,
+           "Run register allocation with the named allocator (a native name "
+           "like 'greedy', or a register_regalloc name) over the built MIR and "
+           "return the post-RA vreg->physreg assignment map, without emitting "
+           "an object. Verifies the MIR first, raising if it is malformed; an "
+           "unknown allocator name raises. Build-path-only and one-shot, like "
+           "emit_object.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the

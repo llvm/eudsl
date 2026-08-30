@@ -654,15 +654,10 @@ public:
             *mf));
   }
 
-  // The register class's GlobalPriority flag (RC.GlobalPriority) -- the first
-  // disjunct of RAGreedy's ForceGlobal. The second, size-based disjunct
-  // (!reverseLocalAssignment && Size/InstrDist > 2*NumAllocatableRegs) is
-  // interval-dependent and is computed by enqueue, not here.
   bool regClassHasGlobalPriority(const llvm::TargetRegisterClass *rc) {
     return rc->GlobalPriority;
   }
 
-  // Whether `rc` is an allocatable register class.
   bool regClassIsAllocatable(const llvm::TargetRegisterClass *rc) {
     return rc->isAllocatable();
   }
