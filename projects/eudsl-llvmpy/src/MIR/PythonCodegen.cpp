@@ -432,11 +432,12 @@ protected:
 // vector, and the edit buffer) that the standalone NativeRegAlloc fallback has
 // no use for.
 // RAGreedy resolves reverseLocalAssignment / regClassPriorityTrumpsGlobalness
-// as `flag.getNumOccurrences() ? flag : TRI->hook()`, where `flag` is one of its
-// file-static hidden cl::opts. Those statics aren't visible here, but they are
-// the same options registered in the global cl registry, so look them up by name
-// to honor a `-greedy-*` override exactly as the allocator would (in an embedding
-// with no command-line parsing the count is 0, so this returns the target hook).
+// as `flag.getNumOccurrences() ? flag : TRI->hook()`, where `flag` is one of
+// its file-static hidden cl::opts. Those statics aren't visible here, but they
+// are the same options registered in the global cl registry, so look them up by
+// name to honor a `-greedy-*` override exactly as the allocator would (in an
+// embedding with no command-line parsing the count is 0, so this returns the
+// target hook).
 bool greedyEffectiveFlag(llvm::StringRef flag, bool targetDefault) {
   auto &opts = llvm::cl::getRegisteredOptions();
   auto it = opts.find(flag);
@@ -644,8 +645,8 @@ public:
   }
 
   // Whether the register class's AllocationPriority outranks globalness in the
-  // priority calculation (RAGreedy's RegClassPriorityTrumpsGlobalness), honoring
-  // the -greedy-regclass-priority-trumps-globalness override.
+  // priority calculation (RAGreedy's RegClassPriorityTrumpsGlobalness),
+  // honoring the -greedy-regclass-priority-trumps-globalness override.
   bool regClassPriorityTrumpsGlobalness() {
     return greedyEffectiveFlag(
         "greedy-regclass-priority-trumps-globalness",
@@ -1132,15 +1133,17 @@ void populate_python_codegen(nb::module_ &m) {
       .def("reverse_local_assignment", &PyRegAllocBase::reverseLocalAssignment,
            "Whether the target assigns local ranges in reverse order "
            "(honors -greedy-reverse-local-assignment).")
-      .def("reg_class_priority_trumps_globalness",
-           &PyRegAllocBase::regClassPriorityTrumpsGlobalness,
-           "Whether the register class's AllocationPriority outranks globalness "
-           "in the priority calculation (honors "
-           "-greedy-regclass-priority-trumps-globalness).")
-      .def("reg_class_has_global_priority",
-           &PyRegAllocBase::regClassHasGlobalPriority, "reg_class"_a,
-           "`reg_class`'s GlobalPriority flag -- the first disjunct of RAGreedy "
-           "ForceGlobal (the size-based disjunct is computed in enqueue).")
+      .def(
+          "reg_class_priority_trumps_globalness",
+          &PyRegAllocBase::regClassPriorityTrumpsGlobalness,
+          "Whether the register class's AllocationPriority outranks globalness "
+          "in the priority calculation (honors "
+          "-greedy-regclass-priority-trumps-globalness).")
+      .def(
+          "reg_class_has_global_priority",
+          &PyRegAllocBase::regClassHasGlobalPriority, "reg_class"_a,
+          "`reg_class`'s GlobalPriority flag -- the first disjunct of RAGreedy "
+          "ForceGlobal (the size-based disjunct is computed in enqueue).")
       .def("reg_class_is_allocatable", &PyRegAllocBase::regClassIsAllocatable,
            "reg_class"_a, "Whether `reg_class` is allocatable.")
       .def(
