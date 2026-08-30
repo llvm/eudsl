@@ -61,6 +61,14 @@ else()
   set(CLANG_INCLUDE_DIRS "${CLANG_INCLUDE_DIR};${CLANG_GENERATED_INCLUDE_DIR}")
 endif()
 
+# Always honor the linked LLVM's LLVM_ENABLE_ASSERTIONS: with assertions on this
+# drops -DNDEBUG from the Release flags, so the assertion-only LLVM APIs (e.g.
+# Debug.h's setCurrentDebugType(s), which become no-op macros under NDEBUG) stay
+# real functions and match the libraries we link against. The standalone branch
+# puts the LLVM CMake modules on CMAKE_MODULE_PATH; the external-projects branch
+# inherits them from the enclosing LLVM build, so this resolves either way.
+include(HandleLLVMOptions)
+
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${CLANG_INCLUDE_DIRS})
