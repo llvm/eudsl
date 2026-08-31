@@ -7,6 +7,7 @@ import pytest
 import llvm
 from llvm import ir, jit, mir
 from llvm import mir_ilp_base as model
+from llvm import mir_ilp_decomp as decomp
 from llvm.mir_ilp_base import RAILPBase, ILPSolution, ILPStats
 from llvm.testing import assert_no_leaks
 
@@ -83,6 +84,59 @@ def _build_high_pressure(mmi):
     rc.add_reg(acc)
     ret = b.build_instr(mf.opcode("RET_ReallyLR"))
     ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+def _build_diamond(mmi, n):
+    """A diamond CFG: the entry block defines `n` values from W0, a conditional
+    branch splits into two arms that each chain-add all `n` values and write the
+    result to W0, and both arms rejoin at an exit. Values defined in entry and
+    used in both arms get multi-segment (holed) live ranges -- the multi-block
+    case the single-block fixtures never produce."""
+    mf = mmi.machine_function("diamond")
+    b = mir.MachineIRBuilder(mf)
+    g32 = mf.reg_class("GPR32")
+    w0 = mf.physreg("W0")
+    entry = mf.blocks[0]
+    els_bb = mf.create_block()  # fallthrough arm (laid out right after entry)
+    then_bb = mf.create_block()  # taken arm
+    exit_bb = mf.create_block()
+    entry.add_livein(w0)
+    copy, addrr = mf.opcode("COPY"), mf.opcode("ADDWrr")
+    b.set_block(entry)
+    vs = []
+    for _ in range(n):
+        v = mf.create_vreg(g32)
+        c = b.build_instr(copy)
+        c.add_reg(v, is_def=True)
+        c.add_reg(w0)
+        vs.append(v)
+    cb = b.build_instr(mf.opcode("CBNZW"))  # branch to `then` if vs[0] != 0
+    cb.add_reg(vs[0])
+    cb.add_mbb(then_bb)
+    entry.add_successor(then_bb)
+    entry.add_successor(els_bb)
+    for blk in (els_bb, then_bb):
+        b.set_block(blk)
+        acc = vs[0]
+        for v in vs[1:]:
+            nacc = mf.create_vreg(g32)
+            a = b.build_instr(addrr)
+            a.add_reg(nacc, is_def=True)
+            a.add_reg(acc)
+            a.add_reg(v)
+            acc = nacc
+        rc = b.build_instr(copy)
+        rc.add_reg(w0, is_def=True)
+        rc.add_reg(acc)
+        br = b.build_instr(mf.opcode("B"))
+        br.add_mbb(exit_bb)
+        blk.add_successor(exit_bb)
+    b.set_block(exit_bb)
+    exit_bb.add_livein(w0)
+    b.build_instr(mf.opcode("RET_ReallyLR")).add_reg(w0, implicit=True)
     for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
         mf.set_property(getattr(mir.MachineFunctionProperty, prop))
     return mf
@@ -175,6 +229,43 @@ def test_single_class_k():
     assert model.single_class_k({}, {}) is None
 
 
+def test_interval_live_at():
+    assert decomp.interval_live_at([(0, 4)], 0) is True
+    assert decomp.interval_live_at([(0, 4)], 3) is True
+    assert decomp.interval_live_at([(0, 4)], 4) is False  # half-open
+    assert decomp.interval_live_at([(0, 2), (8, 10)], 5) is False  # hole
+
+
+def test_pressure_constraints_checks_segment_boundaries():
+    # v1, v2 (spillable) and v3 (unspillable) all pass through the hole segment
+    # [5, 10). Slot 5 is a segment boundary but neither a def nor a use of any
+    # value, so a def/use-only pressure scan would miss the 3-way peak there;
+    # the segment-boundary scan must still emit a constraint. At slot 5: v3 is
+    # counted as fixed (unspillable live-through), v1/v2 as optional (spillable
+    # live-through).
+    intervals = {1: [(0, 1), (5, 10)], 2: [(2, 3), (5, 10)], 3: [(4, 10)]}
+    must_reg = {1: {0, 1}, 2: {2, 3}, 3: {4}}
+    spillable = {1: True, 2: True, 3: False}
+    cons = {
+        p: (fixed, tuple(opt))
+        for p, fixed, opt in decomp.pressure_constraints(
+            intervals, must_reg, spillable, k=2
+        )
+    }
+    assert 5 in cons  # the holed-segment peak is caught
+    assert cons[5] == (1, (1, 2))  # v3 fixed; v1, v2 optional -> 1 + 2 = 3 > k
+    # A def/use-only scan would not check slot 5 (5 is in no must_reg set).
+    assert all(5 not in pts for pts in must_reg.values())
+
+
+def test_perfect_elimination_order_is_a_permutation():
+    # A 3-clique: MCS returns all three vertices once, highest-id tie-break first.
+    adjacency = {1: {2, 3}, 2: {1, 3}, 3: {1, 2}}
+    order = decomp.perfect_elimination_order(adjacency)
+    assert sorted(order) == [1, 2, 3]
+    assert order[0] == 3  # ties broken by vreg id (max)
+
+
 def test_ilp_stats_gap():
     assert ILPStats(status="INFEASIBLE").gap is None
     assert ILPStats(status="OPTIMAL", objective=0.0).gap == 0.0
@@ -234,6 +325,13 @@ def test_assign_solve_standalone_infeasible():
     )
     assert sol.stats.status == "INFEASIBLE"
     assert sol.assignment == {} and sol.spilled == set()
+
+
+def test_decomp_solve_standalone_multiclass_raises():
+    with pytest.raises(RuntimeError, match="single register class"):
+        mir.RAILPDecomp()._solve(
+            _mk_problem(num_regs={1: 30, 2: 30, 3: 30}, reg_class_id={1: 0, 2: 1, 3: 0})
+        )
 
 
 def test_packing_solve_standalone_spill_and_degenerate_segment():
@@ -589,4 +687,116 @@ def test_points_in_register_aligns_with_intervals():
         end = max(e for _, e in intervals[v])
         assert min(pts) == start
         assert all(start <= p <= end for p in pts)
+    assert_no_leaks()
+
+
+@aarch64
+def test_ilp_decomp_pressure_free_no_spill():
+    mir.register_regalloc("ilp-decomp-t", mir.RAILPDecomp)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        result = mmi.regalloc_assignments(regalloc="ilp-decomp-t")
+        assignments = dict(result.assignments)
+        spilled = list(result.spilled)
+    v0, v1, v2 = sorted(assignments)
+    assert assignments[v0] != assignments[v1]
+    assert spilled == []
+    assert_no_leaks()
+
+
+@aarch64
+def test_ilp_decomp_high_pressure_spills_and_is_valid():
+    # The per-point model accounts for reload pressure, so its spill set is
+    # realizable: it actually spills and produces a valid allocation where
+    # whole-interval RAILPAssign/RAILPPacking hard-fail.
+    mir.register_regalloc("ilp-decomp-hp", mir.RAILPDecomp)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "hp")
+        _build_high_pressure(mmi)
+        result = mmi.regalloc_assignments(regalloc="ilp-decomp-hp")
+        assignments = dict(result.assignments)
+        spilled = list(result.spilled)
+    assert len(spilled) >= 1  # pressure forces real spilling
+    assert set(assignments) & set(spilled) == set()  # no vreg both assigned and spilled
+    assert all(isinstance(p, int) for p in assignments.values())
+    assert len(set(assignments.values())) >= 2  # a real multi-register coloring
+    # Collision-freedom (no two simultaneously-live vregs share a register) is
+    # guaranteed by the base: select_or_split only returns a matrix.is_free
+    # physreg and hard-fails otherwise, so a completed run cannot contain one.
+    assert_no_leaks()
+
+
+@aarch64
+def test_ilp_decomp_multiblock_diamond_valid():
+    # A real multi-block CFG (not the single-block fixtures): entry values used
+    # in both arms of a diamond get multi-segment (holed) live ranges, whose
+    # later segment starts are block-rejoin points, not defs -- exactly what the
+    # segment-boundary pressure scan and the PEO coloring must handle. Low
+    # pressure -> no spill; the two entry values are simultaneously live and get
+    # distinct registers.
+    mir.register_regalloc("ilp-decomp-dia", mir.RAILPDecomp)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "diamond")
+        _build_diamond(mmi, 2)
+        result = mmi.regalloc_assignments(regalloc="ilp-decomp-dia")
+        assignments = dict(result.assignments)
+        spilled = list(result.spilled)
+    assert spilled == []
+    entry_vals = sorted(assignments)[:2]  # the two entry COPYs (smallest vreg ids)
+    assert assignments[entry_vals[0]] != assignments[entry_vals[1]]
+    assert_no_leaks()
+
+
+@aarch64
+def test_ilp_decomp_multiblock_diamond_spills():
+    # A wide diamond: 40 values live across the conditional branch exceed the
+    # ~30 allocatable GPR32 registers, so RAILPDecomp must spill and still
+    # produce a valid multi-block allocation (coloring the survivors across
+    # blocks in a perfect elimination order).
+    mir.register_regalloc("ilp-decomp-dia-hp", mir.RAILPDecomp)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "diamond")
+        _build_diamond(mmi, 40)
+        result = mmi.regalloc_assignments(regalloc="ilp-decomp-dia-hp")
+        assignments = dict(result.assignments)
+        spilled = list(result.spilled)
+    assert len(spilled) >= 1
+    assert set(assignments) & set(spilled) == set()
+    assert all(isinstance(p, int) for p in assignments.values())
+    assert len(set(assignments.values())) >= 2
+    assert_no_leaks()
+
+
+@aarch64
+def test_comparison_low_pressure_all_valid_and_ilp_optimal():
+    mir.register_regalloc("cmp-basic", mir.BasicRegAlloc)
+    mir.register_regalloc("cmp-assign", mir.RAILPAssign)
+    mir.register_regalloc("cmp-pack", mir.RAILPPacking)
+    mir.register_regalloc("cmp-decomp", mir.RAILPDecomp)
+    for alloc in ["greedy", "cmp-basic", "cmp-assign", "cmp-pack", "cmp-decomp"]:
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(mod, tm, "add")
+            _build_add(mmi)
+            result = mmi.regalloc_assignments(regalloc=alloc)
+            assignments = dict(result.assignments)
+            spilled = list(result.spilled)
+        assert spilled == [], f"{alloc} spilled on a pressure-free function"
+        v0, v1, _ = sorted(assignments)
+        assert assignments[v0] != assignments[v1], f"{alloc} gave a bad coloring"
+    # Every ILP allocator proves optimality (gap 0) on this trivial function.
+    for cls in ("RAILPAssign", "RAILPPacking", "RAILPDecomp"):
+        stats = RAILPBase.last_stats[cls]
+        assert stats.status in ("OPTIMAL", "FEASIBLE")
+        assert stats.gap == 0.0
     assert_no_leaks()
