@@ -111,7 +111,14 @@ class RAILPBase(mir.RegAllocBase):
             cls = self.reg_class(reg)
             num_regs[reg] = self.num_allocatable_regs(cls)
             allowed, forb = [], set()
+            seen = set()
             for preg in self.allocation_order(li):
+                # allocation_order can list a physreg more than once (LLVM
+                # front-loads copy-hint regs), which would create duplicate x
+                # variables; keep the first occurrence only.
+                if preg in seen:
+                    continue
+                seen.add(preg)
                 kind = self.matrix.check_interference(li, preg)
                 if kind == free or kind == virt:
                     allowed.append(preg)

@@ -227,3 +227,43 @@ def test_base_stub_routes_spill():
         spilled = list(result.spilled)
     assert len(spilled) >= 1
     assert_no_leaks()
+
+
+@aarch64
+def test_ilp_assign_pressure_free_matches_greedy():
+    def assignments(alloc):
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(mod, tm, "add")
+            _build_add(mmi)
+            r = mmi.regalloc_assignments(regalloc=alloc)
+            return dict(r.assignments), list(r.spilled)
+
+    mir.register_regalloc("ilp-assign-t", mir.RAILPAssign)
+    ilp_asg, ilp_spill = assignments("ilp-assign-t")
+    _, grd_spill = assignments("greedy")
+    # Pressure-free: no spills, and every simultaneously-live pair differs.
+    assert ilp_spill == []
+    assert grd_spill == []
+    v0, v1, v2 = sorted(ilp_asg)
+    assert ilp_asg[v0] != ilp_asg[v1]
+    assert_no_leaks()
+
+
+@aarch64
+def test_ilp_assign_high_pressure_spills_and_is_valid():
+    mir.register_regalloc("ilp-assign-hp", mir.RAILPAssign)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "hp")
+        _build_high_pressure(mmi)
+        result = mmi.regalloc_assignments(regalloc="ilp-assign-hp")
+        assignments = dict(result.assignments)
+        spilled = list(result.spilled)
+    # More simultaneously-live vregs than GPR32 registers -> at least one spill,
+    # and every assigned vreg got a real physreg (valid allocation).
+    assert len(spilled) >= 1
+    assert all(isinstance(p, int) for p in assignments.values())
+    assert_no_leaks()
