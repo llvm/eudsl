@@ -37,7 +37,25 @@ def stats_from_solver(cp, solver, status, wall):
     )
 
 
+def make_solver(cp, time_limit_s):
+    """A CP-SAT solver configured for reproducible, deterministic search.
+
+    A fixed seed and a single worker make allocation reproducible across runs
+    (the study compares solutions, and reproducible compiler output matters);
+    the problems here are small enough that single-threaded search is fine.
+    """
+    solver = cp.CpSolver()
+    solver.parameters.max_time_in_seconds = time_limit_s
+    solver.parameters.random_seed = 0
+    solver.parameters.num_workers = 1
+    return solver
+
+
 class RAILPAssign(RAILPBase):
+    # Whole-interval spill decisions ignore reload register pressure and are not
+    # reliably realizable; hard-fail cleanly when a function needs spilling.
+    realizes_spills = False
+
     def _solve(self, prob):
         cp = _require_ortools()
         model = cp.CpModel()
@@ -72,8 +90,7 @@ class RAILPAssign(RAILPBase):
                 terms.append(-HINT_BONUS * x[(v, hint)])
         model.minimize(sum(terms))
 
-        solver = cp.CpSolver()
-        solver.parameters.max_time_in_seconds = self.time_limit_s
+        solver = make_solver(cp, self.time_limit_s)
         t0 = time.perf_counter()
         status = solver.solve(model)
         wall = time.perf_counter() - t0

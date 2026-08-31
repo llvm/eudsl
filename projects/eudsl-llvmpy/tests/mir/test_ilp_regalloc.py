@@ -252,18 +252,46 @@ def test_ilp_assign_pressure_free_matches_greedy():
 
 
 @aarch64
-def test_ilp_assign_high_pressure_spills_and_is_valid():
+def test_ilp_assign_high_pressure_hard_fails():
+    # Whole-interval spill decisions ignore reload pressure and are not reliably
+    # realizable, so RAILPAssign refuses to spill: it hard-fails cleanly (never
+    # crashes) when a function needs spilling.
     mir.register_regalloc("ilp-assign-hp", mir.RAILPAssign)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "hp")
         _build_high_pressure(mmi)
-        result = mmi.regalloc_assignments(regalloc="ilp-assign-hp")
+        with pytest.raises(RuntimeError, match="register-fitting"):
+            mmi.regalloc_assignments(regalloc="ilp-assign-hp")
+
+
+@aarch64
+def test_ilp_packing_pressure_free_valid():
+    mir.register_regalloc("ilp-pack-t", mir.RAILPPacking)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        result = mmi.regalloc_assignments(regalloc="ilp-pack-t")
         assignments = dict(result.assignments)
         spilled = list(result.spilled)
-    # More simultaneously-live vregs than GPR32 registers -> at least one spill,
-    # and every assigned vreg got a real physreg (valid allocation).
-    assert len(spilled) >= 1
-    assert all(isinstance(p, int) for p in assignments.values())
+    v0, v1, v2 = sorted(assignments)
+    assert assignments[v0] != assignments[v1]
+    assert spilled == []
     assert_no_leaks()
+
+
+@aarch64
+def test_ilp_packing_high_pressure_hard_fails():
+    # Same whole-interval limitation as RAILPAssign: refuse to spill, hard-fail
+    # cleanly (never crash) when a function needs spilling.
+    mir.register_regalloc("ilp-pack-hp", mir.RAILPPacking)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "hp")
+        _build_high_pressure(mmi)
+        with pytest.raises(RuntimeError, match="register-fitting"):
+            mmi.regalloc_assignments(regalloc="ilp-pack-hp")

@@ -65,6 +65,14 @@ class RAILPBase(mir.RegAllocBase):
     # the optimality gap is reported (may be > 0).
     time_limit_s = 10.0
 
+    # Whether this allocator realizes spills through the framework's inline
+    # spiller. Whole-interval models (assign, packing) set this False: their
+    # minimum-spill solutions ignore reload register pressure and are not
+    # reliably realizable, so they hard-fail cleanly when a function needs
+    # spilling (register-fitting functions only). The per-point decomposition
+    # model, which accounts for reloads, sets this True.
+    realizes_spills = True
+
     def __init__(self):
         super().__init__()
         self._pending = []
@@ -93,6 +101,12 @@ class RAILPBase(mir.RegAllocBase):
         self._problem_vregs = set(self._pending)
         problem = self._build_problem(self._pending)
         solution = self._solve(problem)
+        if solution.spilled and not self.realizes_spills:
+            raise RuntimeError(
+                f"{type(self).__name__} does not realize spills, but the ILP "
+                f"requires spilling {len(solution.spilled)} vreg(s); this "
+                f"allocator supports register-fitting functions only"
+            )
         self._solution = solution.assignment
         self._spill = set(solution.spilled)
         self.solve_stats = solution.stats
@@ -140,14 +154,18 @@ class RAILPBase(mir.RegAllocBase):
         reg = li.reg
         if reg not in self._problem_vregs:
             # A reload/def vreg minted by self.spill after the solve: the ILP
-            # never saw it. Color it first-free (always colorable once the ILP
-            # freed registers by spilling). This is the spiller's own reload
-            # assignment, not a fallback for an ILP decision.
+            # never saw it. Color it first-free. A spill product cannot itself
+            # be spilled (LLVM's InlineSpiller aborts on that), so if no
+            # register is free here the model under-spilled -- reload register
+            # pressure exceeds capacity at this use point. Fail loudly.
             for cand in self.allocation_order(li):
                 if self.matrix.is_free(li, cand):
                     return cand
-            self._spill_or_fail(li)
-            return None
+            raise RuntimeError(
+                f"reload vreg {reg} has no free register; the ILP model "
+                f"under-spilled (whole-interval spilling ignores reload "
+                f"register pressure at use points)"
+            )
         # An original vreg the ILP solved: it must have a valid decision. No
         # greedy fallback -- a missing or infeasible assignment is a model bug
         # and must fail loudly rather than be silently repaired (which would
