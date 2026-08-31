@@ -662,6 +662,32 @@ public:
     return rc->isAllocatable();
   }
 
+  // Whether `reg`'s whole live interval is contained in a single MBB. RAGreedy
+  // routes single-block ranges to local splitting and multi-block ranges to
+  // global (region/block) splitting.
+  bool intervalIsInOneMBB(unsigned reg) {
+    return LIS->intervalIsInOneMBB(LIS->getInterval(llvm::Register(reg)));
+  }
+
+  // Whether `reg`'s class is a proper subclass of its allocation superclass
+  // (RAGreedy's SingleInstrs input to shouldSplitSingleBlock: a constrained
+  // subclass makes even a single-instruction isolation worthwhile).
+  bool isProperSubClass(unsigned reg) {
+    return RegClassInfo.isProperSubClass(
+        mf->getRegInfo().getRegClass(llvm::Register(reg)));
+  }
+
+  // Whether the instruction defining/using `li` at `idx` is copy-like
+  // (a plain COPY or SUBREG_TO_REG). shouldSplitSingleBlock refuses to isolate
+  // a lone copy since it carries no register-class constraint.
+  bool isCopyLikeAt(llvm::SlotIndex idx) {
+    llvm::MachineInstr *mi = LIS->getInstructionFromIndex(idx);
+    if (!mi)
+      return false; // LCOV_EXCL_LINE -- a use slot always has an instruction
+    const llvm::TargetInstrInfo *tii = mf->getSubtarget().getInstrInfo();
+    return tii->isCopyInstr(*mi).has_value() || mi->isSubregToReg();
+  }
+
   bool isTriviallyRematerializable(llvm::MachineInstr *mi) {
     return mf->getSubtarget().getInstrInfo()->isTriviallyReMaterializable(*mi);
   }
@@ -705,13 +731,21 @@ public:
     auxInfo->calculateSpillWeightAndHint(LIS->getInterval(llvm::Register(reg)));
   }
 
-  // Spill `li` into the current select_or_split's split-vreg vector.
-  void spill(const llvm::LiveInterval &li) {
+  // Spill `li` into the current select_or_split's split-vreg vector. Returns
+  // the ids of the new vregs the spiller produced (reloads/remats), which the
+  // framework re-enqueues; RAGreedy marks them RS_Done so they are never split
+  // or spilled again.
+  std::vector<unsigned> spill(const llvm::LiveInterval &li) {
     if (!currentSplit)
       throw nb::value_error("spill() is only valid inside select_or_split");
+    size_t before = currentSplit->size();
     llvm::LiveRangeEdit lre(&li, *currentSplit, *mf, *LIS, VRM,
                             /*delegate=*/nullptr, &DeadRemats);
     injectedSpiller->spill(lre);
+    std::vector<unsigned> produced;
+    for (size_t i = before; i < currentSplit->size(); ++i)
+      produced.push_back((*currentSplit)[i].id());
+    return produced;
   }
 
   // A LiveRangeEdit over the current split-vreg vector for the split editor to
@@ -1141,6 +1175,16 @@ void populate_python_codegen(nb::module_ &m) {
           "ForceGlobal (the size-based disjunct is computed in enqueue).")
       .def("reg_class_is_allocatable", &PyRegAllocBase::regClassIsAllocatable,
            "reg_class"_a, "Whether `reg_class` is allocatable.")
+      .def("interval_is_in_one_mbb", &PyRegAllocBase::intervalIsInOneMBB,
+           "reg"_a,
+           "Whether `reg`'s whole live interval lies in a single block "
+           "(local- vs global-split routing in trySplit).")
+      .def("is_proper_sub_class", &PyRegAllocBase::isProperSubClass, "reg"_a,
+           "Whether `reg`'s class is a proper subclass of its allocation "
+           "superclass (shouldSplitSingleBlock's SingleInstrs input).")
+      .def("is_copy_like_at", &PyRegAllocBase::isCopyLikeAt, "idx"_a,
+           "Whether the instruction at slot `idx` is a COPY or SUBREG_TO_REG "
+           "(shouldSplitSingleBlock won't isolate a lone copy).")
       .def(
           "is_trivially_rematerializable",
           &PyRegAllocBase::isTriviallyRematerializable, "mi"_a,
@@ -1614,7 +1658,14 @@ void populate_python_codegen(nb::module_ &m) {
       .def_ro("last_instr", &llvm::SplitAnalysis::BlockInfo::LastInstr)
       .def_ro("first_def", &llvm::SplitAnalysis::BlockInfo::FirstDef)
       .def_ro("live_in", &llvm::SplitAnalysis::BlockInfo::LiveIn)
-      .def_ro("live_out", &llvm::SplitAnalysis::BlockInfo::LiveOut);
+      .def_ro("live_out", &llvm::SplitAnalysis::BlockInfo::LiveOut)
+      .def(
+          "is_one_instr",
+          [](const llvm::SplitAnalysis::BlockInfo &b) {
+            return b.isOneInstr();
+          },
+          "Whether the interval touches exactly one instruction in this block "
+          "(shouldSplitSingleBlock always splits multi-instruction blocks).");
   sa.def(
         "analyze",
         [](llvm::SplitAnalysis &s, const llvm::LiveInterval &li) {
@@ -1641,6 +1692,15 @@ void populate_python_codegen(nb::module_ &m) {
             return s.getLastSplitPoint(mbb);
           },
           "mbb"_a)
+      .def(
+          "is_original_endpoint",
+          [](llvm::SplitAnalysis &s, llvm::SlotIndex idx) {
+            return s.isOriginalEndpoint(idx);
+          },
+          "idx"_a,
+          "Whether the original live range was killed or defined at `idx` "
+          "(shouldSplitSingleBlock will not isolate an endpoint that an "
+          "earlier split created).")
       .def("through_blocks", [](llvm::SplitAnalysis &s) {
         std::vector<unsigned> v;
         for (unsigned b : s.getThroughBlocks().set_bits())
@@ -1770,7 +1830,19 @@ void populate_python_codegen(nb::module_ &m) {
           },
           "mbb"_a)
       .def("overlap_intv", &llvm::SplitEditor::overlapIntv, "start"_a, "end"_a)
-      .def("finish", [](llvm::SplitEditor &s) { s.finish(nullptr); });
+      .def(
+          "finish",
+          [](llvm::SplitEditor &s) {
+            // Return the IntvMap: for each new vreg (in LiveRangeEdit order),
+            // the open-interval index it landed in (0 = the complement /
+            // remainder). RAGreedy reads this to tag non-progress local-split
+            // ranges RS_Split2 and to send block-split remainders to spill.
+            llvm::SmallVector<unsigned, 8> intvMap;
+            s.finish(&intvMap);
+            return std::vector<unsigned>(intvMap.begin(), intvMap.end());
+          },
+          "Apply the queued split and return the IntvMap (new-vreg index -> "
+          "open-interval index; 0 is the remainder).");
 
   nb::enum_<llvm::LiveRegMatrix::InterferenceKind>(m, "InterferenceKind")
       .value("IK_Free", llvm::LiveRegMatrix::IK_Free)

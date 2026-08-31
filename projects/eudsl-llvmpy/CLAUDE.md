@@ -62,6 +62,16 @@ Do not write comments that reference future work, later PRs, or task numbers
 rebased and squash-merged. Describe what the code does now; if something is
 intentionally a stub, say so without pointing at a future commit.
 
+## README scope
+
+The README documents the higher-level programming model and feature set of the
+package -- what a user reaches for and how the pieces fit together. Not every
+addition belongs there. A new binding, a faithful internal port, or an
+implementation detail that does not change how the package is used from the
+outside does not need a README entry; its docstrings and code comments are
+enough. Add to the README only when you change or extend the user-facing model
+(a new submodule, a new authoring surface, a capability users would look for).
+
 ## C++ coding style (LLVM)
 
 Follow the LLVM coding standards. A conditional takes braces whenever its

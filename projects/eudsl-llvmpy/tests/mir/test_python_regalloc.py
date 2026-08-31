@@ -664,6 +664,14 @@ def test_split_analysis_use_and_through_blocks():
                 saw["live_out"] = bi.live_out
                 saw["num_through"] = sa.num_through_blocks()
                 saw["through"] = sa.through_blocks()
+                # Block-split predicates RAGreedy::shouldSplitSingleBlock reads:
+                # is_one_instr per block, whether the def instruction is
+                # copy-like (v = COPY w0 in _build_three_block's def block), and
+                # whether a use point is an original endpoint of the range.
+                saw["one_instr"] = [b.is_one_instr() for b in blocks]
+                def_bi = next(b for b in blocks if b.first_def.is_valid())
+                saw["def_is_copy_like"] = self.is_copy_like_at(def_bi.first_instr)
+                saw["def_orig_endpoint"] = sa.is_original_endpoint(def_bi.first_instr)
             for preg in self.allocation_order(li):
                 if self.matrix.is_free(li, preg):
                     return preg
@@ -679,6 +687,10 @@ def test_split_analysis_use_and_through_blocks():
     assert saw["num_through"] == 1
     assert len(saw["through"]) == 1
     assert isinstance(saw["live_in"], bool) and isinstance(saw["live_out"], bool)
+    assert all(isinstance(x, bool) for x in saw["one_instr"])
+    # The def is `v = COPY w0`, so its defining instruction is copy-like.
+    assert saw["def_is_copy_like"] is True
+    assert isinstance(saw["def_orig_endpoint"], bool)
     assert_no_leaks()
 
 
