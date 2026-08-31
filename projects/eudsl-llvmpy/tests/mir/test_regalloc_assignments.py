@@ -238,3 +238,53 @@ def test_regalloc_assignments_python_allocator_exception_propagates():
         with pytest.raises(RuntimeError, match="boom from select_or_split"):
             mmi.regalloc_assignments(regalloc="ra-raise-cap")
     assert_no_leaks()
+
+
+def test_regalloc_assignments_copies_remaining_all_coalesced():
+    # Every COPY in _build_add is coalesceable (src and dst land in the same
+    # physreg), so none survive.
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        result = mmi.regalloc_assignments(regalloc="greedy")
+        copies = result.copies_remaining
+    assert copies == 0
+    assert_no_leaks()
+
+
+def _build_cross_reg_move(mmi):
+    """An argument arrives in W1 and is returned in W0, forcing a surviving COPY
+    (its source and destination land in different physical registers)."""
+    mf = mmi.machine_function("mv")
+    b = mir.MachineIRBuilder(mf)
+    entry = mf.blocks[0]
+    gpr32 = mf.reg_class("GPR32")
+    w0, w1 = mf.physreg("W0"), mf.physreg("W1")
+    entry.add_livein(w1)
+    v0 = mf.create_vreg(gpr32)
+    copy = mf.opcode("COPY")
+    c = b.build_instr(copy)
+    c.add_reg(v0, is_def=True)
+    c.add_reg(w1)
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(v0)
+    b.build_instr(mf.opcode("RET_ReallyLR")).add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+def test_regalloc_assignments_copies_remaining_counts_surviving_move():
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "mv")
+        _build_cross_reg_move(mmi)
+        result = mmi.regalloc_assignments(regalloc="greedy")
+        copies = result.copies_remaining
+    # The W1 -> W0 move cannot be coalesced away: one COPY survives.
+    assert copies >= 1
+    assert_no_leaks()

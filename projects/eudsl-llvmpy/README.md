@@ -547,8 +547,9 @@ realizable; they are scoped to register-fitting functions and hard-fail cleanly
 when a function needs spilling. `RAILPDecomp`'s per-point model accounts for
 reloads and allocates functions that require spilling.
 `scripts/ilp_regalloc_compare.py` compares all three against the greedy/basic
-baselines on curated fixtures, reporting spills, weighted spill cost, solve
-time, and optimality gap.
+baselines on curated fixtures, reporting spills, weighted spill cost, copies
+remaining (via `RegAllocAssignments.copies_remaining`), solve time, and
+optimality gap.
 
 ## Limitations
 

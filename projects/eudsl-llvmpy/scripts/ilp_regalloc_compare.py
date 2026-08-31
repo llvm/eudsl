@@ -103,6 +103,7 @@ def _run_one(fixture, fname, name, regalloc, is_ilp):
             result = mmi.regalloc_assignments(regalloc=regalloc)
             assignments = dict(result.assignments)
             spilled = list(result.spilled)
+            copies_remaining = result.copies_remaining
     except RuntimeError as e:
         return AllocResult(name=name, valid=False, spills=[], weight={},
                            copies_remaining=0, wall_time_s=None, gap=None,
@@ -112,8 +113,8 @@ def _run_one(fixture, fname, name, regalloc, is_ilp):
         name=name,
         valid=all(isinstance(p, int) for p in assignments.values()),
         spills=spilled,
-        weight={v: 1 for v in spilled},  # uniform (copies/weights are informational)
-        copies_remaining=0,              # stubbed pending an instruction-walk binding
+        weight={v: 1 for v in spilled},  # uniform (weights are informational)
+        copies_remaining=copies_remaining,
         wall_time_s=stats.wall_time_s if stats else None,
         gap=stats.gap if stats else None,
     )
