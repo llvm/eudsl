@@ -33,5 +33,6 @@ from . import mir_greedy as _mir_greedy  # noqa: F401
 from . import mir_ilp_base as _mir_ilp_base  # noqa: F401
 from . import mir_ilp_assign as _mir_ilp_assign  # noqa: F401
 from . import mir_ilp_packing as _mir_ilp_packing  # noqa: F401
+from . import mir_ilp_decomp as _mir_ilp_decomp  # noqa: F401
 
 from .eudslllvm_ext import enable_debug  # noqa: F401

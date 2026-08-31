@@ -127,6 +127,14 @@ def test_single_class_k():
     assert model.single_class_k({}) is None
 
 
+def test_interval_live_at():
+    from llvm import mir_ilp_decomp as decomp
+    assert decomp.interval_live_at([(0, 4)], 0) is True
+    assert decomp.interval_live_at([(0, 4)], 3) is True
+    assert decomp.interval_live_at([(0, 4)], 4) is False  # half-open
+    assert decomp.interval_live_at([(0, 2), (8, 10)], 5) is False  # hole
+
+
 class _StubValidColoring(RAILPBase):
     """Produces a valid coloring in _solve (greedy over the interference graph),
     exercising the base's cached-solution return path. No ortools."""
@@ -295,3 +303,39 @@ def test_ilp_packing_high_pressure_hard_fails():
         _build_high_pressure(mmi)
         with pytest.raises(RuntimeError, match="register-fitting"):
             mmi.regalloc_assignments(regalloc="ilp-pack-hp")
+
+
+@aarch64
+def test_ilp_decomp_pressure_free_no_spill():
+    mir.register_regalloc("ilp-decomp-t", mir.RAILPDecomp)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        result = mmi.regalloc_assignments(regalloc="ilp-decomp-t")
+        assignments = dict(result.assignments)
+        spilled = list(result.spilled)
+    v0, v1, v2 = sorted(assignments)
+    assert assignments[v0] != assignments[v1]
+    assert spilled == []
+    assert_no_leaks()
+
+
+@aarch64
+def test_ilp_decomp_high_pressure_spills_and_is_valid():
+    # The per-point model accounts for reload pressure, so its spill set is
+    # realizable: it actually spills and produces a valid allocation where
+    # whole-interval RAILPAssign/RAILPPacking hard-fail.
+    mir.register_regalloc("ilp-decomp-hp", mir.RAILPDecomp)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "hp")
+        _build_high_pressure(mmi)
+        result = mmi.regalloc_assignments(regalloc="ilp-decomp-hp")
+        assignments = dict(result.assignments)
+        spilled = list(result.spilled)
+    assert len(spilled) >= 1
+    assert all(isinstance(p, int) for p in assignments.values())
+    assert_no_leaks()
