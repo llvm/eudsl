@@ -35,7 +35,7 @@ class RAILPPacking(RAILPBase):
     realizes_spills = False
 
     def _solve(self, prob):
-        if single_class_k(prob.num_regs) is None:
+        if single_class_k(prob.reg_class_id, prob.num_regs) is None:
             raise RuntimeError(
                 "RAILPPacking supports a single register class only; this "
                 "function mixes classes (the flat register axis cannot model "

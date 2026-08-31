@@ -88,6 +88,38 @@ def _build_high_pressure(mmi):
     return mf
 
 
+def _build_mixed_class(mmi):
+    """A GPR32 vreg and a GPR64 vreg simultaneously live -- two register classes
+    that report the same allocatable count (30) yet alias (W/X share reg units).
+    The flat-axis packing model must reject this."""
+    mf = mmi.machine_function("mixed")
+    b = mir.MachineIRBuilder(mf)
+    entry = mf.blocks[0]
+    g32, g64 = mf.reg_class("GPR32"), mf.reg_class("GPR64")
+    x0, w1 = mf.physreg("X0"), mf.physreg("W1")
+    entry.add_livein(x0)
+    entry.add_livein(w1)
+    v64, v32 = mf.create_vreg(g64), mf.create_vreg(g32)
+    copy = mf.opcode("COPY")
+    c = b.build_instr(copy)
+    c.add_reg(v64, is_def=True)
+    c.add_reg(x0)
+    c = b.build_instr(copy)
+    c.add_reg(v32, is_def=True)
+    c.add_reg(w1)
+    # Uses interleaved so v64 and v32 overlap (both live between the two defs).
+    c = b.build_instr(copy)
+    c.add_reg(x0, is_def=True)
+    c.add_reg(v64)
+    c = b.build_instr(copy)
+    c.add_reg(w1, is_def=True)
+    c.add_reg(v32)
+    b.build_instr(mf.opcode("RET_ReallyLR")).add_reg(w1, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
 def test_require_ortools_returns_cp_model():
     cp = model._require_ortools()
     assert hasattr(cp, "CpModel")
@@ -97,6 +129,15 @@ def test_scale_weight_is_positive_int():
     assert model.scale_weight(0.0) >= 1
     assert isinstance(model.scale_weight(1.5), int)
     assert model.scale_weight(2.0) > model.scale_weight(1.0)
+
+
+def test_scale_weight_infinite_dominates_finite():
+    # LLVM's must-not-spill marker maps to _MAX_WEIGHT; every finite weight,
+    # even a pathologically huge one, stays strictly below it so an unspillable
+    # interval always out-costs any finite spill.
+    assert model.scale_weight(float("inf")) == model._MAX_WEIGHT
+    assert model.scale_weight(1e12) < model.scale_weight(float("inf"))
+    assert model.scale_weight(1e12) == model._MAX_WEIGHT - 1
 
 
 def test_build_interference_overlap_and_disjoint():
@@ -126,9 +167,12 @@ def test_candidate_pregs_filters_forbidden():
 
 
 def test_single_class_k():
-    assert model.single_class_k({1: 32, 2: 32}) == 32
-    assert model.single_class_k({1: 32, 2: 16}) is None
-    assert model.single_class_k({}) is None
+    # One class -> k is the (shared) allocatable count.
+    assert model.single_class_k({1: 0, 2: 0}, {1: 32, 2: 32}) == 32
+    # Different classes -> None, even when their allocatable counts match
+    # (AArch64 GPR32/GPR64 both report 30 but alias -- must be rejected).
+    assert model.single_class_k({1: 0, 2: 1}, {1: 30, 2: 30}) is None
+    assert model.single_class_k({}, {}) is None
 
 
 def test_ilp_stats_gap():
@@ -149,6 +193,7 @@ def _mk_problem(**overrides):
         weight={1: 5, 2: 5, 3: 5},
         hints={1: 0, 2: 0, 3: 0},
         num_regs={1: 2, 2: 2, 3: 2},
+        reg_class_id={1: 0, 2: 0, 3: 0},
         spillable={1: True, 2: True, 3: True},
     )
     base.update(overrides)
@@ -156,12 +201,20 @@ def _mk_problem(**overrides):
 
 
 def test_packing_solve_standalone_multiclass_raises():
+    # Two distinct register classes that report the SAME allocatable count
+    # (the AArch64 GPR32/GPR64 aliasing trap): must still be rejected, since
+    # the gate keys on class identity, not on the count.
     with pytest.raises(RuntimeError, match="single register class"):
-        mir.RAILPPacking()._solve(_mk_problem(num_regs={1: 8, 2: 16, 3: 8}))
+        mir.RAILPPacking()._solve(
+            _mk_problem(num_regs={1: 30, 2: 30, 3: 30}, reg_class_id={1: 0, 2: 1, 3: 0})
+        )
 
 
 def test_packing_solve_standalone_spill_and_degenerate_segment():
-    # One spill forced; vreg 3 also carries a zero-length segment (skipped).
+    # Three mutually-interfering vregs, 2 pregs -> exactly one spills; vreg 3
+    # also carries a zero-length segment (6,6) that must be skipped so it does
+    # not become a rectangle that falsely self-interferes or forces an extra
+    # spill. Assert the full realized allocation, not just the spill count.
     sol = mir.RAILPPacking()._solve(
         _mk_problem(
             intervals={1: [(0, 6)], 2: [(0, 6)], 3: [(0, 6), (6, 6)]},
@@ -169,6 +222,11 @@ def test_packing_solve_standalone_spill_and_degenerate_segment():
     )
     assert sol.stats.status in ("OPTIMAL", "FEASIBLE")
     assert len(sol.spilled) == 1
+    # The two survivors are colored with distinct physregs (a valid packing);
+    # the degenerate segment did not inflate the spill count past 1.
+    survivors = [v for v in (1, 2, 3) if v not in sol.spilled]
+    assert len(sol.assignment) == 2
+    assert sol.assignment[survivors[0]] != sol.assignment[survivors[1]]
 
 
 def test_alloc_result_weighted_spill_cost():
@@ -384,6 +442,22 @@ def test_ilp_packing_high_pressure_hard_fails():
         _build_high_pressure(mmi)
         with pytest.raises(RuntimeError, match="register-fitting"):
             mmi.regalloc_assignments(regalloc="ilp-pack-hp")
+
+
+@aarch64
+def test_ilp_packing_mixed_class_hard_fails():
+    # GPR32 and GPR64 both report 30 allocatable regs, so a count-based gate
+    # would wrongly accept this mixed-class function and only fail later with a
+    # confusing "model interference bug" once the aliasing W0/X0 collide. The
+    # class-identity gate rejects it up front with a clear message.
+    mir.register_regalloc("ilp-pack-mixed", mir.RAILPPacking)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "mixed")
+        _build_mixed_class(mmi)
+        with pytest.raises(RuntimeError, match="single register class"):
+            mmi.regalloc_assignments(regalloc="ilp-pack-mixed")
 
 
 @aarch64

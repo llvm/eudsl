@@ -38,11 +38,14 @@ def _require_ortools():
 def scale_weight(weight):
     """Scale a float spill weight to a positive integer objective coefficient.
 
-    Infinite / huge weights (LLVM's must-not-spill marker) clamp to _MAX_WEIGHT.
+    LLVM's must-not-spill marker (infinite / HUGE_VALF weight) maps to
+    _MAX_WEIGHT. Every finite weight maps strictly below it (capped at
+    _MAX_WEIGHT - 1), so an unspillable interval always dominates any finite
+    spill cost while distinct finite weights stay distinguishable up to the cap.
     """
-    if weight == float("inf") or weight * _WEIGHT_SCALE >= _MAX_WEIGHT:
+    if weight == float("inf"):
         return _MAX_WEIGHT
-    return max(1, round(weight * _WEIGHT_SCALE))
+    return max(1, min(_MAX_WEIGHT - 1, round(weight * _WEIGHT_SCALE)))
 
 
 def _segments_overlap(segs_a, segs_b):
@@ -86,11 +89,19 @@ def candidate_pregs(order, forbidden):
     return [p for p in order if p not in forbidden]
 
 
-def single_class_k(num_regs):
-    """If every vreg shares one register-class size, return k; else None.
+def single_class_k(reg_class_id, num_regs):
+    """If every vreg shares one register class, return its allocatable count k;
+    else None. The packing and decomposition models are scoped to single-class
+    functions.
 
-    `num_regs` maps vreg id -> allocatable-register count of its class. The
-    packing and decomposition models are scoped to single-class functions.
+    Gating on class *identity* (not merely on the allocatable count) is what
+    makes the flat register axis sound: two different classes can report the
+    same count yet alias. On AArch64, GPR32 and GPR64 both have 30 allocatable
+    registers, but W0/X0 share register units -- treating them as independent
+    axis indices would silently ignore that aliasing. `reg_class_id` maps each
+    vreg to its TargetRegisterClass id; `num_regs` maps it to the class's
+    allocatable-register count (identical across vregs when the class is).
     """
-    ks = set(num_regs.values())
-    return next(iter(ks)) if len(ks) == 1 else None
+    if len(set(reg_class_id.values())) != 1:
+        return None
+    return next(iter(num_regs.values()))

@@ -33,6 +33,7 @@ class ILPProblem:
     weight: dict  # vreg -> int scaled spill weight
     hints: dict  # vreg -> preg copy hint (0 if none)
     num_regs: dict  # vreg -> int allocatable regs in its class
+    reg_class_id: dict  # vreg -> int TargetRegisterClass id (class identity)
     spillable: dict  # vreg -> bool (LLVM li.is_spillable)
 
 
@@ -101,8 +102,8 @@ class RAILPBase(mir.RegAllocBase):
     # spiller. Whole-interval models (assign, packing) set this False: their
     # minimum-spill solutions ignore reload register pressure and are not
     # reliably realizable, so they hard-fail cleanly when a function needs
-    # spilling (register-fitting functions only). The per-point decomposition
-    # model, which accounts for reloads, sets this True.
+    # spilling (register-fitting functions only). A model that accounts for
+    # reload pressure at each use point leaves this True.
     realizes_spills = True
 
     # Class-level record of the most recent solve's stats, keyed by allocator
@@ -152,7 +153,7 @@ class RAILPBase(mir.RegAllocBase):
 
     def _build_problem(self, vregs):
         intervals, order, forbidden = {}, {}, {}
-        weight, hints, num_regs, spillable = {}, {}, {}, {}
+        weight, hints, num_regs, reg_class_id, spillable = {}, {}, {}, {}, {}
         zero = self.zero_slot_index()
         free = mir.InterferenceKind.IK_Free
         virt = mir.InterferenceKind.IK_VirtReg
@@ -163,6 +164,7 @@ class RAILPBase(mir.RegAllocBase):
             ]
             cls = self.reg_class(reg)
             num_regs[reg] = self.num_allocatable_regs(cls)
+            reg_class_id[reg] = cls.id
             allowed, forb = [], set()
             seen = set()
             for preg in self.allocation_order(li):
@@ -190,6 +192,7 @@ class RAILPBase(mir.RegAllocBase):
             weight=weight,
             hints=hints,
             num_regs=num_regs,
+            reg_class_id=reg_class_id,
             spillable=spillable,
         )
 
