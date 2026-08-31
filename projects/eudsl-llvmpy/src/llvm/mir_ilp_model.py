@@ -33,3 +33,54 @@ def _require_ortools():
 def scale_weight(weight):
     """Scale a float spill weight to a positive integer objective coefficient."""
     return max(1, round(weight * _WEIGHT_SCALE))
+
+
+def _segments_overlap(segs_a, segs_b):
+    """True if any half-open [start, end) segment of A overlaps one of B."""
+    for s1, e1 in segs_a:
+        for s2, e2 in segs_b:
+            if s1 < e2 and s2 < e1:
+                return True
+    return False
+
+
+def build_interference(intervals):
+    """Pairwise interference edges from live-range overlap.
+
+    `intervals` maps vreg id -> list of (start, end) half-open integer segments.
+    Returns a set of ``frozenset({u, v})`` for every pair whose ranges overlap.
+    """
+    vregs = sorted(intervals)
+    edges = set()
+    for i, u in enumerate(vregs):
+        for v in vregs[i + 1:]:
+            if _segments_overlap(intervals[u], intervals[v]):
+                edges.add(frozenset((u, v)))
+    return edges
+
+
+def compact_time_axis(intervals):
+    """Map the sorted set of all segment endpoints to contiguous ints.
+
+    Returns ``(mapping, n_points)`` where `mapping` sends each original endpoint
+    to its index in the sorted order. Used to give the packing model a dense
+    time axis instead of raw (possibly large, sparse) slot distances.
+    """
+    points = sorted({p for segs in intervals.values() for seg in segs for p in seg})
+    mapping = {p: i for i, p in enumerate(points)}
+    return mapping, len(points)
+
+
+def candidate_pregs(order, forbidden):
+    """Allocation-order physregs minus the matrix-forbidden ones."""
+    return [p for p in order if p not in forbidden]
+
+
+def single_class_k(num_regs):
+    """If every vreg shares one register-class size, return k; else None.
+
+    `num_regs` maps vreg id -> allocatable-register count of its class. The
+    packing and decomposition models are scoped to single-class functions.
+    """
+    ks = set(num_regs.values())
+    return next(iter(ks)) if len(ks) == 1 else None
