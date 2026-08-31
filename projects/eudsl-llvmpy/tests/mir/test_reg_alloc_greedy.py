@@ -1312,7 +1312,7 @@ def test_region_split_analysis_accessors():
     assert saw["count_live"] >= 2
     assert isinstance(saw["loop_iv"], bool)
     assert saw["bundle"] >= 0
-    assert saw["loop_hdr"] == -1  # straight-line CFG: no loop
+    assert saw["loop_hdr"] is None  # straight-line CFG: no loop
     assert_no_leaks()
 
 
@@ -2166,8 +2166,8 @@ def _build_self_loop(mmi):
 
 def test_loop_header_number_resolves_enclosing_loop():
     """loop_header_number returns the enclosing loop's header for a block inside
-    a loop (the non-trivial MachineLoopInfo path), and -1 for a block that is in
-    no loop."""
+    a loop (the non-trivial MachineLoopInfo path), and None for a block that is
+    in no loop."""
     state = {}
 
     class Probe(mir.RAGreedy):
@@ -2187,7 +2187,7 @@ def test_loop_header_number_resolves_enclosing_loop():
         _build_self_loop(mmi)
         mmi.regalloc_assignments(regalloc="ra-greedy-loop")
     assert state["hdr"] == 1  # the loop header block number
-    assert state["none"] == -1  # b0 is not in a loop
+    assert state["none"] is None  # b0 is not in a loop
     assert_no_leaks()
 
 

@@ -45,6 +45,7 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
@@ -604,27 +605,27 @@ public:
     cur.setPhysReg(intfCache, llvm::MCRegister(physreg));
   }
 
-  // Header block number of the innermost loop containing `mbbNumber`, or -1 if
-  // none. Reproduces growRegion's looksLikeLoopIV header check without exposing
-  // the loop tree.
-  int loopHeaderNumber(unsigned mbbNumber) {
+  // Header block number of the innermost loop containing `mbbNumber`, or
+  // std::nullopt if none. Reproduces growRegion's looksLikeLoopIV header check
+  // without exposing the loop tree.
+  std::optional<int> loopHeaderNumber(unsigned mbbNumber) {
     llvm::MachineBasicBlock *mbb = mf->getBlockNumbered(mbbNumber);
     llvm::MachineLoop *loop = loops->getLoopFor(mbb);
     if (!loop)
-      return -1;
+      return std::nullopt;
     return loop->getHeader()->getNumber();
   }
 
-  // Slot index of the first non-debug instruction in block `n`, or an invalid
-  // SlotIndex if the block is empty (addThroughConstraints' abort guard).
-  llvm::SlotIndex firstNonDebugInstrIndex(unsigned n) {
+  // Slot index of the first non-debug instruction in block `n`, or std::nullopt
+  // if the block is empty (addThroughConstraints' abort guard).
+  std::optional<llvm::SlotIndex> firstNonDebugInstrIndex(unsigned n) {
     llvm::MachineBasicBlock *mbb = mf->getBlockNumbered(n);
     auto it = mbb->getFirstNonDebugInstr();
     // An empty (all-debug) block cannot be produced by the hand-built test MIR
     // -- the pre-regalloc pipeline requires a terminator -- so this defensive
     // guard is unreachable from tests.
     if (it == mbb->end())
-      return llvm::SlotIndex(); // LCOV_EXCL_LINE
+      return std::nullopt; // LCOV_EXCL_LINE
     return LIS->getInstructionIndex(*it);
   }
 
@@ -684,9 +685,10 @@ public:
     std::vector<llvm::LiveRange::Segment> segs;
     for (llvm::MCRegUnit unit : tri->regunits(llvm::MCRegister(physreg))) {
       const llvm::LiveRange &lr = LIS->getRegUnit(unit);
-      for (const llvm::LiveRange::Segment &s : lr)
+      for (const llvm::LiveRange::Segment &s : lr) {
         if (s.start < stop && start < s.end) // overlaps li
           segs.push_back(s);
+      }
     }
     return segs;
   }
@@ -886,9 +888,10 @@ public:
       }
     }
     llvm::LaneBitmask liveAtMask;
-    for (const llvm::LiveInterval::SubRange &s : li.subranges())
+    for (const llvm::LiveInterval::SubRange &s : li.subranges()) {
       if (s.liveAt(idx))
         liveAtMask |= s.LaneMask;
+    }
     return (readMask & ~(liveAtMask & tri->getCoveringLanes())).any();
   }
 
@@ -1551,11 +1554,11 @@ void populate_python_codegen(nb::module_ &m) {
       .def("loop_header_number", &PyRegAllocBase::loopHeaderNumber,
            "mbb_number"_a,
            "Header block number of the innermost loop containing "
-           "`mbb_number`, or -1 if none.")
+           "`mbb_number`, or None if none.")
       .def("first_nondebug_instr_index",
            &PyRegAllocBase::firstNonDebugInstrIndex, "mbb_number"_a,
-           "SlotIndex of the first non-debug instruction in the block, or an "
-           "invalid index if empty.")
+           "SlotIndex of the first non-debug instruction in the block, or None "
+           "if empty.")
       .def("through_insert_index", &PyRegAllocBase::throughInsertIndex,
            "mbb_number"_a,
            "Live-in insertion-point index for the analyzed interval's reg in "

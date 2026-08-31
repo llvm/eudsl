@@ -732,7 +732,7 @@ class RAGreedy(mir.RegAllocBase):
             bc.number = number
             # Abort if the spill cannot be inserted at the block start.
             first_instr = self.first_nondebug_instr_index(number)
-            if first_instr.is_valid() and _earlier_instr(
+            if first_instr is not None and _earlier_instr(
                 first_instr, sa.first_split_point(number)
             ):
                 return False
