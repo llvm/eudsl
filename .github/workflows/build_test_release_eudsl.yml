@@ -388,10 +388,6 @@ jobs:
           # which llvm.testing.filecheck_with_comments locates.
           python -m pip install mlir-native-tools \
             -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
-          # The ILP register allocators need OR-Tools (the optional `ilp` extra).
-          # Best-effort: a Python version without an ortools wheel still runs the
-          # rest of the suite (the ILP tests importorskip), and the coverage gate
-          # below drops when ortools is absent.
           python -m pip install "ortools>=9.0" || true
 
       - name: "Test eudsl-llvmpy"
@@ -408,8 +404,6 @@ jobs:
           case "${{ matrix.name }}" in
             ubuntu_x86_64|windows_amd64) COV_FAIL_UNDER=0 ;;
           esac
-          # Without ortools the ILP tests skip, so mir_ilp_*.py cannot be covered;
-          # don't hold the gate against them in that case.
           python -c "import ortools" 2>/dev/null || COV_FAIL_UNDER=0
           python -m pytest -rA --capture=tee-sys \
             --cov-fail-under=$COV_FAIL_UNDER $TESTS_DIR

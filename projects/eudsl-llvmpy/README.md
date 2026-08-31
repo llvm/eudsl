@@ -539,9 +539,6 @@ like any allocator.
 Whole-interval spill decisions ignore reload register pressure and are not
 reliably realizable, so `RAILPPacking` is scoped to register-fitting functions
 and hard-fails cleanly when a function needs spilling.
-`scripts/ilp_regalloc_compare.py` compares the ILP allocators against the
-greedy/basic baselines on curated fixtures, reporting spills, weighted spill
-cost, solve time, and optimality gap.
 
 ## Limitations
 

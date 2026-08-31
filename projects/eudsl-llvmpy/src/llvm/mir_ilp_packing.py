@@ -20,8 +20,11 @@ value in their domain, forcing a physreg assignment.
 import time
 
 from . import mir
-from .mir_ilp_base import RAILPBase, ILPSolution, stats_from_solver, make_solver
-from .mir_ilp_model import (
+from .mir_ilp_base import (
+    RAILPBase,
+    ILPSolution,
+    stats_from_solver,
+    make_solver,
     candidate_pregs,
     compact_time_axis,
     single_class_k,
@@ -35,6 +38,27 @@ class RAILPPacking(RAILPBase):
     realizes_spills = False
 
     def _solve(self, prob):
+        r"""CP-SAT model (single register class, k = #allocatable regs):
+
+            variables   r_v in D_v  for each vreg v
+                        D_v = {0..P-1}                 (dense physreg indices)
+                              U {P + i}  if v spillable (private memory slot)
+                        where P = |union of legal physregs across all vregs|
+
+            rectangles  for each live segment [s, e) of v, one 2D box
+                        x-extent [t(s), t(e))   (compacted time axis)
+                        y-extent [r_v, r_v + 1) (width 1, at v's register)
+
+            constraint  no_overlap_2d(all boxes)
+                        => two vregs live at the same time cannot share a
+                           register index; distinct memory slots (P + i) never
+                           collide, so spilled values never falsely interfere
+
+            spill flag  b_v = 1  <=>  r_v >= P   (v placed in memory)
+            objective   minimize  sum_v  w_v * b_v   (weighted spill cost)
+
+        Unspillable vregs get no memory value in D_v, forcing r_v < P.
+        """
         if single_class_k(prob.reg_class_id, prob.num_regs) is None:
             raise RuntimeError(
                 "RAILPPacking supports a single register class only; this "

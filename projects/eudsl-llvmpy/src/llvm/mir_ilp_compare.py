@@ -5,7 +5,7 @@
 
 `AllocResult` holds one allocator's outcome on one function; `format_table`
 renders a set of results. Kept binding-free so the metric arithmetic and
-formatting are unit-testable; the runner (scripts/ilp_regalloc_compare.py)
+formatting are unit-testable; the runner (tests/mir/ilp_regalloc_compare.py)
 builds the MachineFunctions and populates these.
 """
 

@@ -5,8 +5,8 @@
 
 import pytest
 import llvm
-from llvm import mir_ilp_model as model
 from llvm import ir, jit, mir
+from llvm import mir_ilp_base as model
 from llvm.mir_ilp_base import RAILPBase, ILPSolution, ILPStats
 from llvm.testing import assert_no_leaks
 

@@ -4,7 +4,7 @@
 """Run the ILP-vs-greedy register-allocation comparison over curated fixtures.
 
 Usage (AArch64 backend + ortools required):
-    LLVM_BINDIR=... python scripts/ilp_regalloc_compare.py
+    LLVM_BINDIR=... python tests/mir/ilp_regalloc_compare.py
 
 Prints, per fixture, a table comparing each allocator's spills, weighted spill
 cost, solve time, and optimality gap. Allocators that hard-fail (the whole-
