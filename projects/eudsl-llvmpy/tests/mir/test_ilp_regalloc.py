@@ -135,6 +135,33 @@ def test_interval_live_at():
     assert decomp.interval_live_at([(0, 2), (8, 10)], 5) is False  # hole
 
 
+def test_alloc_result_weighted_spill_cost():
+    from llvm import mir_ilp_compare as compare
+    r = compare.AllocResult(
+        name="x", valid=True, spills=[2, 3],
+        weight={1: 10, 2: 5, 3: 7}, copies_remaining=1,
+        wall_time_s=0.1, gap=0.0, error=None,
+    )
+    assert r.weighted_spill_cost == 12  # 5 + 7
+    assert r.num_spills == 2
+
+
+def test_format_table_contains_rows_and_header():
+    from llvm import mir_ilp_compare as compare
+    rows = [
+        compare.AllocResult("greedy", True, [], {}, 0, None, None, None),
+        compare.AllocResult("ilp-assign", True, [1], {1: 4}, 0, 0.2, 0.0, None),
+        compare.AllocResult("ilp-pack", False, [], {}, 0, None, None,
+                            "register-fitting only"),
+    ]
+    text = compare.format_table("add", rows)
+    assert "add" in text
+    assert "greedy" in text
+    assert "ilp-assign" in text
+    assert "gap" in text.lower()
+    assert "hard-fail" in text or "register-fitting" in text
+
+
 class _StubValidColoring(RAILPBase):
     """Produces a valid coloring in _solve (greedy over the interference graph),
     exercising the base's cached-solution return path. No ortools."""
