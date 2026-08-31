@@ -519,6 +519,30 @@ build has assertions enabled, an invalid split aborts with a diagnostic rather
 than emitting bad code, and an exception raised in any override propagates out
 of `emit_object`.
 
+### ILP register allocators (optional, requires OR-Tools)
+
+Integer-linear-programming register allocators, solved with Google OR-Tools
+CP-SAT, are available when the `ilp` extra is installed
+(`pip install eudsl-llvmpy[ilp]`). Each subclasses a shared `RAILPBase` that
+collects every seeded vreg, solves one global model on the first `dequeue`, and
+answers each `select_or_split` from the cached solution. The solution is
+verified against the live-register matrix: a missing or infeasible ILP decision
+is a **hard error** (no silent greedy fallback), so a model bug surfaces rather
+than being masked. Register assignments are read back with `regalloc_assignments`
+like any allocator.
+
+- `mir.RAILPPacking` — 2D no-overlap rectangle packing (time × register), one
+  rectangle per live segment; the register variable's domain includes a private
+  memory slot so a value in the memory region means spilled. Single register
+  class only (the flat register axis cannot model aliasing).
+
+Whole-interval spill decisions ignore reload register pressure and are not
+reliably realizable, so `RAILPPacking` is scoped to register-fitting functions
+and hard-fails cleanly when a function needs spilling.
+`scripts/ilp_regalloc_compare.py` compares the ILP allocators against the
+greedy/basic baselines on curated fixtures, reporting spills, weighted spill
+cost, solve time, and optimality gap.
+
 ## Limitations
 
 - **`break`, `continue`, and early `return` inside DSL control flow are not

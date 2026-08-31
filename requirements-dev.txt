@@ -3,3 +3,4 @@ numpy>=2.0.2
 scikit-build-core==0.10.7
 pytest
 pytest-cov
+ortools>=9.0

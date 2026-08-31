@@ -11,6 +11,9 @@ name = "eudsl-llvmpy"
 version = "0.0.1"
 requires-python = ">=3.12"
 
+[project.optional-dependencies]
+ilp = ["ortools>=9.0"]
+
 [project.urls]
 Homepage = "https://github.com/llvm/eudsl"
 
