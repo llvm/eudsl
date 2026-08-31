@@ -39,6 +39,7 @@
 #include <llvm/CodeGen/VirtRegMap.h>
 #include <llvm/MC/LaneBitmask.h>
 #include <llvm/PassRegistry.h>
+#include <llvm/Support/CommandLine.h>
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
@@ -430,6 +431,23 @@ protected:
 // Python-only splitting surface (split analysis/editor, the current split-vreg
 // vector, and the edit buffer) that the standalone NativeRegAlloc fallback has
 // no use for.
+// RAGreedy resolves reverseLocalAssignment / regClassPriorityTrumpsGlobalness
+// as `flag.getNumOccurrences() ? flag : TRI->hook()`, where `flag` is one of
+// its file-static hidden cl::opts. Those statics aren't visible here, but they
+// are the same options registered in the global cl registry, so look them up by
+// name to honor a `-greedy-*` override exactly as the allocator would (in an
+// embedding with no command-line parsing the count is 0, so this returns the
+// target hook).
+bool greedyEffectiveFlag(llvm::StringRef flag, bool targetDefault) {
+  auto &opts = llvm::cl::getRegisteredOptions();
+  auto it = opts.find(flag);
+  if (it == opts.end() || !it->second->getNumOccurrences())
+    return targetDefault;
+  // Only reached when a -greedy-* override was set on LLVM's command line; this
+  // embedding never parses those flags, so it is unreachable from tests.
+  return *static_cast<llvm::cl::opt<bool> *>(it->second); // LCOV_EXCL_LINE
+}
+
 class PyRegAllocBase : public NativeRegAlloc {
 public:
   NB_TRAMPOLINE(NativeRegAlloc, 6);
@@ -611,6 +629,37 @@ public:
 
   unsigned numAllocatableRegs(const llvm::TargetRegisterClass *rc) {
     return RegClassInfo.getNumAllocatableRegs(rc);
+  }
+
+  // LLVM's fixed number of slot-index positions per instruction (SlotIndex::
+  // InstrDist) -- RAGreedy converts range size to instruction count with it.
+  unsigned slotIndexInstrDistance() { return llvm::SlotIndex::InstrDist; }
+
+  // Whether the target assigns local ranges in reverse instruction order
+  // (RAGreedy::enqueue orders local ranges by this), honoring the
+  // -greedy-reverse-local-assignment override the allocator applies.
+  bool reverseLocalAssignment() {
+    return greedyEffectiveFlag(
+        "greedy-reverse-local-assignment",
+        mf->getSubtarget().getRegisterInfo()->reverseLocalAssignment());
+  }
+
+  // Whether the register class's AllocationPriority outranks globalness in the
+  // priority calculation (RAGreedy's RegClassPriorityTrumpsGlobalness),
+  // honoring the -greedy-regclass-priority-trumps-globalness override.
+  bool regClassPriorityTrumpsGlobalness() {
+    return greedyEffectiveFlag(
+        "greedy-regclass-priority-trumps-globalness",
+        mf->getSubtarget().getRegisterInfo()->regClassPriorityTrumpsGlobalness(
+            *mf));
+  }
+
+  bool regClassHasGlobalPriority(const llvm::TargetRegisterClass *rc) {
+    return rc->GlobalPriority;
+  }
+
+  bool regClassIsAllocatable(const llvm::TargetRegisterClass *rc) {
+    return rc->isAllocatable();
   }
 
   bool isTriviallyRematerializable(llvm::MachineInstr *mi) {
@@ -1074,6 +1123,24 @@ void populate_python_codegen(nb::module_ &m) {
            "reg_class"_a,
            "Number of actually-allocatable registers in `reg_class` (the "
            "register-pressure denominator; reserved registers excluded).")
+      .def("slot_index_instr_distance", &PyRegAllocBase::slotIndexInstrDistance,
+           "Slot positions per instruction (SlotIndex::InstrDist).")
+      .def("reverse_local_assignment", &PyRegAllocBase::reverseLocalAssignment,
+           "Whether the target assigns local ranges in reverse order "
+           "(honors -greedy-reverse-local-assignment).")
+      .def(
+          "reg_class_priority_trumps_globalness",
+          &PyRegAllocBase::regClassPriorityTrumpsGlobalness,
+          "Whether the register class's AllocationPriority outranks globalness "
+          "in the priority calculation (honors "
+          "-greedy-regclass-priority-trumps-globalness).")
+      .def(
+          "reg_class_has_global_priority",
+          &PyRegAllocBase::regClassHasGlobalPriority, "reg_class"_a,
+          "`reg_class`'s GlobalPriority flag -- the first disjunct of RAGreedy "
+          "ForceGlobal (the size-based disjunct is computed in enqueue).")
+      .def("reg_class_is_allocatable", &PyRegAllocBase::regClassIsAllocatable,
+           "reg_class"_a, "Whether `reg_class` is allocatable.")
       .def(
           "is_trivially_rematerializable",
           &PyRegAllocBase::isTriviallyRematerializable, "mi"_a,

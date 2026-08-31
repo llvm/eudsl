@@ -1888,3 +1888,37 @@ def test_segments_and_spill_weight_recompute():
     assert isinstance(w, float) and math.isfinite(w) and w > 0
     assert w == _seg_saw["framework_weight"]
     assert_no_leaks()
+
+
+def test_priority_scalars():
+    """The scalars RAGreedy::enqueue reads: instruction-slot granularity, the
+    target's reverse-local-assignment flag, and per-class GlobalPriority /
+    allocatability."""
+    saw = {}
+
+    class Reader(mir.RegAllocBase):
+        def select_or_split(self, li):
+            if not saw:
+                rc = self.reg_class(li.reg)
+                saw["instr_dist"] = self.slot_index_instr_distance()
+                saw["reverse_local"] = self.reverse_local_assignment()
+                saw["trumps_globalness"] = self.reg_class_priority_trumps_globalness()
+                saw["global_priority"] = self.reg_class_has_global_priority(rc)
+                saw["allocatable"] = self.reg_class_is_allocatable(rc)
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-prio-scalars", Reader)
+    obj = _emit("ra-prio-scalars", Reader, builder=_build_remat_const, fn="rematc")
+    assert obj[:4] == b"\x7fELF"
+    # InstrDist is LLVM's fixed slots-per-instruction (16); GPR32 is allocatable
+    # and (on AArch64) not a GlobalPriority class.
+    assert saw["instr_dist"] == 16
+    assert isinstance(saw["reverse_local"], bool)
+    assert isinstance(saw["trumps_globalness"], bool)
+    assert saw["allocatable"] is True
+    assert isinstance(saw["global_priority"], bool)
+    assert_no_leaks()
