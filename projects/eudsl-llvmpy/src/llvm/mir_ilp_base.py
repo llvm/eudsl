@@ -73,6 +73,12 @@ class RAILPBase(mir.RegAllocBase):
     # model, which accounts for reloads, sets this True.
     realizes_spills = True
 
+    # Class-level record of the most recent solve's stats, keyed by allocator
+    # class name. The driver instantiates the allocator internally, so this is
+    # how the comparison harness retrieves the objective / optimality gap /
+    # wall time after `regalloc_assignments` returns.
+    last_stats = {}
+
     def __init__(self):
         super().__init__()
         self._pending = []
@@ -110,6 +116,7 @@ class RAILPBase(mir.RegAllocBase):
         self._solution = solution.assignment
         self._spill = set(solution.spilled)
         self.solve_stats = solution.stats
+        RAILPBase.last_stats[type(self).__name__] = solution.stats
 
     def _build_problem(self, vregs):
         intervals, order, forbidden = {}, {}, {}

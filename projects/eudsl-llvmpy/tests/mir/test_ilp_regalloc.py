@@ -366,3 +366,35 @@ def test_ilp_decomp_high_pressure_spills_and_is_valid():
     assert len(spilled) >= 1
     assert all(isinstance(p, int) for p in assignments.values())
     assert_no_leaks()
+
+
+@aarch64
+def test_comparison_low_pressure_all_valid_and_ilp_optimal():
+    from llvm.mir_ilp_base import RAILPBase
+
+    mir.register_regalloc("cmp-basic", mir.BasicRegAlloc)
+    mir.register_regalloc("cmp-assign", mir.RAILPAssign)
+    mir.register_regalloc("cmp-pack", mir.RAILPPacking)
+    mir.register_regalloc("cmp-decomp", mir.RAILPDecomp)
+    allocs = ["greedy", "cmp-basic", "cmp-assign", "cmp-pack", "cmp-decomp"]
+
+    for alloc in allocs:
+        with ir.Context() as ctx:
+            mod = ir.Module("m", ctx)
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(mod, tm, "add")
+            _build_add(mmi)
+            result = mmi.regalloc_assignments(regalloc=alloc)
+            assignments = dict(result.assignments)
+            spilled = list(result.spilled)
+        # Low pressure: every allocator is valid and spills nothing.
+        assert spilled == [], f"{alloc} spilled on a pressure-free function"
+        v0, v1, _ = sorted(assignments)
+        assert assignments[v0] != assignments[v1], f"{alloc} gave a bad coloring"
+
+    # The ILP allocators prove optimality (gap 0) on this trivial function.
+    for cls in ("RAILPAssign", "RAILPDecomp"):
+        stats = RAILPBase.last_stats[cls]
+        assert stats.status == "OPTIMAL"
+        assert stats.gap == 0.0
+    assert_no_leaks()
