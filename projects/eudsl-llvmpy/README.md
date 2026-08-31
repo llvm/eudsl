@@ -531,14 +531,17 @@ is a **hard error** (no silent greedy fallback), so a model bug surfaces rather
 than being masked. Register assignments are read back with `regalloc_assignments`
 like any allocator.
 
+- `mir.RAILPAssign` — Goodwin-Wilken 0-1 ILP: `x[v,p]` assignment variables plus
+  `spill[v]`, interference-edge constraints, objective minimizing weighted spill
+  cost less a copy-hint (coalescing) bonus. General over register classes.
 - `mir.RAILPPacking` — 2D no-overlap rectangle packing (time × register), one
   rectangle per live segment; the register variable's domain includes a private
   memory slot so a value in the memory region means spilled. Single register
   class only (the flat register axis cannot model aliasing).
 
 Whole-interval spill decisions ignore reload register pressure and are not
-reliably realizable, so `RAILPPacking` is scoped to register-fitting functions
-and hard-fails cleanly when a function needs spilling.
+reliably realizable, so `RAILPAssign` and `RAILPPacking` are scoped to
+register-fitting functions and hard-fail cleanly when a function needs spilling.
 
 ## Limitations
 
