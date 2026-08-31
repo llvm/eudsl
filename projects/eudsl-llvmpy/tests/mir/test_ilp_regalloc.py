@@ -407,3 +407,46 @@ def test_comparison_low_pressure_packing_valid_and_optimal():
     assert stats.status in ("OPTIMAL", "FEASIBLE")
     assert stats.gap == 0.0
     assert_no_leaks()
+
+
+class _StubCapturePoints(RAILPBase):
+    """Captures ``_points_in_register`` for every vreg alongside the problem's
+    intervals, then colors validly so the run completes. Lets a test assert the
+    helper's points land in the same coordinate space as ``ILPProblem.intervals``.
+    """
+
+    captured_points = {}
+    captured_intervals = {}
+
+    def _solve(self, prob):
+        _StubCapturePoints.captured_points = {
+            v: self._points_in_register(self.lis.interval(v)) for v in prob.vregs
+        }
+        _StubCapturePoints.captured_intervals = dict(prob.intervals)
+        return ILPSolution(
+            assignment=_greedy_color(prob), spilled=set(), stats=ILPStats("OPTIMAL")
+        )
+
+
+@aarch64
+def test_points_in_register_aligns_with_intervals():
+    mir.register_regalloc("ilp-stub-points", _StubCapturePoints)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        mmi.regalloc_assignments(regalloc="ilp-stub-points")
+    points = _StubCapturePoints.captured_points
+    intervals = _StubCapturePoints.captured_intervals
+    assert set(points) == set(intervals)
+    for v, pts in points.items():
+        assert pts, f"vreg {v} has no must-be-in-register point"
+        assert all(isinstance(p, int) for p in pts)
+        # The def point is the live range's start (same coordinate space), and
+        # every must-reg point falls within the vreg's live span.
+        start = min(s for s, _ in intervals[v])
+        end = max(e for _, e in intervals[v])
+        assert min(pts) == start
+        assert all(start <= p <= end for p in pts)
+    assert_no_leaks()

@@ -239,5 +239,22 @@ class RAILPBase(mir.RegAllocBase):
             )
         self.spill(li)
 
+    def _points_in_register(self, li):
+        """Base-relative slots where `li` needs a physical register even when
+        spilled: each definition (the store's source) and each use (a reload).
+        Live-*through* points are excluded -- a spilled value sits in memory
+        there. Points are distances from ``zero_slot_index()``, the same
+        coordinate space ``_build_problem`` uses for ``ILPProblem.intervals``,
+        so per-point pressure counts stay aligned with the interval segments.
+        """
+        zero = self.zero_slot_index()
+        pts = {
+            zero.distance(li.get_val_num_info(i).def_index)
+            for i in range(li.num_val_nums)
+        }
+        self.split_analysis.analyze(li)
+        pts |= {zero.distance(s) for s in self.split_analysis.get_use_slots()}
+        return pts
+
     def _solve(self, problem):  # pragma: no cover - overridden by subclasses
         raise NotImplementedError
