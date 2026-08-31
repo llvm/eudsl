@@ -14,6 +14,11 @@ lists, dicts) so they can be unit-tested without constructing a MachineFunction.
 # hint can only ever break ties, never force or prevent a spill).
 _WEIGHT_SCALE = 1000
 
+# LLVM marks must-not-spill intervals with an infinite (HUGE_VALF) spill weight.
+# CP-SAT needs a finite integer coefficient, so clamp to a value large enough to
+# dominate any realistic sum of ordinary weights yet safely within int range.
+_MAX_WEIGHT = 1_000_000_000
+
 # Reward (in scaled objective units) for assigning a vreg to its copy hint.
 # Strictly less than the smallest scaled spill weight so it never buys a spill.
 HINT_BONUS = 1
@@ -31,7 +36,12 @@ def _require_ortools():
 
 
 def scale_weight(weight):
-    """Scale a float spill weight to a positive integer objective coefficient."""
+    """Scale a float spill weight to a positive integer objective coefficient.
+
+    Infinite / huge weights (LLVM's must-not-spill marker) clamp to _MAX_WEIGHT.
+    """
+    if weight == float("inf") or weight * _WEIGHT_SCALE >= _MAX_WEIGHT:
+        return _MAX_WEIGHT
     return max(1, round(weight * _WEIGHT_SCALE))
 
 

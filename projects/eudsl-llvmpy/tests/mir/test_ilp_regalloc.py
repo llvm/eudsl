@@ -6,6 +6,82 @@
 import pytest
 import llvm
 from llvm import mir_ilp_model as model
+from llvm import ir, jit, mir
+from llvm.mir_ilp_base import RAILPBase, ILPSolution, ILPStats
+from llvm.testing import assert_no_leaks
+
+_AARCH64_LINUX = "aarch64-unknown-linux-gnu"
+
+aarch64 = pytest.mark.skipif(
+    "aarch64" not in llvm.jit.registered_targets(),
+    reason="AArch64 backend not linked",
+)
+
+
+def _build_add(mmi):
+    """Pressure-free add: two argument copies + an ADD + a return copy."""
+    mf = mmi.machine_function("add")
+    b = mir.MachineIRBuilder(mf)
+    entry = mf.blocks[0]
+    gpr32 = mf.reg_class("GPR32")
+    w0, w1 = mf.physreg("W0"), mf.physreg("W1")
+    entry.add_livein(w0)
+    entry.add_livein(w1)
+    v0, v1, v2 = (mf.create_vreg(gpr32) for _ in range(3))
+    copy = mf.opcode("COPY")
+    for dst, src in ((v0, w0), (v1, w1)):
+        c = b.build_instr(copy)
+        c.add_reg(dst, is_def=True)
+        c.add_reg(src)
+    add = b.build_instr(mf.opcode("ADDWrr"))
+    add.add_reg(v2, is_def=True)
+    add.add_reg(v0)
+    add.add_reg(v1)
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(v2)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
+
+
+_HP_N = 48
+
+
+def _build_high_pressure(mmi):
+    mf = mmi.machine_function("hp")
+    b = mir.MachineIRBuilder(mf)
+    entry = mf.blocks[0]
+    gpr32 = mf.reg_class("GPR32")
+    w0 = mf.physreg("W0")
+    entry.add_livein(w0)
+    copy = mf.opcode("COPY")
+    addrr = mf.opcode("ADDWrr")
+    terms = []
+    for _ in range(_HP_N):
+        t = mf.create_vreg(gpr32)
+        ins = b.build_instr(copy)
+        ins.add_reg(t, is_def=True)
+        ins.add_reg(w0)
+        terms.append(t)
+    acc = terms[0]
+    for t in terms[1:]:
+        nacc = mf.create_vreg(gpr32)
+        ins = b.build_instr(addrr)
+        ins.add_reg(nacc, is_def=True)
+        ins.add_reg(acc)
+        ins.add_reg(t)
+        acc = nacc
+    rc = b.build_instr(copy)
+    rc.add_reg(w0, is_def=True)
+    rc.add_reg(acc)
+    ret = b.build_instr(mf.opcode("RET_ReallyLR"))
+    ret.add_reg(w0, implicit=True)
+    for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+        mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+    return mf
 
 
 def test_require_ortools_returns_cp_model():
@@ -49,3 +125,105 @@ def test_single_class_k():
     assert model.single_class_k({1: 32, 2: 32}) == 32
     assert model.single_class_k({1: 32, 2: 16}) is None
     assert model.single_class_k({}) is None
+
+
+class _StubValidColoring(RAILPBase):
+    """Produces a valid coloring in _solve (greedy over the interference graph),
+    exercising the base's cached-solution return path. No ortools."""
+
+    def _solve(self, prob):
+        edges = model.build_interference(prob.intervals)
+        adj = {v: set() for v in prob.vregs}
+        for edge in edges:
+            a, b = tuple(edge)
+            adj[a].add(b)
+            adj[b].add(a)
+        asg = {}
+        for v in prob.vregs:
+            used = {asg[n] for n in adj[v] if n in asg}
+            for p in model.candidate_pregs(prob.order[v], prob.forbidden[v]):
+                if p not in used:
+                    asg[v] = p
+                    break
+        return ILPSolution(assignment=asg, spilled=set(), stats=ILPStats("OPTIMAL"))
+
+
+@aarch64
+def test_base_returns_cached_valid_assignment():
+    mir.register_regalloc("ilp-stub-valid", _StubValidColoring)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        result = mmi.regalloc_assignments(regalloc="ilp-stub-valid")
+        assignments = dict(result.assignments)
+        spilled = list(result.spilled)
+    v0, v1, v2 = sorted(assignments)
+    assert assignments[v0] != assignments[v1]  # simultaneously live -> distinct
+    assert spilled == []
+    assert_no_leaks()
+
+
+class _StubSameReg(RAILPBase):
+    """Assigns every vreg the same physreg (a candidate legal for all). Two
+    simultaneously-live vregs then collide, so the base must hard-fail on the
+    "not free" branch rather than silently repair it."""
+
+    def _solve(self, prob):
+        common = set(prob.order[prob.vregs[0]])
+        for v in prob.vregs[1:]:
+            common &= set(prob.order[v])
+        reg = min(common)
+        asg = {v: reg for v in prob.vregs}
+        return ILPSolution(assignment=asg, spilled=set(), stats=ILPStats("OPTIMAL"))
+
+
+@aarch64
+def test_base_hard_fails_on_infeasible_assignment():
+    mir.register_regalloc("ilp-stub-bad", _StubSameReg)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        with pytest.raises(RuntimeError, match="not free"):
+            mmi.regalloc_assignments(regalloc="ilp-stub-bad")
+
+
+class _StubSpillOne(RAILPBase):
+    """Spills one spillable vreg and colors the rest (greedy over interference),
+    exercising the spill-routing + reload-vreg first-free path."""
+
+    def _solve(self, prob):
+        target = min(v for v in prob.vregs if prob.spillable[v])
+        edges = model.build_interference(prob.intervals)
+        adj = {v: set() for v in prob.vregs}
+        for edge in edges:
+            a, b = tuple(edge)
+            adj[a].add(b)
+            adj[b].add(a)
+        asg = {}
+        for v in prob.vregs:
+            if v == target:
+                continue
+            used = {asg[n] for n in adj[v] if n in asg}
+            for p in model.candidate_pregs(prob.order[v], prob.forbidden[v]):
+                if p not in used:
+                    asg[v] = p
+                    break
+        return ILPSolution(assignment=asg, spilled={target}, stats=ILPStats("OPTIMAL"))
+
+
+@aarch64
+def test_base_stub_routes_spill():
+    mir.register_regalloc("ilp-stub-spill", _StubSpillOne)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        result = mmi.regalloc_assignments(regalloc="ilp-stub-spill")
+        spilled = list(result.spilled)
+    assert len(spilled) >= 1
+    assert_no_leaks()
