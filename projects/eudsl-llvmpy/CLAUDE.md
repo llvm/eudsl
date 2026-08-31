@@ -47,6 +47,16 @@ holds. Reach for `nb::object`/`nb::handle` only when the value is genuinely an
 arbitrary Python object with no more specific type — e.g. the ignored
 `exc_type`/`exc_value`/`traceback` parameters of `__exit__`.
 
+## Signal "failure or value" with `std::optional`, not sentinels
+
+When a binding may not have a value to return, return `std::optional<T>` (it
+casts to `T | None` in Python via `nanobind/stl/optional.h`) rather than an
+in-band sentinel like `-1`, an invalid `SlotIndex`, or an empty string. The
+optional makes the "no value" case explicit at the type level and lets the
+Python caller test `is None` instead of memorizing which magic value means
+absence. Reserve sentinels for the rare case where the underlying LLVM API
+itself defines one as a real value.
+
 ## Comments explain why, not what
 
 Do not write comments that restate what the code plainly does. Add a comment

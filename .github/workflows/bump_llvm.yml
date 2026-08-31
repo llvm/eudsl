@@ -51,6 +51,8 @@ jobs:
             projects/eudsl-llvmpy/src/MIR/AllocationOrder.h
           cp third_party/llvm-project/llvm/lib/CodeGen/SplitKit.h \
             projects/eudsl-llvmpy/src/MIR/SplitKit.h
+          cp third_party/llvm-project/llvm/lib/CodeGen/InterferenceCache.h \
+            projects/eudsl-llvmpy/src/MIR/InterferenceCache.h
 
       - name: "Regenerate Pipeline pass methods"
         run: |

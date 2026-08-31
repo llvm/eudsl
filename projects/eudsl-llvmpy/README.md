@@ -541,8 +541,11 @@ of `emit_object`.
   by traversal from a `Module`. Out of scope for now: DIBuilder/DebugInfo,
   remarks, the disassembler, object-file inspection, funclet-based exception
   handling, and ORC customization points that need Python callbacks.
-- **Targets.** The build links host targets only by default (AArch64 and X86).
-  AMDGPU and NVPTX stay reachable through the `EUDSL_LLVMPY_TARGETS` CMake
+- **Targets.** The build links the host target by default (whatever
+  `LLVM_NATIVE_ARCH` is), plus AMDGPU whenever the LLVM being built against
+  provides it (it is in the default distribution) — AMDGPU is the one target
+  with sub-register liveness, which `mir.RAGreedy`'s `tryInstructionSplit` test
+  needs. Extra targets stay reachable through the `EUDSL_LLVMPY_TARGETS` CMake
   option. Emitting AMDGCN assembly never needed an AMD device; only running it
   did.
 
@@ -557,8 +560,9 @@ pip install -e . --no-build-isolation
 
 CMake options, passed through `--config-settings=cmake.define.<NAME>=<VALUE>`:
 
-- `EUDSL_LLVMPY_TARGETS` (default `AArch64;X86`) selects which LLVM target
-  backends to link and initialize.
+- `EUDSL_LLVMPY_TARGETS` (default: the host target, `LLVM_NATIVE_ARCH`) selects
+  which LLVM target backends to link and initialize; AMDGPU is added on top
+  whenever the linked LLVM provides it.
 - `EUDSL_LLVMPY_ENABLE_COVERAGE` (default `OFF`) instruments the extension for
   `llvm-cov`.
 

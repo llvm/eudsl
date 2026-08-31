@@ -5,6 +5,7 @@
 #include "IR/Common.h"
 #include "MIR/AllocationOrder.h"
 #include "MIR/Diagnostics.h"
+#include "MIR/InterferenceCache.h"
 #include "MIR/RegAllocBase.h"
 #include "MIR/SplitKit.h"
 
@@ -24,6 +25,7 @@
 #include <llvm/CodeGen/MachineDominators.h>
 #include <llvm/CodeGen/MachineFunctionPass.h>
 #include <llvm/CodeGen/MachineInstr.h>
+#include <llvm/CodeGen/MachineInstrBundle.h>
 #include <llvm/CodeGen/MachineLoopInfo.h>
 #include <llvm/CodeGen/MachineRegisterInfo.h>
 #include <llvm/CodeGen/MachineScheduler.h>
@@ -43,6 +45,7 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
@@ -554,15 +557,20 @@ public:
               llvm::MachineFunction &mfn, llvm::SplitAnalysis *sa,
               llvm::SplitEditor *se, llvm::MachineBlockFrequencyInfo *mbfi,
               llvm::EdgeBundles *eb, llvm::SpillPlacement *spl,
-              llvm::VirtRegAuxInfo *vrai) {
+              llvm::VirtRegAuxInfo *vrai, llvm::MachineLoopInfo *ml) {
     splitAnalysis = sa;
     splitEditor = se;
     blockFreqInfo = mbfi;
     edgeBundles = eb;
     spillPlacer = spl;
     auxInfo = vrai;
+    loops = ml;
     regCosts = mfn.getSubtarget().getRegisterInfo()->getRegisterCosts(mfn);
     NativeRegAlloc::pyInit(vrm, lis, mat, sp, mfn);
+    // Matches RAGreedy::IntfCache.init: MF, the matrix's per-regunit unions,
+    // slot indexes, LIS, TRI.
+    intfCache.init(mf, Matrix->getLiveUnions(), LIS->getSlotIndexes(), LIS,
+                   mf->getSubtarget().getRegisterInfo());
   }
 
   // Protected driver state, surfaced to the Python helpers. These borrow
@@ -581,6 +589,59 @@ public:
   }
   llvm::EdgeBundles *edgeBundlesPtr() { return edgeBundles; }
   llvm::SpillPlacement *spillPlacerPtr() { return spillPlacer; }
+
+  // A cursor into the interference cache, for region-split cost queries. Point
+  // it at a physreg with set_interference_physreg, then move_to_block/first/
+  // last/has_interference per block. Copyable and refcounts its cache entry;
+  // valid only within an allocator callback, do not retain past it.
+  llvm::InterferenceCache::Cursor newInterferenceCursor() {
+    return llvm::InterferenceCache::Cursor();
+  }
+
+  // setPhysReg needs the driver's owned cache, which the free Cursor can't
+  // reach; do it through the driver.
+  void cursorSetPhysReg(llvm::InterferenceCache::Cursor &cur,
+                        unsigned physreg) {
+    cur.setPhysReg(intfCache, llvm::MCRegister(physreg));
+  }
+
+  // Header block number of the innermost loop containing `mbbNumber`, or
+  // std::nullopt if none. Reproduces growRegion's looksLikeLoopIV header check
+  // without exposing the loop tree.
+  std::optional<int> loopHeaderNumber(unsigned mbbNumber) {
+    llvm::MachineBasicBlock *mbb = mf->getBlockNumbered(mbbNumber);
+    llvm::MachineLoop *loop = loops->getLoopFor(mbb);
+    if (!loop)
+      return std::nullopt;
+    return loop->getHeader()->getNumber();
+  }
+
+  // Slot index of the first non-debug instruction in block `n`, or std::nullopt
+  // if the block is empty (addThroughConstraints' abort guard).
+  std::optional<llvm::SlotIndex> firstNonDebugInstrIndex(unsigned n) {
+    llvm::MachineBasicBlock *mbb = mf->getBlockNumbered(n);
+    auto it = mbb->getFirstNonDebugInstr();
+    // An empty (all-debug) block cannot be produced by the hand-built test MIR
+    // -- the pre-regalloc pipeline requires a terminator -- so this defensive
+    // guard is unreachable from tests.
+    if (it == mbb->end())
+      return std::nullopt; // LCOV_EXCL_LINE
+    return LIS->getInstructionIndex(*it);
+  }
+
+  // The live-in insertion-point index for block `n` (SkipPHIsLabelsAndDebug for
+  // the analyzed interval's reg), matching addThroughConstraints' InsertIdx.
+  llvm::SlotIndex throughInsertIndex(unsigned n) {
+    llvm::MachineBasicBlock *mbb = mf->getBlockNumbered(n);
+    llvm::Register reg = splitAnalysis->getParent().reg();
+    auto insertPt = mbb->SkipPHIsLabelsAndDebug(mbb->begin(), reg);
+    return insertPt == mbb->end() ? LIS->getMBBEndIdx(mbb)
+                                  : LIS->getInstructionIndex(*insertPt);
+  }
+
+  llvm::SlotIndex mbbStartIndexByNumber(unsigned n) {
+    return LIS->getMBBStartIdx(mf->getBlockNumbered(n));
+  }
 
   // Physregs, in target allocation order, that Python may try for `li`.
   std::vector<unsigned> allocationOrder(const llvm::LiveInterval &li) {
@@ -611,6 +672,46 @@ public:
       }
     }
     return ids;
+  }
+
+  // Fixed (physical) reg-unit interference for `physreg` overlapping `li`: the
+  // segments of LIS->getRegUnit(unit) for each of `physreg`'s reg units that
+  // overlap li's range. calcGapWeights marks gaps covered by these huge_valf --
+  // a physreg clobbered mid-interval can't hold the value across the clobber.
+  std::vector<llvm::LiveRange::Segment>
+  fixedInterferenceSpans(const llvm::LiveInterval &li, unsigned physreg) {
+    const llvm::TargetRegisterInfo *tri = mf->getSubtarget().getRegisterInfo();
+    llvm::SlotIndex start = li.beginIndex(), stop = li.endIndex();
+    std::vector<llvm::LiveRange::Segment> segs;
+    for (llvm::MCRegUnit unit : tri->regunits(llvm::MCRegister(physreg))) {
+      const llvm::LiveRange &lr = LIS->getRegUnit(unit);
+      for (const llvm::LiveRange::Segment &s : lr) {
+        if (s.start < stop && start < s.end) // overlaps li
+          segs.push_back(s);
+      }
+    }
+    return segs;
+  }
+
+  // Whether `li` is live across any register-mask operand (a call clobber).
+  bool checkRegMaskInterferenceLI(const llvm::LiveInterval &li) {
+    return Matrix->checkRegMaskInterference(
+        const_cast<llvm::LiveInterval &>(li));
+  }
+
+  // Whether `physreg` is clobbered by a register mask that `li` crosses.
+  bool checkRegMaskInterferencePhys(const llvm::LiveInterval &li,
+                                    unsigned physreg) {
+    return Matrix->checkRegMaskInterference(
+        const_cast<llvm::LiveInterval &>(li), llvm::MCRegister(physreg));
+  }
+
+  // The register-mask slot indexes in block `mbbNumber` (tryLocalSplit finds
+  // the gaps overlapping these to mark call-clobbered).
+  std::vector<llvm::SlotIndex> regMaskSlotsInBlock(unsigned mbbNumber) {
+    llvm::ArrayRef<llvm::SlotIndex> rms =
+        LIS->getRegMaskSlotsInBlock(mbbNumber);
+    return std::vector<llvm::SlotIndex>(rms.begin(), rms.end());
   }
 
   // Per-use cost of `physreg` (the CostPerUseLimit heuristic RAGreedy uses to
@@ -658,6 +759,40 @@ public:
     return rc->GlobalPriority;
   }
 
+  // `rc`'s target-assigned allocation priority (RC.AllocationPriority), one of
+  // the fields getPriority packs into the enqueue key.
+  unsigned regClassAllocationPriority(const llvm::TargetRegisterClass *rc) {
+    return rc->AllocationPriority;
+  }
+
+  // Whether `reg` has a known physreg preference (a copy hint the framework
+  // already resolved) -- getPriority boosts these.
+  bool hasKnownPreference(unsigned reg) {
+    return VRM->hasKnownPreference(llvm::Register(reg));
+  }
+
+  // Whether `reg` is currently assigned to its preferred physreg (a satisfied,
+  // unbroken copy hint): canEvictInterferenceBasedOnCost charges BrokenHints
+  // when evicting such a range would break that hint.
+  bool hasPreferredPhys(unsigned reg) {
+    return VRM->hasPreferredPhys(llvm::Register(reg));
+  }
+
+  // TargetRegisterClass::getCopyCost -- the per-broken-hint weight the eviction
+  // cost model adds to BrokenHints.
+  int regClassCopyCost(const llvm::TargetRegisterClass *rc) {
+    return rc->getCopyCost();
+  }
+
+  // The last / zero slot indexes of the function, for the instruction-order
+  // priority of local ranges (getApproxInstrDistance endpoints).
+  llvm::SlotIndex lastSlotIndex() {
+    return LIS->getSlotIndexes()->getLastIndex();
+  }
+  llvm::SlotIndex zeroSlotIndex() {
+    return LIS->getSlotIndexes()->getZeroIndex();
+  }
+
   bool regClassIsAllocatable(const llvm::TargetRegisterClass *rc) {
     return rc->isAllocatable();
   }
@@ -686,6 +821,78 @@ public:
       return false; // LCOV_EXCL_LINE -- a use slot always has an instruction
     const llvm::TargetInstrInfo *tii = mf->getSubtarget().getInstrInfo();
     return tii->isCopyInstr(*mi).has_value() || mi->isSubregToReg();
+  }
+
+  // MachineInstr::isCopyLike() for the instruction at `idx` -- exactly the
+  // predicate SplitAnalysis::shouldSplitSingleBlock uses (generic COPY or
+  // SUBREG_TO_REG only). Unlike isCopyLikeAt, this does NOT match target-
+  // specific copies (TII::isCopyInstr), so it is the faithful test there.
+  bool isCopyLikeInstrAt(llvm::SlotIndex idx) {
+    llvm::MachineInstr *mi = LIS->getInstructionFromIndex(idx);
+    if (!mi)
+      return false; // LCOV_EXCL_LINE -- a use slot always has an instruction
+    return mi->isCopyLike();
+  }
+
+  // TargetRegisterInfo::shouldRegionSplitForVirtReg -- a target hook (default
+  // true) that tryRegionSplit consults before attempting a region split.
+  bool shouldRegionSplitForVirtReg(unsigned reg) {
+    const llvm::TargetRegisterInfo *tri = mf->getSubtarget().getRegisterInfo();
+    return tri->shouldRegionSplitForVirtReg(
+        *mf, LIS->getInterval(llvm::Register(reg)));
+  }
+
+  // Whether the instruction at `idx` is a full (non-subreg) copy
+  // (TII::isFullCopyInstr) -- tryInstructionSplit skips such uses.
+  bool isFullCopyInstrAt(llvm::SlotIndex idx) {
+    llvm::MachineInstr *mi = LIS->getInstructionFromIndex(idx);
+    return mi && mf->getSubtarget().getInstrInfo()->isFullCopyInstr(*mi);
+  }
+
+  // RAGreedy::readsLaneSubset: whether the instruction defining/using `li` at
+  // `idx` reads only a subset of the lanes live there (so splitting around it
+  // can move the rest to a wider class). A verbatim port of the file-static
+  // helper (with its getInstReadLaneMask), for tryInstructionSplit's subrange
+  // arm on sub-register-liveness targets.
+  bool readsLaneSubset(const llvm::LiveInterval &li, llvm::SlotIndex idx) {
+    llvm::MachineInstr *mi = LIS->getInstructionFromIndex(idx);
+    const llvm::TargetInstrInfo *tii = mf->getSubtarget().getInstrInfo();
+    const llvm::TargetRegisterInfo *tri = mf->getSubtarget().getRegisterInfo();
+    llvm::MachineRegisterInfo &mri = mf->getRegInfo();
+    // Common case: a copy whose source and destination sub-registers match
+    // reads the whole value.
+    auto destSrc = tii->isCopyInstr(*mi);
+    if (destSrc && !mi->isBundled() &&
+        destSrc->Destination->getSubReg() == destSrc->Source->getSubReg())
+      return false;
+    // getInstReadLaneMask: the lanes this instruction reads of li's reg.
+    llvm::Register reg = li.reg();
+    llvm::LaneBitmask readMask;
+    llvm::SmallVector<std::pair<llvm::MachineInstr *, unsigned>, 8> ops;
+    (void)llvm::AnalyzeVirtRegInBundle(*mi, reg, &ops);
+    for (auto [opMI, opIdx] : ops) {
+      const llvm::MachineOperand &mo = opMI->getOperand(opIdx);
+      unsigned subReg = mo.getSubReg();
+      if (subReg == 0 && mo.isUse()) {
+        if (mo.isUndef())
+          continue;
+        readMask = mri.getMaxLaneMaskForVReg(reg);
+        break;
+      }
+      llvm::LaneBitmask subRegMask = tri->getSubRegIndexLaneMask(subReg);
+      if (mo.isDef()) {
+        if (!mo.isUndef())
+          readMask |= ~subRegMask;
+      } else {
+        readMask |= subRegMask;
+      }
+    }
+    llvm::LaneBitmask liveAtMask;
+    for (const llvm::LiveInterval::SubRange &s : li.subranges()) {
+      if (s.liveAt(idx))
+        liveAtMask |= s.LaneMask;
+    }
+    return (readMask & ~(liveAtMask & tri->getCoveringLanes())).any();
   }
 
   bool isTriviallyRematerializable(llvm::MachineInstr *mi) {
@@ -798,8 +1005,13 @@ private:
   llvm::EdgeBundles *edgeBundles = nullptr;
   llvm::SpillPlacement *spillPlacer = nullptr;
   llvm::VirtRegAuxInfo *auxInfo = nullptr;
+  llvm::MachineLoopInfo *loops = nullptr;
   llvm::ArrayRef<uint8_t> regCosts;
   std::unique_ptr<llvm::LiveRangeEdit> heldEdit;
+  // Per-block interference cache for region-split cost queries (RAGreedy's
+  // IntfCache). Owns cursors handed to Python; init'd in pyInit once the
+  // matrix/LIS are wired.
+  llvm::InterferenceCache intfCache;
 };
 
 // name -> Python RegAllocBase subclass, held in
@@ -958,7 +1170,7 @@ public:
     auto *base =
         static_cast<PyRegAllocBase *>(nb::inst_ptr<PyRegAllocBase>(obj));
     base->pyInit(vrm, lis, mat, *spiller, mfn, &sa, &se, &mbfi, &edgeBundles,
-                 &spillPlacer, &vrai);
+                 &spillPlacer, &vrai, &loops);
     base->pyAllocate();
     // Hold the instance until the pass is destroyed so its C++ subobject (and
     // any Python-recorded witness state) outlives this call; dropped under the
@@ -1136,6 +1348,26 @@ void populate_python_codegen(nb::module_ &m) {
   // PassManager can resolve them when the pipeline runs the allocator slot.
   llvm::initializePyRegAllocDriverPass(*llvm::PassRegistry::getPassRegistry());
 
+  nb::class_<llvm::InterferenceCache::Cursor>(m, "InterferenceCursor")
+      .def(
+          "move_to_block",
+          [](llvm::InterferenceCache::Cursor &c, unsigned n) {
+            c.moveToBlock(n);
+          },
+          "mbb_number"_a, "Point the cursor at block `mbb_number`.")
+      .def(
+          "has_interference",
+          [](llvm::InterferenceCache::Cursor &c) {
+            return c.hasInterference();
+          },
+          "Whether the current block has any interference for this physreg.")
+      .def(
+          "first", [](llvm::InterferenceCache::Cursor &c) { return c.first(); },
+          "First interfering SlotIndex in the current block.")
+      .def(
+          "last", [](llvm::InterferenceCache::Cursor &c) { return c.last(); },
+          "Last interfering SlotIndex in the current block.");
+
   nb::class_<PyRegAllocBase>(m, "RegAllocBase")
       .def(nb::init<>())
       .def("allocation_order", &PyRegAllocBase::allocationOrder, "li"_a,
@@ -1149,6 +1381,20 @@ void populate_python_codegen(nb::module_ &m) {
       .def("register_cost", &PyRegAllocBase::registerCost, "physreg"_a,
            "Per-use cost of `physreg` (the CostPerUseLimit heuristic; 0 on "
            "targets with uniform register cost).")
+      .def(
+          "fixed_interference_spans", &PyRegAllocBase::fixedInterferenceSpans,
+          "li"_a, "physreg"_a,
+          "Fixed (physical) reg-unit interference segments for `physreg` "
+          "overlapping `li` -- calcGapWeights marks gaps they cover huge_valf.")
+      .def("check_reg_mask_interference",
+           &PyRegAllocBase::checkRegMaskInterferenceLI, "li"_a,
+           "Whether `li` is live across any register-mask (call clobber).")
+      .def("check_reg_mask_interference_phys",
+           &PyRegAllocBase::checkRegMaskInterferencePhys, "li"_a, "physreg"_a,
+           "Whether `physreg` is clobbered by a register mask `li` crosses.")
+      .def("reg_mask_slots_in_block", &PyRegAllocBase::regMaskSlotsInBlock,
+           "mbb_number"_a,
+           "The register-mask slot indexes in block `mbb_number`.")
       .def("reg_class", &PyRegAllocBase::regClass, nb::rv_policy::reference,
            "reg"_a,
            "The register class of virtual register `reg` (target-static; "
@@ -1175,6 +1421,27 @@ void populate_python_codegen(nb::module_ &m) {
           "ForceGlobal (the size-based disjunct is computed in enqueue).")
       .def("reg_class_is_allocatable", &PyRegAllocBase::regClassIsAllocatable,
            "reg_class"_a, "Whether `reg_class` is allocatable.")
+      .def("reg_class_allocation_priority",
+           &PyRegAllocBase::regClassAllocationPriority, "reg_class"_a,
+           "`reg_class`'s target allocation priority (getPriority's "
+           "AllocationPriority field).")
+      .def("has_known_preference", &PyRegAllocBase::hasKnownPreference, "reg"_a,
+           "Whether `reg` has a known physreg preference (getPriority boosts "
+           "these).")
+      .def("has_preferred_phys", &PyRegAllocBase::hasPreferredPhys, "reg"_a,
+           "Whether `reg` is assigned to its preferred physreg (a satisfied "
+           "copy "
+           "hint) -- evicting it breaks that hint (eviction BrokenHints).")
+      .def("reg_class_copy_cost", &PyRegAllocBase::regClassCopyCost,
+           "reg_class"_a,
+           "TargetRegisterClass::getCopyCost -- the per-broken-hint weight in "
+           "the "
+           "eviction cost model.")
+      .def(
+          "last_slot_index", &PyRegAllocBase::lastSlotIndex,
+          "The last SlotIndex of the function (local-range priority endpoint).")
+      .def("zero_slot_index", &PyRegAllocBase::zeroSlotIndex,
+           "The zero SlotIndex of the function (reverse local-range endpoint).")
       .def("interval_is_in_one_mbb", &PyRegAllocBase::intervalIsInOneMBB,
            "reg"_a,
            "Whether `reg`'s whole live interval lies in a single block "
@@ -1183,8 +1450,24 @@ void populate_python_codegen(nb::module_ &m) {
            "Whether `reg`'s class is a proper subclass of its allocation "
            "superclass (shouldSplitSingleBlock's SingleInstrs input).")
       .def("is_copy_like_at", &PyRegAllocBase::isCopyLikeAt, "idx"_a,
-           "Whether the instruction at slot `idx` is a COPY or SUBREG_TO_REG "
-           "(shouldSplitSingleBlock won't isolate a lone copy).")
+           "Whether the instruction at slot `idx` is copy-like including "
+           "target-specific copies (TII::isCopyInstr, or SUBREG_TO_REG).")
+      .def("is_copy_like_instr_at", &PyRegAllocBase::isCopyLikeInstrAt, "idx"_a,
+           "MachineInstr::isCopyLike() at slot `idx` (generic COPY / "
+           "SUBREG_TO_REG only) -- the exact test shouldSplitSingleBlock uses.")
+      .def("should_region_split_for_virt_reg",
+           &PyRegAllocBase::shouldRegionSplitForVirtReg, "reg"_a,
+           "TargetRegisterInfo::shouldRegionSplitForVirtReg (default true) -- "
+           "tryRegionSplit's target-hook guard.")
+      .def("is_full_copy_instr_at", &PyRegAllocBase::isFullCopyInstrAt, "idx"_a,
+           "TII::isFullCopyInstr at slot `idx` (tryInstructionSplit skips full "
+           "copies).")
+      .def(
+          "reads_lane_subset", &PyRegAllocBase::readsLaneSubset, "li"_a,
+          "idx"_a,
+          "RAGreedy::readsLaneSubset -- whether the instruction at `idx` reads "
+          "only a subset of `li`'s live lanes (tryInstructionSplit's subrange "
+          "arm splits around such uses).")
       .def(
           "is_trivially_rematerializable",
           &PyRegAllocBase::isTriviallyRematerializable, "mi"_a,
@@ -1260,7 +1543,28 @@ void populate_python_codegen(nb::module_ &m) {
           nb::rv_policy::reference,
           "The SpillPlacement network for choosing global-split boundaries "
           "(the machinery RAGreedy's splitAroundRegion drives). Borrowed and "
-          "valid only within an allocator callback; do not retain.");
+          "valid only within an allocator callback; do not retain.")
+      .def(
+          "new_interference_cursor", &PyRegAllocBase::newInterferenceCursor,
+          "A fresh interference-cache cursor (call set_interference_physreg to "
+          "point it at a physreg). Valid only within an allocator callback.")
+      .def("set_interference_physreg", &PyRegAllocBase::cursorSetPhysReg,
+           "cursor"_a, "physreg"_a,
+           "Point `cursor` at `physreg`'s per-block interference.")
+      .def("loop_header_number", &PyRegAllocBase::loopHeaderNumber,
+           "mbb_number"_a,
+           "Header block number of the innermost loop containing "
+           "`mbb_number`, or None if none.")
+      .def("first_nondebug_instr_index",
+           &PyRegAllocBase::firstNonDebugInstrIndex, "mbb_number"_a,
+           "SlotIndex of the first non-debug instruction in the block, or None "
+           "if empty.")
+      .def("through_insert_index", &PyRegAllocBase::throughInsertIndex,
+           "mbb_number"_a,
+           "Live-in insertion-point index for the analyzed interval's reg in "
+           "the block.")
+      .def("mbb_start_index_by_number", &PyRegAllocBase::mbbStartIndexByNumber,
+           "mbb_number"_a, "Start SlotIndex of the block.");
 
   // A value number: one definition of a virtual register's live interval.
   // Rematerialization is keyed on the VNInfo whose defining instruction is
@@ -1289,6 +1593,11 @@ void populate_python_codegen(nb::module_ &m) {
   nb::class_<llvm::LiveInterval>(m, "LiveInterval")
       .def_prop_ro("reg",
                    [](const llvm::LiveInterval &li) { return li.reg().id(); })
+      .def_prop_ro(
+          "has_sub_ranges",
+          [](const llvm::LiveInterval &li) { return li.hasSubRanges(); },
+          "Whether this interval tracks per-sub-register live ranges (only on "
+          "targets with sub-register liveness, e.g. AMDGPU).")
       .def_prop_rw(
           "weight", [](const llvm::LiveInterval &li) { return li.weight(); },
           [](llvm::LiveInterval &li, float w) { li.setWeight(w); })
@@ -1426,6 +1735,13 @@ void populate_python_codegen(nb::module_ &m) {
       .def("num_bundles", &llvm::EdgeBundles::getNumBundles,
            "Total number of edge bundles in the CFG.")
       .def(
+          "get_bundle_number",
+          [](llvm::EdgeBundles &eb, unsigned number, bool out) {
+            return eb.getBundle(number, out);
+          },
+          "mbb_number"_a, "out"_a,
+          "Edge bundle for block `mbb_number` (out-edges if `out`).")
+      .def(
           "get_blocks",
           [](llvm::EdgeBundles &eb, unsigned bundle) {
             if (bundle >= eb.getNumBundles())
@@ -1447,6 +1763,15 @@ void populate_python_codegen(nb::module_ &m) {
           "i"_a, "Whether bit `i` is set.")
       .def("count", &llvm::BitVector::count, "Number of set bits.")
       .def("size", &llvm::BitVector::size, "Number of bits.")
+      .def(
+          "resize", [](llvm::BitVector &bv, unsigned n) { bv.resize(n); },
+          "n"_a, "Grow/shrink to `n` bits (new bits cleared).")
+      .def(
+          "set", [](llvm::BitVector &bv, unsigned i) { bv.set(i); }, "i"_a,
+          "Set bit `i`.")
+      .def(
+          "reset", [](llvm::BitVector &bv, unsigned i) { bv.reset(i); }, "i"_a,
+          "Clear bit `i`.")
       .def(
           "set_bits",
           [](llvm::BitVector &bv) {
@@ -1544,7 +1869,13 @@ void populate_python_codegen(nb::module_ &m) {
           },
           "mbb"_a,
           "Estimated execution frequency of `mbb` (per function invocation). "
-          "Taking the block keeps the index in range by construction.");
+          "Taking the block keeps the index in range by construction.")
+      .def(
+          "get_block_frequency_by_number",
+          [](llvm::SpillPlacement &sp, unsigned number) {
+            return sp.getBlockFrequency(number);
+          },
+          "mbb_number"_a, "Estimated frequency of block `mbb_number`.");
 
   // A program point. Live ranges and the split editor are expressed in terms of
   // these; they order the instructions of a function.
@@ -1562,6 +1893,22 @@ void populate_python_codegen(nb::module_ &m) {
             return a == b;
           },
           "other"_a)
+      .def(
+          "is_earlier_instr",
+          [](const llvm::SlotIndex &a, const llvm::SlotIndex &b) {
+            return llvm::SlotIndex::isEarlierInstr(a, b);
+          },
+          "other"_a,
+          "Whether this and `other` are on different instructions and this is "
+          "earlier (SlotIndex::isEarlierInstr).")
+      .def(
+          "is_same_instr",
+          [](const llvm::SlotIndex &a, const llvm::SlotIndex &b) {
+            return llvm::SlotIndex::isSameInstr(a, b);
+          },
+          "other"_a,
+          "Whether this and `other` are on the same instruction "
+          "(SlotIndex::isSameInstr).")
       .def("get_reg_slot",
            [](const llvm::SlotIndex &i) { return i.getRegSlot(); })
       .def("get_base_index",
@@ -1692,6 +2039,29 @@ void populate_python_codegen(nb::module_ &m) {
             return s.getLastSplitPoint(mbb);
           },
           "mbb"_a)
+      .def(
+          "last_split_point_number",
+          [](llvm::SplitAnalysis &s, unsigned n) {
+            return s.getLastSplitPoint(n);
+          },
+          "mbb_number"_a, "Last legal split point in block `mbb_number`.")
+      .def(
+          "first_split_point",
+          [](llvm::SplitAnalysis &s, unsigned n) {
+            return s.getFirstSplitPoint(n);
+          },
+          "mbb_number"_a, "First legal split point in block `mbb_number`.")
+      .def("num_live_blocks", &llvm::SplitAnalysis::getNumLiveBlocks,
+           "Number of blocks where the analyzed interval is live.")
+      .def(
+          "count_live_blocks",
+          [](llvm::SplitAnalysis &s, const llvm::LiveInterval &li) {
+            return s.countLiveBlocks(&li);
+          },
+          "li"_a, "Number of blocks where `li` is live (post-split check).")
+      .def("looks_like_loop_iv", &llvm::SplitAnalysis::looksLikeLoopIV,
+           "Whether the analyzed interval looks like a loop induction "
+           "variable.")
       .def(
           "is_original_endpoint",
           [](llvm::SplitAnalysis &s, llvm::SlotIndex idx) {
@@ -1830,6 +2200,39 @@ void populate_python_codegen(nb::module_ &m) {
           },
           "mbb"_a)
       .def("overlap_intv", &llvm::SplitEditor::overlapIntv, "start"_a, "end"_a)
+      .def(
+          "split_single_block",
+          [](llvm::SplitEditor &s, const llvm::SplitAnalysis::BlockInfo &bi) {
+            s.splitSingleBlock(bi);
+          },
+          "block_info"_a,
+          "Split the analyzed interval around the uses in a single block "
+          "(part of a larger split; does not call finish).")
+      .def(
+          "split_live_through_block",
+          [](llvm::SplitEditor &s, unsigned n, unsigned intvIn,
+             llvm::SlotIndex intfIn, unsigned intvOut,
+             llvm::SlotIndex intfOut) {
+            s.splitLiveThroughBlock(n, intvIn, intfIn, intvOut, intfOut);
+          },
+          "mbb_number"_a, "intv_in"_a, "intf_in"_a, "intv_out"_a, "intf_out"_a,
+          "Split a live-through block: enter in `intv_in`, leave in "
+          "`intv_out` (interference-aware placement).")
+      .def(
+          "split_reg_in_block",
+          [](llvm::SplitEditor &s, const llvm::SplitAnalysis::BlockInfo &bi,
+             unsigned intvIn,
+             llvm::SlotIndex intfIn) { s.splitRegInBlock(bi, intvIn, intfIn); },
+          "block_info"_a, "intv_in"_a, "intf_in"_a,
+          "Split a block that enters in `intv_in` and leaves on the stack.")
+      .def(
+          "split_reg_out_block",
+          [](llvm::SplitEditor &s, const llvm::SplitAnalysis::BlockInfo &bi,
+             unsigned intvOut, llvm::SlotIndex intfOut) {
+            s.splitRegOutBlock(bi, intvOut, intfOut);
+          },
+          "block_info"_a, "intv_out"_a, "intf_out"_a,
+          "Split a block that enters on the stack and leaves in `intv_out`.")
       .def(
           "finish",
           [](llvm::SplitEditor &s) {

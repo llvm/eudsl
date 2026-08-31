@@ -1271,6 +1271,19 @@ void populate_mir(nb::module_ &m) {
                             llvm::MachineOperand::CreateMBB(mbb));
           },
           "block"_a, "Append a machine-basic-block operand.")
+      .def(
+          "add_reg_mask",
+          [](llvm::MachineInstr &self) {
+            llvm::MachineFunction &mf = *self.getMF();
+            const llvm::TargetRegisterInfo *tri =
+                mf.getSubtarget().getRegisterInfo();
+            const uint32_t *mask = tri->getCallPreservedMask(
+                mf, mf.getFunction().getCallingConv());
+            self.addOperand(mf, llvm::MachineOperand::CreateRegMask(mask));
+          },
+          "Append the target's call-preserved register mask -- a call clobber "
+          "of the caller-saved registers (what makes an instruction interfere "
+          "with live ranges crossing it via checkRegMaskInterference).")
       .def("__str__",
            [](llvm::MachineInstr &self) { return eudsl::toString(self); });
 
@@ -1412,6 +1425,20 @@ void populate_mir(nb::module_ &m) {
           },
           "name"_a, nb::rv_policy::reference,
           "Look up a target register class by name (e.g. \"GPR32\").")
+      .def(
+          "subreg_index",
+          [](llvm::MachineFunction &self, const std::string &name) -> unsigned {
+            const llvm::TargetRegisterInfo &tri = requireTRI(self);
+            for (unsigned i = 1, e = tri.getNumSubRegIndices(); i < e; ++i) {
+              if (name == tri.getSubRegIndexName(i))
+                return i;
+            }
+            throw nb::key_error(
+                ("no sub-register index named '" + name + "'").c_str());
+          },
+          "name"_a,
+          "Look up a sub-register index by name (e.g. \"sub_8bit\", "
+          "\"sub_32\"); pass it as add_reg(..., sub_reg=...).")
       .def(
           "physreg",
           [](llvm::MachineFunction &self,

@@ -3,10 +3,18 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
+
+#include <llvm/Support/Debug.h>
 
 #include "IR/Errors.h"
 
+#include <string>
+#include <vector>
+
 namespace nb = nanobind;
+using namespace nb::literals;
 
 void populate_context(nb::module_ &m);
 void populate_sequences(nb::module_ &m);
@@ -27,6 +35,26 @@ void populate_mir(nb::module_ &m);
 
 NB_MODULE(eudslllvm_ext, m) {
   m.doc() = "Hand-written nanobind bindings over the LLVM C++ IR API.";
+
+  m.def(
+      "enable_debug",
+      [](const std::vector<std::string> &debug_types, bool enabled) {
+        llvm::DebugFlag = enabled;
+        if (enabled && !debug_types.empty()) {
+          // setCurrentDebugTypes copies each string into its own storage
+          // (CurrentDebugType is a std::vector<std::string>), so the c_str()
+          // pointers only need to be valid for the call.
+          std::vector<const char *> ptrs;
+          for (const std::string &s : debug_types)
+            ptrs.push_back(s.c_str());
+          llvm::setCurrentDebugTypes(ptrs.data(), ptrs.size());
+        }
+      },
+      "debug_types"_a = std::vector<std::string>(), "enabled"_a = true,
+      "Toggle LLVM's LLVM_DEBUG tracing (to stderr), like -debug / "
+      "-debug-only. Pass a list of DEBUG_TYPEs (e.g. [\"regalloc\"]) to scope "
+      "it, or nothing for all; pass enabled=False to turn it back off. No "
+      "effect unless LLVM was built with assertions.");
 
   // llvm.ir -- the IR-core submodule (Context/Module, the Value and Constant
   // hierarchies, instructions, metadata, IRBuilder, attribute enums, errors).

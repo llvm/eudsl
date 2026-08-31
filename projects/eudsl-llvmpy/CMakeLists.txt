@@ -55,6 +55,13 @@ endif()
 # being built against).
 set(EUDSL_LLVMPY_TARGETS "${LLVM_NATIVE_ARCH}" CACHE STRING
     "LLVM targets to link into eudslllvm_ext (semicolon-separated)")
+# AMDGPU has sub-register liveness (which the host, AArch64, lacks), so
+# tryInstructionSplit's subrange path is only reachable/testable on it. Link it
+# whenever the LLVM being built against provides it (it is in the default
+# distribution), on top of whatever the user asked for, so that test runs.
+if(TARGET LLVMAMDGPUInfo AND NOT "AMDGPU" IN_LIST EUDSL_LLVMPY_TARGETS)
+  list(APPEND EUDSL_LLVMPY_TARGETS "AMDGPU")
+endif()
 message(STATUS "EUDSL_LLVMPY_TARGETS: ${EUDSL_LLVMPY_TARGETS}")
 
 set(EUDSLLLVM_TARGET_LIBS)

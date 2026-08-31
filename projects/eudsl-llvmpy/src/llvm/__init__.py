@@ -27,3 +27,5 @@ from . import mir_strategies as _mir_strategies  # noqa: F401
 
 # Attaches mir.RAGreedy onto the mir submodule.
 from . import mir_greedy as _mir_greedy  # noqa: F401
+
+from .eudslllvm_ext import enable_debug  # noqa: F401

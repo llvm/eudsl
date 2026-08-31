@@ -43,3 +43,7 @@
 /mlir_wheel-*.whl
 /mlir_wheel-*.dist-info/
 docs/superpowers/
+
+# Local LLVM build/install produced by scripts/build_llvm.sh
+/llvm-build/
+/llvm-install/
