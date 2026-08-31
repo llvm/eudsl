@@ -135,6 +135,67 @@ def test_interval_live_at():
     assert decomp.interval_live_at([(0, 2), (8, 10)], 5) is False  # hole
 
 
+def test_ilp_stats_gap():
+    from llvm.mir_ilp_base import ILPStats
+    assert ILPStats(status="INFEASIBLE").gap is None
+    assert ILPStats(status="OPTIMAL", objective=0.0).gap == 0.0
+    s = ILPStats(status="FEASIBLE", objective=10.0, best_bound=8.0)
+    assert abs(s.gap - 0.2) < 1e-9
+
+
+def _mk_problem(**overrides):
+    from llvm.mir_ilp_base import ILPProblem
+    base = dict(
+        vregs=[1, 2, 3],
+        intervals={1: [(0, 6)], 2: [(0, 6)], 3: [(0, 6)]},
+        order={1: [10, 11], 2: [10, 11], 3: [10, 11]},
+        forbidden={1: set(), 2: set(), 3: set()},
+        weight={1: 5, 2: 5, 3: 5},
+        hints={1: 0, 2: 0, 3: 0},
+        num_regs={1: 2, 2: 2, 3: 2},
+        spillable={1: True, 2: True, 3: True},
+    )
+    base.update(overrides)
+    return ILPProblem(**base)
+
+
+def test_assign_solve_standalone_spill():
+    # 3 mutually-interfering spillable vregs, 2 pregs -> exactly one spills.
+    sol = mir.RAILPAssign()._solve(_mk_problem())
+    assert sol.stats.status == "OPTIMAL"
+    assert len(sol.spilled) == 1
+    assert len(sol.assignment) == 2
+
+
+def test_assign_solve_standalone_infeasible():
+    # Unspillable vreg with no legal candidate -> infeasible, empty solution.
+    sol = mir.RAILPAssign()._solve(_mk_problem(
+        vregs=[1], intervals={1: [(0, 4)]}, order={1: []}, forbidden={1: set()},
+        weight={1: 5}, hints={1: 0}, num_regs={1: 2}, spillable={1: False},
+    ))
+    assert sol.stats.status == "INFEASIBLE"
+    assert sol.assignment == {} and sol.spilled == set()
+
+
+def test_packing_solve_standalone_multiclass_raises():
+    with pytest.raises(RuntimeError, match="single register class"):
+        mir.RAILPPacking()._solve(_mk_problem(num_regs={1: 8, 2: 16, 3: 8}))
+
+
+def test_packing_solve_standalone_spill_and_degenerate_segment():
+    # One spill forced; vreg 3 also carries a zero-length segment (skipped).
+    sol = mir.RAILPPacking()._solve(_mk_problem(
+        intervals={1: [(0, 6)], 2: [(0, 6)], 3: [(0, 6), (6, 6)]},
+    ))
+    assert sol.stats.status in ("OPTIMAL", "FEASIBLE")
+    assert len(sol.spilled) == 1
+
+
+def test_decomp_solve_standalone_multiclass_raises():
+    with pytest.raises(RuntimeError, match="single register class"):
+        mir.RAILPDecomp()._solve(_mk_problem(num_regs={1: 8, 2: 16, 3: 8}))
+
+
 def test_alloc_result_weighted_spill_cost():
     from llvm import mir_ilp_compare as compare
     r = compare.AllocResult(
@@ -162,25 +223,72 @@ def test_format_table_contains_rows_and_header():
     assert "hard-fail" in text or "register-fitting" in text
 
 
+def _greedy_color(prob, exclude=frozenset()):
+    """Valid first-fit coloring over interference, skipping `exclude` vregs."""
+    keep = [v for v in prob.vregs if v not in exclude]
+    adj = {v: set() for v in keep}
+    for edge in model.build_interference({v: prob.intervals[v] for v in keep}):
+        a, b = tuple(edge)
+        adj[a].add(b)
+        adj[b].add(a)
+    asg = {}
+    for v in keep:
+        used = {asg[n] for n in adj[v] if n in asg}
+        for p in model.candidate_pregs(prob.order[v], prob.forbidden[v]):
+            if p not in used:
+                asg[v] = p
+                break
+    return asg
+
+
 class _StubValidColoring(RAILPBase):
-    """Produces a valid coloring in _solve (greedy over the interference graph),
-    exercising the base's cached-solution return path. No ortools."""
+    """Produces a valid coloring in _solve, exercising the cached-return path."""
 
     def _solve(self, prob):
-        edges = model.build_interference(prob.intervals)
-        adj = {v: set() for v in prob.vregs}
-        for edge in edges:
-            a, b = tuple(edge)
-            adj[a].add(b)
-            adj[b].add(a)
-        asg = {}
-        for v in prob.vregs:
-            used = {asg[n] for n in adj[v] if n in asg}
-            for p in model.candidate_pregs(prob.order[v], prob.forbidden[v]):
-                if p not in used:
-                    asg[v] = p
-                    break
-        return ILPSolution(assignment=asg, spilled=set(), stats=ILPStats("OPTIMAL"))
+        return ILPSolution(assignment=_greedy_color(prob), spilled=set(),
+                           stats=ILPStats("OPTIMAL"))
+
+
+class _StubSpillUnspillable(RAILPBase):
+    """Spills a vreg that is not spillable -> base must raise (never abort)."""
+
+    def _solve(self, prob):
+        target = min(v for v in prob.vregs if not prob.spillable[v])
+        return ILPSolution(_greedy_color(prob, {target}), {target},
+                           ILPStats("OPTIMAL"))
+
+
+@aarch64
+def test_base_hard_fails_spilling_unspillable():
+    mir.register_regalloc("ilp-stub-unspill", _StubSpillUnspillable)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        with pytest.raises(RuntimeError, match="not spillable"):
+            mmi.regalloc_assignments(regalloc="ilp-stub-unspill")
+
+
+class _StubMissingAssignment(RAILPBase):
+    """Omits one vreg's decision entirely -> base must raise 'no assignment'."""
+
+    def _solve(self, prob):
+        target = max(prob.vregs)
+        return ILPSolution(_greedy_color(prob, {target}), set(),
+                           ILPStats("OPTIMAL"))
+
+
+@aarch64
+def test_base_hard_fails_on_missing_decision():
+    mir.register_regalloc("ilp-stub-missing", _StubMissingAssignment)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        with pytest.raises(RuntimeError, match="no assignment or spill"):
+            mmi.regalloc_assignments(regalloc="ilp-stub-missing")
 
 
 @aarch64
