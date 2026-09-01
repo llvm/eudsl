@@ -38,6 +38,10 @@ Module *moduleWrapperFor(const llvm::Module *m) {
 }
 
 Context::Context() : ctx(std::make_shared<llvm::LLVMContext>()) {
+  // This LLVM still supports typed pointers and defaults to them; the bindings
+  // only ever build opaque pointers, so put every context in opaque-pointer
+  // mode up front (newer LLVM drops this call as opaque is the only mode).
+  ctx->setOpaquePointers(true);
   ++gLiveContexts;
 }
 
