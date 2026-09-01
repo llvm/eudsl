@@ -40,10 +40,6 @@ _WEIGHT_SCALE = 1000
 # dominate any realistic sum of ordinary weights yet safely within int range.
 _MAX_WEIGHT = 1_000_000_000
 
-# Reward (in scaled objective units) for assigning a vreg to its copy hint.
-# Strictly less than the smallest scaled spill weight so it never buys a spill.
-HINT_BONUS = 1
-
 
 def _require_ortools():
     try:
