@@ -953,6 +953,12 @@ public:
   std::vector<unsigned> spill(const llvm::LiveInterval &li) {
     if (!currentSplit)
       throw nb::value_error("spill() is only valid inside select_or_split");
+    // A LiveRangeEdit registers itself as the MachineRegisterInfo delegate for
+    // its lifetime. This LLVM's MRI holds a single delegate (newer LLVM holds a
+    // set), so an earlier split attempt's heldEdit must be released before this
+    // spill's edit registers, or setDelegate asserts. The split it belonged to
+    // has finished by the time a range falls through to spilling.
+    heldEdit.reset();
     size_t before = currentSplit->size();
     llvm::LiveRangeEdit lre(&li, *currentSplit, *mf, *LIS, VRM,
                             /*delegate=*/nullptr, &DeadRemats);
@@ -972,6 +978,12 @@ public:
     if (!currentSplit)
       throw nb::value_error(
           "new_live_range_edit() is only valid inside select_or_split");
+    // Release any previous edit first: a LiveRangeEdit registers as the MRI
+    // delegate in its ctor, and this LLVM's MRI holds a single delegate, so
+    // constructing the new one while the old is still alive would assert. (The
+    // make_unique below would otherwise build the new edit before destroying
+    // the old.)
+    heldEdit.reset();
     heldEdit = std::make_unique<llvm::LiveRangeEdit>(
         &li, *currentSplit, *mf, *LIS, VRM, /*delegate=*/nullptr, &DeadRemats);
     return heldEdit.get();
