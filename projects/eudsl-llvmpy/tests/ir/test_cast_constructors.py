@@ -141,12 +141,12 @@ def test_value_cast_constructors():
             (llvm.ir.PHINode, phi, lambda v: v.num_incoming == 2),
             (llvm.ir.ReturnInst, ret, lambda v: v.return_value is not None),
             (
-                llvm.ir.CondBrInst,
+                llvm.ir.BranchInst,
                 entry.terminator,
                 lambda v: v.is_conditional is True,
             ),
             (
-                llvm.ir.UncondBrInst,
+                llvm.ir.BranchInst,
                 a_block.terminator,
                 lambda v: v.is_conditional is False,
             ),

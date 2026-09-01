@@ -37,9 +37,8 @@ _SOURCES = {
           %4 = fptrunc double %c to float
           %5 = fpext float %b to double
           %6 = addrspacecast ptr %p to ptr addrspace(1)
-          %7 = ptrtoaddr ptr %p to i64
-          %8 = fneg float %b
-          %9 = freeze i32 %2
+          %7 = fneg float %b
+          %8 = freeze i32 %2
           ret void
         }
     """,
@@ -176,8 +175,7 @@ def test_instruction_kinds_downcast():
         "LoadInst",
         "GetElementPtrInst",
         "CallInst",
-        "UncondBrInst",
-        "CondBrInst",
+        "BranchInst",
         "PHINode",
         "ReturnInst",
     }

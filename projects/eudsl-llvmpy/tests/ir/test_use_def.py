@@ -149,7 +149,7 @@ def test_function_walk():
         walked = list(f.walk())
         assert [type(i).__name__ for i in walked] == [
             "BinaryOperator",  # add (entry)
-            "UncondBrInst",  # br  (entry)
+            "BranchInst",  # br  (entry)
             "BinaryOperator",  # mul (next)
             "ReturnInst",  # ret (next)
         ]

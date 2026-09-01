@@ -365,17 +365,6 @@ def test_unreachable_free_function():
     assert_no_leaks()
 
 
-def test_ptrtoaddr_free_function():
-    with llvm.ir.Context() as ctx:
-        mod, fn = _fn(ctx, llvm.types.i64(), [llvm.types.ptr()])
-        b = IRBuilder(ctx)
-        with InsertPoint(fn.append_basic_block("entry"), builder=b):
-            I.ret(I.ptrtoaddr(fn.arg(0), "pa"))
-        assert "%pa = ptrtoaddr ptr %0 to i64" in str(mod)
-        del b, fn, mod
-    assert_no_leaks()
-
-
 def test_switch_free_function():
     with llvm.ir.Context() as ctx:
         i32 = llvm.types.i32()
@@ -466,9 +455,9 @@ def test_atomic_rmw_free_function():
                 llvm.ir.AtomicOrdering.SequentiallyConsistent,
                 name="rmw",
             )
-            # a value added in the extended BinOp set, single-threaded scope
+            # a single-threaded-scope rmw with a BinOp available in this LLVM
             r = I.atomic_rmw(
-                llvm.ir.AtomicRMWBinOp.UIncWrap,
+                llvm.ir.AtomicRMWBinOp.Xchg,
                 fn.arg(0),
                 fn.arg(1),
                 llvm.ir.AtomicOrdering.Monotonic,
@@ -479,7 +468,7 @@ def test_atomic_rmw_free_function():
         p = str(mod)
         assert "%rmw = atomicrmw add ptr %0, i32 %1 seq_cst, align 4" in p
         assert (
-            '%inc = atomicrmw uinc_wrap ptr %0, i32 %1 syncscope("singlethread") '
+            '%inc = atomicrmw xchg ptr %0, i32 %1 syncscope("singlethread") '
             "monotonic, align 4" in p
         )
         del b, fn, mod

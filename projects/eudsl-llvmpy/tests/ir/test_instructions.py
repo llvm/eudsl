@@ -61,10 +61,11 @@ def test_instructions_downcast():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(_PHI_SRC, ctx, "m")
         # add-style ops become BinaryOperator; the icmp becomes ICmpInst; the
-        # phi becomes PHINode; the conditional branch becomes CondBrInst.
+        # phi becomes PHINode; every branch (conditional or not) becomes a
+        # BranchInst -- one conditional entry branch plus two unconditional.
         assert len(_insts_by_class(mod, "PHINode")) == 1
         assert len(_insts_by_class(mod, "ICmpInst")) == 1
-        assert len(_insts_by_class(mod, "CondBrInst")) == 1
+        assert len(_insts_by_class(mod, "BranchInst")) == 3
         del mod
     assert_no_leaks()
 
@@ -116,7 +117,9 @@ def test_icmp_predicate():
 def test_conditional_branch():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(_PHI_SRC, ctx, "m")
-        cbrs = _insts_by_class(mod, "CondBrInst")
+        # This LLVM has a single BranchInst class; the conditional one is the
+        # entry `br i1 %c`.
+        cbrs = [b for b in _insts_by_class(mod, "BranchInst") if b.is_conditional]
         assert len(cbrs) == 1
         assert cbrs[0].is_conditional
         assert cbrs[0].num_successors == 2
@@ -129,8 +132,10 @@ def test_conditional_branch():
 def test_unconditional_branch():
     with llvm.ir.Context() as ctx:
         mod = llvm.ir.parse_assembly(_PHI_SRC, ctx, "m")
-        # The a->join and b->join branches are unconditional.
-        ubrs = _insts_by_class(mod, "UncondBrInst")
+        # The a->join and b->join branches are unconditional BranchInsts.
+        ubrs = [
+            b for b in _insts_by_class(mod, "BranchInst") if not b.is_conditional
+        ]
         assert len(ubrs) == 2
         assert ubrs[0].is_conditional is False
         assert ubrs[0].num_successors == 1
