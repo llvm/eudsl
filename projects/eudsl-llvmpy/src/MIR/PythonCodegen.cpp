@@ -1745,7 +1745,10 @@ void populate_python_codegen(nb::module_ &m) {
       .def(
           "entry_freq",
           [](llvm::MachineBlockFrequencyInfo &mbfi) {
-            return mbfi.getEntryFreq();
+            // This LLVM's getEntryFreq() returns a raw uint64_t (newer LLVM
+            // returns a BlockFrequency); wrap it so the Python surface is a
+            // BlockFrequency, matching block_freq() and the newer API.
+            return llvm::BlockFrequency(mbfi.getEntryFreq());
           },
           "Frequency of the entry block (the denominator of the relative "
           "frequencies).");
