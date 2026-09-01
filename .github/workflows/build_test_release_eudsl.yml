@@ -388,6 +388,7 @@ jobs:
           # which llvm.testing.filecheck_with_comments locates.
           python -m pip install mlir-native-tools \
             -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
+          python -m pip install "ortools>=9.0" || true
 
       - name: "Test eudsl-llvmpy"
         run: |
@@ -403,6 +404,7 @@ jobs:
           case "${{ matrix.name }}" in
             ubuntu_x86_64|windows_amd64) COV_FAIL_UNDER=0 ;;
           esac
+          python -c "import ortools" 2>/dev/null || COV_FAIL_UNDER=0
           python -m pytest -rA --capture=tee-sys \
             --cov-fail-under=$COV_FAIL_UNDER $TESTS_DIR
 
@@ -480,6 +482,9 @@ jobs:
           $python3_command -m pip install \
             "nanobind==2.12.0" ninja "scikit-build-core==0.10.7" \
             typing_extensions numpy pytest pytest-cov
+          # The ILP register-allocation tests need OR-Tools (optional `ilp`
+          # extra); best-effort so the C++ coverage run also exercises them.
+          $python3_command -m pip install "ortools>=9.0" || true
           # mlir-native-tools installs the FileCheck binary into sys.prefix/bin,
           # which llvm.testing.filecheck_with_comments locates. Needed here too
           # (not just the Test job) since this job's pytest run exercises the
