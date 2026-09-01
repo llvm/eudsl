@@ -8,6 +8,7 @@
 
 #include <llvm/ADT/Hashing.h>
 #include <llvm/CodeGen/GlobalISel/MachineIRBuilder.h>
+#include <llvm/CodeGen/LowLevelType.h>
 #include <llvm/CodeGen/MIRParser/MIRParser.h>
 #include <llvm/CodeGen/MIRPrinter.h>
 #include <llvm/CodeGen/MachineBasicBlock.h>
@@ -26,7 +27,6 @@
 #include <llvm/CodeGen/TargetRegisterInfo.h>
 #include <llvm/CodeGen/TargetSubtargetInfo.h>
 #include <llvm/CodeGen/VirtRegMap.h>
-#include <llvm/CodeGenTypes/LowLevelType.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -59,6 +59,10 @@
 #include <variant>
 #include <vector>
 
+#include <cstdio>
+#include <fcntl.h>
+#include <unistd.h>
+
 namespace eudsl {
 // Defined in PythonCodegen.cpp: the class registered under a scheduler name (an
 // invalid object if the name was not registered via register_scheduler), the
@@ -82,6 +86,49 @@ void clearActiveRegAllocClass();
 void populate_python_codegen(nb::module_ &m);
 
 namespace {
+
+// Run `body` with the process's standard error (file descriptor 2) redirected
+// to a temporary file, and return whatever it wrote as a string. Used to
+// capture the MachineVerifier's report, which this LLVM prints unconditionally
+// to llvm::errs() with no capturable-stream overload. Best-effort: if the
+// redirect cannot be set up, `body` runs with stderr untouched and "" is
+// returned.
+template <typename Fn>
+std::string captureStderr(Fn &&body) {
+  llvm::errs().flush();
+  fflush(stderr);
+  int saved = dup(STDERR_FILENO);
+  if (saved < 0) {
+    body();
+    return {};
+  }
+  FILE *tmp = tmpfile();
+  if (!tmp) {
+    close(saved);
+    body();
+    return {};
+  }
+  int tmpFd = fileno(tmp);
+  dup2(tmpFd, STDERR_FILENO);
+
+  body();
+
+  llvm::errs().flush();
+  fflush(stderr);
+  dup2(saved, STDERR_FILENO);
+  close(saved);
+
+  std::string out;
+  long size = lseek(tmpFd, 0, SEEK_END);
+  if (size > 0) {
+    lseek(tmpFd, 0, SEEK_SET);
+    out.resize(static_cast<size_t>(size));
+    ssize_t got = read(tmpFd, out.data(), static_cast<size_t>(size));
+    out.resize(got > 0 ? static_cast<size_t>(got) : 0);
+  }
+  fclose(tmp);
+  return out;
+}
 
 // A machine register paired with the MachineFunction that owns it. A virtual
 // register's numeric id is only an index into its own function's
@@ -354,13 +401,12 @@ public:
 
   void getAnalysisUsage(llvm::AnalysisUsage &au) const override {
     au.setPreservesAll();
-    au.addRequired<llvm::VirtRegMapWrapperLegacy>();
+    au.addRequired<llvm::VirtRegMap>();
     llvm::MachineFunctionPass::getAnalysisUsage(au);
   }
 
   bool runOnMachineFunction(llvm::MachineFunction &mfn) override {
-    llvm::VirtRegMap &vrm =
-        getAnalysis<llvm::VirtRegMapWrapperLegacy>().getVRM();
+    llvm::VirtRegMap &vrm = getAnalysis<llvm::VirtRegMap>();
     llvm::MachineRegisterInfo &mri = mfn.getRegInfo();
     // Classify by the VirtRegMap, not by liveness: the spiller assigns a stack
     // slot for a spilled vreg (which persists here) but rewrites its uses to
@@ -461,7 +507,7 @@ public:
     llvm::printMIR(os, *module_);
     for (llvm::Function &f : *module_) {
       if (llvm::MachineFunction *mf = info->getMachineFunction(f))
-        llvm::printMIR(os, *info, *mf);
+        llvm::printMIR(os, *mf);
     }
     return buf;
   }
@@ -507,18 +553,20 @@ public:
     // emission pipeline -- whose in-pass verifier and asserts are gone under
     // NDEBUG -- to a garbage object or a fatal codegen abort. The pipeline runs
     // with DisableVerify=true since we verify here.
-    std::string report;
-    llvm::raw_string_ostream reportOS(report);
     bool ok = true;
     for (llvm::Function &f : *module_) {
       if (llvm::MachineFunction *mf = info->getMachineFunction(f)) {
-        ok &= mf->verify(/*p=*/nullptr, /*Banner=*/nullptr, &reportOS,
+        // This LLVM's MachineFunction::verify writes its report to stderr and
+        // has no stream-capture overload, so we cannot fold it into the
+        // exception message.
+        ok &= mf->verify(/*p=*/nullptr, /*Banner=*/nullptr,
                          /*AbortOnError=*/false);
       }
     }
     if (!ok) {
       throw std::runtime_error(
-          eudsl::withDetail("hand-built MIR failed verification", report));
+          "hand-built MIR failed verification (see stderr for the machine "
+          "verifier's report)");
     }
 
     // Run only the back half of codegen (regalloc, prologue/epilogue, object
@@ -629,9 +677,9 @@ public:
     // addPassesToEmitFile adopts the MMIWrapperPass into `pm` (which we keep,
     // so `info` stays valid); it holds the built MachineFunctions.
     // LCOV_EXCL_START -- AArch64 can always emit an object file
-    if (tm->addPassesToEmitFile(
-            *pm, os, nullptr, llvm::CodeGenFileType::ObjectFile,
-            /*DisableVerify=*/true, build->mmiwp.release())) {
+    if (tm->addPassesToEmitFile(*pm, os, nullptr, llvm::CGFT_ObjectFile,
+                                /*DisableVerify=*/true,
+                                build->mmiwp.release())) {
       // The wrapper has already been released into `pm`, so the BuildOwned's
       // mmiwp is now null. Consume it into EmittedOwned before throwing so `pm`
       // (and thus `info`) stays alive and a later query/retry reports a clean
@@ -645,7 +693,7 @@ public:
     // the hand-built MachineFunctions.
     for (llvm::Function &f : *module_) {
       if (llvm::MachineFunction *mf = info->getMachineFunction(f))
-        mf->getRegInfo().freezeReservedRegs();
+        mf->getRegInfo().freezeReservedRegs(*mf);
     }
     // A codegen pass reports failure through the context diagnostic handler
     // (DS_Error -> stderr + exit under the default handler), not pm->run()'s
@@ -737,25 +785,26 @@ public:
 
     // Verify hand-built MIR up front (mirrors emitObject) so malformed input
     // raises a catchable error instead of aborting inside the allocator.
-    std::string report;
-    llvm::raw_string_ostream reportOS(report);
     bool ok = true;
     for (llvm::Function &f : *module_) {
       if (llvm::MachineFunction *mf = info->getMachineFunction(f)) {
-        ok &= mf->verify(/*p=*/nullptr, /*Banner=*/nullptr, &reportOS,
+        // See the emit path: this LLVM's verify() reports to stderr, not a
+        // capturable stream.
+        ok &= mf->verify(/*p=*/nullptr, /*Banner=*/nullptr,
                          /*AbortOnError=*/false);
       }
     }
     if (!ok) {
       throw std::runtime_error(
-          eudsl::withDetail("hand-built MIR failed verification", report));
+          "hand-built MIR failed verification (see stderr for the machine "
+          "verifier's report)");
     }
 
     // Register allocation requires reserved registers to be frozen; the front
     // of the normal pipeline does this, so do it here for the hand-built MIR.
     for (llvm::Function &f : *module_) {
       if (llvm::MachineFunction *mf = info->getMachineFunction(f))
-        mf->getRegInfo().freezeReservedRegs();
+        mf->getRegInfo().freezeReservedRegs(*mf);
     }
 
     // The allocator's required codegen analyses (LiveIntervals, VirtRegMap,
@@ -830,10 +879,14 @@ private:
 // bits" describing a scalar/pointer/vector operand, distinct from the uniqued
 // llvm::Type hierarchy. It is a small value type (not context-owned and not
 // polymorphic), so it is bound by value with no ownership/keep_alive plumbing.
-// Binding it first also proves LLVMCodeGenTypes links into the extension.
 void populate_mir(nb::module_ &m) {
   nb::class_<llvm::LLT>(m, "LLT")
-      .def_static("scalar", &llvm::LLT::scalar, "size_in_bits"_a)
+      .def_static(
+          "scalar",
+          // This LLT::scalar takes a trailing IsBF flag; wrap it so the Python
+          // surface stays a single size argument (ordinary, non-bfloat scalar).
+          [](unsigned sizeInBits) { return llvm::LLT::scalar(sizeInBits); },
+          "size_in_bits"_a)
       .def_static("pointer", &llvm::LLT::pointer, "address_space"_a,
                   "size_in_bits"_a)
       .def_static(
@@ -859,10 +912,10 @@ void populate_mir(nb::module_ &m) {
                    [](const llvm::LLT &self) { return self.isPointer(); })
       .def_prop_ro("is_vector",
                    [](const llvm::LLT &self) { return self.isVector(); })
-      .def_prop_ro("is_integer",
-                   [](const llvm::LLT &self) { return self.isInteger(); })
-      .def_prop_ro("is_float",
-                   [](const llvm::LLT &self) { return self.isFloat(); })
+      // This LLT is a plain "bag of bits": it carries no integer/float kind, so
+      // neither predicate is ever true. They exist to mirror the full LLT API.
+      .def_prop_ro("is_integer", [](const llvm::LLT &) { return false; })
+      .def_prop_ro("is_float", [](const llvm::LLT &) { return false; })
       .def_prop_ro("is_valid",
                    [](const llvm::LLT &self) { return self.isValid(); })
       .def(
@@ -1444,8 +1497,7 @@ void populate_mir(nb::module_ &m) {
             const llvm::TargetRegisterInfo &tri = requireTRI(self);
             for (unsigned i = 0, e = tri.getNumRegClasses(); i < e; ++i) {
               const llvm::TargetRegisterClass *rc = tri.getRegClass(i);
-              if (name == tri.getRegClassName(
-                              &tri.MCRegisterInfo::getRegClass(rc->getID()))) {
+              if (name == tri.getRegClassName(rc)) {
                 return rc;
               }
             }
@@ -1549,17 +1601,21 @@ void populate_mir(nb::module_ &m) {
           "verify",
           [](llvm::MachineFunction &self) {
             return self.verify(/*p=*/nullptr, /*Banner=*/nullptr,
-                               /*OS=*/nullptr, /*AbortOnError=*/false);
+                               /*AbortOnError=*/false);
           },
           "Run the machine verifier; returns True if no problems were found.")
       .def(
           "verify_diagnostic",
           [](llvm::MachineFunction &self) {
-            std::string buf;
-            llvm::raw_string_ostream os(buf);
-            self.verify(/*p=*/nullptr, /*Banner=*/nullptr, &os,
-                        /*AbortOnError=*/false);
-            return buf;
+            // This LLVM's MachineVerifier writes its report straight to errs()
+            // (no capturable-stream overload and the verifier class is
+            // private), so capture file descriptor 2 for the duration of the
+            // run and read it back. A well-formed function produces no output,
+            // giving the empty string the caller expects.
+            return captureStderr([&] {
+              self.verify(/*p=*/nullptr, /*Banner=*/nullptr,
+                          /*AbortOnError=*/false);
+            });
           },
           "Run the machine verifier and return its report -- an empty string "
           "if the MIR is well-formed, else the verifier's explanation.")
@@ -1665,9 +1721,13 @@ void populate_mir(nb::module_ &m) {
                                   : llvm::GlobalISelAbortMode::Enable);
 
         auto pm = std::make_unique<llvm::legacy::PassManager>();
-        llvm::TargetPassConfig *tpc = tm.createPassConfig(*pm);
+        // createPassConfig and MachineModuleInfoWrapperPass are declared on
+        // LLVMTargetMachine, not the TargetMachine base bound here; every real
+        // target's machine derives from it, so downcast.
+        auto &ltm = static_cast<llvm::LLVMTargetMachine &>(tm);
+        llvm::TargetPassConfig *tpc = ltm.createPassConfig(*pm);
         pm->add(tpc);
-        auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(&tm);
+        auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(&ltm);
         pm->add(mmiwp);
         // LCOV_EXCL_START -- only a misconfigured target fails to add ISel
         if (tpc->addISelPasses()) {
@@ -1751,7 +1811,8 @@ void populate_mir(nb::module_ &m) {
               "failed to parse the IR portion of the MIR", diag));
         }
         module->setDataLayout(tm.createDataLayout());
-        auto ownedMmi = std::make_unique<llvm::MachineModuleInfo>(&tm);
+        auto ownedMmi = std::make_unique<llvm::MachineModuleInfo>(
+            &static_cast<llvm::LLVMTargetMachine &>(tm));
         if (parser->parseMachineFunctions(*module, *ownedMmi)) {
           throw std::runtime_error(
               eudsl::withDetail("failed to parse machine functions", diag));
@@ -1799,7 +1860,8 @@ void populate_mir(nb::module_ &m) {
             module->getContext(),
             llvm::BasicBlock::Create(module->getContext(), "entry", f));
 
-        auto mmiwp = std::make_unique<llvm::MachineModuleInfoWrapperPass>(&tm);
+        auto mmiwp = std::make_unique<llvm::MachineModuleInfoWrapperPass>(
+            &static_cast<llvm::LLVMTargetMachine &>(tm));
         llvm::MachineFunction &mf =
             mmiwp->getMMI().getOrCreateMachineFunction(*f);
         mf.push_back(mf.CreateMachineBasicBlock());
@@ -1857,7 +1919,7 @@ void populate_mir(nb::module_ &m) {
             // buildConstant derives the width from ty's scalar size; a pointer,
             // scalable-vector, or invalid LLT hits asserting accessors that
             // vanish under NDEBUG and would emit a wrong-width G_CONSTANT.
-            if (!(ty.isScalar() || ty.isFixedVector())) {
+            if (!(ty.isScalar() || (ty.isVector() && !ty.isScalable()))) {
               throw nb::value_error("build_constant requires a scalar or "
                                     "fixed-vector type");
             }
@@ -1940,7 +2002,8 @@ void populate_mir(nb::module_ &m) {
               throw nb::value_error(
                   "build_icmp requires an integer comparison predicate");
             llvm::LLT s1 = llvm::LLT::scalar(1);
-            if (ty != s1 && !(ty.isFixedVector() && ty.getElementType() == s1))
+            if (ty != s1 && !(ty.isVector() && !ty.isScalable() &&
+                              ty.getElementType() == s1))
               throw nb::value_error(
                   "build_icmp result type must be s1 or a fixed vector of s1");
             requireVReg(self, lhs, "lhs");

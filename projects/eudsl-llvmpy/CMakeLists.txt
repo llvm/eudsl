@@ -159,13 +159,20 @@ set(eudslllvm_ext_libs
   LLVMMC
   LLVMMCParser
   LLVMCodeGen
-  LLVMCodeGenTypes
   LLVMGlobalISel
   LLVMSelectionDAG
   LLVMMIRParser
-  LLVMTargetParser
   ${EUDSLLLVM_TARGET_LIBS}
 )
+# CodeGenTypes (LLT and friends) and TargetParser (Triple/Host) are separate
+# libraries only in newer LLVM; in older releases those symbols live in
+# LLVMCodeGen and LLVMSupport respectively. Link each only when it exists.
+if(TARGET LLVMCodeGenTypes)
+  list(APPEND eudslllvm_ext_libs LLVMCodeGenTypes)
+endif()
+if(TARGET LLVMTargetParser)
+  list(APPEND eudslllvm_ext_libs LLVMTargetParser)
+endif()
 target_link_libraries(eudslllvm_ext PRIVATE ${eudslllvm_ext_libs})
 
 set_target_properties(eudslllvm_ext

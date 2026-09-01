@@ -233,19 +233,19 @@ void populate_values(nb::module_ &m) {
       .def(
           "move_before",
           [](llvm::Instruction &self, llvm::Instruction *pos) {
-            self.moveBefore(pos->getIterator());
+            self.moveBefore(pos);
           },
           "pos"_a, "Move this instruction to just before `pos`.")
       .def(
           "insert_before",
           [](llvm::Instruction &self, llvm::Instruction *pos) {
-            self.insertBefore(pos->getIterator());
+            self.insertBefore(pos);
           },
           "pos"_a, "Insert this (unattached) instruction just before `pos`.")
       .def(
           "insert_after",
           [](llvm::Instruction &self, llvm::Instruction *pos) {
-            self.insertAfter(pos->getIterator());
+            self.insertAfter(pos);
           },
           "pos"_a, "Insert this (unattached) instruction just after `pos`.")
       .def(
@@ -292,7 +292,7 @@ void populate_values(nb::module_ &m) {
           nb::rv_policy::reference_internal)
       .def_prop_ro(
           "terminator",
-          [](llvm::BasicBlock &self) { return self.getTerminatorOrNull(); },
+          [](llvm::BasicBlock &self) { return self.getTerminator(); },
           nb::rv_policy::reference_internal)
       .def_prop_ro(
           "instructions",

@@ -57,19 +57,16 @@ std::unordered_map<std::string, nb::callable> &pythonFunctionPassRegistry() {
 enum class PyPassKind { Module, Function };
 
 // A new-PM module pass whose body is a Python callable. The new PassManager is
-// concept-based, so a pass needs no LLVM base class beyond the
-// OptionalPassInfoMixin that supplies name()/isRequired()/printPipeline -- any
-// movable type with a run(Module&, ModuleAnalysisManager&) qualifies. (LLVM
-// moved the old llvm::PassInfoMixin into llvm::detail and now asks passes to
-// inherit RequiredPassInfoMixin or OptionalPassInfoMixin; these are optional --
-// isRequired() == false -- matching the old default.) We hold the owning
+// concept-based, so a pass needs no LLVM base class beyond the PassInfoMixin
+// that supplies name()/isRequired()/printPipeline -- any movable type with a
+// run(Module&, ModuleAnalysisManager&) qualifies. We hold the owning
 // eudsl::Module so the callback receives the same Python wrapper the caller
 // passed (rv_policy::reference maps the pointer back through nanobind's
 // instance registry), and the nb::callable so the callback outlives the move
 // into PassModel. Everything runs synchronously on the calling (Python) thread,
 // so the callable's refcounting stays correct; we still take the GIL in run()
 // to stay correct under a free-threaded interpreter.
-struct PyModulePass : llvm::OptionalPassInfoMixin<PyModulePass> {
+struct PyModulePass : llvm::PassInfoMixin<PyModulePass> {
   eudsl::Module *mod;
   nb::callable callback;
 
@@ -113,7 +110,7 @@ struct PyModulePass : llvm::OptionalPassInfoMixin<PyModulePass> {
 // ModuleToFunctionPassAdaptor it runs once per defined function; the callback
 // receives the llvm::Function (bound directly, so nanobind hands back its
 // wrapper). Same truthy-return / GIL contract as PyModulePass.
-struct PyFunctionPass : llvm::OptionalPassInfoMixin<PyFunctionPass> {
+struct PyFunctionPass : llvm::PassInfoMixin<PyFunctionPass> {
   nb::callable callback;
 
   explicit PyFunctionPass(nb::callable callback)
@@ -164,8 +161,7 @@ struct PassPipelineEnv {
 
   PassPipelineEnv(eudsl::Module &mod, const llvm::PipelineTuningOptions &opts,
                   bool debug, bool verifyEach)
-      : si(mod.get().getContext(), debug, verifyEach),
-        pb(nullptr, opts, std::nullopt, &pic) {
+      : si(debug, verifyEach), pb(nullptr, opts, llvm::None, &pic) {
     si.registerCallbacks(pic);
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
@@ -211,11 +207,18 @@ struct PassPipelineEnv {
 } // namespace
 
 void populate_passes(nb::module_ &m) {
-  nb::enum_<llvm::OptimizationLevel>(m, "OptLevel")
-      .value("O0", llvm::OptimizationLevel::O0)
-      .value("O1", llvm::OptimizationLevel::O1)
-      .value("O2", llvm::OptimizationLevel::O2)
-      .value("O3", llvm::OptimizationLevel::O3);
+  // OptimizationLevel is a value class (not an enum): O0-O3 are static const
+  // instances. Expose them as read-only class attributes so Python addresses
+  // them as OptLevel.O0 ... OptLevel.O3, matching the LLVM spelling.
+  nb::class_<llvm::OptimizationLevel>(m, "OptLevel")
+      .def_prop_ro_static(
+          "O0", [](nb::handle) { return llvm::OptimizationLevel::O0; })
+      .def_prop_ro_static(
+          "O1", [](nb::handle) { return llvm::OptimizationLevel::O1; })
+      .def_prop_ro_static(
+          "O2", [](nb::handle) { return llvm::OptimizationLevel::O2; })
+      .def_prop_ro_static(
+          "O3", [](nb::handle) { return llvm::OptimizationLevel::O3; });
 
   nb::enum_<PyPassKind>(m, "PassKind")
       .value("MODULE", PyPassKind::Module)

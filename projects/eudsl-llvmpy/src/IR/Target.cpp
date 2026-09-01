@@ -5,13 +5,13 @@
 #include "IR/Common.h"
 #include "IR/Ownership.h"
 
+#include <llvm/ADT/Triple.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/CodeGen.h>
+#include <llvm/Support/Host.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
-#include <llvm/TargetParser/Host.h>
-#include <llvm/TargetParser/Triple.h>
 
 #include <memory>
 #include <optional>
@@ -51,15 +51,14 @@ void populate_target(nb::module_ &m) {
                  featStr += (*features)[i];
                }
              }
-             llvm::Triple tt(tripleStr);
              std::string err;
              const llvm::Target *target =
-                 llvm::TargetRegistry::lookupTarget(tt, err);
+                 llvm::TargetRegistry::lookupTarget(tripleStr, err);
              if (!target)
                throw std::runtime_error(err);
              llvm::TargetOptions opts;
              llvm::TargetMachine *tm = target->createTargetMachine(
-                 tt, cpuStr, featStr, opts, std::nullopt);
+                 tripleStr, cpuStr, featStr, opts, llvm::None);
              if (!tm) { // LCOV_EXCL_START
                throw std::runtime_error("could not create TargetMachine for " +
                                         tripleStr);
@@ -85,14 +84,13 @@ void populate_target(nb::module_ &m) {
       .def(
           "emit_assembly",
           [](llvm::TargetMachine &self, eudsl::Module &mod) {
-            return emit(self, mod, llvm::CodeGenFileType::AssemblyFile);
+            return emit(self, mod, llvm::CGFT_AssemblyFile);
           },
           "module"_a)
       .def(
           "emit_object",
           [](llvm::TargetMachine &self, eudsl::Module &mod) {
-            std::string obj =
-                emit(self, mod, llvm::CodeGenFileType::ObjectFile);
+            std::string obj = emit(self, mod, llvm::CGFT_ObjectFile);
             return nb::bytes(obj.data(), obj.size());
           },
           "module"_a);

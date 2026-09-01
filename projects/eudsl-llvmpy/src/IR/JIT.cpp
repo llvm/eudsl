@@ -64,8 +64,8 @@ void populate_jit(nb::module_ &m) {
       .def(
           "lookup",
           [](llvm::orc::LLJIT &self, const std::string &name) {
-            llvm::orc::ExecutorAddr addr = eudsl::unwrap(self.lookup(name));
-            return static_cast<uint64_t>(addr.getValue());
+            llvm::JITEvaluatedSymbol sym = eudsl::unwrap(self.lookup(name));
+            return static_cast<uint64_t>(sym.getAddress());
           },
           "name"_a);
 }

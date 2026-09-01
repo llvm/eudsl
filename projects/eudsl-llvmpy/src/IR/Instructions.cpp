@@ -8,6 +8,38 @@
 #include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/Instructions.h>
 
+// CleanupPadInst and CatchPadInst inherit FuncletPadInst's (private) copy
+// constructor as friends, so nanobind treats them as copy- and
+// move-constructible and emits copy/move wrappers that call placement-new.
+// llvm::User declares a class-scoped operator new that hides the global
+// placement operator, so an unqualified placement-new in those wrappers fails
+// to compile. (FuncletPadInst itself keeps its copy ctor private with no friend
+// grant here, so it is not copy/move-constructible and needs no wrapper.) These
+// pad instructions are only ever handled by pointer through the bindings, never
+// copied or moved by value:
+//  * is_copy_constructible is nanobind's intended customization point -- set it
+//    false so no copy wrapper is generated;
+//  * move constructibility is read straight from std::is_move_constructible (no
+//    trait hook), so specialize wrap_move to use global-scope ::new, which
+//    resolves the placement operator past User's class-scoped one.
+namespace nanobind::detail {
+template <>
+struct is_copy_constructible<llvm::CleanupPadInst> : std::false_type {};
+template <>
+struct is_copy_constructible<llvm::CatchPadInst> : std::false_type {};
+
+template <>
+inline void wrap_move<llvm::CleanupPadInst>(void *dst, void *src) noexcept {
+  ::new ((llvm::CleanupPadInst *)dst)
+      llvm::CleanupPadInst(std::move(*(llvm::CleanupPadInst *)src));
+}
+template <>
+inline void wrap_move<llvm::CatchPadInst>(void *dst, void *src) noexcept {
+  ::new ((llvm::CatchPadInst *)dst)
+      llvm::CatchPadInst(std::move(*(llvm::CatchPadInst *)src));
+}
+} // namespace nanobind::detail
+
 void populate_instructions(nb::module_ &m) {
   // ICmp and FCmp share the C++ enum llvm::CmpInst::Predicate, and nanobind
   // keys enum registration by C++ type, so register it once and expose the two
@@ -58,17 +90,7 @@ void populate_instructions(nb::module_ &m) {
       .value("UMax", llvm::AtomicRMWInst::UMax)
       .value("UMin", llvm::AtomicRMWInst::UMin)
       .value("FAdd", llvm::AtomicRMWInst::FAdd)
-      .value("FSub", llvm::AtomicRMWInst::FSub)
-      .value("FMax", llvm::AtomicRMWInst::FMax)
-      .value("FMin", llvm::AtomicRMWInst::FMin)
-      .value("FMaximum", llvm::AtomicRMWInst::FMaximum)
-      .value("FMinimum", llvm::AtomicRMWInst::FMinimum)
-      .value("FMaximumNum", llvm::AtomicRMWInst::FMaximumNum)
-      .value("FMinimumNum", llvm::AtomicRMWInst::FMinimumNum)
-      .value("UIncWrap", llvm::AtomicRMWInst::UIncWrap)
-      .value("UDecWrap", llvm::AtomicRMWInst::UDecWrap)
-      .value("USubCond", llvm::AtomicRMWInst::USubCond)
-      .value("USubSat", llvm::AtomicRMWInst::USubSat);
+      .value("FSub", llvm::AtomicRMWInst::FSub);
 
   // Intermediate bases (the Value type_hook never names these, but leaf classes
   // need them registered as their nanobind base).
@@ -158,16 +180,15 @@ void populate_instructions(nb::module_ &m) {
           "return_value",
           [](llvm::ReturnInst &self) { return self.getReturnValue(); },
           nb::rv_policy::reference_internal);
-  nb::class_<llvm::UncondBrInst, llvm::Instruction>(m, "UncondBrInst")
-      .EUDSL_CAST_CTOR(llvm::UncondBrInst, llvm::Value)
+  nb::class_<llvm::BranchInst, llvm::Instruction>(m, "BranchInst")
+      .EUDSL_CAST_CTOR(llvm::BranchInst, llvm::Value)
       .def_prop_ro("is_conditional",
-                   [](llvm::UncondBrInst &) { return false; });
-  nb::class_<llvm::CondBrInst, llvm::Instruction>(m, "CondBrInst")
-      .EUDSL_CAST_CTOR(llvm::CondBrInst, llvm::Value)
-      .def_prop_ro("is_conditional", [](llvm::CondBrInst &) { return true; })
+                   [](llvm::BranchInst &self) { return self.isConditional(); })
       .def_prop_ro(
           "condition",
-          [](llvm::CondBrInst &self) { return self.getCondition(); },
+          [](llvm::BranchInst &self) -> llvm::Value * {
+            return self.isConditional() ? self.getCondition() : nullptr;
+          },
           nb::rv_policy::reference_internal);
   nb::class_<llvm::SwitchInst, llvm::Instruction>(m, "SwitchInst")
       .def("add_case", &llvm::SwitchInst::addCase, "on_value"_a, "dest"_a);
@@ -208,11 +229,7 @@ void populate_instructions(nb::module_ &m) {
   nb::class_<llvm::FPTruncInst, llvm::CastInst>(m, "FPTruncInst");
   nb::class_<llvm::FPExtInst, llvm::CastInst>(m, "FPExtInst");
   nb::class_<llvm::PtrToIntInst, llvm::CastInst>(m, "PtrToIntInst");
-  nb::class_<llvm::PtrToAddrInst, llvm::CastInst>(m, "PtrToAddrInst");
   nb::class_<llvm::IntToPtrInst, llvm::CastInst>(m, "IntToPtrInst");
   nb::class_<llvm::BitCastInst, llvm::CastInst>(m, "BitCastInst");
   nb::class_<llvm::AddrSpaceCastInst, llvm::CastInst>(m, "AddrSpaceCastInst");
-  nb::class_<llvm::FPUnaryOperator, llvm::UnaryOperator>(m, "FPUnaryOperator");
-  nb::class_<llvm::FPBinaryOperator, llvm::BinaryOperator>(m,
-                                                           "FPBinaryOperator");
 }

@@ -7,6 +7,7 @@
 #include "MIR/Diagnostics.h"
 #include "MIR/InterferenceCache.h"
 #include "MIR/RegAllocBase.h"
+#include "MIR/SpillPlacement.h"
 #include "MIR/SplitKit.h"
 
 #include <llvm/ADT/BitVector.h>
@@ -34,7 +35,6 @@
 #include <llvm/CodeGen/ScheduleDAG.h>
 #include <llvm/CodeGen/ScheduleDAGMutation.h>
 #include <llvm/CodeGen/SlotIndexes.h>
-#include <llvm/CodeGen/SpillPlacement.h>
 #include <llvm/CodeGen/Spiller.h>
 #include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetRegisterInfo.h>
@@ -105,7 +105,10 @@ class PySchedStrategy : public llvm::MachineSchedStrategy {
 public:
   NB_TRAMPOLINE(llvm::MachineSchedStrategy, 9);
 
-  llvm::MachineSchedPolicy getPolicy() const override {
+  // This LLVM's MachineSchedStrategy has no getPolicy() virtual (the scheduler
+  // reads shouldTrackPressure()/shouldTrackLaneMasks() directly), so this is a
+  // plain helper the predicates below delegate to, not an override.
+  llvm::MachineSchedPolicy getPolicy() const {
     nb::gil_scoped_acquire gil;
     if (eudsl::pendingCodegenError)
       return {};
@@ -270,9 +273,6 @@ public:
     pyStrategy.reset();
   }
 
-  llvm::MachineSchedPolicy getPolicy() const override {
-    return inner->getPolicy();
-  }
   bool shouldTrackPressure() const override {
     return inner->shouldTrackPressure();
   }
@@ -330,7 +330,7 @@ createRegisteredPyStrategy(llvm::MachineSchedContext *c) {
   nb::gil_scoped_acquire gil;
   // LCOV_EXCL_START -- emit_object always sets the active class before running
   if (!activeSchedClass.is_valid())
-    return llvm::createSchedLive(c);
+    return llvm::createGenericSchedLive(c);
   // LCOV_EXCL_STOP
   try {
     auto strategy = std::make_unique<OwningPyStrategy>(activeSchedClass());
@@ -343,7 +343,7 @@ createRegisteredPyStrategy(llvm::MachineSchedContext *c) {
     // so stash the error and wind down with the default DAG; runCodegenPipeline
     // re-raises after the run.
     eudsl::pendingCodegenError = std::current_exception();
-    return llvm::createSchedLive(c);
+    return llvm::createGenericSchedLive(c);
   }
 }
 
@@ -663,9 +663,12 @@ public:
                                          unsigned physreg) {
     const llvm::TargetRegisterInfo *tri = mf->getSubtarget().getRegisterInfo();
     std::vector<unsigned> ids;
-    for (llvm::MCRegUnit unit : tri->regunits(llvm::MCRegister(physreg))) {
+    // This LLVM has no regunits() range; iterate the units with
+    // MCRegUnitIterator (a unit is a plain unsigned here).
+    for (llvm::MCRegUnitIterator units(llvm::MCRegister(physreg), tri);
+         units.isValid(); ++units) {
       for (const llvm::LiveInterval *intf :
-           Matrix->query(li, unit).interferingVRegs()) {
+           Matrix->query(li, *units).interferingVRegs()) {
         unsigned id = intf->reg().id();
         if (std::find(ids.begin(), ids.end(), id) == ids.end())
           ids.push_back(id);
@@ -683,8 +686,9 @@ public:
     const llvm::TargetRegisterInfo *tri = mf->getSubtarget().getRegisterInfo();
     llvm::SlotIndex start = li.beginIndex(), stop = li.endIndex();
     std::vector<llvm::LiveRange::Segment> segs;
-    for (llvm::MCRegUnit unit : tri->regunits(llvm::MCRegister(physreg))) {
-      const llvm::LiveRange &lr = LIS->getRegUnit(unit);
+    for (llvm::MCRegUnitIterator units(llvm::MCRegister(physreg), tri);
+         units.isValid(); ++units) {
+      const llvm::LiveRange &lr = LIS->getRegUnit(*units);
       for (const llvm::LiveRange::Segment &s : lr) {
         if (s.start < stop && start < s.end) // overlaps li
           segs.push_back(s);
@@ -747,16 +751,18 @@ public:
 
   // Whether the register class's AllocationPriority outranks globalness in the
   // priority calculation (RAGreedy's RegClassPriorityTrumpsGlobalness),
-  // honoring the -greedy-regclass-priority-trumps-globalness override.
+  // honoring the -greedy-regclass-priority-trumps-globalness override. This
+  // LLVM's TargetRegisterInfo has no regClassPriorityTrumpsGlobalness hook (the
+  // feature postdates it), so the target default is false.
   bool regClassPriorityTrumpsGlobalness() {
-    return greedyEffectiveFlag(
-        "greedy-regclass-priority-trumps-globalness",
-        mf->getSubtarget().getRegisterInfo()->regClassPriorityTrumpsGlobalness(
-            *mf));
+    return greedyEffectiveFlag("greedy-regclass-priority-trumps-globalness",
+                               false);
   }
 
-  bool regClassHasGlobalPriority(const llvm::TargetRegisterClass *rc) {
-    return rc->GlobalPriority;
+  // This LLVM's TargetRegisterClass has no GlobalPriority field (the feature
+  // postdates it), so no class carries global priority.
+  bool regClassHasGlobalPriority(const llvm::TargetRegisterClass *) {
+    return false;
   }
 
   // `rc`'s target-assigned allocation priority (RC.AllocationPriority), one of
@@ -842,11 +848,13 @@ public:
         *mf, LIS->getInterval(llvm::Register(reg)));
   }
 
-  // Whether the instruction at `idx` is a full (non-subreg) copy
-  // (TII::isFullCopyInstr) -- tryInstructionSplit skips such uses.
+  // Whether the instruction at `idx` is a full (non-subreg) copy --
+  // tryInstructionSplit skips such uses. This LLVM has no
+  // TII::isFullCopyInstr; MachineInstr::isFullCopy is the equivalent (a plain
+  // COPY with no sub-register indices).
   bool isFullCopyInstrAt(llvm::SlotIndex idx) {
     llvm::MachineInstr *mi = LIS->getInstructionFromIndex(idx);
-    return mi && mf->getSubtarget().getInstrInfo()->isFullCopyInstr(*mi);
+    return mi && mi->isFullCopy();
   }
 
   // RAGreedy::readsLaneSubset: whether the instruction defining/using `li` at
@@ -908,13 +916,13 @@ public:
   std::pair<unsigned, std::vector<unsigned>> regAllocationHints(unsigned reg) {
     unsigned type = 0;
     std::vector<unsigned> ids;
-    const auto *hints =
+    // This LLVM returns a reference to the (kind, regs) pair (empty if the vreg
+    // has no hints), not a nullable pointer.
+    const auto &hints =
         mf->getRegInfo().getRegAllocationHints(llvm::Register(reg));
-    if (hints) {
-      type = hints->first;
-      for (llvm::Register h : hints->second)
-        ids.push_back(h.id());
-    }
+    type = hints.first;
+    for (llvm::Register h : hints.second)
+      ids.push_back(h.id());
     return {type, ids};
   }
 
@@ -1074,24 +1082,24 @@ public:
     au.setPreservesCFG();
     au.addRequired<llvm::AAResultsWrapperPass>();
     au.addPreserved<llvm::AAResultsWrapperPass>();
-    au.addRequired<llvm::LiveIntervalsWrapperPass>();
-    au.addPreserved<llvm::LiveIntervalsWrapperPass>();
-    au.addPreserved<llvm::SlotIndexesWrapperPass>();
-    au.addRequired<llvm::LiveDebugVariablesWrapperLegacy>();
-    au.addPreserved<llvm::LiveDebugVariablesWrapperLegacy>();
-    au.addRequired<llvm::LiveStacksWrapperLegacy>();
-    au.addPreserved<llvm::LiveStacksWrapperLegacy>();
+    au.addRequired<llvm::LiveIntervals>();
+    au.addPreserved<llvm::LiveIntervals>();
+    au.addPreserved<llvm::SlotIndexes>();
+    au.addRequired<llvm::LiveDebugVariables>();
+    au.addPreserved<llvm::LiveDebugVariables>();
+    au.addRequired<llvm::LiveStacks>();
+    au.addPreserved<llvm::LiveStacks>();
     au.addRequired<llvm::ProfileSummaryInfoWrapperPass>();
-    au.addRequired<llvm::MachineBlockFrequencyInfoWrapperPass>();
-    au.addRequired<llvm::MachineDominatorTreeWrapperPass>();
+    au.addRequired<llvm::MachineBlockFrequencyInfo>();
+    au.addRequired<llvm::MachineDominatorTree>();
     au.addRequiredID(llvm::MachineDominatorsID);
-    au.addRequired<llvm::MachineLoopInfoWrapperPass>();
-    au.addRequired<llvm::VirtRegMapWrapperLegacy>();
-    au.addPreserved<llvm::VirtRegMapWrapperLegacy>();
-    au.addRequired<llvm::LiveRegMatrixWrapperLegacy>();
-    au.addPreserved<llvm::LiveRegMatrixWrapperLegacy>();
-    au.addRequired<llvm::EdgeBundlesWrapperLegacy>();
-    au.addRequired<llvm::SpillPlacementWrapperLegacy>();
+    au.addRequired<llvm::MachineLoopInfo>();
+    au.addRequired<llvm::VirtRegMap>();
+    au.addPreserved<llvm::VirtRegMap>();
+    au.addRequired<llvm::LiveRegMatrix>();
+    au.addPreserved<llvm::LiveRegMatrix>();
+    au.addRequired<llvm::EdgeBundles>();
+    au.addRequired<llvm::SpillPlacement>();
     llvm::MachineFunctionPass::getAnalysisUsage(au);
   }
 
@@ -1101,26 +1109,21 @@ public:
   }
 
   bool runOnMachineFunction(llvm::MachineFunction &mfn) override {
-    llvm::VirtRegMap &vrm =
-        getAnalysis<llvm::VirtRegMapWrapperLegacy>().getVRM();
-    llvm::LiveIntervals &lis =
-        getAnalysis<llvm::LiveIntervalsWrapperPass>().getLIS();
-    llvm::LiveRegMatrix &mat =
-        getAnalysis<llvm::LiveRegMatrixWrapperLegacy>().getLRM();
+    // In this LLVM the classic analysis passes are themselves the analysis
+    // result (no WrapperPass/WrapperLegacy split), so getAnalysis<T>() returns
+    // the T& directly.
+    llvm::VirtRegMap &vrm = getAnalysis<llvm::VirtRegMap>();
+    llvm::LiveIntervals &lis = getAnalysis<llvm::LiveIntervals>();
+    llvm::LiveRegMatrix &mat = getAnalysis<llvm::LiveRegMatrix>();
     llvm::MachineBlockFrequencyInfo &mbfi =
-        getAnalysis<llvm::MachineBlockFrequencyInfoWrapperPass>().getMBFI();
-    llvm::LiveStacks &livestks =
-        getAnalysis<llvm::LiveStacksWrapperLegacy>().getLS();
-    llvm::MachineDominatorTree &mdt =
-        getAnalysis<llvm::MachineDominatorTreeWrapperPass>().getDomTree();
-    llvm::MachineLoopInfo &loops =
-        getAnalysis<llvm::MachineLoopInfoWrapperPass>().getLI();
-    llvm::ProfileSummaryInfo &psi =
-        getAnalysis<llvm::ProfileSummaryInfoWrapperPass>().getPSI();
-    llvm::EdgeBundles &edgeBundles =
-        getAnalysis<llvm::EdgeBundlesWrapperLegacy>().getEdgeBundles();
-    llvm::SpillPlacement &spillPlacer =
-        getAnalysis<llvm::SpillPlacementWrapperLegacy>().getResult();
+        getAnalysis<llvm::MachineBlockFrequencyInfo>();
+    llvm::LiveStacks &livestks = getAnalysis<llvm::LiveStacks>();
+    llvm::MachineDominatorTree &mdt = getAnalysis<llvm::MachineDominatorTree>();
+    llvm::MachineLoopInfo &loops = getAnalysis<llvm::MachineLoopInfo>();
+    llvm::EdgeBundles &edgeBundles = getAnalysis<llvm::EdgeBundles>();
+    llvm::SpillPlacement &spillPlacer = getAnalysis<llvm::SpillPlacement>();
+    llvm::AAResults &aa =
+        getAnalysis<llvm::AAResultsWrapperPass>().getAAResults();
 
     nb::gil_scoped_acquire gil;
     // LCOV_EXCL_START -- emit_object always sets the active class before
@@ -1129,13 +1132,16 @@ public:
       return false;
     // LCOV_EXCL_STOP
 
-    // Analyses shared by whichever allocator drives this function.
-    llvm::VirtRegAuxInfo vrai(mfn, lis, vrm, loops, mbfi, &psi);
+    // Analyses shared by whichever allocator drives this function. This LLVM's
+    // VirtRegAuxInfo takes no ProfileSummaryInfo, the inline spiller takes the
+    // owning pass rather than an analysis bundle, and SplitEditor takes an
+    // explicit AAResults.
+    llvm::VirtRegAuxInfo vrai(mfn, lis, vrm, loops, mbfi);
     vrai.calculateSpillWeightsAndHints();
     std::unique_ptr<llvm::Spiller> spiller(
-        llvm::createInlineSpiller({lis, livestks, mdt, mbfi}, mfn, vrm, vrai));
+        llvm::createInlineSpiller(*this, mfn, vrm, vrai));
     llvm::SplitAnalysis sa(vrm, lis, loops);
-    llvm::SplitEditor se(sa, lis, vrm, mdt, mbfi, vrai);
+    llvm::SplitEditor se(sa, aa, lis, vrm, mdt, mbfi, vrai);
 
     auto runNative = [&] {
       NativeRegAlloc fallback;
@@ -1206,19 +1212,19 @@ using namespace llvm;
 
 INITIALIZE_PASS_BEGIN(PyRegAllocDriver, "eudsl-python-regalloc",
                       "eudsl Python register allocator", false, false)
-INITIALIZE_PASS_DEPENDENCY(LiveDebugVariablesWrapperLegacy)
-INITIALIZE_PASS_DEPENDENCY(SlotIndexesWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(LiveIntervalsWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(LiveStacksWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(LiveDebugVariables)
+INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
+INITIALIZE_PASS_DEPENDENCY(LiveIntervals)
+INITIALIZE_PASS_DEPENDENCY(LiveStacks)
 INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(MachineDominatorTreeWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(MachineLoopInfoWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(VirtRegMapWrapperLegacy)
-INITIALIZE_PASS_DEPENDENCY(LiveRegMatrixWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
+INITIALIZE_PASS_DEPENDENCY(MachineLoopInfo)
+INITIALIZE_PASS_DEPENDENCY(VirtRegMap)
+INITIALIZE_PASS_DEPENDENCY(LiveRegMatrix)
 INITIALIZE_PASS_DEPENDENCY(ProfileSummaryInfoWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(MachineBlockFrequencyInfoWrapperPass)
-INITIALIZE_PASS_DEPENDENCY(EdgeBundlesWrapperLegacy)
-INITIALIZE_PASS_DEPENDENCY(SpillPlacementWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(MachineBlockFrequencyInfo)
+INITIALIZE_PASS_DEPENDENCY(EdgeBundles)
+INITIALIZE_PASS_DEPENDENCY(SpillPlacement)
 INITIALIZE_PASS_END(PyRegAllocDriver, "eudsl-python-regalloc",
                     "eudsl Python register allocator", false, false)
 
@@ -1677,8 +1683,15 @@ void populate_python_codegen(nb::module_ &m) {
   // cost model can weigh and combine frequencies directly.
   nb::class_<llvm::BlockFrequency>(m, "BlockFrequency")
       .def(nb::init<uint64_t>(), "freq"_a)
-      .def_static("max", &llvm::BlockFrequency::max,
-                  "The saturation value (maximum possible frequency).")
+      .def_static(
+          "max",
+          // This LLVM exposes the saturation value as the scalar
+          // getMaxFrequency(); wrap it back into a BlockFrequency.
+          [] {
+            return llvm::BlockFrequency(
+                llvm::BlockFrequency::getMaxFrequency());
+          },
+          "The saturation value (maximum possible frequency).")
       .def("get_frequency", &llvm::BlockFrequency::getFrequency,
            "The raw fixed-point frequency value.")
       .def(nb::self < nb::self, "other"_a)
@@ -1686,7 +1699,13 @@ void populate_python_codegen(nb::module_ &m) {
       .def(nb::self > nb::self, "other"_a)
       .def(nb::self >= nb::self, "other"_a)
       .def(nb::self == nb::self, "other"_a)
-      .def(nb::self != nb::self, "other"_a)
+      // This LLVM's BlockFrequency has no operator!=, so express it via ==.
+      .def(
+          "__ne__",
+          [](const llvm::BlockFrequency &a, const llvm::BlockFrequency &b) {
+            return a.getFrequency() != b.getFrequency();
+          },
+          "other"_a, nb::is_operator())
       .def(nb::self + nb::self, "other"_a)
       .def(nb::self - nb::self, "other"_a)
       .def("__repr__", [](const llvm::BlockFrequency &f) {
@@ -1920,8 +1939,8 @@ void populate_python_codegen(nb::module_ &m) {
       .def("distance", &llvm::SlotIndex::distance, "other"_a,
            "Number of slots between this and `other` (a raw distance in the "
            "slot-index space).")
-      .def("get_approx_instr_distance",
-           &llvm::SlotIndex::getApproxInstrDistance, "other"_a,
+      .def("get_approx_instr_distance", &llvm::SlotIndex::getInstrDistance,
+           "other"_a,
            "Approximate number of instructions between this and `other` (what "
            "RAGreedy's size/gap heuristics measure).")
       .def("__repr__", [](const llvm::SlotIndex &i) {
@@ -2059,9 +2078,26 @@ void populate_python_codegen(nb::module_ &m) {
             return s.countLiveBlocks(&li);
           },
           "li"_a, "Number of blocks where `li` is live (post-split check).")
-      .def("looks_like_loop_iv", &llvm::SplitAnalysis::looksLikeLoopIV,
-           "Whether the analyzed interval looks like a loop induction "
-           "variable.")
+      .def(
+          "looks_like_loop_iv",
+          // This LLVM's SplitAnalysis has no looksLikeLoopIV(); reproduce its
+          // check over the public use-block info and loop tree: exactly two use
+          // blocks, one of which is a loop latch where the value is live-in,
+          // live-out, and defined.
+          [](llvm::SplitAnalysis &s) {
+            llvm::ArrayRef<llvm::SplitAnalysis::BlockInfo> useBlocks =
+                s.getUseBlocks();
+            if (useBlocks.size() != 2)
+              return false;
+            return llvm::any_of(
+                useBlocks, [&s](const llvm::SplitAnalysis::BlockInfo &bi) {
+                  const llvm::MachineLoop *l = s.Loops.getLoopFor(bi.MBB);
+                  return bi.LiveIn && bi.LiveOut && bi.FirstDef && l &&
+                         l->isLoopLatch(bi.MBB);
+                });
+          },
+          "Whether the analyzed interval looks like a loop induction "
+          "variable.")
       .def(
           "is_original_endpoint",
           [](llvm::SplitAnalysis &s, llvm::SlotIndex idx) {
@@ -2112,9 +2148,14 @@ void populate_python_codegen(nb::module_ &m) {
              llvm::MachineInstr *replaceIndexMI, llvm::LaneBitmask usedLanes) {
             const llvm::TargetRegisterInfo *tri =
                 mbb->getParent()->getSubtarget().getRegisterInfo();
+            // This LLVM's rematerializeAt takes no sub-register index, index-
+            // replacement instruction, or used-lane mask; those parameters are
+            // accepted for API compatibility but have no effect here.
+            (void)subIdx;
+            (void)replaceIndexMI;
+            (void)usedLanes;
             return e.rematerializeAt(*mbb, before->getIterator(),
-                                     llvm::Register(destReg), rm, *tri, late,
-                                     subIdx, replaceIndexMI, usedLanes);
+                                     llvm::Register(destReg), rm, *tri, late);
           },
           "mbb"_a, "before"_a, "dest_reg"_a, "remat"_a, "late"_a = false,
           "sub_idx"_a = 0, "replace_index_mi"_a.none() = nullptr,

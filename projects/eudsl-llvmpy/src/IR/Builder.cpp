@@ -148,7 +148,6 @@ void populate_builder(nb::module_ &m) {
       EUDSL_UNARY("neg", CreateNeg)
       EUDSL_UNARY("fneg", CreateFNeg)
       EUDSL_UNARY("not_", CreateNot)
-      EUDSL_UNARY("ptrtoaddr", CreatePtrToAddr)
   // clang-format on
 #undef EUDSL_UNARY
   // Casts: (value, dest_type, name) -> value.
@@ -464,7 +463,7 @@ void populate_builder(nb::module_ &m) {
       .def_static(
           "at_block_terminator",
           [](llvm::BasicBlock *bb, nb::object builder) {
-            llvm::Instruction *term = bb->getTerminatorOrNull();
+            llvm::Instruction *term = bb->getTerminator();
             if (!term)
               throw nb::value_error("block has no terminator");
             return InsertPoint{RawIP(bb, term->getIterator()),

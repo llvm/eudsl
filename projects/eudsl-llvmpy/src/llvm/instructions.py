@@ -71,7 +71,6 @@ __all__ = [
     "inttoptr",
     "bitcast",
     "addrspacecast",
-    "ptrtoaddr",
     # memory / atomics
     "alloca",
     "load",
@@ -355,10 +354,6 @@ def bitcast(value, dest_type, name="", *, builder=None):
 
 def addrspacecast(value, dest_type, name="", *, builder=None):
     return _builder(builder).addrspacecast(value, dest_type, name)
-
-
-def ptrtoaddr(value, name="", *, builder=None):
-    return _builder(builder).ptrtoaddr(value, name)
 
 
 # --- Memory / atomics ---------------------------------------------------------

@@ -14,7 +14,7 @@ void populate_intrinsics(nb::module_ &m) {
   m.def(
       "lookup_intrinsic_id",
       [](const std::string &name) {
-        return (unsigned)llvm::Intrinsic::lookupIntrinsicID(name);
+        return (unsigned)llvm::Function::lookupIntrinsicID(name);
       },
       "name"_a);
   m.def(
@@ -27,7 +27,7 @@ void populate_intrinsics(nb::module_ &m) {
       "get_intrinsic_declaration",
       [](eudsl::Module &mod, unsigned id,
          std::vector<llvm::Type *> overloadTypes) -> llvm::Function * {
-        return llvm::Intrinsic::getOrInsertDeclaration(
+        return llvm::Intrinsic::getDeclaration(
             &mod.get(), (llvm::Intrinsic::ID)id, overloadTypes);
       },
       "module"_a, "id"_a, "overload_types"_a = std::vector<llvm::Type *>{},
