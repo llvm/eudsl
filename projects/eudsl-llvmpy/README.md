@@ -538,10 +538,16 @@ like any allocator.
   rectangle per live segment; the register variable's domain includes a private
   memory slot so a value in the memory region means spilled. Single register
   class only (the flat register axis cannot model aliasing).
+- `mir.RAILPDecomp` — SSA spill-then-color: a per-program-point (Appel-George)
+  ILP chooses a minimum-weight spill set so register pressure ≤ k at every
+  def/use point (a spilled value still needs a register at its uses), then colors
+  the survivors in dominance order. Single register class only.
 
-Whole-interval spill decisions ignore reload register pressure and are not
-reliably realizable, so `RAILPAssign` and `RAILPPacking` are scoped to
-register-fitting functions and hard-fail cleanly when a function needs spilling.
+`RAILPAssign` and `RAILPPacking` decide spills at whole-live-interval
+granularity, which ignores reload register pressure and is not reliably
+realizable; they are scoped to register-fitting functions and hard-fail cleanly
+when a function needs spilling. `RAILPDecomp`'s per-point model accounts for
+reloads and allocates functions that require spilling.
 
 ## Limitations
 

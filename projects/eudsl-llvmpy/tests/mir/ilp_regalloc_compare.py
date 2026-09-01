@@ -87,8 +87,13 @@ _ALLOCS = [
     ("basic", "cmp-basic", False),
     ("ilp-assign", "cmp-assign", True),
     ("ilp-packing", "cmp-pack", True),
+    ("ilp-decomp", "cmp-decomp", True),
 ]
-_ILP_CLASS = {"cmp-assign": "RAILPAssign", "cmp-pack": "RAILPPacking"}
+_ILP_CLASS = {
+    "cmp-assign": "RAILPAssign",
+    "cmp-pack": "RAILPPacking",
+    "cmp-decomp": "RAILPDecomp",
+}
 
 
 def _run_one(fixture, fname, name, regalloc, is_ilp):
@@ -131,6 +136,7 @@ def main():
     mir.register_regalloc("cmp-basic", mir.BasicRegAlloc)
     mir.register_regalloc("cmp-assign", mir.RAILPAssign)
     mir.register_regalloc("cmp-pack", mir.RAILPPacking)
+    mir.register_regalloc("cmp-decomp", mir.RAILPDecomp)
     for fixture_name, fixture in _FIXTURES:
         results = [
             _run_one(fixture, fixture_name, name, regalloc, is_ilp)
