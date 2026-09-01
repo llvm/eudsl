@@ -284,7 +284,7 @@ def test_valuetypeinfo_downcasts_many_opcodes_and_kinds():
         "mul": "BinaryOperator",
         "and": "BinaryOperator",
         "shl": "BinaryOperator",
-        "fadd": "FPBinaryOperator",
+        "fadd": "BinaryOperator",
         "tr": "TruncInst",
         "ze": "ZExtInst",
         "si": "SIToFPInst",
@@ -310,8 +310,8 @@ def test_valuetypeinfo_downcasts_many_opcodes_and_kinds():
                 if inst.name:
                     named_insts[inst.name] = type(inst).__name__
             terminator = bb.terminator
-            if type(terminator).__name__ == "UncondBrInst":
-                named_insts["__br__"] = "UncondBrInst"
+            if type(terminator).__name__ == "BranchInst":
+                named_insts["__br__"] = "BranchInst"
             elif type(terminator).__name__ == "ReturnInst":
                 named_insts["__ret__"] = "ReturnInst"
         for name, expected_cls in expected_per_name.items():
@@ -319,7 +319,7 @@ def test_valuetypeinfo_downcasts_many_opcodes_and_kinds():
             assert (
                 actual == expected_cls
             ), f"%{name}: expected {expected_cls}, got {actual}"
-        assert named_insts.get("__br__") == "UncondBrInst"
+        assert named_insts.get("__br__") == "BranchInst"
         assert named_insts.get("__ret__") == "ReturnInst"
         assert type(f).__name__ == "Function"
         assert type(f.arg(0)).__name__ == "Argument"
