@@ -330,6 +330,10 @@ struct EmittedOwned {
 struct RegAllocAssignments {
   std::map<unsigned, unsigned> assignments; // vreg id -> physreg id
   std::vector<unsigned> spilled;            // vreg ids with no physreg
+  // Number of COPY instructions whose source and destination end up in
+  // different physical registers, i.e. copies coalescing did NOT eliminate --
+  // a measure of allocation (coalescing) quality.
+  unsigned copiesRemaining = 0;
 };
 
 // Copies the live VirtRegMap into a result it OWNS. Requires VirtRegMap so the
@@ -370,6 +374,31 @@ public:
         result.assignments[vreg.id()] = vrm.getPhys(vreg).id();
       else if (vrm.getStackSlot(vreg) != llvm::VirtRegMap::NO_STACK_SLOT)
         result.spilled.push_back(vreg.id());
+    }
+    // Count copies coalescing left behind: a COPY survives (emits a real move)
+    // when its source and destination resolve to different physical registers.
+    // A physreg operand resolves to itself; a vreg to its VirtRegMap physreg.
+    // Resolution is by physical-register id only -- subregister indices are not
+    // considered, which is what this coalescing-quality heuristic wants.
+    auto physOf = [&](llvm::Register r) -> unsigned {
+      if (r.isPhysical())
+        return r.id();
+      if (vrm.hasPhys(r))
+        return vrm.getPhys(r).id();
+      // A spilled vreg's uses are rewritten to reload vregs before capture, so
+      // a physreg-less COPY operand does not arise; 0 (NoRegister) is a safe
+      // sentinel distinct from every real physreg id if one ever did.
+      return 0; // LCOV_EXCL_LINE
+    };
+    for (llvm::MachineBasicBlock &mbb : mfn) {
+      for (llvm::MachineInstr &mi : mbb) {
+        if (!mi.isCopy())
+          continue;
+        if (physOf(mi.getOperand(0).getReg()) !=
+            physOf(mi.getOperand(1).getReg())) {
+          ++result.copiesRemaining;
+        }
+      }
     }
     return false;
   }
@@ -1544,7 +1573,11 @@ void populate_mir(nb::module_ &m) {
       .def_ro("assignments", &RegAllocAssignments::assignments,
               "Map of virtual-register id -> assigned physical-register id.")
       .def_ro("spilled", &RegAllocAssignments::spilled,
-              "Virtual-register ids that were spilled (no physreg assigned).");
+              "Virtual-register ids that were spilled (no physreg assigned).")
+      .def_ro("copies_remaining", &RegAllocAssignments::copiesRemaining,
+              "Number of COPY instructions whose source and destination ended "
+              "up in different physical registers -- copies coalescing did not "
+              "eliminate (a coalescing-quality measure).");
 
   nb::class_<MirModule>(m, "MirModule")
       .def(
