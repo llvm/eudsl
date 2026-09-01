@@ -210,6 +210,32 @@ def test_packing_solve_standalone_multiclass_raises():
         )
 
 
+def test_assign_solve_standalone_spill():
+    # 3 mutually-interfering spillable vregs, 2 pregs -> exactly one spills.
+    sol = mir.RAILPAssign()._solve(_mk_problem())
+    assert sol.stats.status == "OPTIMAL"
+    assert len(sol.spilled) == 1
+    assert len(sol.assignment) == 2
+
+
+def test_assign_solve_standalone_infeasible():
+    # Unspillable vreg with no legal candidate -> infeasible, empty solution.
+    sol = mir.RAILPAssign()._solve(
+        _mk_problem(
+            vregs=[1],
+            intervals={1: [(0, 4)]},
+            order={1: []},
+            forbidden={1: set()},
+            weight={1: 5},
+            hints={1: 0},
+            num_regs={1: 2},
+            spillable={1: False},
+        )
+    )
+    assert sol.stats.status == "INFEASIBLE"
+    assert sol.assignment == {} and sol.spilled == set()
+
+
 def test_packing_solve_standalone_spill_and_degenerate_segment():
     # Three mutually-interfering vregs, 2 pregs -> exactly one spills; vreg 3
     # also carries a zero-length segment (6,6) that must be skipped so it does
@@ -445,6 +471,7 @@ def test_ilp_packing_high_pressure_hard_fails():
 
 
 @aarch64
+@aarch64
 def test_ilp_packing_mixed_class_hard_fails():
     # GPR32 and GPR64 both report 30 allocatable regs, so a count-based gate
     # would wrongly accept this mixed-class function and only fail later with a
@@ -461,10 +488,48 @@ def test_ilp_packing_mixed_class_hard_fails():
 
 
 @aarch64
+def test_ilp_assign_pressure_free_coalesces():
+    # Pressure-free: RAILPAssign fits everything in registers (no spill) and,
+    # since coalescing only breaks ties here, honors the copy hints. v0 (= COPY
+    # W0) and v2 (returned via COPY to W0) both hint W0 and do not interfere, so
+    # they share it; v0 and v1 are simultaneously live and must differ.
+    mir.register_regalloc("ilp-assign-t", mir.RAILPAssign)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_add(mmi)
+        result = mmi.regalloc_assignments(regalloc="ilp-assign-t")
+        asg = dict(result.assignments)
+        spilled = list(result.spilled)
+    v0, v1, v2 = sorted(asg)
+    assert spilled == []
+    assert asg[v0] != asg[v1]  # simultaneously live -> distinct registers
+    assert asg[v0] == asg[v2]  # both coalesced onto their W0 copy hint
+    assert_no_leaks()
+
+
+@aarch64
+def test_ilp_assign_high_pressure_hard_fails():
+    # Whole-interval spill decisions ignore reload pressure and are not reliably
+    # realizable, so RAILPAssign refuses to spill: it hard-fails cleanly (never
+    # crashes) when a function needs spilling.
+    mir.register_regalloc("ilp-assign-hp", mir.RAILPAssign)
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(mod, tm, "hp")
+        _build_high_pressure(mmi)
+        with pytest.raises(RuntimeError, match="register-fitting"):
+            mmi.regalloc_assignments(regalloc="ilp-assign-hp")
+
+
+@aarch64
 def test_comparison_low_pressure_packing_valid_and_optimal():
     mir.register_regalloc("cmp-basic", mir.BasicRegAlloc)
+    mir.register_regalloc("cmp-assign", mir.RAILPAssign)
     mir.register_regalloc("cmp-pack", mir.RAILPPacking)
-    for alloc in ["greedy", "cmp-basic", "cmp-pack"]:
+    for alloc in ["greedy", "cmp-basic", "cmp-assign", "cmp-pack"]:
         with ir.Context() as ctx:
             mod = ir.Module("m", ctx)
             tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -476,10 +541,11 @@ def test_comparison_low_pressure_packing_valid_and_optimal():
         assert spilled == [], f"{alloc} spilled on a pressure-free function"
         v0, v1, _ = sorted(assignments)
         assert assignments[v0] != assignments[v1], f"{alloc} gave a bad coloring"
-    # RAILPPacking proves optimality (gap 0) on this trivial function.
-    stats = RAILPBase.last_stats["RAILPPacking"]
-    assert stats.status in ("OPTIMAL", "FEASIBLE")
-    assert stats.gap == 0.0
+    # The ILP allocators prove optimality (gap 0) on this trivial function.
+    for cls in ("RAILPAssign", "RAILPPacking"):
+        stats = RAILPBase.last_stats[cls]
+        assert stats.status in ("OPTIMAL", "FEASIBLE")
+        assert stats.gap == 0.0
     assert_no_leaks()
 
 

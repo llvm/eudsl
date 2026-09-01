@@ -31,6 +31,7 @@ from . import mir_greedy as _mir_greedy  # noqa: F401
 # Attaches the ILP register allocators onto the mir submodule. The ortools
 # dependency is imported lazily, so importing llvm never requires it.
 from . import mir_ilp_base as _mir_ilp_base  # noqa: F401
+from . import mir_ilp_assign as _mir_ilp_assign  # noqa: F401
 from . import mir_ilp_packing as _mir_ilp_packing  # noqa: F401
 
 from .eudslllvm_ext import enable_debug  # noqa: F401

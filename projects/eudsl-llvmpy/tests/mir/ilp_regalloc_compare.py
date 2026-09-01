@@ -85,9 +85,10 @@ _FIXTURES = [("low_pressure", _low_pressure), ("high_pressure", _high_pressure)]
 _ALLOCS = [
     ("greedy", "greedy", False),
     ("basic", "cmp-basic", False),
+    ("ilp-assign", "cmp-assign", True),
     ("ilp-packing", "cmp-pack", True),
 ]
-_ILP_CLASS = {"cmp-pack": "RAILPPacking"}
+_ILP_CLASS = {"cmp-assign": "RAILPAssign", "cmp-pack": "RAILPPacking"}
 
 
 def _run_one(fixture, fname, name, regalloc, is_ilp):
@@ -128,6 +129,7 @@ def main():
         print("AArch64 backend not linked; nothing to compare.")
         return
     mir.register_regalloc("cmp-basic", mir.BasicRegAlloc)
+    mir.register_regalloc("cmp-assign", mir.RAILPAssign)
     mir.register_regalloc("cmp-pack", mir.RAILPPacking)
     for fixture_name, fixture in _FIXTURES:
         results = [
