@@ -32,16 +32,26 @@ std::string emit(llvm::TargetMachine &self, eudsl::Module &mod,
 }
 } // namespace
 
+namespace {
+// The triple to use when the caller does not supply one. Prefer the compiler's
+// configured default, but this LLVM may have been built without a default
+// target triple set (LLVM_DEFAULT_TARGET_TRIPLE empty), in which case fall back
+// to the process triple, which is always derived from the host at compile time.
+std::string defaultTriple() {
+  std::string t = llvm::sys::getDefaultTargetTriple();
+  return t.empty() ? llvm::sys::getProcessTriple() : t;
+}
+} // namespace
+
 void populate_target(nb::module_ &m) {
-  m.def("host_triple", []() { return llvm::sys::getDefaultTargetTriple(); });
+  m.def("host_triple", []() { return defaultTriple(); });
 
   nb::class_<llvm::TargetMachine>(m, "TargetMachine")
       .def(nb::new_([](std::optional<std::string> triple,
                        std::optional<std::string> cpu,
                        std::optional<std::vector<std::string>> features)
                         -> llvm::TargetMachine * {
-             std::string tripleStr =
-                 triple.value_or(llvm::sys::getDefaultTargetTriple());
+             std::string tripleStr = triple.value_or(defaultTriple());
              std::string cpuStr = cpu.value_or("");
              std::string featStr;
              if (features) {
