@@ -430,7 +430,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           .def_static("classof", &llvm::ListInit::classof, "i"_a)
           .def_static("get", &llvm::ListInit::get, "range"_a, "elt_ty"_a,
                       nb::rv_policy::reference_internal)
-          .def("profile", &llvm::ListInit::Profile, "id"_a)
           .def("get_element", &llvm::ListInit::getElement, "i"_a,
                nb::rv_policy::reference_internal)
           .def("get_element_type", &llvm::ListInit::getElementType,
@@ -493,7 +492,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
   unaryOpInit.def_static("classof", &llvm::UnOpInit::classof, "i"_a)
       .def_static("get", &llvm::UnOpInit::get, "opc"_a, "lhs"_a, "type"_a,
                   nb::rv_policy::reference_internal)
-      .def("profile", &llvm::UnOpInit::Profile, "id"_a)
       .def(
           "get_operand",
           [](llvm::UnOpInit &self) -> const llvm::Init * {
@@ -552,7 +550,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
                   "rhs"_a, nb::rv_policy::reference_internal)
       .def_static("get_list_concat", &llvm::BinOpInit::getListConcat, "lhs"_a,
                   "rhs"_a, nb::rv_policy::reference_internal)
-      .def("profile", &llvm::BinOpInit::Profile, "id"_a)
       .def("get_opcode", &llvm::BinOpInit::getOpcode)
       .def("get_lhs", &llvm::BinOpInit::getLHS,
            nb::rv_policy::reference_internal)
@@ -584,7 +581,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
   ternaryOpInit.def_static("classof", &llvm::TernOpInit::classof, "i"_a)
       .def_static("get", &llvm::TernOpInit::get, "opc"_a, "lhs"_a, "mhs"_a,
                   "rhs"_a, "type"_a, nb::rv_policy::reference_internal)
-      .def("profile", &llvm::TernOpInit::Profile, "id"_a)
       .def("get_opcode", &llvm::TernOpInit::getOpcode)
       .def("get_lhs", &llvm::TernOpInit::getLHS,
            nb::rv_policy::reference_internal)
