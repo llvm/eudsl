@@ -174,7 +174,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
             return llvm::RecordRecTy::get(Class);
           },
           "class"_a, nb::rv_policy::reference_internal)
-      .def("profile", &llvm::RecordRecTy::Profile, "id"_a)
       .def("get_classes",
            eudsl::coerceReturn<std::vector<const llvm::Record *>>(
                &llvm::RecordRecTy::getClasses, nb::const_),
@@ -320,7 +319,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            nb::rv_policy::reference_internal)
       .def("clone_with_value", &llvm::ArgumentInit::cloneWithValue, "value"_a,
            nb::rv_policy::reference_internal)
-      .def("profile", &llvm::ArgumentInit::Profile, "id"_a)
       .def("resolve_references", &llvm::ArgumentInit::resolveReferences, "r"_a,
            nb::rv_policy::reference_internal)
       .def("get_as_string", &llvm::ArgumentInit::getAsString)
@@ -352,7 +350,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_static("classof", &llvm::BitsInit::classof, "i"_a)
       .def_static("get", &llvm::BitsInit::get, "rk"_a, "range"_a,
                   nb::rv_policy::reference_internal)
-      .def("profile", &llvm::BitsInit::Profile, "id"_a)
       .def("get_num_bits", &llvm::BitsInit::getNumBits)
       .def("convert_initializer_to", &llvm::BitsInit::convertInitializerTo,
            "ty"_a, nb::rv_policy::reference_internal)
@@ -600,7 +597,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_static("classof", &llvm::CondOpInit::classof, "i"_a)
       .def_static("get", &llvm::CondOpInit::get, "c"_a, "v"_a, "type"_a,
                   nb::rv_policy::reference_internal)
-      .def("profile", &llvm::CondOpInit::Profile, "id"_a)
       .def("get_val_type", &llvm::CondOpInit::getValType,
            nb::rv_policy::reference_internal)
       .def("get_num_conds", &llvm::CondOpInit::getNumConds)
@@ -641,7 +637,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_static("classof", &llvm::FoldOpInit::classof, "i"_a)
       .def_static("get", &llvm::FoldOpInit::get, "start"_a, "list"_a, "a"_a,
                   "b"_a, "expr"_a, "type"_a, nb::rv_policy::reference_internal)
-      .def("profile", &llvm::FoldOpInit::Profile, "id"_a)
       .def("fold", &llvm::FoldOpInit::Fold, "cur_rec"_a,
            nb::rv_policy::reference_internal)
       .def("is_complete", &llvm::FoldOpInit::isComplete)
@@ -656,7 +651,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_static("classof", &llvm::IsAOpInit::classof, "i"_a)
       .def_static("get", &llvm::IsAOpInit::get, "check_type"_a, "expr"_a,
                   nb::rv_policy::reference_internal)
-      .def("profile", &llvm::IsAOpInit::Profile, "id"_a)
       .def("fold", &llvm::IsAOpInit::Fold, nb::rv_policy::reference_internal)
       .def("is_complete", &llvm::IsAOpInit::isComplete)
       .def("resolve_references", &llvm::IsAOpInit::resolveReferences, "r"_a,
@@ -670,7 +664,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_static("classof", &llvm::ExistsOpInit::classof, "i"_a)
       .def_static("get", &llvm::ExistsOpInit::get, "check_type"_a, "expr"_a,
                   nb::rv_policy::reference_internal)
-      .def("profile", &llvm::ExistsOpInit::Profile, "id"_a)
       .def("fold", &llvm::ExistsOpInit::Fold, "cur_rec"_a, "is_final"_a,
            nb::rv_policy::reference_internal)
       .def("is_complete", &llvm::ExistsOpInit::isComplete)
@@ -735,7 +728,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def_static("classof", &llvm::VarDefInit::classof, "i"_a)
       .def_static("get", &llvm::VarDefInit::get, "loc"_a, "class"_a, "args"_a,
                   nb::rv_policy::reference_internal)
-      .def("profile", &llvm::VarDefInit::Profile, "id"_a)
       .def("resolve_references", &llvm::VarDefInit::resolveReferences, "r"_a,
            nb::rv_policy::reference_internal)
       .def("fold", &llvm::VarDefInit::Fold, nb::rv_policy::reference_internal)
@@ -792,7 +784,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("__str__", &llvm::FieldInit::getAsUnquotedString);
 
   nb::class_<llvm::DagInit, llvm::TypedInit>(m, "DagInit")
-      .def("profile", &llvm::DagInit::Profile, "id"_a)
       .def("get_operator", &llvm::DagInit::getOperator,
            nb::rv_policy::reference_internal)
       .def("get_operator_as_def", &llvm::DagInit::getOperatorAsDef, "loc"_a,
