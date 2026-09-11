@@ -6072,6 +6072,25 @@ class Pipeline(Pipeline):
         self.add_pass("tosa-experimental-input-shape", **{"args": args})
         return self
 
+    def tosa_gather_scatter_hardening(self):
+        """Clamp TOSA gather and scatter indices to valid bounds
+
+        Bounds the indices used by each gather and scatter with TOSA minimum and
+        maximum operations so that all accesses are in bounds. This improves
+        security in the context of untrusted TOSA graph by preventing memory access
+        outside values (gather) and values_out (scatter) tensor.
+
+        Each operation is rewritten independently; a subsequent CSE pass is
+        required to share bounding ops between gather/scatter with the same input
+        and bounds. Other users continue to use the original indices.
+
+        Currently the pass only supports static index dimensions and fails
+        otherwise.
+
+        """
+        self.add_pass("tosa-gather-scatter-hardening")
+        return self
+
     def tosa_infer_shapes(
         self,
         fold_shape_expressions: bool = None,
@@ -6120,6 +6139,39 @@ class Pipeline(Pipeline):
 
         """
         self.add_pass("tosa-make-broadcastable")
+        return self
+
+    def tosa_narrow_f32_to_f16(
+        self,
+        aggressive_rewrite: bool = None,
+        convert_function_boundaries: bool = None,
+        convert_accumulator_type: bool = None,
+    ):
+        """Narrow F32 TOSA operations to F16
+
+        This pass destructively narrows TOSA operations with 32-bit floating-point
+        tensor types to 16-bit floating-point tensor types. It can reduce model
+        size and improve execution time on backends with native F16 support.
+
+        This conversion is not correctness-preserving and does not perform range
+        analysis on graph inputs. Before applying this pass, users must verify that
+        all possible input values can be represented with the required range and
+        precision in F16. Otherwise, the conversion may reduce accuracy or produce
+        incorrect results.
+
+        Args:
+            aggressive_rewrite: If enabled, all TOSA operations are rewritten, regardless of whether the narrowing is safe. This option may lead to data loss if not used carefully.
+            convert_function_boundaries: If enabled, the pass will convert function I/O types as well. Otherwise casts will be inserted at the I/O boundaries.
+            convert_accumulator_type: If enabled, F32 accumulator type attributes are narrowed to F16. This conversion may lose precision and is performed without range analysis.
+        """
+        self.add_pass(
+            "tosa-narrow-f32-to-f16",
+            **{
+                "aggressive-rewrite": aggressive_rewrite,
+                "convert-function-boundaries": convert_function_boundaries,
+                "convert-accumulator-type": convert_accumulator_type,
+            }
+        )
         return self
 
     def tosa_narrow_f64_to_f32(
