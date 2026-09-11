@@ -62,5 +62,6 @@ cmake --build "${MLIR_NATIVE_TOOLS_BUILD_DIR}" --target \
   install-llvm-config \
   install-mlir-tblgen \
   install-mlir-linalg-ods-yaml-gen \
-  install-mlir-pdll
+  install-mlir-pdll \
+  install-mlir-src-sharder
 
