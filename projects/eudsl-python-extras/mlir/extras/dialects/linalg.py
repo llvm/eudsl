@@ -15,8 +15,21 @@ from ...dialects.linalg import *
 from ...extras import types as T
 
 
+def _indexing_maps(num_dims, *operand_dims):
+    # Build one AffineMapAttr per operand, each selecting the given result
+    # dimensions from a `num_dims`-dimensional iteration space. Used to express
+    # the transposed matmul variants (removed upstream as dedicated named ops in
+    # llvm/llvm-project#220916) via the generic linalg.matmul / batch_matmul ops.
+    return [
+        ir.AffineMapAttr.get(
+            ir.AffineMap.get(num_dims, 0, [ir.AffineDimExpr.get(d) for d in dims])
+        )
+        for dims in operand_dims
+    ]
+
+
 def abs(I, O, *, loc=None, ip=None):
-    return linalg.abs(I, loc=loc, ip=ip, outs=[O])
+    return linalg.elementwise(I, outs=[O], kind=linalg.ElementwiseKind.abs)
 
 
 def add(lhs, rhs, O, *, loc=None, ip=None):
@@ -33,11 +46,23 @@ def batch_matmul(A, B, C, *, loc=None, ip=None):
 
 
 def batch_matmul_transpose_a(A, B, C, *, loc=None, ip=None):
-    return linalg.batch_matmul_transpose_a(A, B, loc=loc, ip=ip, outs=[C])
+    # A is transposed: [batch, k, m] instead of [batch, m, k].
+    return linalg.batch_matmul(
+        A,
+        B,
+        outs=[C],
+        indexing_maps=_indexing_maps(4, [0, 3, 1], [0, 3, 2], [0, 1, 2]),
+    )
 
 
 def batch_matmul_transpose_b(A, B, C, *, loc=None, ip=None):
-    return linalg.batch_matmul_transpose_b(A, B, loc=loc, ip=ip, outs=[C])
+    # B is transposed: [batch, n, k] instead of [batch, k, n].
+    return linalg.batch_matmul(
+        A,
+        B,
+        outs=[C],
+        indexing_maps=_indexing_maps(4, [0, 1, 3], [0, 2, 3], [0, 1, 2]),
+    )
 
 
 def batch_matvec(A, B, C, *, loc=None, ip=None):
@@ -57,7 +82,7 @@ def batch_vecmat(A, B, C, *, loc=None, ip=None):
 
 
 def ceil(I, O, *, loc=None, ip=None):
-    return linalg.ceil(I, loc=loc, ip=ip, outs=[O])
+    return linalg.elementwise(I, outs=[O], kind=linalg.ElementwiseKind.ceil)
 
 
 def conv_1d(I, K, O, *, loc=None, ip=None):
@@ -169,27 +194,37 @@ def depthwise_conv_3d_ndhwc_dhwcm(I, K, O, *, loc=None, ip=None):
 
 
 def div(lhs, rhs, O, *, loc=None, ip=None):
-    return linalg.div(lhs, rhs, loc=loc, ip=ip, outs=[O])
+    return linalg.elementwise(lhs, rhs, outs=[O], kind=linalg.ElementwiseKind.div)
 
 
 def div_unsigned(lhs, rhs, O, *, loc=None, ip=None):
-    return linalg.div_unsigned(lhs, rhs, loc=loc, ip=ip, outs=[O])
+    return linalg.elementwise(
+        lhs, rhs, outs=[O], kind=linalg.ElementwiseKind.div_unsigned
+    )
 
 
 def dot(A, B, C, *, loc=None, ip=None):
     return linalg.dot(A, B, loc=loc, ip=ip, outs=[C])
 
 
-def elemwise_binary(lhs, rhs, O, *, loc=None, ip=None):
-    return linalg.elemwise_binary(lhs, rhs, loc=loc, ip=ip, outs=[O])
+def elemwise_binary(lhs, rhs, O, *, fun=None, loc=None, ip=None):
+    # linalg.elemwise_binary was removed; linalg.elementwise (with a binary
+    # `kind`) is the replacement. Default to `add` to match the old op default.
+    if fun is None:
+        fun = linalg.ElementwiseKind.add
+    return linalg.elementwise(lhs, rhs, outs=[O], kind=fun)
 
 
-def elemwise_unary(I, O, *, loc=None, ip=None):
-    return linalg.elemwise_unary(I, loc=loc, ip=ip, outs=[O])
+def elemwise_unary(I, O, *, fun=None, loc=None, ip=None):
+    # linalg.elemwise_unary was removed; linalg.elementwise (with a unary
+    # `kind`) is the replacement. Default to `exp` to match the old op default.
+    if fun is None:
+        fun = linalg.ElementwiseKind.exp
+    return linalg.elementwise(I, outs=[O], kind=fun)
 
 
 def exp(I, O, *, loc=None, ip=None):
-    return linalg.exp(I, loc=loc, ip=ip, outs=[O])
+    return linalg.elementwise(I, outs=[O], kind=linalg.ElementwiseKind.exp)
 
 
 def fill(v, O, *, loc=None, ip=None):
@@ -210,11 +245,11 @@ def fill_rng_2d(min, max, seed, O, *, loc=None, ip=None):
 
 
 def floor(I, O, *, loc=None, ip=None):
-    return linalg.floor(I, loc=loc, ip=ip, outs=[O])
+    return linalg.elementwise(I, outs=[O], kind=linalg.ElementwiseKind.floor)
 
 
 def log(I, O, *, loc=None, ip=None):
-    return linalg.log(I, loc=loc, ip=ip, outs=[O])
+    return linalg.elementwise(I, outs=[O], kind=linalg.ElementwiseKind.log)
 
 
 @linalg.linalg_structured_op
@@ -269,15 +304,21 @@ def matmul(A, B, C, *, loc=None, ip=None):
 
 
 def matmul_transpose_a(A, B, C, *, loc=None, ip=None):
-    return linalg.matmul_transpose_a(A, B, loc=loc, ip=ip, outs=[C])
+    # A is transposed: [k, m] instead of [m, k].
+    return linalg.matmul(
+        A, B, outs=[C], indexing_maps=_indexing_maps(3, [2, 0], [2, 1], [0, 1])
+    )
 
 
 def matmul_transpose_b(A, B, C, *, loc=None, ip=None):
-    return linalg.matmul_transpose_b(A, B, loc=loc, ip=ip, outs=[C])
+    # B is transposed: [n, k] instead of [k, n].
+    return linalg.matmul(
+        A, B, outs=[C], indexing_maps=_indexing_maps(3, [0, 2], [1, 2], [0, 1])
+    )
 
 
 def matmul_unsigned(A, B, C, *, loc=None, ip=None):
-    return linalg.matmul_unsigned(A, B, loc=loc, ip=ip, outs=[C])
+    return linalg.matmul(A, B, outs=[C], cast=linalg.TypeFn.cast_unsigned)
 
 
 def matvec(A, y, x, *, loc=None, ip=None):
@@ -285,7 +326,9 @@ def matvec(A, y, x, *, loc=None, ip=None):
 
 
 def max(lhs, rhs, O, *, loc=None, ip=None):
-    return linalg.max(lhs, rhs, loc=loc, ip=ip, outs=[O])
+    return linalg.elementwise(
+        lhs, rhs, outs=[O], kind=linalg.ElementwiseKind.max_signed
+    )
 
 
 def mmt4d(lhs, rhs, accum, *, loc=None, ip=None):
@@ -293,11 +336,11 @@ def mmt4d(lhs, rhs, accum, *, loc=None, ip=None):
 
 
 def mul(lhs, rhs, O, *, loc=None, ip=None):
-    return linalg.mul(lhs, rhs, loc=loc, ip=ip, outs=[O])
+    return linalg.elementwise(lhs, rhs, outs=[O], kind=linalg.ElementwiseKind.mul)
 
 
 def negf(I, O, *, loc=None, ip=None):
-    return linalg.negf(I, loc=loc, ip=ip, outs=[O])
+    return linalg.elementwise(I, outs=[O], kind=linalg.ElementwiseKind.negf)
 
 
 def pooling_nchw_max(I, K, O, *, strides, dilations, loc=None, ip=None):
@@ -411,7 +454,7 @@ def quantized_matmul(A, B, C, *, loc=None, ip=None):
 
 
 def sub(lhs, rhs, O, *, loc=None, ip=None):
-    return linalg.sub(lhs, rhs, loc=loc, ip=ip, outs=[O])
+    return linalg.elementwise(lhs, rhs, outs=[O], kind=linalg.ElementwiseKind.sub)
 
 
 def vecmat(y, A, x, *, loc=None, ip=None):
