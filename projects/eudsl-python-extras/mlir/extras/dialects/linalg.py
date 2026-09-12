@@ -16,14 +16,12 @@ from ...extras import types as T
 
 
 def _indexing_maps(num_dims, *operand_dims):
-    # Build one AffineMapAttr per operand, each selecting the given result
+    # Build one AffineMap per operand, each selecting the given result
     # dimensions from a `num_dims`-dimensional iteration space. Used to express
     # the transposed matmul variants (removed upstream as dedicated named ops in
     # llvm/llvm-project#220916) via the generic linalg.matmul / batch_matmul ops.
     return [
-        ir.AffineMapAttr.get(
-            ir.AffineMap.get(num_dims, 0, [ir.AffineDimExpr.get(d) for d in dims])
-        )
+        ir.AffineMap.get(num_dims, 0, [ir.AffineDimExpr.get(d) for d in dims])
         for dims in operand_dims
     ]
 
