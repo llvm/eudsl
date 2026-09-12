@@ -84,8 +84,8 @@ def test_basic_unroll(ctx: MLIRContext):
       module attributes {transform.with_named_sequence} {
         transform.named_sequence @__transform_main(%arg0: !transform.any_op) {
           %0 = transform.structured.match ops{["arith.addi"]} in %arg0 : (!transform.any_op) -> !transform.any_op
-          %1 = transform.get_parent_op %0 {op_name = "scf.for"} : (!transform.any_op) -> !pdl.operation
-          transform.loop.unroll %1 {factor = 4 : i64} : !pdl.operation
+          %1 = transform.get_parent_op %0 <op_name = "scf.for"> : (!transform.any_op) -> !pdl.operation
+          transform.loop.unroll %1 factor = 4 : !pdl.operation
           transform.yield 
         }
       }
@@ -855,9 +855,9 @@ def test_matmul_schedule(ctx: MLIRContext):
               transform.include @cleanup failures(propagate) (%arg0) : (!transform.any_op) -> ()
               %4 = transform.get_producer_of_operand %packed_op[0] : (!transform.any_op) -> !transform.any_op
               %5 = transform.get_producer_of_operand %packed_op[2] : (!transform.any_op) -> !transform.any_op
-              %allocated_buffer, %new_ops = transform.structured.bufferize_to_allocation %pack_op {bufferize_destination_only, emit_dealloc, memory_space = "shared"} : !transform.any_op
-              %allocated_buffer_0, %new_ops_1 = transform.structured.bufferize_to_allocation %4 {bufferize_destination_only, emit_dealloc, memory_space = "shared"} : !transform.any_op
-              %allocated_buffer_2, %new_ops_3 = transform.structured.bufferize_to_allocation %5 {bufferize_destination_only, emit_dealloc, memory_space = "shared"} : !transform.any_op
+              %allocated_buffer, %new_ops = transform.structured.bufferize_to_allocation %pack_op <memory_space = "shared", bufferize_destination_only, emit_dealloc> : !transform.any_op
+              %allocated_buffer_0, %new_ops_1 = transform.structured.bufferize_to_allocation %4 <memory_space = "shared", bufferize_destination_only, emit_dealloc> : !transform.any_op
+              %allocated_buffer_2, %new_ops_3 = transform.structured.bufferize_to_allocation %5 <memory_space = "shared", bufferize_destination_only, emit_dealloc> : !transform.any_op
               %tiled_op_4, %forall_op_5 = transform.structured.tile_using_forall %1#1 tile_sizes [1, 1](mapping = [#gpu.thread<y>, #gpu.thread<x>]) : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
               %6 = transform.get_producer_of_operand %forall_op_5[0] : (!transform.any_op) -> !transform.any_op
               %fused_op_6, %new_containing_op_7 = transform.structured.fuse_into_containing_op %6 into %forall_op_5 : (!transform.any_op, !transform.any_op) -> (!transform.any_op, !transform.any_op)
@@ -869,10 +869,10 @@ def test_matmul_schedule(ctx: MLIRContext):
               %10 = transform.get_consumers_of_result %packed_op_11[0] : (!transform.any_op) -> !transform.any_op
               %packed_op_14, %pack_op_15, %un_pack_op_16 = transform.structured.pack_transpose %10 with_compute_op(%packed_op_11) outer_perm = [0, 1, 3, 2] : (!transform.any_op, !transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
               transform.include @cleanup failures(propagate) (%arg0) : (!transform.any_op) -> ()
-              %allocated_buffer_17, %new_ops_18 = transform.structured.bufferize_to_allocation %pack_op_9 {bufferize_destination_only, memory_space = "local"} : !transform.any_op
-              %allocated_buffer_19, %new_ops_20 = transform.structured.bufferize_to_allocation %pack_op_12 {bufferize_destination_only, memory_space = "local"} : !transform.any_op
+              %allocated_buffer_17, %new_ops_18 = transform.structured.bufferize_to_allocation %pack_op_9 <memory_space = "local", bufferize_destination_only> : !transform.any_op
+              %allocated_buffer_19, %new_ops_20 = transform.structured.bufferize_to_allocation %pack_op_12 <memory_space = "local", bufferize_destination_only> : !transform.any_op
               %11 = transform.get_producer_of_operand %packed_op_14[2] : (!transform.any_op) -> !transform.any_op
-              %allocated_buffer_21, %new_ops_22 = transform.structured.bufferize_to_allocation %11 {bufferize_destination_only, memory_space = "local"} : !transform.any_op
+              %allocated_buffer_21, %new_ops_22 = transform.structured.bufferize_to_allocation %11 <memory_space = "local", bufferize_destination_only> : !transform.any_op
               %tiled_linalg_op, %loops = transform.structured.tile_using_for %packed_op_14 tile_sizes [0, 0, 1] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
               transform.include @cleanup failures(propagate) (%arg0) : (!transform.any_op) -> ()
               transform.yield 
