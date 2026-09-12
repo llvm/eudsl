@@ -778,7 +778,7 @@ def test_linalg(ctx: MLIRContext, backend: LLVMJITBackend):
     # CHECK:        %[[VAL_13:.*]] = memref.subview %[[VAL_0]]{{\[}}%[[VAL_9]], %[[VAL_11]]] [32, 32] [1, 1] : memref<256x256xf32> to memref<32x32xf32, strided<[256, 1], offset: ?>>
     # CHECK:        %[[VAL_14:.*]] = memref.subview %[[VAL_1]]{{\[}}%[[VAL_9]], %[[VAL_11]]] [32, 32] [1, 1] : memref<256x256xf32> to memref<32x32xf32, strided<[256, 1], offset: ?>>
     # CHECK:        %[[VAL_15:.*]] = memref.subview %[[VAL_2]]{{\[}}%[[VAL_9]], %[[VAL_11]]] [32, 32] [1, 1] : memref<256x256xf32> to memref<32x32xf32, strided<[256, 1], offset: ?>>
-    # CHECK:        linalg.add ins(%[[VAL_13]], %[[VAL_14]] : memref<32x32xf32, strided<[256, 1], offset: ?>>, memref<32x32xf32, strided<[256, 1], offset: ?>>) outs(%[[VAL_15]] : memref<32x32xf32, strided<[256, 1], offset: ?>>)
+    # CHECK:        linalg.elementwise <add> ins(%[[VAL_13]], %[[VAL_14]] : memref<32x32xf32, strided<[256, 1], offset: ?>>, memref<32x32xf32, strided<[256, 1], offset: ?>>) outs(%[[VAL_15]] : memref<32x32xf32, strided<[256, 1], offset: ?>>)
     # CHECK:      }
     # CHECK:    }
     # CHECK:    return
@@ -822,7 +822,7 @@ def test_linalg_tensor(ctx: MLIRContext, backend: LLVMJITBackend):
     tenfoo.emit()
 
     # CHECK:  func.func @tenfoo(%[[VAL_0:.*]]: tensor<256x256xf32>, %[[VAL_1:.*]]: tensor<256x256xf32>, %[[VAL_2:.*]]: tensor<256x256xf32>) {
-    # CHECK:    %[[VAL_3:.*]] = linalg.add ins(%[[VAL_0]], %[[VAL_1]] : tensor<256x256xf32>, tensor<256x256xf32>) outs(%[[VAL_2]] : tensor<256x256xf32>) -> tensor<256x256xf32>
+    # CHECK:    %[[VAL_3:.*]] = linalg.elementwise <add> ins(%[[VAL_0]], %[[VAL_1]] : tensor<256x256xf32>, tensor<256x256xf32>) outs(%[[VAL_2]] : tensor<256x256xf32>) -> tensor<256x256xf32>
     # CHECK:    return
     # CHECK:  }
 

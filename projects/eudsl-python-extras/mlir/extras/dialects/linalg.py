@@ -20,7 +20,12 @@ def abs(I, O, *, loc=None, ip=None):
 
 
 def add(lhs, rhs, O, *, loc=None, ip=None):
-    return linalg.add(lhs, rhs, loc=loc, ip=ip, outs=[O])
+    # The linalg named ops (linalg.add etc.) were removed upstream
+    # (llvm/llvm-project#220916, #220912, #220905) in favor of the generic
+    # linalg.elementwise op with a `kind` attribute.
+    return linalg.elementwise(
+        lhs, rhs, outs=[O], kind=linalg.ElementwiseKind.add
+    )
 
 
 def batch_matmul(A, B, C, *, loc=None, ip=None):
