@@ -118,10 +118,8 @@ def test_elemwise_generic(ctx: MLIRContext):
     y = memref.alloc((4, 4), T.f32())
     z = memref.alloc((4, 4), T.f32())
 
-    # default kinds preserve the old op defaults (unary -> exp, binary -> add)
-    linalg.elemwise_unary(x, y)
-    linalg.elemwise_binary(x, y, z)
-    # explicit kinds
+    linalg.elemwise_unary(x, y, fun=ElementwiseKind.exp)
+    linalg.elemwise_binary(x, y, z, fun=ElementwiseKind.add)
     linalg.elemwise_unary(x, y, fun=ElementwiseKind.log)
     linalg.elemwise_binary(x, y, z, fun=ElementwiseKind.mul)
 

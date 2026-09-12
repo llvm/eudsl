@@ -205,19 +205,15 @@ def dot(A, B, C, *, loc=None, ip=None):
     return linalg.dot(A, B, loc=loc, ip=ip, outs=[C])
 
 
-def elemwise_binary(lhs, rhs, O, *, fun=None, loc=None, ip=None):
+def elemwise_binary(lhs, rhs, O, *, fun, loc=None, ip=None):
     # linalg.elemwise_binary was removed; linalg.elementwise (with a binary
-    # `kind`) is the replacement. Default to `add` to match the old op default.
-    if fun is None:
-        fun = linalg.ElementwiseKind.add
+    # `kind`) is the replacement.
     return linalg.elementwise(lhs, rhs, outs=[O], kind=fun)
 
 
-def elemwise_unary(I, O, *, fun=None, loc=None, ip=None):
+def elemwise_unary(I, O, *, fun, loc=None, ip=None):
     # linalg.elemwise_unary was removed; linalg.elementwise (with a unary
-    # `kind`) is the replacement. Default to `exp` to match the old op default.
-    if fun is None:
-        fun = linalg.ElementwiseKind.exp
+    # `kind`) is the replacement.
     return linalg.elementwise(I, outs=[O], kind=fun)
 
 
