@@ -1972,3 +1972,37 @@ def test_target_register_class_properties():
     assert isinstance(seen["global_priority"], bool)
     assert isinstance(seen["alloc_priority"], int)
     assert_no_leaks()
+
+
+def test_virt_reg_map_and_live_reg_matrix_queries():
+    """has_known_preference/has_preferred_phys are reachable on VirtRegMap,
+    and check_reg_mask_interference (with an optional physreg) is reachable on
+    LiveRegMatrix -- not as flat RegAllocBase forwarders."""
+    seen = {}
+
+    class Probe(mir.RegAllocBase):
+        def select_or_split(self, li):
+            if not seen:
+                seen["known_pref"] = self.vrm.has_known_preference(li.reg)
+                seen["preferred_phys"] = self.vrm.has_preferred_phys(li.reg)
+                seen["interference"] = self.matrix.check_reg_mask_interference(li)
+                # Exercise the two-arg overload with a real physreg (a distinct
+                # path from the physreg=0 default checked above).
+                a_physreg = next(iter(self.allocation_order(li)))
+                seen["interference_phys"] = self.matrix.check_reg_mask_interference(
+                    li, a_physreg
+                )
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-vrm-matrix-props", Probe)
+    obj = _emit("ra-vrm-matrix-props", Probe)
+    assert obj[:4] == b"\x7fELF"
+    assert isinstance(seen["known_pref"], bool)
+    assert isinstance(seen["preferred_phys"], bool)
+    assert isinstance(seen["interference"], bool)
+    assert isinstance(seen["interference_phys"], bool)
+    assert_no_leaks()
