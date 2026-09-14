@@ -26,7 +26,7 @@ optional ``ortools`` dependency.
 import os
 from dataclasses import dataclass, field
 
-from . import mir
+from ...eudslllvm_ext import mir
 
 # ---- pure helpers (weights, interference, time axis, register classes) ----
 

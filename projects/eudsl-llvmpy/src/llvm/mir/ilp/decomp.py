@@ -24,8 +24,8 @@ Scoped to a single register class (like RAILPPacking): multi-class raises.
 
 import time
 
-from . import mir
-from .mir_ilp_base import (
+from ...eudslllvm_ext import mir
+from .base import (
     RAILPBase,
     ILPSolution,
     stats_from_solver,
@@ -182,6 +182,3 @@ class RAILPDecomp(RAILPBase):
                     assignment[v] = preg
                     break
         return assignment
-
-
-mir.RAILPDecomp = RAILPDecomp

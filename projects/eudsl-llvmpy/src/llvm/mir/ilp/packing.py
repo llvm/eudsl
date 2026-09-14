@@ -19,8 +19,8 @@ value in their domain, forcing a physreg assignment.
 
 import time
 
-from . import mir
-from .mir_ilp_base import (
+from ...eudslllvm_ext import mir
+from .base import (
     RAILPBase,
     ILPSolution,
     stats_from_solver,
@@ -120,6 +120,3 @@ class RAILPPacking(RAILPBase):
                 else:
                     assignment[v] = pregs[idx]
         return ILPSolution(assignment=assignment, spilled=spilled, stats=stats)
-
-
-mir.RAILPPacking = RAILPPacking
