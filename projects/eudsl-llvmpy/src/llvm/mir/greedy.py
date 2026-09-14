@@ -244,7 +244,7 @@ class RAGreedy(mir.RegAllocBase):
             stage == LiveRangeStage.RS_Assign
             and not force_global
             and size > 0  # not LI.empty(); guards interval_is_in_one_mbb below
-            and self.interval_is_in_one_mbb(reg)
+            and self.lis.interval_is_in_one_mbb(self.lis.interval(reg))
         )
         global_bit = 0
         local_prio = 0
@@ -254,10 +254,10 @@ class RAGreedy(mir.RegAllocBase):
             # bottom-up to its end when the target assigns locals in reverse.
             if not reverse:
                 local_prio = li.begin_index.get_approx_instr_distance(
-                    self.last_slot_index()
+                    self.lis.slot_indexes.last_index
                 )
             else:
-                local_prio = self.zero_slot_index().get_approx_instr_distance(
+                local_prio = self.lis.slot_indexes.zero_index.get_approx_instr_distance(
                     li.end_index
                 )
         else:
@@ -370,7 +370,7 @@ class RAGreedy(mir.RegAllocBase):
             return False
         sa = self.split_analysis
         sa.analyze(li)
-        if self.interval_is_in_one_mbb(reg):
+        if self.lis.interval_is_in_one_mbb(self.lis.interval(reg)):
             # Single-block: local split, then instruction split as a fallback
             # (RAGreedy::trySplit). Instruction split fires here only for a range
             # with subranges (sub-register liveness), i.e. AMDGPU; on AArch64 it
@@ -403,8 +403,12 @@ class RAGreedy(mir.RegAllocBase):
         # No point isolating a copy: it has no register-class constraint.
         # Use MachineInstr::isCopyLike() (generic COPY / SUBREG_TO_REG), the
         # exact predicate shouldSplitSingleBlock tests -- not is_copy_like_at,
-        # whose TII::isCopyInstr also matches target-specific copies.
-        if self.is_copy_like_instr_at(bi.first_instr):
+        # whose TII::isCopyInstr also matches target-specific copies. A use
+        # slot always has an instruction, but instr_from_index can return None
+        # (no instruction at this index), so guard it the way the removed
+        # forwarder's null check did.
+        mi = self.lis.instr_from_index(bi.first_instr)
+        if mi is not None and mi.is_copy_like:
             return False
         # Don't isolate an endpoint an earlier split created.
         return self.split_analysis.is_original_endpoint(bi.first_instr)
@@ -485,7 +489,7 @@ class RAGreedy(mir.RegAllocBase):
         Empty when `li` crosses no register mask."""
         if not self.matrix.check_reg_mask_interference(li):
             return []
-        rms = list(self.reg_mask_slots_in_block(bi.mbb.number))
+        rms = list(self.lis.reg_mask_slots_in_block(bi.mbb.number))
         gaps = []
         # lower_bound(rms, uses[0].get_reg_slot())
         first = uses[0].get_reg_slot()
@@ -738,7 +742,9 @@ class RAGreedy(mir.RegAllocBase):
             ):
                 return False
             insert_idx = self.through_insert_index(number)
-            mbb_start = self.mbb_start_index_by_number(number)
+            mbb_start = self.lis.mbb_start_index(
+                self.machine_function.block_numbered(number)
+            )
             if (not (mbb_start < intf.first())) or _earlier_instr(
                 intf.first(), insert_idx
             ):

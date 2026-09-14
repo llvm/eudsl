@@ -639,10 +639,6 @@ public:
                                   : LIS->getInstructionIndex(*insertPt);
   }
 
-  llvm::SlotIndex mbbStartIndexByNumber(unsigned n) {
-    return LIS->getMBBStartIdx(mf->getBlockNumbered(n));
-  }
-
   // Physregs, in target allocation order, that Python may try for `li`.
   std::vector<unsigned> allocationOrder(const llvm::LiveInterval &li) {
     auto order =
@@ -693,14 +689,6 @@ public:
     return segs;
   }
 
-  // The register-mask slot indexes in block `mbbNumber` (tryLocalSplit finds
-  // the gaps overlapping these to mark call-clobbered).
-  std::vector<llvm::SlotIndex> regMaskSlotsInBlock(unsigned mbbNumber) {
-    llvm::ArrayRef<llvm::SlotIndex> rms =
-        LIS->getRegMaskSlotsInBlock(mbbNumber);
-    return std::vector<llvm::SlotIndex>(rms.begin(), rms.end());
-  }
-
   // Per-use cost of `physreg` (the CostPerUseLimit heuristic RAGreedy uses to
   // decide whether a register is worth allocating). Indexed by physreg id. The
   // cost table is an ArrayRef into the target's static tables (fixed for this
@@ -742,22 +730,6 @@ public:
             *mf));
   }
 
-  // The last / zero slot indexes of the function, for the instruction-order
-  // priority of local ranges (getApproxInstrDistance endpoints).
-  llvm::SlotIndex lastSlotIndex() {
-    return LIS->getSlotIndexes()->getLastIndex();
-  }
-  llvm::SlotIndex zeroSlotIndex() {
-    return LIS->getSlotIndexes()->getZeroIndex();
-  }
-
-  // Whether `reg`'s whole live interval is contained in a single MBB. RAGreedy
-  // routes single-block ranges to local splitting and multi-block ranges to
-  // global (region/block) splitting.
-  bool intervalIsInOneMBB(unsigned reg) {
-    return LIS->intervalIsInOneMBB(LIS->getInterval(llvm::Register(reg)));
-  }
-
   // Whether `reg`'s class is a proper subclass of its allocation superclass
   // (RAGreedy's SingleInstrs input to shouldSplitSingleBlock: a constrained
   // subclass makes even a single-instruction isolation worthwhile).
@@ -775,17 +747,6 @@ public:
       return false; // LCOV_EXCL_LINE -- a use slot always has an instruction
     const llvm::TargetInstrInfo *tii = mf->getSubtarget().getInstrInfo();
     return tii->isCopyInstr(*mi).has_value() || mi->isSubregToReg();
-  }
-
-  // MachineInstr::isCopyLike() for the instruction at `idx` -- exactly the
-  // predicate SplitAnalysis::shouldSplitSingleBlock uses (generic COPY or
-  // SUBREG_TO_REG only). Unlike isCopyLikeAt, this does NOT match target-
-  // specific copies (TII::isCopyInstr), so it is the faithful test there.
-  bool isCopyLikeInstrAt(llvm::SlotIndex idx) {
-    llvm::MachineInstr *mi = LIS->getInstructionFromIndex(idx);
-    if (!mi)
-      return false; // LCOV_EXCL_LINE -- a use slot always has an instruction
-    return mi->isCopyLike();
   }
 
   // TargetRegisterInfo::shouldRegionSplitForVirtReg -- a target hook (default
@@ -1340,9 +1301,6 @@ void populate_python_codegen(nb::module_ &m) {
           "li"_a, "physreg"_a,
           "Fixed (physical) reg-unit interference segments for `physreg` "
           "overlapping `li` -- calcGapWeights marks gaps they cover huge_valf.")
-      .def("reg_mask_slots_in_block", &PyRegAllocBase::regMaskSlotsInBlock,
-           "mbb_number"_a,
-           "The register-mask slot indexes in block `mbb_number`.")
       .def("reg_class", &PyRegAllocBase::regClass, nb::rv_policy::reference,
            "reg"_a,
            "The register class of virtual register `reg` (target-static; "
@@ -1362,24 +1320,12 @@ void populate_python_codegen(nb::module_ &m) {
           "Whether the register class's AllocationPriority outranks globalness "
           "in the priority calculation (honors "
           "-greedy-regclass-priority-trumps-globalness).")
-      .def(
-          "last_slot_index", &PyRegAllocBase::lastSlotIndex,
-          "The last SlotIndex of the function (local-range priority endpoint).")
-      .def("zero_slot_index", &PyRegAllocBase::zeroSlotIndex,
-           "The zero SlotIndex of the function (reverse local-range endpoint).")
-      .def("interval_is_in_one_mbb", &PyRegAllocBase::intervalIsInOneMBB,
-           "reg"_a,
-           "Whether `reg`'s whole live interval lies in a single block "
-           "(local- vs global-split routing in trySplit).")
       .def("is_proper_sub_class", &PyRegAllocBase::isProperSubClass, "reg"_a,
            "Whether `reg`'s class is a proper subclass of its allocation "
            "superclass (shouldSplitSingleBlock's SingleInstrs input).")
       .def("is_copy_like_at", &PyRegAllocBase::isCopyLikeAt, "idx"_a,
            "Whether the instruction at slot `idx` is copy-like including "
            "target-specific copies (TII::isCopyInstr, or SUBREG_TO_REG).")
-      .def("is_copy_like_instr_at", &PyRegAllocBase::isCopyLikeInstrAt, "idx"_a,
-           "MachineInstr::isCopyLike() at slot `idx` (generic COPY / "
-           "SUBREG_TO_REG only) -- the exact test shouldSplitSingleBlock uses.")
       .def("should_region_split_for_virt_reg",
            &PyRegAllocBase::shouldRegionSplitForVirtReg, "reg"_a,
            "TargetRegisterInfo::shouldRegionSplitForVirtReg (default true) -- "
@@ -1487,9 +1433,7 @@ void populate_python_codegen(nb::module_ &m) {
       .def("through_insert_index", &PyRegAllocBase::throughInsertIndex,
            "mbb_number"_a,
            "Live-in insertion-point index for the analyzed interval's reg in "
-           "the block.")
-      .def("mbb_start_index_by_number", &PyRegAllocBase::mbbStartIndexByNumber,
-           "mbb_number"_a, "Start SlotIndex of the block.");
+           "the block.");
 
   // A value number: one definition of a virtual register's live interval.
   // Rematerialization is keyed on the VNInfo whose defining instruction is
@@ -1871,6 +1815,20 @@ void populate_python_codegen(nb::module_ &m) {
                            : std::string("SlotIndex(invalid)");
       });
 
+  // SlotIndexes -- the per-function numbering that assigns every
+  // MachineInstr a SlotIndex; reached from LiveIntervals via lis.slot_indexes.
+  nb::class_<llvm::SlotIndexes>(m, "SlotIndexes")
+      .def_prop_ro(
+          "last_index",
+          [](llvm::SlotIndexes &self) { return self.getLastIndex(); },
+          "The last SlotIndex of the function (local-range priority "
+          "endpoint).")
+      .def_prop_ro(
+          "zero_index",
+          [](llvm::SlotIndexes &self) { return self.getZeroIndex(); },
+          "The zero SlotIndex of the function (reverse local-range "
+          "endpoint).");
+
   nb::class_<llvm::LiveIntervals>(m, "LiveIntervals")
       .def(
           "instruction_index",
@@ -1909,6 +1867,30 @@ void populate_python_codegen(nb::module_ &m) {
           },
           nb::rv_policy::reference, "idx"_a,
           "The MachineInstr at `idx`, or None. Borrowed; do not retain.")
+      .def_prop_ro(
+          "slot_indexes",
+          [](llvm::LiveIntervals &l) { return l.getSlotIndexes(); },
+          nb::rv_policy::reference,
+          "The SlotIndexes numbering for this function.")
+      .def(
+          "reg_mask_slots_in_block",
+          [](llvm::LiveIntervals &l, unsigned mbbNumber) {
+            llvm::ArrayRef<llvm::SlotIndex> rms =
+                l.getRegMaskSlotsInBlock(mbbNumber);
+            return std::vector<llvm::SlotIndex>(rms.begin(), rms.end());
+          },
+          "mbb_number"_a,
+          "The register-mask slot indexes in block `mbb_number` (tryLocalSplit "
+          "finds the gaps overlapping these to mark call-clobbered).")
+      .def(
+          "interval_is_in_one_mbb",
+          [](llvm::LiveIntervals &l, const llvm::LiveInterval &li) {
+            return l.intervalIsInOneMBB(li);
+          },
+          "li"_a, nb::rv_policy::reference,
+          "The single MachineBasicBlock that wholly contains `li`, or None if "
+          "`li` spans more than one block (local- vs global-split routing in "
+          "trySplit).")
       .def(
           "compute_interval",
           [](llvm::LiveIntervals &l, unsigned reg) {

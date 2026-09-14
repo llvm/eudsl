@@ -507,7 +507,7 @@ def test_local_split_executes():
                 sa = self.split_analysis
                 sa.analyze(li)
                 if (
-                    self.interval_is_in_one_mbb(reg)
+                    self.lis.interval_is_in_one_mbb(self.lis.interval(reg))
                     and len(sa.use_blocks()) == 1
                     and len(list(sa.get_use_slots())) > 2
                     and self._try_local_split(li)
@@ -762,7 +762,7 @@ def test_local_split_gap_scan_with_interference():
             sa = self.split_analysis
             sa.analyze(li)
             multi = (
-                self.interval_is_in_one_mbb(reg)
+                self.lis.interval_is_in_one_mbb(self.lis.interval(reg))
                 and len(sa.use_blocks()) == 1
                 and len(list(sa.get_use_slots())) > 2
             )
@@ -878,7 +878,7 @@ def test_local_split_fixed_and_regmask_interference():
             sa = self.split_analysis
             sa.analyze(li)
             multi = (
-                self.interval_is_in_one_mbb(reg)
+                self.lis.interval_is_in_one_mbb(self.lis.interval(reg))
                 and len(sa.use_blocks()) == 1
                 and len(list(sa.get_use_slots())) > 2
             )
@@ -920,7 +920,7 @@ def test_local_split_progress_required():
             sa = self.split_analysis
             sa.analyze(li)
             multi = (
-                self.interval_is_in_one_mbb(reg)
+                self.lis.interval_is_in_one_mbb(self.lis.interval(reg))
                 and len(sa.use_blocks()) == 1
                 and len(list(sa.get_use_slots())) > 2
             )
@@ -1006,7 +1006,9 @@ def test_block_split_overlap_path_executes():
             reg = li.reg
             sa = self.split_analysis
             sa.analyze(li)
-            if not forced["done"] and not self.interval_is_in_one_mbb(reg):
+            if not forced["done"] and not self.lis.interval_is_in_one_mbb(
+                self.lis.interval(reg)
+            ):
                 if self._try_block_split(li):
                     forced["done"] = True
                     return None
@@ -1037,7 +1039,9 @@ def test_block_split_no_qualifying_block():
             reg = li.reg
             sa = self.split_analysis
             sa.analyze(li)
-            if "done" not in checks and not self.interval_is_in_one_mbb(reg):
+            if "done" not in checks and not self.lis.interval_is_in_one_mbb(
+                self.lis.interval(reg)
+            ):
                 checks["done"] = True
                 checks["no_split"] = self._try_block_split(li) is False
             return super().select_or_split(li)
@@ -1105,7 +1109,7 @@ def test_local_split_progress_required_finds_no_window():
             sa = self.split_analysis
             sa.analyze(li)
             multi = (
-                self.interval_is_in_one_mbb(reg)
+                self.lis.interval_is_in_one_mbb(self.lis.interval(reg))
                 and len(sa.use_blocks()) == 1
                 and len(list(sa.get_use_slots())) > 2
             )
@@ -1215,7 +1219,7 @@ def test_local_split_shrink_recompute():
             sa = self.split_analysis
             sa.analyze(li)
             multi = (
-                self.interval_is_in_one_mbb(li.reg)
+                self.lis.interval_is_in_one_mbb(self.lis.interval(li.reg))
                 and len(sa.use_blocks()) == 1
                 and len(list(sa.get_use_slots())) > 4
             )
@@ -1285,7 +1289,9 @@ def test_region_split_analysis_accessors():
 
     class Probe(mir.RAGreedy):
         def select_or_split(self, li):
-            if "done" not in saw and not self.interval_is_in_one_mbb(li.reg):
+            if "done" not in saw and not self.lis.interval_is_in_one_mbb(
+                self.lis.interval(li.reg)
+            ):
                 saw["done"] = True
                 sa = self.split_analysis
                 sa.analyze(li)
@@ -1334,7 +1340,7 @@ def test_split_live_through_block_executes():
             sa.analyze(li)
             if (
                 not done["v"]
-                and not self.interval_is_in_one_mbb(reg)
+                and not self.lis.interval_is_in_one_mbb(self.lis.interval(reg))
                 and sa.through_blocks()
             ):
                 lre = self.new_live_range_edit(li)
@@ -1396,7 +1402,9 @@ def test_add_split_constraints_builds_constraints():
         def select_or_split(self, li):
             sa = self.split_analysis
             sa.analyze(li)
-            if "done" not in saw and not self.interval_is_in_one_mbb(li.reg):
+            if "done" not in saw and not self.lis.interval_is_in_one_mbb(
+                self.lis.interval(li.reg)
+            ):
                 saw["done"] = True
                 cur = self.new_interference_cursor()
                 self.set_interference_physreg(
@@ -1776,7 +1784,9 @@ def test_calc_compact_region_no_through_blocks():
 
     class Probe(mir.RAGreedy):
         def select_or_split(self, li):
-            if "done" not in checks and self.interval_is_in_one_mbb(li.reg):
+            if "done" not in checks and self.lis.interval_is_in_one_mbb(
+                self.lis.interval(li.reg)
+            ):
                 sa = self.split_analysis
                 sa.analyze(li)
                 checks["done"] = True
@@ -2202,7 +2212,9 @@ def test_split_editor_split_single_block_executes():
         def select_or_split(self, li):
             sa = self.split_analysis
             sa.analyze(li)
-            if not done["v"] and not self.interval_is_in_one_mbb(li.reg):
+            if not done["v"] and not self.lis.interval_is_in_one_mbb(
+                self.lis.interval(li.reg)
+            ):
                 lre = self.new_live_range_edit(li)
                 se = self.split_editor
                 se.reset(lre, mir.ComplementSpillMode.SM_Speed)
@@ -2368,7 +2380,9 @@ def test_should_split_single_block_proper_subclass_arms():
     live-through instruction always splits; a copy never does; otherwise it
     splits only at an original endpoint."""
     fg = SimpleNamespace(
-        is_copy_like_instr_at=lambda instr: fg._is_copy,
+        lis=SimpleNamespace(
+            instr_from_index=lambda idx: SimpleNamespace(is_copy_like=fg._is_copy)
+        ),
         split_analysis=SimpleNamespace(is_original_endpoint=lambda i: fg._is_orig),
     )
 
@@ -2464,7 +2478,8 @@ def test_add_through_constraints_exit_mustspill_and_no_links():
         spill_placer=sp,
         first_nondebug_instr_index=lambda n: _FakeSlot(3),
         through_insert_index=lambda n: _FakeSlot(1),
-        mbb_start_index_by_number=lambda n: _FakeSlot(0),
+        lis=SimpleNamespace(mbb_start_index=lambda mbb: _FakeSlot(0)),
+        machine_function=SimpleNamespace(block_numbered=lambda n: n),
     )
     ok = mg.RAGreedy._add_through_constraints(
         fg, _FakeIntf(True, first=5, last=50), [7]
@@ -2491,7 +2506,8 @@ def test_add_through_constraints_aborts_when_spill_uninsertable():
         spill_placer=_FakeSP(),
         first_nondebug_instr_index=lambda n: _FakeSlot(3),
         through_insert_index=lambda n: _FakeSlot(1),
-        mbb_start_index_by_number=lambda n: _FakeSlot(0),
+        lis=SimpleNamespace(mbb_start_index=lambda mbb: _FakeSlot(0)),
+        machine_function=SimpleNamespace(block_numbered=lambda n: n),
     )
     assert (
         mg.RAGreedy._add_through_constraints(fg, _FakeIntf(True, first=5, last=50), [7])
@@ -2828,7 +2844,7 @@ def test_local_reg_mask_gaps_arms():
         uses = [_FakeSlot(v) for v in use_vals]
         fg = SimpleNamespace(
             matrix=SimpleNamespace(check_reg_mask_interference=lambda li: interfere),
-            reg_mask_slots_in_block=lambda n: rms,
+            lis=SimpleNamespace(reg_mask_slots_in_block=lambda n: rms),
         )
         bi = SimpleNamespace(mbb=SimpleNamespace(number=0))
         return mg.RAGreedy._local_reg_mask_gaps(fg, object(), bi, uses, len(uses) - 1)
@@ -2887,7 +2903,7 @@ def _run_instr_split_amdgpu(builder, want):
             if (
                 "done" not in st
                 and self.lis.interval(li.reg).has_sub_ranges
-                and self.interval_is_in_one_mbb(li.reg)
+                and self.lis.interval_is_in_one_mbb(self.lis.interval(li.reg))
             ):
                 st["done"] = True
                 st["split"] = self._try_instruction_split(li)
@@ -2965,7 +2981,9 @@ def test_instruction_split_no_subranges_returns_false():
 
     class Force(mir.RAGreedy):
         def select_or_split(self, li):
-            if "done" not in st and self.interval_is_in_one_mbb(li.reg):
+            if "done" not in st and self.lis.interval_is_in_one_mbb(
+                self.lis.interval(li.reg)
+            ):
                 st["done"] = True
                 st["sub"] = self.lis.interval(li.reg).has_sub_ranges
                 st["split"] = self._try_instruction_split(li)
@@ -3059,7 +3077,11 @@ def test_reads_lane_subset_operand_kinds():
     class Probe(mir.RAGreedy):
         def select_or_split(self, li):
             iv = self.lis.interval(li.reg)
-            if not rows and iv.has_sub_ranges and self.interval_is_in_one_mbb(li.reg):
+            if (
+                not rows
+                and iv.has_sub_ranges
+                and self.lis.interval_is_in_one_mbb(self.lis.interval(li.reg))
+            ):
                 for bb in self.machine_function.blocks:
                     for mi in bb.instructions:
                         idx = self.lis.instruction_index(mi)

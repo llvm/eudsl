@@ -259,7 +259,7 @@ class RAILPBase(mir.RegAllocBase):
     def _build_problem(self, vregs):
         intervals, order, forbidden = {}, {}, {}
         weight, hints, num_regs, reg_class_id, spillable = {}, {}, {}, {}, {}
-        zero = self.zero_slot_index()
+        zero = self.lis.slot_indexes.zero_index
         free = mir.InterferenceKind.IK_Free
         virt = mir.InterferenceKind.IK_VirtReg
         for reg in vregs:
@@ -351,11 +351,12 @@ class RAILPBase(mir.RegAllocBase):
         """Base-relative slots where `li` needs a physical register even when
         spilled: each definition (the store's source) and each use (a reload).
         Live-*through* points are excluded -- a spilled value sits in memory
-        there. Points are distances from ``zero_slot_index()``, the same
-        coordinate space ``_build_problem`` uses for ``ILPProblem.intervals``,
-        so per-point pressure counts stay aligned with the interval segments.
+        there. Points are distances from ``lis.slot_indexes.zero_index``, the
+        same coordinate space ``_build_problem`` uses for
+        ``ILPProblem.intervals``, so per-point pressure counts stay aligned
+        with the interval segments.
         """
-        zero = self.zero_slot_index()
+        zero = self.lis.slot_indexes.zero_index
         pts = {
             zero.distance(li.get_val_num_info(i).def_index)
             for i in range(li.num_val_nums)

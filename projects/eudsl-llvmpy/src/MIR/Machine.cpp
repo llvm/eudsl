@@ -1238,6 +1238,8 @@ void populate_mir(nb::module_ &m) {
                    [](llvm::MachineInstr &self) { return self.mayStore(); })
       .def_prop_ro("is_debug_instr",
                    [](llvm::MachineInstr &self) { return self.isDebugInstr(); })
+      .def_prop_ro("is_copy_like",
+                   [](llvm::MachineInstr &self) { return self.isCopyLike(); })
       .def(
           "set_branch_target",
           [](llvm::MachineInstr &self, llvm::MachineBasicBlock *mbb) {
@@ -1447,6 +1449,14 @@ void populate_mir(nb::module_ &m) {
           nb::rv_policy::reference_internal)
       .def_prop_ro("num_blocks",
                    [](llvm::MachineFunction &self) { return self.size(); })
+      .def(
+          "block_numbered",
+          [](llvm::MachineFunction &self,
+             unsigned mbbNumber) -> llvm::MachineBasicBlock * {
+            return self.getBlockNumbered(mbbNumber);
+          },
+          "mbb_number"_a, nb::rv_policy::reference,
+          "The MachineBasicBlock with number `mbb_number`.")
       .def_prop_ro(
           "function",
           [](llvm::MachineFunction &self) -> const llvm::Function * {
