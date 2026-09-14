@@ -3,16 +3,17 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """Faithful Python port of llvm::RegAllocGreedy.
 
-Importing this module attaches the allocator as ``mir.RAGreedy``. The class
-mirrors RegAllocGreedy.cpp method-for-method; the pure cost computations
-(eviction_cost, calc_gap_weights, calc_global_split_cost) are module-level so
-they can be unit-tested without running the allocator.
+The class mirrors RegAllocGreedy.cpp method-for-method; the pure cost
+computations (eviction_cost, calc_gap_weights, calc_global_split_cost) are
+module-level so they can be unit-tested without running the allocator.
+
+RAGreedy is exposed as `llvm.mir.RAGreedy` via the package `__init__`.
 """
 
 import enum
 import heapq
 
-from . import mir
+from ..eudslllvm_ext import mir
 
 
 class LiveRangeStage(enum.IntEnum):
@@ -1168,6 +1169,3 @@ class RAGreedy(mir.RegAllocBase):
         # do the assignment (assigning here as well would double-assign and
         # abort). `best` now passes select_or_split's free-candidate check.
         return best
-
-
-mir.RAGreedy = RAGreedy

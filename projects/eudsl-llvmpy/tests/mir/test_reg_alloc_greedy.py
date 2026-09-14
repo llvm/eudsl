@@ -9,11 +9,11 @@ from types import SimpleNamespace
 import pytest
 import llvm
 from llvm import ir, jit, mir
-import llvm.mir_greedy as mg
-from llvm.mir_greedy import eviction_cost, calc_gap_weights, calc_global_split_cost
-from llvm.mir_greedy import GlobalSplitCandidate
-from llvm.mir_greedy import _NO_CAND
-from llvm.mir_greedy import LiveRangeStage
+import llvm.mir.greedy as mg
+from llvm.mir.greedy import eviction_cost, calc_gap_weights, calc_global_split_cost
+from llvm.mir.greedy import GlobalSplitCandidate
+from llvm.mir.greedy import _NO_CAND
+from llvm.mir.greedy import LiveRangeStage
 from llvm.testing import assert_no_leaks
 
 pytestmark = pytest.mark.skipif(
@@ -1824,7 +1824,7 @@ def test_calculate_region_split_cost_ignore_csr():
 
 def test_grow_region_budget_exhausted(monkeypatch):
     """A tiny complexity budget makes growRegion bail with False."""
-    import llvm.mir_greedy as _g
+    import llvm.mir.greedy as _g
 
     monkeypatch.setattr(_g, "_GROW_REGION_COMPLEXITY_BUDGET", 1)
 

@@ -304,13 +304,13 @@ std::deque<std::string> &schedNames() {
   return *names;
 }
 
-// name -> Python class, held in llvm.mir_strategies._scheduler_classes. Python
+// name -> Python class, held in llvm.mir.strategies._scheduler_classes. Python
 // owns it, so the classes are released at interpreter teardown (a C++-held
 // nb::object static would pin the subclass types past nanobind's teardown and
 // trip its leak checker).
 nb::dict schedulerClasses() {
   return nb::cast<nb::dict>(
-      nb::module_::import_("llvm.mir_strategies").attr("_scheduler_classes"));
+      nb::module_::import_("llvm.mir.strategies").attr("_scheduler_classes"));
 }
 
 // The live MachineSchedRegistry nodes, kept (leaked) so they stay registered
@@ -1015,11 +1015,11 @@ private:
 };
 
 // name -> Python RegAllocBase subclass, held in
-// llvm.mir_strategies._regalloc_classes (Python owns it so the subclass types
+// llvm.mir.strategies._regalloc_classes (Python owns it so the subclass types
 // are released at interpreter teardown, matching schedulerClasses()).
 nb::dict regallocClasses() {
   return nb::cast<nb::dict>(
-      nb::module_::import_("llvm.mir_strategies").attr("_regalloc_classes"));
+      nb::module_::import_("llvm.mir.strategies").attr("_regalloc_classes"));
 }
 
 std::deque<std::string> &regallocNames() {

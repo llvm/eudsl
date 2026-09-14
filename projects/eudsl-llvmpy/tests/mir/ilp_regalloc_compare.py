@@ -13,8 +13,8 @@ interval models on functions that need spilling) are shown as ``hard-fail``.
 
 import llvm
 from llvm import ir, jit, mir
-from llvm.mir_ilp_base import RAILPBase
-from llvm.mir_ilp_compare import AllocResult, format_table
+from llvm.mir.ilp.base import RAILPBase
+from llvm.mir.ilp.compare import AllocResult, format_table
 
 _TRIPLE = "aarch64-unknown-linux-gnu"
 
@@ -135,9 +135,9 @@ def main():
         print("AArch64 backend not linked; nothing to compare.")
         return
     mir.register_regalloc("cmp-basic", mir.BasicRegAlloc)
-    mir.register_regalloc("cmp-assign", mir.RAILPAssign)
-    mir.register_regalloc("cmp-pack", mir.RAILPPacking)
-    mir.register_regalloc("cmp-decomp", mir.RAILPDecomp)
+    mir.register_regalloc("cmp-assign", mir.ilp.RAILPAssign)
+    mir.register_regalloc("cmp-pack", mir.ilp.RAILPPacking)
+    mir.register_regalloc("cmp-decomp", mir.ilp.RAILPDecomp)
     for fixture_name, fixture in _FIXTURES:
         results = [
             _run_one(fixture, fixture_name, name, regalloc, is_ilp)
