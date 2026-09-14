@@ -13,8 +13,8 @@ interval models on functions that need spilling) are shown as ``hard-fail``.
 
 import llvm
 from llvm import ir, jit, mir
-from llvm.mir_ilp_base import RAILPBase
-from llvm.mir_ilp_compare import AllocResult, format_table
+from llvm.mir.ilp.base import RAILPBase
+from llvm.mir.ilp.compare import AllocResult, format_table
 
 _TRIPLE = "aarch64-unknown-linux-gnu"
 

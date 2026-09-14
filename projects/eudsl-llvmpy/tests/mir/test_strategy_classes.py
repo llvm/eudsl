@@ -2,7 +2,7 @@
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """Pure-Python unit tests for the convenience strategy classes in
-llvm.mir_strategies.
+llvm.mir.strategies.
 
 These exercise the Python-side logic directly (no codegen), so they run
 everywhere -- including x86-only builds where the AArch64 backend is not linked

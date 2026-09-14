@@ -6,9 +6,9 @@
 import pytest
 import llvm
 from llvm import ir, jit, mir
-from llvm import mir_ilp_base as model
-from llvm import mir_ilp_decomp as decomp
-from llvm.mir_ilp_base import RAILPBase, ILPSolution, ILPStats
+from llvm.mir.ilp import base as model
+from llvm.mir.ilp import decomp
+from llvm.mir.ilp.base import RAILPBase, ILPSolution, ILPStats
 from llvm.testing import assert_no_leaks
 
 # The ILP allocators need OR-Tools (the optional `ilp` extra); skip the whole
@@ -274,7 +274,7 @@ def test_ilp_stats_gap():
 
 
 def _mk_problem(**overrides):
-    from llvm.mir_ilp_base import ILPProblem
+    from llvm.mir.ilp.base import ILPProblem
 
     base = dict(
         vregs=[1, 2, 3],
@@ -354,7 +354,7 @@ def test_packing_solve_standalone_spill_and_degenerate_segment():
 
 
 def test_alloc_result_weighted_spill_cost():
-    from llvm import mir_ilp_compare as compare
+    from llvm.mir.ilp import compare
 
     r = compare.AllocResult(
         name="x",
@@ -371,7 +371,7 @@ def test_alloc_result_weighted_spill_cost():
 
 
 def test_format_table_contains_rows_and_header():
-    from llvm import mir_ilp_compare as compare
+    from llvm.mir.ilp import compare
 
     rows = [
         compare.AllocResult("greedy", True, [], {}, 0, None, None, None),
