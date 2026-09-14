@@ -270,7 +270,7 @@ class RAGreedy(mir.RegAllocBase):
             global_bit,
             rc.allocation_priority,
             self.reg_class_priority_trumps_globalness(),
-            self.has_known_preference(reg),
+            self.vrm.has_known_preference(reg),
         )
         # Python heapq is a min-heap; negate prio for max-first, and use reg as
         # the tie-break (smaller id first, matching the ~Reg.id() ordering).
@@ -483,7 +483,7 @@ class RAGreedy(mir.RegAllocBase):
         RegAllocGreedy::tryLocalSplit: walk the block's regmask slots alongside
         the use slots and record each gap [Uses[i], Uses[i+1]] a mask falls in.
         Empty when `li` crosses no register mask."""
-        if not self.check_reg_mask_interference(li):
+        if not self.matrix.check_reg_mask_interference(li):
             return []
         rms = list(self.reg_mask_slots_in_block(bi.mbb.number))
         gaps = []
@@ -534,7 +534,7 @@ class RAGreedy(mir.RegAllocBase):
 
         for physreg in self.allocation_order(li):
             gap_weight = self._local_gap_weights(li, physreg, uses)
-            if reg_mask_gaps and self.check_reg_mask_interference_phys(li, physreg):
+            if reg_mask_gaps and self.matrix.check_reg_mask_interference(li, physreg):
                 for g in reg_mask_gaps:
                     gap_weight[g] = _HUGE_VALF
             split_before, split_after = 0, 1
@@ -1132,7 +1132,7 @@ class RAGreedy(mir.RegAllocBase):
         triples = []
         for v in self.interfering_vregs(li, physreg):
             weight = self.lis.interval(v).weight
-            breaks_hint = self.has_preferred_phys(v)
+            breaks_hint = self.vrm.has_preferred_phys(v)
             copy_cost = self.reg_class(v).copy_cost if breaks_hint else 0.0
             triples.append((weight, breaks_hint, copy_cost))
         return eviction_cost(triples)

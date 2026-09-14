@@ -2717,7 +2717,7 @@ def test_try_local_split_shrink_recompute_running_max():
         mbfi=SimpleNamespace(
             entry_freq=lambda: SimpleNamespace(get_frequency=lambda: 1)
         ),
-        check_reg_mask_interference=lambda li: False,
+        matrix=SimpleNamespace(check_reg_mask_interference=lambda li, physreg=0: False),
         _local_reg_mask_gaps=lambda li, bi, uses, ng: [],
         allocation_order=lambda li: [1],
         # gap[0]=10 is the front max; widening keeps it (g1,g2 < 10); the wide
@@ -2827,7 +2827,7 @@ def test_local_reg_mask_gaps_arms():
         rms = [_FakeSlot(v) for v in rms_vals]
         uses = [_FakeSlot(v) for v in use_vals]
         fg = SimpleNamespace(
-            check_reg_mask_interference=lambda li: interfere,
+            matrix=SimpleNamespace(check_reg_mask_interference=lambda li: interfere),
             reg_mask_slots_in_block=lambda n: rms,
         )
         bi = SimpleNamespace(mbb=SimpleNamespace(number=0))

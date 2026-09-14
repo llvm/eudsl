@@ -693,19 +693,6 @@ public:
     return segs;
   }
 
-  // Whether `li` is live across any register-mask operand (a call clobber).
-  bool checkRegMaskInterferenceLI(const llvm::LiveInterval &li) {
-    return Matrix->checkRegMaskInterference(
-        const_cast<llvm::LiveInterval &>(li));
-  }
-
-  // Whether `physreg` is clobbered by a register mask that `li` crosses.
-  bool checkRegMaskInterferencePhys(const llvm::LiveInterval &li,
-                                    unsigned physreg) {
-    return Matrix->checkRegMaskInterference(
-        const_cast<llvm::LiveInterval &>(li), llvm::MCRegister(physreg));
-  }
-
   // The register-mask slot indexes in block `mbbNumber` (tryLocalSplit finds
   // the gaps overlapping these to mark call-clobbered).
   std::vector<llvm::SlotIndex> regMaskSlotsInBlock(unsigned mbbNumber) {
@@ -753,19 +740,6 @@ public:
         "greedy-regclass-priority-trumps-globalness",
         mf->getSubtarget().getRegisterInfo()->regClassPriorityTrumpsGlobalness(
             *mf));
-  }
-
-  // Whether `reg` has a known physreg preference (a copy hint the framework
-  // already resolved) -- getPriority boosts these.
-  bool hasKnownPreference(unsigned reg) {
-    return VRM->hasKnownPreference(llvm::Register(reg));
-  }
-
-  // Whether `reg` is currently assigned to its preferred physreg (a satisfied,
-  // unbroken copy hint): canEvictInterferenceBasedOnCost charges BrokenHints
-  // when evicting such a range would break that hint.
-  bool hasPreferredPhys(unsigned reg) {
-    return VRM->hasPreferredPhys(llvm::Register(reg));
   }
 
   // The last / zero slot indexes of the function, for the instruction-order
@@ -1366,12 +1340,6 @@ void populate_python_codegen(nb::module_ &m) {
           "li"_a, "physreg"_a,
           "Fixed (physical) reg-unit interference segments for `physreg` "
           "overlapping `li` -- calcGapWeights marks gaps they cover huge_valf.")
-      .def("check_reg_mask_interference",
-           &PyRegAllocBase::checkRegMaskInterferenceLI, "li"_a,
-           "Whether `li` is live across any register-mask (call clobber).")
-      .def("check_reg_mask_interference_phys",
-           &PyRegAllocBase::checkRegMaskInterferencePhys, "li"_a, "physreg"_a,
-           "Whether `physreg` is clobbered by a register mask `li` crosses.")
       .def("reg_mask_slots_in_block", &PyRegAllocBase::regMaskSlotsInBlock,
            "mbb_number"_a,
            "The register-mask slot indexes in block `mbb_number`.")
@@ -1394,13 +1362,6 @@ void populate_python_codegen(nb::module_ &m) {
           "Whether the register class's AllocationPriority outranks globalness "
           "in the priority calculation (honors "
           "-greedy-regclass-priority-trumps-globalness).")
-      .def("has_known_preference", &PyRegAllocBase::hasKnownPreference, "reg"_a,
-           "Whether `reg` has a known physreg preference (getPriority boosts "
-           "these).")
-      .def("has_preferred_phys", &PyRegAllocBase::hasPreferredPhys, "reg"_a,
-           "Whether `reg` is assigned to its preferred physreg (a satisfied "
-           "copy "
-           "hint) -- evicting it breaks that hint (eviction BrokenHints).")
       .def(
           "last_slot_index", &PyRegAllocBase::lastSlotIndex,
           "The last SlotIndex of the function (local-range priority endpoint).")
@@ -1633,7 +1594,24 @@ void populate_python_codegen(nb::module_ &m) {
           },
           "reg"_a,
           "The physreg id assigned to `reg`, or 0 if unassigned (check "
-          "has_phys first).");
+          "has_phys first).")
+      .def(
+          "has_known_preference",
+          [](llvm::VirtRegMap &vrm, unsigned reg) {
+            return vrm.hasKnownPreference(llvm::Register(reg));
+          },
+          "reg"_a,
+          "Whether `reg` has a known physreg preference (a copy hint the "
+          "framework has already resolved to a specific physreg).")
+      .def(
+          "has_preferred_phys",
+          [](llvm::VirtRegMap &vrm, unsigned reg) {
+            return vrm.hasPreferredPhys(llvm::Register(reg));
+          },
+          "reg"_a,
+          "Whether `reg` is currently assigned to its preferred physreg (a "
+          "satisfied copy hint that reusing that physreg elsewhere would "
+          "break).");
   nb::class_<llvm::Spiller>(m, "Spiller");
 
   // A block's estimated execution frequency as a fixed-point number scaled by
@@ -2251,7 +2229,19 @@ void populate_python_codegen(nb::module_ &m) {
           },
           "physreg"_a,
           "Whether any virtual register has been assigned to `physreg` yet "
-          "(used by the callee-saved eviction bias).");
+          "(used by the callee-saved eviction bias).")
+      .def(
+          "check_reg_mask_interference",
+          [](llvm::LiveRegMatrix &mat, const llvm::LiveInterval &li,
+             unsigned physreg) {
+            return mat.checkRegMaskInterference(
+                const_cast<llvm::LiveInterval &>(li),
+                llvm::MCRegister(physreg));
+          },
+          "li"_a, "physreg"_a = 0,
+          "Whether `li` is live across any register-mask operand (a call "
+          "clobber); if `physreg` is given, whether that specific physreg is "
+          "clobbered by a register mask `li` crosses.");
 
   m.def("register_regalloc", &registerRegAlloc, "name"_a, "cls"_a,
         "Register a RegAllocBase subclass under `name` so "
