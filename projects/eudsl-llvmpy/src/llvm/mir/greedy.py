@@ -233,7 +233,7 @@ class RAGreedy(mir.RegAllocBase):
         reverse = self.reverse_local_assignment()
         # ForceGlobal: giant ranges fall back to the global heuristic (the
         # size/InstrDist term only when not assigning locals bottom-up).
-        force_global = self.reg_class_has_global_priority(rc) or (
+        force_global = rc.has_global_priority or (
             not reverse and (size // instr_dist) > 2 * num_alloc
         )
         # enqueue sets the stage before getPriority reads it.
@@ -268,7 +268,7 @@ class RAGreedy(mir.RegAllocBase):
             is_local_assign,
             local_prio,
             global_bit,
-            self.reg_class_allocation_priority(rc),
+            rc.allocation_priority,
             self.reg_class_priority_trumps_globalness(),
             self.has_known_preference(reg),
         )
@@ -1133,9 +1133,7 @@ class RAGreedy(mir.RegAllocBase):
         for v in self.interfering_vregs(li, physreg):
             weight = self.lis.interval(v).weight
             breaks_hint = self.has_preferred_phys(v)
-            copy_cost = (
-                self.reg_class_copy_cost(self.reg_class(v)) if breaks_hint else 0.0
-            )
+            copy_cost = self.reg_class(v).copy_cost if breaks_hint else 0.0
             triples.append((weight, breaks_hint, copy_cost))
         return eviction_cost(triples)
 
