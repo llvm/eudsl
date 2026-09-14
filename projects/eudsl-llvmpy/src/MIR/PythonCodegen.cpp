@@ -755,16 +755,6 @@ public:
             *mf));
   }
 
-  bool regClassHasGlobalPriority(const llvm::TargetRegisterClass *rc) {
-    return rc->GlobalPriority;
-  }
-
-  // `rc`'s target-assigned allocation priority (RC.AllocationPriority), one of
-  // the fields getPriority packs into the enqueue key.
-  unsigned regClassAllocationPriority(const llvm::TargetRegisterClass *rc) {
-    return rc->AllocationPriority;
-  }
-
   // Whether `reg` has a known physreg preference (a copy hint the framework
   // already resolved) -- getPriority boosts these.
   bool hasKnownPreference(unsigned reg) {
@@ -778,12 +768,6 @@ public:
     return VRM->hasPreferredPhys(llvm::Register(reg));
   }
 
-  // TargetRegisterClass::getCopyCost -- the per-broken-hint weight the eviction
-  // cost model adds to BrokenHints.
-  int regClassCopyCost(const llvm::TargetRegisterClass *rc) {
-    return rc->getCopyCost();
-  }
-
   // The last / zero slot indexes of the function, for the instruction-order
   // priority of local ranges (getApproxInstrDistance endpoints).
   llvm::SlotIndex lastSlotIndex() {
@@ -791,10 +775,6 @@ public:
   }
   llvm::SlotIndex zeroSlotIndex() {
     return LIS->getSlotIndexes()->getZeroIndex();
-  }
-
-  bool regClassIsAllocatable(const llvm::TargetRegisterClass *rc) {
-    return rc->isAllocatable();
   }
 
   // Whether `reg`'s whole live interval is contained in a single MBB. RAGreedy
@@ -1414,17 +1394,6 @@ void populate_python_codegen(nb::module_ &m) {
           "Whether the register class's AllocationPriority outranks globalness "
           "in the priority calculation (honors "
           "-greedy-regclass-priority-trumps-globalness).")
-      .def(
-          "reg_class_has_global_priority",
-          &PyRegAllocBase::regClassHasGlobalPriority, "reg_class"_a,
-          "`reg_class`'s GlobalPriority flag -- the first disjunct of RAGreedy "
-          "ForceGlobal (the size-based disjunct is computed in enqueue).")
-      .def("reg_class_is_allocatable", &PyRegAllocBase::regClassIsAllocatable,
-           "reg_class"_a, "Whether `reg_class` is allocatable.")
-      .def("reg_class_allocation_priority",
-           &PyRegAllocBase::regClassAllocationPriority, "reg_class"_a,
-           "`reg_class`'s target allocation priority (getPriority's "
-           "AllocationPriority field).")
       .def("has_known_preference", &PyRegAllocBase::hasKnownPreference, "reg"_a,
            "Whether `reg` has a known physreg preference (getPriority boosts "
            "these).")
@@ -1432,11 +1401,6 @@ void populate_python_codegen(nb::module_ &m) {
            "Whether `reg` is assigned to its preferred physreg (a satisfied "
            "copy "
            "hint) -- evicting it breaks that hint (eviction BrokenHints).")
-      .def("reg_class_copy_cost", &PyRegAllocBase::regClassCopyCost,
-           "reg_class"_a,
-           "TargetRegisterClass::getCopyCost -- the per-broken-hint weight in "
-           "the "
-           "eviction cost model.")
       .def(
           "last_slot_index", &PyRegAllocBase::lastSlotIndex,
           "The last SlotIndex of the function (local-range priority endpoint).")

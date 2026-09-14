@@ -1923,8 +1923,8 @@ def test_priority_scalars():
                 saw["instr_dist"] = self.slot_index_instr_distance()
                 saw["reverse_local"] = self.reverse_local_assignment()
                 saw["trumps_globalness"] = self.reg_class_priority_trumps_globalness()
-                saw["global_priority"] = self.reg_class_has_global_priority(rc)
-                saw["allocatable"] = self.reg_class_is_allocatable(rc)
+                saw["global_priority"] = rc.has_global_priority
+                saw["allocatable"] = rc.is_allocatable
             for preg in self.allocation_order(li):
                 if self.matrix.is_free(li, preg):
                     return preg
@@ -1941,4 +1941,34 @@ def test_priority_scalars():
     assert isinstance(saw["trumps_globalness"], bool)
     assert saw["allocatable"] is True
     assert isinstance(saw["global_priority"], bool)
+    assert_no_leaks()
+
+
+def test_target_register_class_properties():
+    """TargetRegisterClass.copy_cost/is_allocatable/has_global_priority/
+    allocation_priority are reachable on the class itself, not as flat
+    RegAllocBase forwarders."""
+    seen = {}
+
+    class Probe(mir.RegAllocBase):
+        def select_or_split(self, li):
+            if not seen:
+                rc = self.reg_class(li.reg)
+                seen["copy_cost"] = rc.copy_cost
+                seen["allocatable"] = rc.is_allocatable
+                seen["global_priority"] = rc.has_global_priority
+                seen["alloc_priority"] = rc.allocation_priority
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-trc-props", Probe)
+    obj = _emit("ra-trc-props", Probe)
+    assert obj[:4] == b"\x7fELF"
+    assert isinstance(seen["copy_cost"], int)
+    assert seen["allocatable"] is True
+    assert isinstance(seen["global_priority"], bool)
+    assert isinstance(seen["alloc_priority"], int)
     assert_no_leaks()

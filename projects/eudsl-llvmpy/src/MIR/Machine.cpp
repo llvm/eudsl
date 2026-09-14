@@ -929,7 +929,30 @@ void populate_mir(nb::module_ &m) {
   // already-selected MIR; `id` identifies the class (e.g. to compare two).
   nb::class_<llvm::TargetRegisterClass>(m, "TargetRegisterClass")
       .def_prop_ro(
-          "id", [](const llvm::TargetRegisterClass &rc) { return rc.getID(); });
+          "id", [](const llvm::TargetRegisterClass &rc) { return rc.getID(); })
+      .def_prop_ro(
+          "copy_cost",
+          [](const llvm::TargetRegisterClass &rc) { return rc.getCopyCost(); },
+          "TargetRegisterClass::getCopyCost -- per-broken-hint weight in the "
+          "eviction cost model.")
+      .def_prop_ro(
+          "is_allocatable",
+          [](const llvm::TargetRegisterClass &rc) {
+            return rc.isAllocatable();
+          },
+          "Whether this register class is allocatable.")
+      .def_prop_ro(
+          "has_global_priority",
+          [](const llvm::TargetRegisterClass &rc) { return rc.GlobalPriority; },
+          "The class's GlobalPriority flag: whether its live ranges are always "
+          "allocated in global priority order.")
+      .def_prop_ro(
+          "allocation_priority",
+          [](const llvm::TargetRegisterClass &rc) {
+            return rc.AllocationPriority;
+          },
+          "The class's target-assigned allocation priority (higher is "
+          "allocated first).");
 
   // MachineFunctionProperties::Property -- the flags a MachineFunction carries
   // (set with MachineFunction.set_property). Some mark progress through the
