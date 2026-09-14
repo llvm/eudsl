@@ -4,9 +4,10 @@
 """Faithful Python port of llvm::RegAllocGreedy.
 
 The class mirrors RegAllocGreedy.cpp method-for-method; the pure cost
-computations
-(eviction_cost, calc_gap_weights, calc_global_split_cost) are module-level so
-they can be unit-tested without running the allocator.
+computations (eviction_cost, calc_gap_weights, calc_global_split_cost) are
+module-level so they can be unit-tested without running the allocator.
+
+RAGreedy is exposed as `llvm.mir.RAGreedy` via the package `__init__`.
 """
 
 import enum
