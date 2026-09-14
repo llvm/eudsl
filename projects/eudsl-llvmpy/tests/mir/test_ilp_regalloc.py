@@ -296,14 +296,14 @@ def test_packing_solve_standalone_multiclass_raises():
     # (the AArch64 GPR32/GPR64 aliasing trap): must still be rejected, since
     # the gate keys on class identity, not on the count.
     with pytest.raises(RuntimeError, match="single register class"):
-        mir.RAILPPacking()._solve(
+        mir.ilp.RAILPPacking()._solve(
             _mk_problem(num_regs={1: 30, 2: 30, 3: 30}, reg_class_id={1: 0, 2: 1, 3: 0})
         )
 
 
 def test_assign_solve_standalone_spill():
     # 3 mutually-interfering spillable vregs, 2 pregs -> exactly one spills.
-    sol = mir.RAILPAssign()._solve(_mk_problem())
+    sol = mir.ilp.RAILPAssign()._solve(_mk_problem())
     assert sol.stats.status == "OPTIMAL"
     assert len(sol.spilled) == 1
     assert len(sol.assignment) == 2
@@ -311,7 +311,7 @@ def test_assign_solve_standalone_spill():
 
 def test_assign_solve_standalone_infeasible():
     # Unspillable vreg with no legal candidate -> infeasible, empty solution.
-    sol = mir.RAILPAssign()._solve(
+    sol = mir.ilp.RAILPAssign()._solve(
         _mk_problem(
             vregs=[1],
             intervals={1: [(0, 4)]},
@@ -329,7 +329,7 @@ def test_assign_solve_standalone_infeasible():
 
 def test_decomp_solve_standalone_multiclass_raises():
     with pytest.raises(RuntimeError, match="single register class"):
-        mir.RAILPDecomp()._solve(
+        mir.ilp.RAILPDecomp()._solve(
             _mk_problem(num_regs={1: 30, 2: 30, 3: 30}, reg_class_id={1: 0, 2: 1, 3: 0})
         )
 
@@ -339,7 +339,7 @@ def test_packing_solve_standalone_spill_and_degenerate_segment():
     # also carries a zero-length segment (6,6) that must be skipped so it does
     # not become a rectangle that falsely self-interferes or forces an extra
     # spill. Assert the full realized allocation, not just the spill count.
-    sol = mir.RAILPPacking()._solve(
+    sol = mir.ilp.RAILPPacking()._solve(
         _mk_problem(
             intervals={1: [(0, 6)], 2: [(0, 6)], 3: [(0, 6), (6, 6)]},
         )
@@ -538,7 +538,7 @@ def test_base_stub_routes_spill():
 
 @aarch64
 def test_ilp_packing_pressure_free_valid():
-    mir.register_regalloc("ilp-pack-t", mir.RAILPPacking)
+    mir.register_regalloc("ilp-pack-t", mir.ilp.RAILPPacking)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -558,7 +558,7 @@ def test_ilp_packing_high_pressure_hard_fails():
     # Whole-interval spill decisions ignore reload pressure and are not reliably
     # realizable, so RAILPPacking refuses to spill: it hard-fails cleanly (never
     # crashes) when a function needs spilling.
-    mir.register_regalloc("ilp-pack-hp", mir.RAILPPacking)
+    mir.register_regalloc("ilp-pack-hp", mir.ilp.RAILPPacking)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -575,7 +575,7 @@ def test_ilp_packing_mixed_class_hard_fails():
     # would wrongly accept this mixed-class function and only fail later with a
     # confusing "model interference bug" once the aliasing W0/X0 collide. The
     # class-identity gate rejects it up front with a clear message.
-    mir.register_regalloc("ilp-pack-mixed", mir.RAILPPacking)
+    mir.register_regalloc("ilp-pack-mixed", mir.ilp.RAILPPacking)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -591,7 +591,7 @@ def test_ilp_assign_pressure_free_coalesces():
     # since coalescing only breaks ties here, honors the copy hints. v0 (= COPY
     # W0) and v2 (returned via COPY to W0) both hint W0 and do not interfere, so
     # they share it; v0 and v1 are simultaneously live and must differ.
-    mir.register_regalloc("ilp-assign-t", mir.RAILPAssign)
+    mir.register_regalloc("ilp-assign-t", mir.ilp.RAILPAssign)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -612,7 +612,7 @@ def test_ilp_assign_high_pressure_hard_fails():
     # Whole-interval spill decisions ignore reload pressure and are not reliably
     # realizable, so RAILPAssign refuses to spill: it hard-fails cleanly (never
     # crashes) when a function needs spilling.
-    mir.register_regalloc("ilp-assign-hp", mir.RAILPAssign)
+    mir.register_regalloc("ilp-assign-hp", mir.ilp.RAILPAssign)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -625,8 +625,8 @@ def test_ilp_assign_high_pressure_hard_fails():
 @aarch64
 def test_comparison_low_pressure_packing_valid_and_optimal():
     mir.register_regalloc("cmp-basic", mir.BasicRegAlloc)
-    mir.register_regalloc("cmp-assign", mir.RAILPAssign)
-    mir.register_regalloc("cmp-pack", mir.RAILPPacking)
+    mir.register_regalloc("cmp-assign", mir.ilp.RAILPAssign)
+    mir.register_regalloc("cmp-pack", mir.ilp.RAILPPacking)
     for alloc in ["greedy", "cmp-basic", "cmp-assign", "cmp-pack"]:
         with ir.Context() as ctx:
             mod = ir.Module("m", ctx)
@@ -692,7 +692,7 @@ def test_points_in_register_aligns_with_intervals():
 
 @aarch64
 def test_ilp_decomp_pressure_free_no_spill():
-    mir.register_regalloc("ilp-decomp-t", mir.RAILPDecomp)
+    mir.register_regalloc("ilp-decomp-t", mir.ilp.RAILPDecomp)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -712,7 +712,7 @@ def test_ilp_decomp_high_pressure_spills_and_is_valid():
     # The per-point model accounts for reload pressure, so its spill set is
     # realizable: it actually spills and produces a valid allocation where
     # whole-interval RAILPAssign/RAILPPacking hard-fail.
-    mir.register_regalloc("ilp-decomp-hp", mir.RAILPDecomp)
+    mir.register_regalloc("ilp-decomp-hp", mir.ilp.RAILPDecomp)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -739,7 +739,7 @@ def test_ilp_decomp_multiblock_diamond_valid():
     # segment-boundary pressure scan and the PEO coloring must handle. Low
     # pressure -> no spill; the two entry values are simultaneously live and get
     # distinct registers.
-    mir.register_regalloc("ilp-decomp-dia", mir.RAILPDecomp)
+    mir.register_regalloc("ilp-decomp-dia", mir.ilp.RAILPDecomp)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -760,7 +760,7 @@ def test_ilp_decomp_multiblock_diamond_spills():
     # ~30 allocatable GPR32 registers, so RAILPDecomp must spill and still
     # produce a valid multi-block allocation (coloring the survivors across
     # blocks in a perfect elimination order).
-    mir.register_regalloc("ilp-decomp-dia-hp", mir.RAILPDecomp)
+    mir.register_regalloc("ilp-decomp-dia-hp", mir.ilp.RAILPDecomp)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -779,9 +779,9 @@ def test_ilp_decomp_multiblock_diamond_spills():
 @aarch64
 def test_comparison_low_pressure_all_valid_and_ilp_optimal():
     mir.register_regalloc("cmp-basic", mir.BasicRegAlloc)
-    mir.register_regalloc("cmp-assign", mir.RAILPAssign)
-    mir.register_regalloc("cmp-pack", mir.RAILPPacking)
-    mir.register_regalloc("cmp-decomp", mir.RAILPDecomp)
+    mir.register_regalloc("cmp-assign", mir.ilp.RAILPAssign)
+    mir.register_regalloc("cmp-pack", mir.ilp.RAILPPacking)
+    mir.register_regalloc("cmp-decomp", mir.ilp.RAILPDecomp)
     for alloc in ["greedy", "cmp-basic", "cmp-assign", "cmp-pack", "cmp-decomp"]:
         with ir.Context() as ctx:
             mod = ir.Module("m", ctx)
