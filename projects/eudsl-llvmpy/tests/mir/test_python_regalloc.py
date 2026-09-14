@@ -673,11 +673,21 @@ def test_split_analysis_use_and_through_blocks():
                 saw["def_is_copy_like"] = self.is_copy_like_at(def_bi.first_instr)
                 # isCopyLike() (generic COPY / SUBREG_TO_REG) also holds for the
                 # `v = COPY w0` def; and the target-hook region-split guard.
-                saw["def_is_copy_like_instr"] = self.is_copy_like_instr_at(
-                    def_bi.first_instr
+                def_mi = self.lis.instr_from_index(def_bi.first_instr)
+                saw["def_is_copy_like_instr"] = (
+                    def_mi is not None and def_mi.is_copy_like
                 )
                 saw["region_split_ok"] = self.should_region_split_for_virt_reg(li.reg)
                 saw["def_orig_endpoint"] = sa.is_original_endpoint(def_bi.first_instr)
+                # interval_is_in_one_mbb returns the containing MBB (or None if
+                # the range spans several); block_numbered round-trips a number
+                # back to that MBB; slot_indexes exposes the index endpoints.
+                saw["in_one_mbb"] = self.lis.interval_is_in_one_mbb(li)
+                saw["blk_roundtrip"] = self.machine_function.block_numbered(
+                    saw["mbb_num"]
+                ).number
+                si = self.lis.slot_indexes
+                saw["si_endpoints"] = (si.zero_index, si.last_index)
             for preg in self.allocation_order(li):
                 if self.matrix.is_free(li, preg):
                     return preg
@@ -696,6 +706,11 @@ def test_split_analysis_use_and_through_blocks():
     assert all(isinstance(x, bool) for x in saw["one_instr"])
     # The def is `v = COPY w0`, so its defining instruction is copy-like.
     assert saw["def_is_copy_like"] is True
+    # interval_is_in_one_mbb hands back the containing MachineBasicBlock or None.
+    iom = saw["in_one_mbb"]
+    assert iom is None or isinstance(iom, mir.MachineBasicBlock)
+    assert saw["blk_roundtrip"] == saw["mbb_num"]
+    assert all(isinstance(s, mir.SlotIndex) for s in saw["si_endpoints"])
     assert saw["def_is_copy_like_instr"] is True  # a generic COPY
     assert saw["region_split_ok"] is True  # AArch64 default
     assert isinstance(saw["def_orig_endpoint"], bool)
