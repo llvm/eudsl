@@ -2629,7 +2629,13 @@ def test_try_region_split_compact_but_no_vregs_returns_false():
     """tryRegionSplit with a compact region but no winning per-physreg candidate
     and no new vregs produced by doRegionSplit returns False (nothing applied)."""
     fg = SimpleNamespace(
-        should_region_split_for_virt_reg=lambda reg: True,
+        machine_function=SimpleNamespace(
+            subtarget=SimpleNamespace(
+                register_info=SimpleNamespace(
+                    should_region_split_for_virt_reg=lambda mf, li: True
+                )
+            )
+        ),
         allocation_order=lambda li: [1],
         _calc_block_split_cost=lambda: mir.BlockFrequency(0),
         _region_cand0=lambda: GlobalSplitCandidate(),
@@ -2647,7 +2653,13 @@ def test_try_region_split_target_opts_out_returns_false():
     bails immediately without scoring."""
     scored = []
     fg = SimpleNamespace(
-        should_region_split_for_virt_reg=lambda reg: False,
+        machine_function=SimpleNamespace(
+            subtarget=SimpleNamespace(
+                register_info=SimpleNamespace(
+                    should_region_split_for_virt_reg=lambda mf, li: False
+                )
+            )
+        ),
         allocation_order=lambda li: scored.append("scored") or [1],
     )
     assert mg.RAGreedy._try_region_split(fg, SimpleNamespace(reg=1)) is False
@@ -2949,13 +2961,22 @@ def test_instruction_split_no_split_when_whole_value_read():
         open_intv=lambda: calls.append("open"),
     )
     fg = SimpleNamespace(
-        lis=SimpleNamespace(interval=lambda reg: SimpleNamespace(has_sub_ranges=True)),
+        lis=SimpleNamespace(
+            interval=lambda reg: SimpleNamespace(has_sub_ranges=True),
+            instr_from_index=lambda idx: idx,  # pass the fake slot through as "mi"
+        ),
+        machine_function=SimpleNamespace(
+            subtarget=SimpleNamespace(
+                instr_info=SimpleNamespace(
+                    is_full_copy_instr=lambda mi: mi.v == 0  # first use is a full copy
+                )
+            )
+        ),
         new_live_range_edit=lambda li: SimpleNamespace(new_vregs=lambda: []),
         split_editor=se,
         split_analysis=SimpleNamespace(
             get_use_slots=lambda: [_FakeSlot(0), _FakeSlot(1)]
         ),
-        is_full_copy_instr_at=lambda u: u.v == 0,  # first use is a full copy
         reads_lane_subset=lambda li, u: False,  # second reads the whole value
     )
     assert mg.RAGreedy._try_instruction_split(fg, SimpleNamespace(reg=1)) is False

@@ -38,6 +38,7 @@
 #include <llvm/CodeGen/Spiller.h>
 #include <llvm/CodeGen/TargetInstrInfo.h>
 #include <llvm/CodeGen/TargetRegisterInfo.h>
+#include <llvm/CodeGen/TargetSubtargetInfo.h>
 #include <llvm/CodeGen/VirtRegMap.h>
 #include <llvm/MC/LaneBitmask.h>
 #include <llvm/PassRegistry.h>
@@ -745,21 +746,6 @@ public:
     return tii->isCopyInstr(*mi).has_value() || mi->isSubregToReg();
   }
 
-  // TargetRegisterInfo::shouldRegionSplitForVirtReg -- a target hook (default
-  // true) that tryRegionSplit consults before attempting a region split.
-  bool shouldRegionSplitForVirtReg(unsigned reg) {
-    const llvm::TargetRegisterInfo *tri = mf->getSubtarget().getRegisterInfo();
-    return tri->shouldRegionSplitForVirtReg(
-        *mf, LIS->getInterval(llvm::Register(reg)));
-  }
-
-  // Whether the instruction at `idx` is a full (non-subreg) copy
-  // (TII::isFullCopyInstr) -- tryInstructionSplit skips such uses.
-  bool isFullCopyInstrAt(llvm::SlotIndex idx) {
-    llvm::MachineInstr *mi = LIS->getInstructionFromIndex(idx);
-    return mi && mf->getSubtarget().getInstrInfo()->isFullCopyInstr(*mi);
-  }
-
   // RAGreedy::readsLaneSubset: whether the instruction defining/using `li` at
   // `idx` reads only a subset of the lanes live there (so splitting around it
   // can move the rest to a wider class). A verbatim port of the file-static
@@ -804,10 +790,6 @@ public:
         liveAtMask |= s.LaneMask;
     }
     return (readMask & ~(liveAtMask & tri->getCoveringLanes())).any();
-  }
-
-  bool isTriviallyRematerializable(llvm::MachineInstr *mi) {
-    return mf->getSubtarget().getInstrInfo()->isTriviallyReMaterializable(*mi);
   }
 
   // Copy-hint registers for `reg` (physregs and/or vregs it is copy-related
@@ -1312,24 +1294,12 @@ void populate_python_codegen(nb::module_ &m) {
       .def("is_copy_like_at", &PyRegAllocBase::isCopyLikeAt, "idx"_a,
            "Whether the instruction at slot `idx` is copy-like including "
            "target-specific copies (TII::isCopyInstr, or SUBREG_TO_REG).")
-      .def("should_region_split_for_virt_reg",
-           &PyRegAllocBase::shouldRegionSplitForVirtReg, "reg"_a,
-           "TargetRegisterInfo::shouldRegionSplitForVirtReg (default true) -- "
-           "tryRegionSplit's target-hook guard.")
-      .def("is_full_copy_instr_at", &PyRegAllocBase::isFullCopyInstrAt, "idx"_a,
-           "TII::isFullCopyInstr at slot `idx` (tryInstructionSplit skips full "
-           "copies).")
       .def(
           "reads_lane_subset", &PyRegAllocBase::readsLaneSubset, "li"_a,
           "idx"_a,
           "RAGreedy::readsLaneSubset -- whether the instruction at `idx` reads "
           "only a subset of `li`'s live lanes (tryInstructionSplit's subrange "
           "arm splits around such uses).")
-      .def(
-          "is_trivially_rematerializable",
-          &PyRegAllocBase::isTriviallyRematerializable, "mi"_a,
-          "Whether `mi` (e.g. an interval's defining instruction) is trivially "
-          "rematerializable.")
       .def("reg_allocation_hints", &PyRegAllocBase::regAllocationHints, "reg"_a,
            "The (type, [ids]) allocation hints for virtual register `reg`: "
            "`type` is the hint kind (0 = target-independent copy hints), "
@@ -1539,6 +1509,90 @@ void populate_python_codegen(nb::module_ &m) {
           "Whether `reg` is currently assigned to its preferred physreg (a "
           "satisfied copy hint that reusing that physreg elsewhere would "
           "break).");
+
+  // llvm::TargetInstrInfo -- per-target instruction-level queries (copy and
+  // rematerialization predicates); reached from MachineFunction via
+  // subtarget.instr_info. Target-static (one instance per target, valid for
+  // the process lifetime), so returned with rv_policy::reference, like
+  // MachineRegisterInfo.reg_class.
+  nb::class_<llvm::TargetInstrInfo>(m, "TargetInstrInfo")
+      .def(
+          "is_trivially_rematerializable",
+          [](const llvm::TargetInstrInfo &self, llvm::MachineInstr *mi) {
+            return self.isTriviallyReMaterializable(*mi);
+          },
+          "mi"_a,
+          "TargetInstrInfo::isTriviallyReMaterializable -- whether `mi` can "
+          "be recomputed at a use without side effects or extra operands.")
+      .def(
+          "is_full_copy_instr",
+          [](const llvm::TargetInstrInfo &self, llvm::MachineInstr *mi) {
+            return self.isFullCopyInstr(*mi);
+          },
+          "mi"_a,
+          "TargetInstrInfo::isFullCopyInstr -- whether `mi` is a copy of an "
+          "entire register (not a sub-register slice); tryInstructionSplit "
+          "skips full copies.");
+
+  // llvm::TargetRegisterInfo -- per-target register-class/allocation-order
+  // queries, including the raw greedy-override hooks
+  // reverse_local_assignment/reg_class_priority_trumps_globalness; reached
+  // from MachineFunction via subtarget.register_info. Target-static, so
+  // rv_policy::reference.
+  nb::class_<llvm::TargetRegisterInfo>(m, "TargetRegisterInfo")
+      .def(
+          "should_region_split_for_virt_reg",
+          [](const llvm::TargetRegisterInfo &self, llvm::MachineFunction &mf,
+             const llvm::LiveInterval &li) {
+            return self.shouldRegionSplitForVirtReg(mf, li);
+          },
+          "mf"_a, "li"_a,
+          "TargetRegisterInfo::shouldRegionSplitForVirtReg (default true) -- "
+          "tryRegionSplit's target-hook guard.")
+      .def(
+          "reverse_local_assignment",
+          [](const llvm::TargetRegisterInfo &self) {
+            return self.reverseLocalAssignment();
+          },
+          "TargetRegisterInfo::reverseLocalAssignment -- the raw target hook "
+          "(default false). RegAllocBase.reverse_local_assignment wraps this "
+          "hook in the -greedy-reverse-local-assignment cl::opt override, "
+          "which is RAGreedy-specific behavior kept on the allocator.")
+      .def(
+          "reg_class_priority_trumps_globalness",
+          [](const llvm::TargetRegisterInfo &self, llvm::MachineFunction &mf) {
+            return self.regClassPriorityTrumpsGlobalness(mf);
+          },
+          "mf"_a,
+          "TargetRegisterInfo::regClassPriorityTrumpsGlobalness -- the raw "
+          "target hook. RegAllocBase.reg_class_priority_trumps_globalness "
+          "wraps this hook in the "
+          "-greedy-regclass-priority-trumps-globalness cl::opt override, "
+          "which is RAGreedy-specific behavior kept on the allocator.");
+
+  // llvm::TargetSubtargetInfo -- the per-function target configuration,
+  // reached from MachineFunction via `subtarget`. Non-owning: borrowed and
+  // valid only as long as the function is.
+  nb::class_<llvm::TargetSubtargetInfo>(m, "TargetSubtargetInfo")
+      .def_prop_ro(
+          "register_info",
+          [](const llvm::TargetSubtargetInfo &self)
+              -> const llvm::TargetRegisterInfo * {
+            return self.getRegisterInfo();
+          },
+          nb::rv_policy::reference,
+          "The TargetRegisterInfo for this subtarget -- target-static (one "
+          "instance for the process lifetime), so returned with "
+          "rv_policy::reference rather than reference_internal, like "
+          "MachineRegisterInfo.reg_class.")
+      .def_prop_ro(
+          "instr_info",
+          [](const llvm::TargetSubtargetInfo &self)
+              -> const llvm::TargetInstrInfo * { return self.getInstrInfo(); },
+          nb::rv_policy::reference,
+          "The TargetInstrInfo for this subtarget -- target-static, so "
+          "rv_policy::reference (see register_info).");
+
   nb::class_<llvm::Spiller>(m, "Spiller");
 
   // A block's estimated execution frequency as a fixed-point number scaled by

@@ -1522,6 +1522,15 @@ void populate_mir(nb::module_ &m) {
           nb::rv_policy::reference_internal,
           "The MachineRegisterInfo for this function -- virtual-register "
           "creation and register-class/hint queries.")
+      .def_prop_ro(
+          "subtarget",
+          [](llvm::MachineFunction &self) -> const llvm::TargetSubtargetInfo * {
+            return &self.getSubtarget();
+          },
+          nb::rv_policy::reference_internal,
+          "The TargetSubtargetInfo this function is being compiled for -- "
+          "register_info/instr_info reach the target-static TargetRegisterInfo "
+          "/TargetInstrInfo from it.")
       .def(
           "reg_class",
           [](llvm::MachineFunction &self,

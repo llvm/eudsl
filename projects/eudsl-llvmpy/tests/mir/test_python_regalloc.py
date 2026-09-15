@@ -677,7 +677,11 @@ def test_split_analysis_use_and_through_blocks():
                 saw["def_is_copy_like_instr"] = (
                     def_mi is not None and def_mi.is_copy_like
                 )
-                saw["region_split_ok"] = self.should_region_split_for_virt_reg(li.reg)
+                saw["region_split_ok"] = (
+                    self.machine_function.subtarget.register_info.should_region_split_for_virt_reg(
+                        self.machine_function, li
+                    )
+                )
                 saw["def_orig_endpoint"] = sa.is_original_endpoint(def_bi.first_instr)
                 # interval_is_in_one_mbb returns the containing MBB (or None if
                 # the range spans several); block_numbered round-trips a number
@@ -1729,7 +1733,11 @@ def test_priority_pressure_accessors():
             def_mi = self.lis.instr_from_index(vni.def_index)
             # MOVi32imm (a constant def) is trivially rematerializable; the COPY
             # of the live-in physreg is not.
-            remat[def_mi.opcode_name] = self.is_trivially_rematerializable(def_mi)
+            remat[def_mi.opcode_name] = (
+                self.machine_function.subtarget.instr_info.is_trivially_rematerializable(
+                    def_mi
+                )
+            )
             if not saw:
                 mf = self.machine_function
                 rc = mf.reg_info.reg_class(li.reg)
@@ -1956,6 +1964,55 @@ def test_priority_scalars():
     assert isinstance(saw["trumps_globalness"], bool)
     assert saw["allocatable"] is True
     assert isinstance(saw["global_priority"], bool)
+    assert_no_leaks()
+
+
+def test_target_info_spine():
+    """MachineFunction.subtarget exposes TargetRegisterInfo/TargetInstrInfo;
+    is_trivially_rematerializable, is_full_copy_instr, and
+    should_region_split_for_virt_reg are reachable through them rather than as
+    flat RegAllocBase forwarders. The raw TargetRegisterInfo hooks
+    reverse_local_assignment/reg_class_priority_trumps_globalness are directly
+    reachable too -- RegAllocBase's own reverse_local_assignment/
+    reg_class_priority_trumps_globalness keep wrapping the same hooks in a
+    -greedy-* override check, so with no such override on this embedding's
+    (unparsed) command line the two should agree exactly."""
+    saw = {}
+
+    class Reader(mir.RegAllocBase):
+        def select_or_split(self, li):
+            if not saw:
+                mf = self.machine_function
+                st = mf.subtarget
+                tri = st.register_info
+                tii = st.instr_info
+                vni = li.get_vni_at(li.begin_index)
+                def_mi = self.lis.instr_from_index(vni.def_index)
+                saw["is_trivially_remat"] = tii.is_trivially_rematerializable(def_mi)
+                saw["is_full_copy"] = tii.is_full_copy_instr(def_mi)
+                saw["region_split_ok"] = tri.should_region_split_for_virt_reg(mf, li)
+                saw["raw_reverse_local"] = tri.reverse_local_assignment()
+                saw["raw_trumps_globalness"] = tri.reg_class_priority_trumps_globalness(
+                    mf
+                )
+                saw["wrapped_reverse_local"] = self.reverse_local_assignment()
+                saw["wrapped_trumps_globalness"] = (
+                    self.reg_class_priority_trumps_globalness()
+                )
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-target-info-spine", Reader)
+    obj = _emit("ra-target-info-spine", Reader, builder=_build_remat_const, fn="rematc")
+    assert obj[:4] == b"\x7fELF"
+    assert isinstance(saw["is_trivially_remat"], bool)
+    assert isinstance(saw["is_full_copy"], bool)
+    assert isinstance(saw["region_split_ok"], bool)
+    assert saw["raw_reverse_local"] == saw["wrapped_reverse_local"]
+    assert saw["raw_trumps_globalness"] == saw["wrapped_trumps_globalness"]
     assert_no_leaks()
 
 
