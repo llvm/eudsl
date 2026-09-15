@@ -226,7 +226,7 @@ class RAGreedy(mir.RegAllocBase):
 
     def enqueue(self, reg):
         li = self.lis.interval(reg)
-        rc = self.reg_class(reg)
+        rc = self.machine_function.reg_info.reg_class(reg)
         instr_dist = self.slot_index_instr_distance()
         num_alloc = self.num_allocatable_regs(rc)
         size = li.size
@@ -1139,7 +1139,11 @@ class RAGreedy(mir.RegAllocBase):
         for v in self.interfering_vregs(li, physreg):
             weight = self.lis.interval(v).weight
             breaks_hint = self.vrm.has_preferred_phys(v)
-            copy_cost = self.reg_class(v).copy_cost if breaks_hint else 0.0
+            copy_cost = (
+                self.machine_function.reg_info.reg_class(v).copy_cost
+                if breaks_hint
+                else 0.0
+            )
             triples.append((weight, breaks_hint, copy_cost))
         return eviction_cost(triples)
 

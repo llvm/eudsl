@@ -99,7 +99,7 @@ def _build_add(mmi):
     w0, w1 = mf.physreg("W0"), mf.physreg("W1")
     entry.add_livein(w0)
     entry.add_livein(w1)
-    v0, v1, v2 = (mf.create_vreg(gpr32) for _ in range(3))
+    v0, v1, v2 = (mf.reg_info.create_virtual_register(gpr32) for _ in range(3))
     copy = mf.opcode("COPY")
     for dst, src in ((v0, w0), (v1, w1)):
         c = b.build_instr(copy)
@@ -223,14 +223,14 @@ def _build_high_pressure(mmi):
     addrr = mf.opcode("ADDWrr")
     terms = []
     for _ in range(_HP_N):
-        t = mf.create_vreg(gpr32)
+        t = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(copy)
         ins.add_reg(t, is_def=True)
         ins.add_reg(w0)
         terms.append(t)
     acc = terms[0]
     for t in terms[1:]:
-        nacc = mf.create_vreg(gpr32)
+        nacc = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(nacc, is_def=True)
         ins.add_reg(acc)
@@ -292,7 +292,7 @@ def _build_thru_pressure(mmi):
     vals = []
     prev = w0
     for _ in range(_THRU_N):
-        t = mf.create_vreg(gpr32)
+        t = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)  # t = prev + w0
         ins.add_reg(t, is_def=True)
         ins.add_reg(prev)
@@ -311,7 +311,7 @@ def _build_thru_pressure(mmi):
     b.set_block(b2)
     acc = vals[0]
     for t in vals[1:]:
-        nacc = mf.create_vreg(gpr32)
+        nacc = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(nacc, is_def=True)
         ins.add_reg(acc)
@@ -367,12 +367,12 @@ def _build_diamond_pressure(mmi):
     cbz = mf.opcode("CBZW")
 
     b.set_block(b0)
-    v = mf.create_vreg(gpr32)
+    v = mf.reg_info.create_virtual_register(gpr32)
     iv = b.build_instr(addrr)  # v = w0 + w0
     iv.add_reg(v, is_def=True)
     iv.add_reg(w0)
     iv.add_reg(w0)
-    cond = mf.create_vreg(gpr32)
+    cond = mf.reg_info.create_virtual_register(gpr32)
     ic = b.build_instr(copy)
     ic.add_reg(cond, is_def=True)
     ic.add_reg(w0)
@@ -387,7 +387,7 @@ def _build_diamond_pressure(mmi):
     terms = []
     prev = w0
     for _ in range(_DIAMOND_N):
-        t = mf.create_vreg(gpr32)
+        t = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(t, is_def=True)
         ins.add_reg(prev)
@@ -396,7 +396,7 @@ def _build_diamond_pressure(mmi):
         prev = t
     acc = terms[0]
     for t in terms[1:]:
-        na = mf.create_vreg(gpr32)
+        na = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(na, is_def=True)
         ins.add_reg(acc)
@@ -464,13 +464,13 @@ def _build_local_multiuse(mmi):
     entry.add_livein(w0)
     copy = mf.opcode("COPY")
     addrr = mf.opcode("ADDWrr")
-    v = mf.create_vreg(gpr32)
+    v = mf.reg_info.create_virtual_register(gpr32)
     c = b.build_instr(copy)
     c.add_reg(v, is_def=True)
     c.add_reg(w0)
     acc = v
     for _ in range(4):
-        n = mf.create_vreg(gpr32)
+        n = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(n, is_def=True)
         ins.add_reg(acc)
@@ -657,7 +657,7 @@ def _build_three_block(mmi):
     copy = mf.opcode("COPY")
     br = mf.opcode("B")
     b.set_block(b0)
-    v = mf.create_vreg(gpr32)
+    v = mf.reg_info.create_virtual_register(gpr32)
     c = b.build_instr(copy)
     c.add_reg(v, is_def=True)
     c.add_reg(w0)
@@ -719,17 +719,17 @@ def _build_two_multiuse(mmi):
     e.add_livein(w0)
     copy = mf.opcode("COPY")
     addrr = mf.opcode("ADDWrr")
-    u = mf.create_vreg(gpr32)
+    u = mf.reg_info.create_virtual_register(gpr32)
     cu = b.build_instr(copy)
     cu.add_reg(u, is_def=True)
     cu.add_reg(w0)
-    v = mf.create_vreg(gpr32)
+    v = mf.reg_info.create_virtual_register(gpr32)
     cv = b.build_instr(copy)
     cv.add_reg(v, is_def=True)
     cv.add_reg(w0)
     acc = u
     for i in range(8):
-        n = mf.create_vreg(gpr32)
+        n = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(n, is_def=True)
         ins.add_reg(acc)
@@ -814,17 +814,17 @@ def _build_local_clobber(mmi):
     e.add_livein(w0)
     copy = mf.opcode("COPY")
     addrr = mf.opcode("ADDWrr")
-    u = mf.create_vreg(gpr32)
+    u = mf.reg_info.create_virtual_register(gpr32)
     cu = b.build_instr(copy)
     cu.add_reg(u, is_def=True)
     cu.add_reg(w0)
-    v = mf.create_vreg(gpr32)
+    v = mf.reg_info.create_virtual_register(gpr32)
     cv = b.build_instr(copy)
     cv.add_reg(v, is_def=True)
     cv.add_reg(w0)
     acc = u
     for i in range(4):
-        n = mf.create_vreg(gpr32)
+        n = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(n, is_def=True)
         ins.add_reg(acc)
@@ -837,7 +837,7 @@ def _build_local_clobber(mmi):
     clob.add_reg(w0)
     clob.add_reg_mask()
     for i in range(4):
-        n = mf.create_vreg(gpr32)
+        n = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(n, is_def=True)
         ins.add_reg(acc)
@@ -972,7 +972,7 @@ def _build_cbz(mmi):
     b0.add_livein(w0)
     copy = mf.opcode("COPY")
     b.set_block(b0)
-    v = mf.create_vreg(gpr32)
+    v = mf.reg_info.create_virtual_register(gpr32)
     c = b.build_instr(copy)
     c.add_reg(v, is_def=True)
     c.add_reg(w0)
@@ -1073,14 +1073,14 @@ def _build_many_multiuse(mmi, k=6):
     addrr = mf.opcode("ADDWrr")
     vs = []
     for _ in range(k):
-        u = mf.create_vreg(gpr32)
+        u = mf.reg_info.create_virtual_register(gpr32)
         c = b.build_instr(copy)
         c.add_reg(u, is_def=True)
         c.add_reg(w0)
         vs.append(u)
     acc = vs[0]
     for i in range(24):
-        n = mf.create_vreg(gpr32)
+        n = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(n, is_def=True)
         ins.add_reg(acc)
@@ -1163,36 +1163,36 @@ def _build_endheavy_multiuse(mmi):
     e.add_livein(w0)
     copy = mf.opcode("COPY")
     addrr = mf.opcode("ADDWrr")
-    t = mf.create_vreg(gpr32)
+    t = mf.reg_info.create_virtual_register(gpr32)
     c = b.build_instr(copy)
     c.add_reg(t, is_def=True)
     c.add_reg(w0)
     acc = t
     for _ in range(5):
         for _ in range(2):
-            n = mf.create_vreg(gpr32)
+            n = mf.reg_info.create_virtual_register(gpr32)
             ins = b.build_instr(addrr)
             ins.add_reg(n, is_def=True)
             ins.add_reg(acc)
             ins.add_reg(acc)
             acc = n
-        n = mf.create_vreg(gpr32)
+        n = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(n, is_def=True)
         ins.add_reg(acc)
         ins.add_reg(t)
         acc = n
-    u = mf.create_vreg(gpr32)
+    u = mf.reg_info.create_virtual_register(gpr32)
     cu = b.build_instr(copy)
     cu.add_reg(u, is_def=True)
     cu.add_reg(w0)
-    n = mf.create_vreg(gpr32)
+    n = mf.reg_info.create_virtual_register(gpr32)
     ins = b.build_instr(addrr)
     ins.add_reg(n, is_def=True)
     ins.add_reg(acc)
     ins.add_reg(u)
     acc = n
-    nf = mf.create_vreg(gpr32)
+    nf = mf.reg_info.create_virtual_register(gpr32)
     ins = b.build_instr(addrr)
     ins.add_reg(nf, is_def=True)
     ins.add_reg(acc)
@@ -1960,7 +1960,7 @@ def _build_use_pressure(mmi):
     addrr = mf.opcode("ADDWrr")
     br = mf.opcode("B")
     b.set_block(b0)
-    v = mf.create_vreg(gpr)
+    v = mf.reg_info.create_virtual_register(gpr)
     iv = b.build_instr(addrr)
     iv.add_reg(v, is_def=True)
     iv.add_reg(w0)
@@ -1968,7 +1968,7 @@ def _build_use_pressure(mmi):
     terms = []
     prev = w0
     for _ in range(_USE_PRESSURE_N):
-        t = mf.create_vreg(gpr)
+        t = mf.reg_info.create_virtual_register(gpr)
         ins = b.build_instr(addrr)
         ins.add_reg(t, is_def=True)
         ins.add_reg(prev)
@@ -1977,13 +1977,14 @@ def _build_use_pressure(mmi):
         prev = t
     acc = terms[0]
     for t in terms[1:]:
-        na = mf.create_vreg(gpr)
+        na = mf.reg_info.create_virtual_register(gpr)
         ins = b.build_instr(addrr)
         ins.add_reg(na, is_def=True)
         ins.add_reg(acc)
         ins.add_reg(t)
         acc = na
-    u = mf.create_vreg(gpr)  # a use of v inside the pressured block
+    # a use of v inside the pressured block
+    u = mf.reg_info.create_virtual_register(gpr)
     iu = b.build_instr(addrr)
     iu.add_reg(u, is_def=True)
     iu.add_reg(v)
@@ -2150,7 +2151,7 @@ def _build_self_loop(mmi):
     b0.add_livein(w0)
     copy = mf.opcode("COPY")
     b.set_block(b0)
-    v = mf.create_vreg(gpr32)
+    v = mf.reg_info.create_virtual_register(gpr32)
     c = b.build_instr(copy)
     c.add_reg(v, is_def=True)
     c.add_reg(w0)
@@ -2874,12 +2875,12 @@ def _build_amdgpu_subrange(mmi, *, sub0_uses=3):
     e.add_livein(src)
     copy = mf.opcode("COPY")
     sub0 = mf.subreg_index("sub0")
-    v = mf.create_vreg(mf.reg_class("VReg_64"))
+    v = mf.reg_info.create_virtual_register(mf.reg_class("VReg_64"))
     c = b.build_instr(copy)
     c.add_reg(v, is_def=True)
     c.add_reg(src)
     for _ in range(sub0_uses):
-        n = mf.create_vreg(mf.reg_class("VGPR_32"))
+        n = mf.reg_info.create_virtual_register(mf.reg_class("VGPR_32"))
         ins = b.build_instr(mf.opcode("V_ADD_U32_e32"))
         ins.add_reg(n, is_def=True)
         ins.add_reg(v, sub_reg=sub0)
@@ -3032,27 +3033,27 @@ def _build_amdgpu_regseq(mmi):
     vreg64 = mf.reg_class("VReg_64")
     sub0 = mf.subreg_index("sub0")
     sub1 = mf.subreg_index("sub1")
-    lo = mf.create_vreg(vgpr32)
+    lo = mf.reg_info.create_virtual_register(vgpr32)
     dlo = b.build_instr(mf.opcode("V_MOV_B32_e32"))
     dlo.add_reg(lo, is_def=True)
     dlo.add_imm(1)
-    hi = mf.create_vreg(vgpr32)
+    hi = mf.reg_info.create_virtual_register(vgpr32)
     dhi = b.build_instr(mf.opcode("V_MOV_B32_e32"))
     dhi.add_reg(hi, is_def=True)
     dhi.add_imm(2)
-    v = mf.create_vreg(vreg64)
+    v = mf.reg_info.create_virtual_register(vreg64)
     rs = b.build_instr(mf.opcode("REG_SEQUENCE"))
     rs.add_reg(v, is_def=True)
     rs.add_reg(lo)
     rs.add_imm(sub0)
     rs.add_reg(hi)
     rs.add_imm(sub1)
-    n = mf.create_vreg(vgpr32)
+    n = mf.reg_info.create_virtual_register(vgpr32)
     u = b.build_instr(mf.opcode("V_ADD_U32_e32"))
     u.add_reg(n, is_def=True)
     u.add_reg(v, sub_reg=sub0)
     u.add_reg(v, sub_reg=sub0)
-    w = mf.create_vreg(vreg64)
+    w = mf.reg_info.create_virtual_register(vreg64)
     fu = b.build_instr(mf.opcode("V_ADD_U64_PSEUDO"))
     fu.add_reg(w, is_def=True)
     fu.add_reg(v, is_undef=True)  # undef full-register use -> skipped

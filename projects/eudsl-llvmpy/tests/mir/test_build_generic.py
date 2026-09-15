@@ -190,7 +190,7 @@ def test_create_generic_virtual_register_is_virtual():
         mmi = mir.create_machine_function(mod, tm, "f")
         mf = mmi.machine_function("f")
         s64 = mir.LLT.scalar(64)
-        reg = mf.create_generic_virtual_register(s64)
+        reg = mf.reg_info.create_generic_virtual_register(s64)
         assert reg.is_virtual
         # The vreg carries the requested LLT: it is accepted as an s64 operand
         # (the builder validates operand type against the result type).
@@ -210,8 +210,8 @@ def test_build_typed_instr_mints_and_reuses_destinations():
         mf = mmi.machine_function("f")
         s32 = mir.LLT.scalar(32)
         b = mir.MachineIRBuilder(mf)
-        a = mf.create_generic_virtual_register(s32)
-        c = mf.create_generic_virtual_register(s32)
+        a = mf.reg_info.create_generic_virtual_register(s32)
+        c = mf.reg_info.create_generic_virtual_register(s32)
         g_add = mf.opcode("G_ADD")
 
         # LLT dst: a fresh generic vreg is minted for the def.
@@ -223,7 +223,7 @@ def test_build_typed_instr_mints_and_reuses_destinations():
         assert minted.operand(2).reg.id == c.id
 
         # Register dst: the caller's existing vreg is defined instead.
-        dst = mf.create_generic_virtual_register(s32)
+        dst = mf.reg_info.create_generic_virtual_register(s32)
         reused = b.build(g_add, [dst], [a, c])
         assert reused.operand(0).reg.id == dst.id
     assert_no_leaks()
@@ -251,8 +251,8 @@ def test_build_emits_multiple_defs():
         mf = mmi.machine_function("f")
         s32, s1 = mir.LLT.scalar(32), mir.LLT.scalar(1)
         b = mir.MachineIRBuilder(mf)
-        a = mf.create_generic_virtual_register(s32)
-        c = mf.create_generic_virtual_register(s32)
+        a = mf.reg_info.create_generic_virtual_register(s32)
+        c = mf.reg_info.create_generic_virtual_register(s32)
         uaddo = b.build(mf.opcode("G_UADDO"), [s32, s1], [a, c])
         assert uaddo.opcode_name == "G_UADDO"
         assert uaddo.num_defs == 2
@@ -274,7 +274,7 @@ def test_build_rejects_registers_from_another_function():
         mmi_f = mir.create_machine_function(ir.Module("f", ctx), tm, "f")
         mf = mmi_f.machine_function("f")
         b = mir.MachineIRBuilder(mf)
-        own = mf.create_generic_virtual_register(s32)
+        own = mf.reg_info.create_generic_virtual_register(s32)
         g_add = mf.opcode("G_ADD")
         with pytest.raises(ValueError, match="dst .*different MachineFunction"):
             b.build(g_add, [foreign], [own, own])
@@ -294,8 +294,8 @@ def test_register_read_off_operand_feeds_back_into_builder():
         mf = mmi.machine_function("f")
         s32 = mir.LLT.scalar(32)
         b = mir.MachineIRBuilder(mf)
-        a = mf.create_generic_virtual_register(s32)
-        c = mf.create_generic_virtual_register(s32)
+        a = mf.reg_info.create_generic_virtual_register(s32)
+        c = mf.reg_info.create_generic_virtual_register(s32)
         add = b.build(mf.opcode("G_ADD"), [s32], [a, c])
         read_back = add.operand(0).reg  # the def vreg, read off the operand
         assert read_back.is_virtual

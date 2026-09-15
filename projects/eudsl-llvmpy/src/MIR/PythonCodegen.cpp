@@ -699,10 +699,6 @@ public:
     return regCosts[physreg];
   }
 
-  const llvm::TargetRegisterClass *regClass(unsigned reg) {
-    return mf->getRegInfo().getRegClass(llvm::Register(reg));
-  }
-
   unsigned numAllocatableRegs(const llvm::TargetRegisterClass *rc) {
     return RegClassInfo.getNumAllocatableRegs(rc);
   }
@@ -831,12 +827,6 @@ public:
         ids.push_back(h.id());
     }
     return {type, ids};
-  }
-
-  // The single "simple" copy hint for virtual register `reg` (id, or 0 if
-  // none). `reg` must be a virtual register.
-  unsigned simpleHint(unsigned reg) {
-    return mf->getRegInfo().getSimpleHint(llvm::Register(reg)).id();
   }
 
   // The last callee-saved register aliasing `physreg` (id, or 0 if none) --
@@ -1301,10 +1291,6 @@ void populate_python_codegen(nb::module_ &m) {
           "li"_a, "physreg"_a,
           "Fixed (physical) reg-unit interference segments for `physreg` "
           "overlapping `li` -- calcGapWeights marks gaps they cover huge_valf.")
-      .def("reg_class", &PyRegAllocBase::regClass, nb::rv_policy::reference,
-           "reg"_a,
-           "The register class of virtual register `reg` (target-static; "
-           "borrowed).")
       .def("num_allocatable_regs", &PyRegAllocBase::numAllocatableRegs,
            "reg_class"_a,
            "Number of actually-allocatable registers in `reg_class` (the "
@@ -1350,9 +1336,6 @@ void populate_python_codegen(nb::module_ &m) {
            "`ids` the hinted physregs (a hinted physreg is preferred; evicting "
            "a hinted assignment is a 'broken hint' in eviction cost). (0, []) "
            "if none. `reg` must be a virtual register.")
-      .def("simple_hint", &PyRegAllocBase::simpleHint, "reg"_a,
-           "The single simple copy-hint reg id for virtual register `reg`, or "
-           "0 if none. `reg` must be a virtual register.")
       .def("last_callee_saved_alias", &PyRegAllocBase::lastCalleeSavedAlias,
            "physreg"_a,
            "The last callee-saved register aliasing `physreg` (id, or 0) -- "

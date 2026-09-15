@@ -25,8 +25,8 @@ def test_add_reg_flag_matrix_roundtrips():
         tm = jit.TargetMachine(triple=None)
         mf = mir.create_machine_function(mod, tm, "f").machine_function("f")
         b = mir.MachineIRBuilder(mf)
-        d = mf.create_generic_virtual_register(mir.LLT.scalar(32))
-        u = mf.create_generic_virtual_register(mir.LLT.scalar(32))
+        d = mf.reg_info.create_generic_virtual_register(mir.LLT.scalar(32))
+        u = mf.reg_info.create_generic_virtual_register(mir.LLT.scalar(32))
 
         instr = b.build_instr(mf.opcode("COPY"))
         instr.add_reg(d, is_def=True, is_dead=True, is_early_clobber=True, sub_reg=1)
@@ -53,7 +53,7 @@ def test_add_reg_rejects_contradictory_flags():
         tm = jit.TargetMachine(triple=None)
         mf = mir.create_machine_function(mod, tm, "f").machine_function("f")
         b = mir.MachineIRBuilder(mf)
-        v = mf.create_generic_virtual_register(mir.LLT.scalar(32))
+        v = mf.reg_info.create_generic_virtual_register(mir.LLT.scalar(32))
         instr = b.build_instr(mf.opcode("COPY"))
         with pytest.raises(ValueError):
             instr.add_reg(v, is_def=True, is_kill=True)
@@ -73,7 +73,7 @@ def test_add_livein_rejects_virtual_register():
         mod = ir.Module("m", ctx)
         tm = jit.TargetMachine(triple=None)
         mf = mir.create_machine_function(mod, tm, "f").machine_function("f")
-        v = mf.create_generic_virtual_register(mir.LLT.scalar(32))
+        v = mf.reg_info.create_generic_virtual_register(mir.LLT.scalar(32))
         with pytest.raises(ValueError):
             mf.blocks[0].add_livein(v)
     assert_no_leaks()

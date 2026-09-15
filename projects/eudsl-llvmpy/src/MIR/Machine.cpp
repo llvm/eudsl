@@ -1430,6 +1430,57 @@ void populate_mir(nb::module_ &m) {
       .def("__str__",
            [](llvm::MachineBasicBlock &self) { return eudsl::toString(self); });
 
+  // llvm::MachineRegisterInfo -- per-function virtual-register table:
+  // register-class/hint lookups and virtual-register creation. Non-owning:
+  // reached from MachineFunction via `reg_info`, borrowed and valid only as
+  // long as the function is.
+  nb::class_<llvm::MachineRegisterInfo>(m, "MachineRegisterInfo")
+      .def(
+          "reg_class",
+          [](llvm::MachineRegisterInfo &self,
+             unsigned reg) -> const llvm::TargetRegisterClass * {
+            return self.getRegClass(llvm::Register(reg));
+          },
+          "reg"_a, nb::rv_policy::reference,
+          "MachineRegisterInfo::getRegClass -- the register class of virtual "
+          "register `reg` (target-static; borrowed).")
+      .def(
+          "simple_hint",
+          [](llvm::MachineRegisterInfo &self, unsigned reg) {
+            return self.getSimpleHint(llvm::Register(reg)).id();
+          },
+          "reg"_a,
+          "MachineRegisterInfo::getSimpleHint -- the single simple copy-hint "
+          "reg id for virtual register `reg`, or 0 if none. `reg` must be a "
+          "virtual register.")
+      .def(
+          "create_virtual_register",
+          [](llvm::MachineRegisterInfo &self,
+             const llvm::TargetRegisterClass *rc) -> TypedRegister {
+            llvm::Register reg = self.createVirtualRegister(rc);
+            // TypedRegister::owned needs a non-const MachineFunction&, but
+            // MRI::getMF() only exposes a const overload here; the const_cast
+            // is safe since creating a vreg already mutates the (non-const)
+            // MRI.
+            return TypedRegister::owned(
+                const_cast<llvm::MachineFunction &>(self.getMF()), reg);
+          },
+          "reg_class"_a,
+          "MachineRegisterInfo::createVirtualRegister -- create a new "
+          "virtual register constrained to a register class.")
+      .def(
+          "create_generic_virtual_register",
+          [](llvm::MachineRegisterInfo &self, llvm::LLT ty) -> TypedRegister {
+            llvm::Register reg = self.createGenericVirtualRegister(ty);
+            // See create_virtual_register: const_cast works around MRI::getMF()
+            // having only a const overload in this LLVM version.
+            return TypedRegister::owned(
+                const_cast<llvm::MachineFunction &>(self.getMF()), reg);
+          },
+          "type"_a,
+          "MachineRegisterInfo::createGenericVirtualRegister -- create a new "
+          "generic virtual register of the given LLT.");
+
   // llvm::MachineFunction -- the machine-level body of one IR Function after
   // instruction selection. Non-owning: it lives inside the MachineModuleInfo
   // that produced it, so it is returned by pointer with the owning wrapper kept
@@ -1463,13 +1514,14 @@ void populate_mir(nb::module_ &m) {
             return &self.getFunction();
           },
           nb::rv_policy::reference_internal)
-      .def(
-          "create_generic_virtual_register",
-          [](llvm::MachineFunction &self, llvm::LLT ty) -> TypedRegister {
-            return TypedRegister::owned(
-                self, self.getRegInfo().createGenericVirtualRegister(ty));
+      .def_prop_ro(
+          "reg_info",
+          [](llvm::MachineFunction &self) -> llvm::MachineRegisterInfo * {
+            return &self.getRegInfo();
           },
-          "type"_a, "Create a new generic virtual register of the given LLT.")
+          nb::rv_policy::reference_internal,
+          "The MachineRegisterInfo for this function -- virtual-register "
+          "creation and register-class/hint queries.")
       .def(
           "reg_class",
           [](llvm::MachineFunction &self,
@@ -1514,15 +1566,6 @@ void populate_mir(nb::module_ &m) {
                 ("no physical register named '" + name + "'").c_str());
           },
           "name"_a, "Look up a physical register by name (e.g. \"W0\").")
-      .def(
-          "create_vreg",
-          [](llvm::MachineFunction &self,
-             const llvm::TargetRegisterClass *rc) -> TypedRegister {
-            return TypedRegister::owned(
-                self, self.getRegInfo().createVirtualRegister(rc));
-          },
-          "reg_class"_a,
-          "Create a new virtual register constrained to a register class.")
       .def(
           "set_property",
           [](llvm::MachineFunction &self,

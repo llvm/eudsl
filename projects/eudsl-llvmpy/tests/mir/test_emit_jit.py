@@ -44,7 +44,7 @@ def _build_selected_add(mmi, declare_liveins=True):
     if declare_liveins:
         entry.add_livein(w0)
         entry.add_livein(w1)
-    v0, v1, v2 = (mf.create_vreg(gpr32) for _ in range(3))
+    v0, v1, v2 = (mf.reg_info.create_virtual_register(gpr32) for _ in range(3))
     copy = mf.opcode("COPY")
     for dst, src in ((v0, w0), (v1, w1)):
         c = b.build_instr(copy)

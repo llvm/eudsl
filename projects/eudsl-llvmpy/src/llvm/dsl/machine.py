@@ -182,7 +182,7 @@ def machine_function(*, module, target, name=None):
         mf = mmi.machine_function(fn_name)
         with MachineIRBuilder(mf):
             args = [
-                MachineValue(mf.create_generic_virtual_register(llt), llt)
+                MachineValue(mf.reg_info.create_generic_virtual_register(llt), llt)
                 for llt in param_llts
             ]
             f(*args)

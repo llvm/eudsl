@@ -267,7 +267,7 @@ class RAILPBase(mir.RegAllocBase):
             intervals[reg] = [
                 (zero.distance(s.start), zero.distance(s.end)) for s in li.segments()
             ]
-            cls = self.reg_class(reg)
+            cls = self.machine_function.reg_info.reg_class(reg)
             num_regs[reg] = self.num_allocatable_regs(cls)
             reg_class_id[reg] = cls.id
             allowed, forb = [], set()
@@ -287,7 +287,7 @@ class RAILPBase(mir.RegAllocBase):
             order[reg] = allowed
             forbidden[reg] = forb
             weight[reg] = scale_weight(li.weight)
-            hints[reg] = self.simple_hint(reg)
+            hints[reg] = self.machine_function.reg_info.simple_hint(reg)
             spillable[reg] = li.is_spillable
         return ILPProblem(
             vregs=list(vregs),
