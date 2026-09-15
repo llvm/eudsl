@@ -590,20 +590,17 @@ public:
   }
   llvm::EdgeBundles *edgeBundlesPtr() { return edgeBundles; }
   llvm::SpillPlacement *spillPlacerPtr() { return spillPlacer; }
+  llvm::RegisterClassInfo *regClassInfo() { return &RegClassInfo; }
+  llvm::VirtRegAuxInfo *auxInfoPtr() { return auxInfo; }
+  llvm::InterferenceCache *interferenceCachePtr() { return &intfCache; }
 
   // A cursor into the interference cache, for region-split cost queries. Point
-  // it at a physreg with set_interference_physreg, then move_to_block/first/
-  // last/has_interference per block. Copyable and refcounts its cache entry;
-  // valid only within an allocator callback, do not retain past it.
+  // it at a physreg with InterferenceCursor.set_phys_reg (passing
+  // interference_cache), then move_to_block/first/last/has_interference per
+  // block. Copyable and refcounts its cache entry; valid only within an
+  // allocator callback, do not retain past it.
   llvm::InterferenceCache::Cursor newInterferenceCursor() {
     return llvm::InterferenceCache::Cursor();
-  }
-
-  // setPhysReg needs the driver's owned cache, which the free Cursor can't
-  // reach; do it through the driver.
-  void cursorSetPhysReg(llvm::InterferenceCache::Cursor &cur,
-                        unsigned physreg) {
-    cur.setPhysReg(intfCache, llvm::MCRegister(physreg));
   }
 
   // Header block number of the innermost loop containing `mbbNumber`, or
@@ -700,10 +697,6 @@ public:
     return regCosts[physreg];
   }
 
-  unsigned numAllocatableRegs(const llvm::TargetRegisterClass *rc) {
-    return RegClassInfo.getNumAllocatableRegs(rc);
-  }
-
   // LLVM's fixed number of slot-index positions per instruction (SlotIndex::
   // InstrDist) -- RAGreedy converts range size to instruction count with it.
   unsigned slotIndexInstrDistance() { return llvm::SlotIndex::InstrDist; }
@@ -725,14 +718,6 @@ public:
         "greedy-regclass-priority-trumps-globalness",
         mf->getSubtarget().getRegisterInfo()->regClassPriorityTrumpsGlobalness(
             *mf));
-  }
-
-  // Whether `reg`'s class is a proper subclass of its allocation superclass
-  // (RAGreedy's SingleInstrs input to shouldSplitSingleBlock: a constrained
-  // subclass makes even a single-instruction isolation worthwhile).
-  bool isProperSubClass(unsigned reg) {
-    return RegClassInfo.isProperSubClass(
-        mf->getRegInfo().getRegClass(llvm::Register(reg)));
   }
 
   // Whether the instruction defining/using `li` at `idx` is copy-like
@@ -809,20 +794,6 @@ public:
         ids.push_back(h.id());
     }
     return {type, ids};
-  }
-
-  // The last callee-saved register aliasing `physreg` (id, or 0 if none) --
-  // RAGreedy's isUnusedCalleeSavedReg check, which biases against introducing a
-  // CSR spill.
-  unsigned lastCalleeSavedAlias(unsigned physreg) {
-    return RegClassInfo.getLastCalleeSavedAlias(llvm::MCRegister(physreg)).id();
-  }
-
-  // Recompute the spill weight (and hint) of `reg` from its current defs/uses.
-  // RAGreedy does this for the vregs produced by a split so their enqueue
-  // priority reflects the new, shorter ranges.
-  void calculateSpillWeightAndHint(unsigned reg) {
-    auxInfo->calculateSpillWeightAndHint(LIS->getInterval(llvm::Register(reg)));
   }
 
   // Spill `li` into the current select_or_split's split-vreg vector. Returns
@@ -1235,7 +1206,22 @@ void populate_python_codegen(nb::module_ &m) {
   // PassManager can resolve them when the pipeline runs the allocator slot.
   llvm::initializePyRegAllocDriverPass(*llvm::PassRegistry::getPassRegistry());
 
+  // Per-block interference cache for region-split cost queries (RAGreedy's
+  // IntfCache); reached from RegAllocBase via interference_cache. Opaque --
+  // its only use from Python is as the handle InterferenceCursor.set_phys_reg
+  // needs to look up a physreg's entry; init/reset are driver-internal.
+  nb::class_<llvm::InterferenceCache>(m, "InterferenceCache");
+
   nb::class_<llvm::InterferenceCache::Cursor>(m, "InterferenceCursor")
+      .def(
+          "set_phys_reg",
+          [](llvm::InterferenceCache::Cursor &c, llvm::InterferenceCache &cache,
+             unsigned physreg) {
+            c.setPhysReg(cache, llvm::MCRegister(physreg));
+          },
+          "cache"_a, "physreg"_a,
+          "Point this cursor at `physreg`'s per-block interference, using "
+          "`cache` (RegAllocBase.interference_cache).")
       .def(
           "move_to_block",
           [](llvm::InterferenceCache::Cursor &c, unsigned n) {
@@ -1273,10 +1259,6 @@ void populate_python_codegen(nb::module_ &m) {
           "li"_a, "physreg"_a,
           "Fixed (physical) reg-unit interference segments for `physreg` "
           "overlapping `li` -- calcGapWeights marks gaps they cover huge_valf.")
-      .def("num_allocatable_regs", &PyRegAllocBase::numAllocatableRegs,
-           "reg_class"_a,
-           "Number of actually-allocatable registers in `reg_class` (the "
-           "register-pressure denominator; reserved registers excluded).")
       .def("slot_index_instr_distance", &PyRegAllocBase::slotIndexInstrDistance,
            "Slot positions per instruction (SlotIndex::InstrDist).")
       .def("reverse_local_assignment", &PyRegAllocBase::reverseLocalAssignment,
@@ -1288,9 +1270,6 @@ void populate_python_codegen(nb::module_ &m) {
           "Whether the register class's AllocationPriority outranks globalness "
           "in the priority calculation (honors "
           "-greedy-regclass-priority-trumps-globalness).")
-      .def("is_proper_sub_class", &PyRegAllocBase::isProperSubClass, "reg"_a,
-           "Whether `reg`'s class is a proper subclass of its allocation "
-           "superclass (shouldSplitSingleBlock's SingleInstrs input).")
       .def("is_copy_like_at", &PyRegAllocBase::isCopyLikeAt, "idx"_a,
            "Whether the instruction at slot `idx` is copy-like including "
            "target-specific copies (TII::isCopyInstr, or SUBREG_TO_REG).")
@@ -1306,15 +1285,6 @@ void populate_python_codegen(nb::module_ &m) {
            "`ids` the hinted physregs (a hinted physreg is preferred; evicting "
            "a hinted assignment is a 'broken hint' in eviction cost). (0, []) "
            "if none. `reg` must be a virtual register.")
-      .def("last_callee_saved_alias", &PyRegAllocBase::lastCalleeSavedAlias,
-           "physreg"_a,
-           "The last callee-saved register aliasing `physreg` (id, or 0) -- "
-           "biases against introducing a callee-saved spill.")
-      .def("calculate_spill_weight_and_hint",
-           &PyRegAllocBase::calculateSpillWeightAndHint, "reg"_a,
-           "Recompute `reg`'s spill weight and hint from its current defs/uses "
-           "-- for the vregs a split produced, so their enqueue priority "
-           "reflects the new ranges.")
       .def("spill", &PyRegAllocBase::spill, "li"_a,
            "Spill `li`; new split vregs are appended for re-enqueue. Only "
            "valid inside select_or_split.")
@@ -1368,13 +1338,27 @@ void populate_python_codegen(nb::module_ &m) {
           "The SpillPlacement network for choosing global-split boundaries "
           "(the machinery RAGreedy's splitAroundRegion drives). Borrowed and "
           "valid only within an allocator callback; do not retain.")
-      .def(
-          "new_interference_cursor", &PyRegAllocBase::newInterferenceCursor,
-          "A fresh interference-cache cursor (call set_interference_physreg to "
-          "point it at a physreg). Valid only within an allocator callback.")
-      .def("set_interference_physreg", &PyRegAllocBase::cursorSetPhysReg,
-           "cursor"_a, "physreg"_a,
-           "Point `cursor` at `physreg`'s per-block interference.")
+      .def_prop_ro(
+          "reg_class_info", &PyRegAllocBase::regClassInfo,
+          nb::rv_policy::reference,
+          "The RegisterClassInfo for this function (allocatable-register "
+          "counts, proper-subclass and callee-saved-alias queries). Borrowed "
+          "and valid only within an allocator callback; do not retain.")
+      .def_prop_ro(
+          "aux_info", &PyRegAllocBase::auxInfoPtr, nb::rv_policy::reference,
+          "The VirtRegAuxInfo for recomputing spill weights and hints. "
+          "Borrowed and valid only within an allocator callback; do not "
+          "retain.")
+      .def_prop_ro(
+          "interference_cache", &PyRegAllocBase::interferenceCachePtr,
+          nb::rv_policy::reference,
+          "The per-block interference cache backing region-split cost "
+          "queries; pass to InterferenceCursor.set_phys_reg. Borrowed and "
+          "valid only within an allocator callback; do not retain.")
+      .def("new_interference_cursor", &PyRegAllocBase::newInterferenceCursor,
+           "A fresh interference-cache cursor (call its set_phys_reg, passing "
+           "interference_cache, to point it at a physreg). Valid only within "
+           "an allocator callback.")
       .def("loop_header_number", &PyRegAllocBase::loopHeaderNumber,
            "mbb_number"_a,
            "Header block number of the innermost loop containing "
@@ -1592,6 +1576,58 @@ void populate_python_codegen(nb::module_ &m) {
           nb::rv_policy::reference,
           "The TargetInstrInfo for this subtarget -- target-static, so "
           "rv_policy::reference (see register_info).");
+
+  // llvm::RegisterClassInfo -- per-function dynamic register-class info
+  // (callee-saved and reserved registers depend on the calling convention, so
+  // this cannot be computed statically like TargetRegisterClass's own
+  // fields); reached from RegAllocBase via reg_class_info.
+  nb::class_<llvm::RegisterClassInfo>(m, "RegisterClassInfo")
+      .def(
+          "num_allocatable_regs",
+          [](const llvm::RegisterClassInfo &rci,
+             const llvm::TargetRegisterClass *rc) {
+            return rci.getNumAllocatableRegs(rc);
+          },
+          "reg_class"_a,
+          "RegisterClassInfo::getNumAllocatableRegs -- the number of "
+          "actually-allocatable registers in `reg_class` for the current "
+          "function (the register-pressure denominator; reserved registers "
+          "excluded).")
+      .def(
+          "is_proper_sub_class",
+          [](const llvm::RegisterClassInfo &rci,
+             const llvm::TargetRegisterClass *rc) {
+            return rci.isProperSubClass(rc);
+          },
+          "reg_class"_a,
+          "RegisterClassInfo::isProperSubClass -- whether `reg_class` has a "
+          "legal super-class with more allocatable registers "
+          "(shouldSplitSingleBlock's SingleInstrs input).")
+      .def(
+          "last_callee_saved_alias",
+          [](const llvm::RegisterClassInfo &rci, unsigned physreg) {
+            return rci.getLastCalleeSavedAlias(llvm::MCRegister(physreg)).id();
+          },
+          "physreg"_a,
+          "RegisterClassInfo::getLastCalleeSavedAlias -- the last "
+          "callee-saved register aliasing `physreg` (id, or 0 if none), "
+          "biasing against introducing a callee-saved spill.");
+
+  // llvm::VirtRegAuxInfo -- spill-weight and allocation-hint computation for
+  // a virtual register's live interval; reached from RegAllocBase via
+  // aux_info. Constructed and owned by the driver, so bound with no
+  // constructor of its own.
+  nb::class_<llvm::VirtRegAuxInfo>(m, "VirtRegAuxInfo")
+      .def(
+          "calculate_spill_weight_and_hint",
+          [](llvm::VirtRegAuxInfo &vrai, llvm::LiveInterval &li) {
+            vrai.calculateSpillWeightAndHint(li);
+          },
+          "li"_a,
+          "VirtRegAuxInfo::calculateSpillWeightAndHint -- (re)compute `li`'s "
+          "spill weight and allocation hint from its current defs/uses. "
+          "RAGreedy does this for the vregs produced by a split, so their "
+          "enqueue priority reflects the new, shorter ranges.");
 
   nb::class_<llvm::Spiller>(m, "Spiller");
 

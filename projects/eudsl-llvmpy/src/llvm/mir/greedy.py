@@ -228,7 +228,7 @@ class RAGreedy(mir.RegAllocBase):
         li = self.lis.interval(reg)
         rc = self.machine_function.reg_info.reg_class(reg)
         instr_dist = self.slot_index_instr_distance()
-        num_alloc = self.num_allocatable_regs(rc)
+        num_alloc = self.reg_class_info.num_allocatable_regs(rc)
         size = li.size
         reverse = self.reverse_local_assignment()
         # ForceGlobal: giant ranges fall back to the global heuristic (the
@@ -436,7 +436,8 @@ class RAGreedy(mir.RegAllocBase):
         new local ranges stay RS_New so they can re-compete. Mirrors
         RAGreedy::tryBlockSplit."""
         reg = li.reg
-        single_instrs = self.is_proper_sub_class(reg)
+        rc = self.machine_function.reg_info.reg_class(reg)
+        single_instrs = self.reg_class_info.is_proper_sub_class(rc)
         lre = self.new_live_range_edit(li)
         se = self.split_editor
         se.reset(lre, mir.ComplementSpillMode.SM_Speed)
@@ -853,7 +854,7 @@ class RAGreedy(mir.RegAllocBase):
         if sa.num_through_blocks() == 0:
             return False
         cand.reset(0, cand.intf)  # PhysReg = NoRegister
-        self.set_interference_physreg(cand.intf, 0)
+        cand.intf.set_phys_reg(self.interference_cache, 0)
         sp = self.spill_placer
         sp.prepare(cand.live_bundles)
         # Static cost is zero (no interference); a False here means no positive
@@ -872,7 +873,7 @@ class RAGreedy(mir.RegAllocBase):
         """EvictAdvisor::isUnusedCalleeSavedReg: `physreg` aliases a callee-saved
         register that has not been assigned yet (so using it would widen the
         callee-saved set)."""
-        return self.last_callee_saved_alias(
+        return self.reg_class_info.last_callee_saved_alias(
             physreg
         ) != 0 and not self.matrix.is_phys_reg_used(physreg)
 
@@ -903,7 +904,7 @@ class RAGreedy(mir.RegAllocBase):
             self._global_cand.append(GlobalSplitCandidate())
         cand = self._global_cand[num_cands]
         cand.reset(physreg, self.new_interference_cursor())
-        self.set_interference_physreg(cand.intf, physreg)
+        cand.intf.set_phys_reg(self.interference_cache, physreg)
         sp = self.spill_placer
         sp.prepare(cand.live_bundles)
         cost, positive = self._add_split_constraints(cand.intf)
@@ -1020,7 +1021,8 @@ class RAGreedy(mir.RegAllocBase):
         # create more than one edit entry, and the IntvMap < NumGlobalIntvs
         # staging check is off-by-one against len(used_cands).
         num_global_intvs = len(lre.new_vregs())
-        single_instrs = self.is_proper_sub_class(li.reg)
+        rc = self.machine_function.reg_info.reg_class(li.reg)
+        single_instrs = self.reg_class_info.is_proper_sub_class(rc)
         # Use blocks.
         for bi in sa.use_blocks():
             number = bi.mbb.number
