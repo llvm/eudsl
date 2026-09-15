@@ -268,7 +268,7 @@ class RAILPBase(mir.RegAllocBase):
                 (zero.distance(s.start), zero.distance(s.end)) for s in li.segments()
             ]
             cls = self.machine_function.reg_info.reg_class(reg)
-            num_regs[reg] = self.num_allocatable_regs(cls)
+            num_regs[reg] = self.reg_class_info.num_allocatable_regs(cls)
             reg_class_id[reg] = cls.id
             allowed, forb = [], set()
             seen = set()

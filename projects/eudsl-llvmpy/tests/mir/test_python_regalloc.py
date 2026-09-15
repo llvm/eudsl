@@ -1749,7 +1749,7 @@ def test_priority_pressure_accessors():
                 # Oracle: the allocatable-reg count equals the length of the
                 # allocation order (an independent path through AllocationOrder),
                 # so a wrong count can't hide inside a loose bound.
-                saw["num_alloc"] = self.num_allocatable_regs(rc)
+                saw["num_alloc"] = self.reg_class_info.num_allocatable_regs(rc)
                 saw["order_len"] = sum(1 for _ in self.allocation_order(li))
                 begin, end = li.begin_index, li.end_index
                 saw["distance"] = begin.distance(end)
@@ -1801,7 +1801,7 @@ def test_eviction_cost_accessors():
                         saw["used_after"] = self.matrix.is_phys_reg_used(preg)
                         # The GPR32 order mixes callee-saved and caller-saved.
                         csr = [
-                            self.last_callee_saved_alias(p)
+                            self.reg_class_info.last_callee_saved_alias(p)
                             for p in self.allocation_order(li)
                         ]
                         saw["csr_nonzero"] = any(x != 0 for x in csr)
@@ -1893,7 +1893,7 @@ class _SegWeightSplit(mir.RegAllocBase):
                 # (which would leave the poison value) is caught.
                 _seg_saw["framework_weight"] = iv.weight
                 iv.weight = -1.0
-                self.calculate_spill_weight_and_hint(nv)
+                self.aux_info.calculate_spill_weight_and_hint(iv)
                 _seg_saw["new_weight"] = self.lis.interval(nv).weight
                 # the recomputed product has segments of its own
                 _seg_saw["new_nsegs"] = len(self.lis.interval(nv).segments())

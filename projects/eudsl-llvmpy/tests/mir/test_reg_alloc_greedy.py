@@ -1263,7 +1263,7 @@ def test_interference_cursor_reports_per_block_interference():
                 checks["done"] = True
                 cur = self.new_interference_cursor()
                 preg = next(iter(self.allocation_order(li)))
-                self.set_interference_physreg(cur, preg)
+                cur.set_phys_reg(self.interference_cache, preg)
                 cur.move_to_block(0)
                 checks["has"] = cur.has_interference()
             return super().select_or_split(li)
@@ -1348,8 +1348,8 @@ def test_split_live_through_block_executes():
                 se.reset(lre, mir.ComplementSpillMode.SM_Speed)
                 idx = se.open_intv()
                 cur = self.new_interference_cursor()
-                self.set_interference_physreg(
-                    cur, next(iter(self.allocation_order(li)))
+                cur.set_phys_reg(
+                    self.interference_cache, next(iter(self.allocation_order(li)))
                 )
                 for bi in sa.use_blocks():
                     n = bi.mbb.number
@@ -1407,8 +1407,8 @@ def test_add_split_constraints_builds_constraints():
             ):
                 saw["done"] = True
                 cur = self.new_interference_cursor()
-                self.set_interference_physreg(
-                    cur, next(iter(self.allocation_order(li)))
+                cur.set_phys_reg(
+                    self.interference_cache, next(iter(self.allocation_order(li)))
                 )
                 self.spill_placer.prepare(mir.BitVector())
                 cost, positive = self._add_split_constraints(cur)
@@ -1440,8 +1440,8 @@ def test_add_through_constraints_links_clean_blocks():
             if "done" not in saw and sa.num_through_blocks() > 0:
                 saw["done"] = True
                 cur = self.new_interference_cursor()
-                self.set_interference_physreg(
-                    cur, next(iter(self.allocation_order(li)))
+                cur.set_phys_reg(
+                    self.interference_cache, next(iter(self.allocation_order(li)))
                 )
                 self.spill_placer.prepare(mir.BitVector())
                 self._add_split_constraints(cur)
@@ -1475,7 +1475,7 @@ def test_grow_region_expands_and_returns():
                     next(iter(self.allocation_order(li))),
                     self.new_interference_cursor(),
                 )
-                self.set_interference_physreg(cand.intf, cand.phys_reg)
+                cand.intf.set_phys_reg(self.interference_cache, cand.phys_reg)
                 self.spill_placer.prepare(cand.live_bundles)
                 self._add_split_constraints(cand.intf)
                 saw["grew"] = self._grow_region(li, cand)
@@ -1511,7 +1511,7 @@ def test_calc_global_split_cost_nonnegative():
                     next(iter(self.allocation_order(li))),
                     self.new_interference_cursor(),
                 )
-                self.set_interference_physreg(cand.intf, cand.phys_reg)
+                cand.intf.set_phys_reg(self.interference_cache, cand.phys_reg)
                 self.spill_placer.prepare(cand.live_bundles)
                 self._add_split_constraints(cand.intf)
                 self._grow_region(li, cand)
@@ -1843,7 +1843,7 @@ def test_grow_region_budget_exhausted(monkeypatch):
         cand.reset(
             next(iter(self.allocation_order(li))), self.new_interference_cursor()
         )
-        self.set_interference_physreg(cand.intf, cand.phys_reg)
+        cand.intf.set_phys_reg(self.interference_cache, cand.phys_reg)
         self.spill_placer.prepare(cand.live_bundles)
         self._add_split_constraints(cand.intf)
         st["grew"] = self._grow_region(li, cand)
@@ -2035,7 +2035,7 @@ def test_calc_global_split_cost_arms():
 
     def body(self, li, st):
         cur = self.new_interference_cursor()
-        self.set_interference_physreg(cur, next(iter(self.allocation_order(li))))
+        cur.set_phys_reg(self.interference_cache, next(iter(self.allocation_order(li))))
         self.spill_placer.prepare(mir.BitVector())
         self._add_split_constraints(cur)
         eb = self.edge_bundles
@@ -2293,6 +2293,9 @@ class _FakeIntf:
         self._last = _FakeSlot(last)
 
     def move_to_block(self, n):
+        pass
+
+    def set_phys_reg(self, cache, physreg):
         pass
 
     def has_interference(self):
@@ -2581,7 +2584,7 @@ def test_calc_compact_region_not_positive_returns_false():
     fg = SimpleNamespace(
         split_analysis=SimpleNamespace(num_through_blocks=lambda: 1),
         spill_placer=_FakeSP(),
-        set_interference_physreg=lambda c, p: None,
+        interference_cache=None,
         _add_split_constraints=lambda intf: (mir.BlockFrequency(0), False),
     )
     assert mg.RAGreedy._calc_compact_region(fg, object(), cand) is False
@@ -2601,7 +2604,7 @@ def test_calc_compact_region_success_returns_true():
     fg = SimpleNamespace(
         split_analysis=SimpleNamespace(num_through_blocks=lambda: 1),
         spill_placer=_FakeSP(),
-        set_interference_physreg=lambda c, p: None,
+        interference_cache=None,
         _add_split_constraints=lambda intf: (mir.BlockFrequency(0), True),
         _grow_region=grow,
     )
@@ -2823,7 +2826,10 @@ def test_split_around_region_all_arms():
         edge_bundles=SimpleNamespace(get_bundle_number=lambda n, out: eb_map[(n, out)]),
         _global_cand=[cand],
         _bundle_cand=bundle_cand,
-        is_proper_sub_class=lambda reg: False,
+        reg_class_info=SimpleNamespace(is_proper_sub_class=lambda rc: False),
+        machine_function=SimpleNamespace(
+            reg_info=SimpleNamespace(reg_class=lambda reg: reg)
+        ),
         lis=SimpleNamespace(interval=lambda r: r),
         _get_stage=get_stage,
         _set_stage=set_stage,
