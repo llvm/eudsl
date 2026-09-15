@@ -35,7 +35,7 @@ def _build_add(mmi, declare_liveins=True):
     if declare_liveins:
         entry.add_livein(w0)
         entry.add_livein(w1)
-    v0, v1, v2 = (mf.create_vreg(gpr32) for _ in range(3))
+    v0, v1, v2 = (mf.reg_info.create_virtual_register(gpr32) for _ in range(3))
     copy = mf.opcode("COPY")
     for dst, src in ((v0, w0), (v1, w1)):
         c = b.build_instr(copy)
@@ -71,14 +71,14 @@ def _build_high_pressure(mmi):
     addrr = mf.opcode("ADDWrr")
     terms = []
     for _ in range(_HP_N):
-        t = mf.create_vreg(gpr32)
+        t = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(copy)
         ins.add_reg(t, is_def=True)
         ins.add_reg(w0)
         terms.append(t)
     acc = terms[0]
     for t in terms[1:]:
-        nacc = mf.create_vreg(gpr32)
+        nacc = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(nacc, is_def=True)
         ins.add_reg(acc)
@@ -274,7 +274,7 @@ def _build_cross_reg_move(mmi):
     gpr32 = mf.reg_class("GPR32")
     w0, w1 = mf.physreg("W0"), mf.physreg("W1")
     entry.add_livein(w1)
-    v0 = mf.create_vreg(gpr32)
+    v0 = mf.reg_info.create_virtual_register(gpr32)
     copy = mf.opcode("COPY")
     c = b.build_instr(copy)
     c.add_reg(v0, is_def=True)

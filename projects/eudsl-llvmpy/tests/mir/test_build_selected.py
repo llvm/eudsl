@@ -46,9 +46,9 @@ def _build_selected_add(mmi, declare_liveins=True):
         entry.add_livein(w0)
         entry.add_livein(w1)
 
-    v0 = mf.create_vreg(gpr32)
-    v1 = mf.create_vreg(gpr32)
-    v2 = mf.create_vreg(gpr32)
+    v0 = mf.reg_info.create_virtual_register(gpr32)
+    v1 = mf.reg_info.create_virtual_register(gpr32)
+    v2 = mf.reg_info.create_virtual_register(gpr32)
     copy = mf.opcode("COPY")
 
     c0 = b.build_instr(copy)
@@ -80,7 +80,7 @@ def test_reg_class_and_physreg_lookup():
         mmi = mir.create_machine_function(mod, tm, "add")
         mf = mmi.machine_function("add")
         assert mf.reg_class("GPR32") is not None
-        assert mf.create_vreg(mf.reg_class("GPR32")).is_virtual
+        assert mf.reg_info.create_virtual_register(mf.reg_class("GPR32")).is_virtual
         assert mf.physreg("W0").is_physical
     assert_no_leaks()
 

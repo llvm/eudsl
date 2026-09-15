@@ -34,7 +34,7 @@ def _build_selected_add(mmi):
     w0, w1 = mf.physreg("W0"), mf.physreg("W1")
     entry.add_livein(w0)
     entry.add_livein(w1)
-    v0, v1, v2 = (mf.create_vreg(gpr32) for _ in range(3))
+    v0, v1, v2 = (mf.reg_info.create_virtual_register(gpr32) for _ in range(3))
     copy = mf.opcode("COPY")
     for dst, src in ((v0, w0), (v1, w1)):
         c = b.build_instr(copy)
@@ -79,7 +79,7 @@ def _build_high_pressure(mmi):
     # them (distinct vregs, so nothing coalesces them away).
     terms = []
     for _ in range(_HP_N):
-        t = mf.create_vreg(gpr32)
+        t = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(copy)
         ins.add_reg(t, is_def=True)
         ins.add_reg(w0)
@@ -87,7 +87,7 @@ def _build_high_pressure(mmi):
 
     acc = terms[0]
     for t in terms[1:]:
-        nacc = mf.create_vreg(gpr32)
+        nacc = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(addrr)
         ins.add_reg(nacc, is_def=True)
         ins.add_reg(acc)
@@ -616,7 +616,7 @@ def _build_three_block(mmi):
     br = mf.opcode("B")
 
     b.set_block(b0)
-    v = mf.create_vreg(gpr32)
+    v = mf.reg_info.create_virtual_register(gpr32)
     c = b.build_instr(copy)
     c.add_reg(v, is_def=True)
     c.add_reg(w0)
@@ -734,7 +734,7 @@ def _build_cbz(mmi):
     b0.add_livein(w0)
     copy = mf.opcode("COPY")
     b.set_block(b0)
-    v = mf.create_vreg(gpr32)
+    v = mf.reg_info.create_virtual_register(gpr32)
     c = b.build_instr(copy)
     c.add_reg(v, is_def=True)
     c.add_reg(w0)
@@ -1552,7 +1552,7 @@ def _build_remat_const(mmi):
     gpr32 = mf.reg_class("GPR32")
     w0 = mf.physreg("W0")
     entry.add_livein(w0)
-    x0, v, r = (mf.create_vreg(gpr32) for _ in range(3))
+    x0, v, r = (mf.reg_info.create_virtual_register(gpr32) for _ in range(3))
     c = b.build_instr(mf.opcode("COPY"))
     c.add_reg(x0, is_def=True)
     c.add_reg(w0)
@@ -1732,7 +1732,7 @@ def test_priority_pressure_accessors():
             remat[def_mi.opcode_name] = self.is_trivially_rematerializable(def_mi)
             if not saw:
                 mf = self.machine_function
-                rc = self.reg_class(li.reg)
+                rc = mf.reg_info.reg_class(li.reg)
                 # Oracle: the class of a GPR32 vreg is exactly the name-resolved
                 # GPR32 class, and distinct from GPR64 -- a broken reg_class/id
                 # returning a constant fails one of these.
@@ -1782,7 +1782,7 @@ def test_eviction_cost_accessors():
         def select_or_split(self, li):
             hints[li.reg] = (
                 self.reg_allocation_hints(li.reg),
-                self.simple_hint(li.reg),
+                self.machine_function.reg_info.simple_hint(li.reg),
             )
             for preg in self.allocation_order(li):
                 if self.matrix.is_free(li, preg):
@@ -1934,7 +1934,7 @@ def test_priority_scalars():
     class Reader(mir.RegAllocBase):
         def select_or_split(self, li):
             if not saw:
-                rc = self.reg_class(li.reg)
+                rc = self.machine_function.reg_info.reg_class(li.reg)
                 saw["instr_dist"] = self.slot_index_instr_distance()
                 saw["reverse_local"] = self.reverse_local_assignment()
                 saw["trumps_globalness"] = self.reg_class_priority_trumps_globalness()
@@ -1968,7 +1968,7 @@ def test_target_register_class_properties():
     class Probe(mir.RegAllocBase):
         def select_or_split(self, li):
             if not seen:
-                rc = self.reg_class(li.reg)
+                rc = self.machine_function.reg_info.reg_class(li.reg)
                 seen["copy_cost"] = rc.copy_cost
                 seen["allocatable"] = rc.is_allocatable
                 seen["global_priority"] = rc.has_global_priority
@@ -1986,6 +1986,32 @@ def test_target_register_class_properties():
     assert seen["allocatable"] is True
     assert isinstance(seen["global_priority"], bool)
     assert isinstance(seen["alloc_priority"], int)
+    assert_no_leaks()
+
+
+def test_machine_register_info_reg_info_accessor():
+    """reg_class/simple_hint are reachable on MachineRegisterInfo via
+    machine_function.reg_info -- not as flat RegAllocBase forwarders."""
+    seen = {}
+
+    class Probe(mir.RegAllocBase):
+        def select_or_split(self, li):
+            if not seen:
+                mri = self.machine_function.reg_info
+                rc = mri.reg_class(li.reg)
+                seen["is_gpr32"] = rc.id == self.machine_function.reg_class("GPR32").id
+                seen["simple_hint"] = mri.simple_hint(li.reg)
+            for preg in self.allocation_order(li):
+                if self.matrix.is_free(li, preg):
+                    return preg
+            self.spill(li)
+            return None
+
+    mir.register_regalloc("ra-mri-reg-info", Probe)
+    obj = _emit("ra-mri-reg-info", Probe)
+    assert obj[:4] == b"\x7fELF"
+    assert seen["is_gpr32"]
+    assert isinstance(seen["simple_hint"], int)
     assert_no_leaks()
 
 

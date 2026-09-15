@@ -41,7 +41,7 @@ def test_build_if_diamond_with_phi():
         b = mir.MachineIRBuilder(mf)
         entry = mf.blocks[0]
 
-        x = mf.create_generic_virtual_register(s32)
+        x = mf.reg_info.create_generic_virtual_register(s32)
         one = b.build_constant(s32, 1)
         two = b.build_constant(s32, 2)
         cond = b.build_icmp(ir.ICmpPredicate.SLT, s1, x, one)  # x < 1
@@ -402,7 +402,7 @@ def test_add_phi_incoming_requires_a_phi():
         const_mi = mf.blocks[0].instructions[0]  # a G_CONSTANT, not a G_PHI
         with pytest.raises(ValueError, match="requires a G_PHI"):
             const_mi.add_phi_incoming(
-                mf.create_generic_virtual_register(s32), mf.blocks[0]
+                mf.reg_info.create_generic_virtual_register(s32), mf.blocks[0]
             )
     assert_no_leaks()
 

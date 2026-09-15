@@ -202,7 +202,7 @@ def test_value_reused_under_second_builder_of_same_function():
         s32 = mir.LLT.scalar(32)
         mf = mir.create_machine_function(mod, tm, "f").machine_function("f")
         with mir.MachineIRBuilder(mf):
-            a = MachineValue(mf.create_generic_virtual_register(s32), s32)
+            a = MachineValue(mf.reg_info.create_generic_virtual_register(s32), s32)
         with mir.MachineIRBuilder(mf):  # a fresh builder over the same function
             out = a + a
         assert out.reg.is_virtual
