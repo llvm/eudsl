@@ -634,7 +634,11 @@ class RAGreedy(mir.RegAllocBase):
             # Split around every non-copy instruction that reads only a subset of
             # the value's live lanes; a full copy (uncoalescable) or a use that
             # reads the whole live value gains nothing from splitting.
-            if self.is_full_copy_instr_at(use) or not self.reads_lane_subset(li, use):
+            use_mi = self.lis.instr_from_index(use)
+            is_full_copy = use_mi is not None and (
+                self.machine_function.subtarget.instr_info.is_full_copy_instr(use_mi)
+            )
+            if is_full_copy or not self.reads_lane_subset(li, use):
                 continue
             se.open_intv()
             seg_start = se.enter_intv_before(use)
@@ -949,7 +953,9 @@ class RAGreedy(mir.RegAllocBase):
         new vregs were produced."""
         # Target opt-out: some targets (e.g. AMDGPU) disable region splitting for
         # a vreg; the AArch64 default is true.
-        if not self.should_region_split_for_virt_reg(li.reg):
+        if not self.machine_function.subtarget.register_info.should_region_split_for_virt_reg(
+            self.machine_function, li
+        ):
             return False
         order = list(self.allocation_order(li))
         num_cands = 0
