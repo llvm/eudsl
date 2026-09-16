@@ -3088,6 +3088,11 @@ class Pipeline(Pipeline):
         )
         return self
 
+    def linalg_categorize_ops(self):
+        """Convert `named` and `generic` ops into `category` ops"""
+        self.add_pass("linalg-categorize-ops")
+        return self
+
     def linalg_fold_into_elementwise(self):
         """Fold transpose and broadcast ops into elementwise consumers
 
@@ -3118,7 +3123,7 @@ class Pipeline(Pipeline):
         return self
 
     def linalg_generalize_named_ops(self):
-        """Convert named ops into generic ops"""
+        """Convert `named` and `category` ops into `generic` ops"""
         self.add_pass("linalg-generalize-named-ops")
         return self
 
@@ -3176,7 +3181,7 @@ class Pipeline(Pipeline):
         return self
 
     def linalg_specialize_generic_ops(self):
-        """Convert generic ops back to named ops"""
+        """Convert `generic` ops into `named` or `category` ops"""
         self.add_pass("linalg-specialize-generic-ops")
         return self
 
