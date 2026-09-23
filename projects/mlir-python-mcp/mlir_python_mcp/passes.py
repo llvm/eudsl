@@ -78,7 +78,13 @@ class Pipeline(Pipeline):
         return self
 
     def acc_declare_ctor_dtor_conversion(
-        self, priority: int = None, generate_dtors: bool = None
+        self,
+        priority: int = None,
+        generate_dtors: bool = None,
+        extra_ctor_name: str = None,
+        extra_constructors: List[str] = None,
+        entry_only_constructors: List[str] = None,
+        entry_point_name: str = None,
     ):
         """Convert OpenACC declare global constructors and destructors to LLVM functions
 
@@ -96,10 +102,21 @@ class Pipeline(Pipeline):
         Args:
             priority: Priority for ACC declare global constructors and destructors
             generate_dtors: Generate LLVM destructor functions and register them globally
+            extra_ctor_name: Name of the extra constructor function added to global ctors.
+            extra_constructors: Extra functions to declare and call from an OpenACC constructor.
+            entry_only_constructors: Extra functions to declare and call from an OpenACC constructor when the entry-point-name is defined and present in the module
+            entry_point_name: Symbol name of the entry point. Extra constructors with in entryOnlyConstructors are emitted only when this symbol is present. Empty means entryOnlyConstructors are never emitted.
         """
         self.add_pass(
             "acc-declare-ctor-dtor-conversion",
-            **{"priority": priority, "generate-dtors": generate_dtors}
+            **{
+                "priority": priority,
+                "generate-dtors": generate_dtors,
+                "extra-ctor-name": extra_ctor_name,
+                "extra-constructors": extra_constructors,
+                "entry-only-constructors": entry_only_constructors,
+                "entry-point-name": entry_point_name,
+            }
         )
         return self
 
@@ -4681,6 +4698,9 @@ class Pipeline(Pipeline):
         terminator operands of region branch ops, and,
         (D) Removes simple and region branch ops that have all non-live results and
         don't affect memory in any way.
+
+        The pass applies only to nested operations. It preserves the root
+        operation, including its operands, results, and function signature.
 
         Here, a "simple op" refers to an op that isn't a symbol op, symbol-user op,
         region branch op, branch op, region branch terminator op, or return-like.
