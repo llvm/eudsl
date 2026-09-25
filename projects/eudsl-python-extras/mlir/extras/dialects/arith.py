@@ -579,5 +579,4 @@ class ArithCanonicalizer(Canonicalizer):
     cst_transformers = [CanonicalizeFMA]
     function_patchers = [ArithPatchFunction]
 
-
 canonicalizer = ArithCanonicalizer()
