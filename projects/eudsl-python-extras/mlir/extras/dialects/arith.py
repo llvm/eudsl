@@ -315,7 +315,7 @@ def _binary_op(
 
     if predicate is not None:
         if isinstance(lhs.dtype, FloatType):
-            enum_predicate = _CMPF_PREDICATES[predicate][0]
+            enum_predicate, _ = _CMPF_PREDICATES[predicate]
         else:
             assert isinstance(
                 lhs.dtype, (IntegerType, IndexType)
