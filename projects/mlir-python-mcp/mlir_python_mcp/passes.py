@@ -17,7 +17,8 @@ class Pipeline(Pipeline):
         For calls inside offload regions that target a function with an
         `acc routine` directive and a `bind(name)` clause, rewrite the
         call to use the bound symbol so device code calls the correct
-        call target.
+        call target. String-valued bind targets must first be created by
+        `acc-materialize-routine-bind-targets`.
 
         Args:
             device_type: Target device type. One use case is ensuring that device_type-specific clauses are considered. Another is device-specific specializations.
@@ -366,6 +367,24 @@ class Pipeline(Pipeline):
             default_tile_size: Default tile size to use for wildcard ('*') tile sizes
         """
         self.add_pass("acc-loop-tiling", **{"default-tile-size": default_tile_size})
+        return self
+
+    def acc_materialize_routine_bind_targets(
+        self, device_type: "mlir::acc::DeviceType" = None
+    ):
+        """Materialize string-bound ACC routine call targets
+
+        Materialize declarations for string-valued `acc routine bind` targets in
+        the current symbol table. This parent-level pass must run before
+        `acc-bind-routine`, which can then rewrite calls in parallel without
+        mutating a parent operation.
+
+        Args:
+            device_type: Target device type. One use case is ensuring that device_type-specific clauses are considered. Another is device-specific specializations.
+        """
+        self.add_pass(
+            "acc-materialize-routine-bind-targets", **{"device-type": device_type}
+        )
         return self
 
     def acc_recipe_materialization(self):
