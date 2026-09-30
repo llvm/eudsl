@@ -2197,6 +2197,12 @@ class Pipeline(Pipeline):
             `__spirv_ocl_` extended instruction set. Set the `convertToOCL` flag to
             `false` to leave these ops alone instead.
 
+        Algebraic simplifications run ahead of the lowering, so the cheaper form is
+        what reaches the intrinsics: `math.powf %x, 2.0` becomes a multiply instead
+        of a call to `__spirv_ocl_native_powr`, and `exp(a) / exp(b)` becomes a
+        single `exp(a - b)` when the division may be reassociated (`arcp` or
+        `reassoc`). Ops these simplifications cannot rewrite are left as they are.
+
         Args:
             convert_arith: Convert supported Arith ops (e.g. arith.divf) as well.
             convert_to_ocl: Convert Math ops without `afn` fastmath to precise OCL intrinsics.
@@ -6322,6 +6328,7 @@ class Pipeline(Pipeline):
         self,
         disable_tosa_decompositions: bool = None,
         aggressive_reduce_constant: bool = None,
+        allow_non_finites: bool = None,
     ):
         """Lower TOSA to LinAlg on tensors
 
@@ -6331,12 +6338,14 @@ class Pipeline(Pipeline):
         Args:
             disable_tosa_decompositions: Disable tosa decompositions pass
             aggressive_reduce_constant: Always perform the reduce constant optimization
+            allow_non_finites: When enabled, float min/max reductions are seeded with the infinite identity mandated by the TOSA specification. When disabled (default), the largest finite value is used instead. This controls only compiler-generated identity values; NaN results required by nan_mode are unaffected.
         """
         self.add_pass(
             "tosa-to-linalg",
             **{
                 "disable-tosa-decompositions": disable_tosa_decompositions,
                 "aggressive-reduce-constant": aggressive_reduce_constant,
+                "allow-non-finites": allow_non_finites,
             }
         )
         return self
