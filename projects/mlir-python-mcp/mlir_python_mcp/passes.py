@@ -4076,7 +4076,7 @@ class Pipeline(Pipeline):
         analysis_fuzzer_seed: int = None,
         analysis_heuristic: str = None,
         bufferize_function_boundaries: bool = None,
-        check_parallel_regions: bool = None,
+        may_have_parallel_regions: bool = None,
         copy_before_write: bool = None,
         dialect_filter: List[str] = None,
         dump_alias_sets: bool = None,
@@ -4202,7 +4202,7 @@ class Pipeline(Pipeline):
             analysis_fuzzer_seed: Test only: Analyze ops in random order with a given seed (fuzzer)
             analysis_heuristic: Heuristic that control the IR traversal during analysis
             bufferize_function_boundaries: Bufferize function boundaries (experimental).
-            check_parallel_regions: Account for parallel regions in RaW analysis.
+            may_have_parallel_regions: Whether the IR may contain parallel regions.
             copy_before_write: Skip the analysis. Make a buffer copy on every write.
             dialect_filter: Restrict bufferization to ops from these dialects.
             dump_alias_sets: Test only: Annotate tensor IR with alias sets
@@ -4223,7 +4223,7 @@ class Pipeline(Pipeline):
                 "analysis-fuzzer-seed": analysis_fuzzer_seed,
                 "analysis-heuristic": analysis_heuristic,
                 "bufferize-function-boundaries": bufferize_function_boundaries,
-                "check-parallel-regions": check_parallel_regions,
+                "may-have-parallel-regions": may_have_parallel_regions,
                 "copy-before-write": copy_before_write,
                 "dialect-filter": dialect_filter,
                 "dump-alias-sets": dump_alias_sets,
