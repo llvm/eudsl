@@ -2669,6 +2669,32 @@ class Pipeline(Pipeline):
         self.add_pass("eliminate-empty-tensors")
         return self
 
+    def eliminate_vector_masks(self, vscale_min: int = None, vscale_max: int = None):
+        """Replace masks that are provably all-true with constant masks
+
+        Rewrites `vector.create_mask` operations that can be proven all-true into
+        `vector.constant_mask`. Canonicalization then folds those away, turning a
+        masked transfer into an unmasked one.
+
+        A mask dimension is all-true when its size is at least the size of the
+        corresponding vector dimension. Sizes are bounded with
+        `ValueBoundsOpInterface`, so sizes derived from a loop, such as
+        `%dim - %iv`, can be proven too.
+
+        Proving a scalable dimension needs the range of `vscale`: pass `vscale-min`
+        and `vscale-max` when it is known for the target (1 and 16 for SVE, say).
+        Without a range, only fixed-size dimensions can be proven.
+
+        Args:
+            vscale_min: Minimum possible value of vscale, or 0 when unknown.
+            vscale_max: Maximum possible value of vscale, or 0 when unknown.
+        """
+        self.add_pass(
+            "eliminate-vector-masks",
+            **{"vscale-min": vscale_min, "vscale-max": vscale_max}
+        )
+        return self
+
     def empty_tensor_to_alloc_tensor(self):
         """Replace all empty ops by alloc_tensor ops.
 
