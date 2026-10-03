@@ -441,11 +441,9 @@ void populate_builder(nb::module_ &m) {
             llvm::BasicBlock *bb;
             llvm::Instruction *inst;
             if (nb::try_cast(blockOrBefore, bb)) {
-              new (self) InsertPoint{RawIP(bb, bb->end()), std::move(builder)};
+              new (self) InsertPoint{bb->end(), std::move(builder)};
             } else if (nb::try_cast(blockOrBefore, inst)) {
-              new (self)
-                  InsertPoint{RawIP(inst->getParent(), inst->getIterator()),
-                              std::move(builder)};
+              new (self) InsertPoint{inst->getIterator(), std::move(builder)};
             } else {
               throw nb::type_error(
                   "InsertPoint expects a BasicBlock (insert at end) or an "
@@ -456,8 +454,7 @@ void populate_builder(nb::module_ &m) {
       .def_static(
           "at_block_begin",
           [](llvm::BasicBlock *bb, nb::object builder) {
-            return InsertPoint{RawIP(bb, bb->getFirstInsertionPt()),
-                               std::move(builder)};
+            return InsertPoint{bb->getFirstInsertionPt(), std::move(builder)};
           },
           "block"_a, "builder"_a = nb::none(),
           "Insert at the start of a block (after any phis).")
@@ -467,24 +464,26 @@ void populate_builder(nb::module_ &m) {
             llvm::Instruction *term = bb->getTerminatorOrNull();
             if (!term)
               throw nb::value_error("block has no terminator");
-            return InsertPoint{RawIP(bb, term->getIterator()),
-                               std::move(builder)};
+            return InsertPoint{term->getIterator(), std::move(builder)};
           },
           "block"_a, "builder"_a = nb::none(),
           "Insert before a block's terminator.")
       .def_static(
           "after",
           [](llvm::Instruction *inst, nb::object builder) {
-            return InsertPoint{
-                RawIP(inst->getParent(), std::next(inst->getIterator())),
-                std::move(builder)};
+            return InsertPoint{std::next(inst->getIterator()),
+                               std::move(builder)};
           },
           "instruction"_a, "builder"_a = nb::none(),
           "Insert immediately after an instruction.")
       .def_prop_ro(
-          "block", [](InsertPoint &self) { return self.ip.getBlock(); },
+          "block",
+          [](InsertPoint &self) {
+            return self.ip.isValid() ? self.ip.getNodeParent() : nullptr;
+          },
           nb::rv_policy::reference_internal)
-      .def_prop_ro("is_set", [](InsertPoint &self) { return self.ip.isSet(); })
+      .def_prop_ro("is_set",
+                   [](InsertPoint &self) { return self.ip.isValid(); })
       .def("__enter__",
            [](nb::object self) -> nb::object {
              InsertPoint &ipObj = nb::cast<InsertPoint &>(self);
