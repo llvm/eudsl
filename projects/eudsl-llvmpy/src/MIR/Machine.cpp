@@ -282,6 +282,15 @@ static std::vector<llvm::MachineIRBuilder *> &machineBuilderStack() {
   return stack;
 }
 
+// Errors go to a local stream so a bad value returns false instead of exiting.
+static bool setStartAfter(llvm::StringRef pass) {
+  std::string arg = ("-start-after=" + pass).str();
+  const char *argv[] = {"eudsl-llvmpy", arg.c_str()};
+  std::string errors;
+  llvm::raw_string_ostream errorsOS(errors);
+  return llvm::cl::ParseCommandLineOptions(2, argv, /*Overview=*/"", &errorsOS);
+}
+
 // The llvm::MachineModuleInfo that owns the MachineFunctions is held one of
 // three ways depending on how a MirModule was built. Each construction path is
 // its own type, and MirModule::state is a std::variant over them, so "which
@@ -527,22 +536,19 @@ public:
     // MIR is used as-is. The option is process-global (read by the pass config
     // addPassesToEmitFile builds), so set+restore it; there is no lock, so this
     // relies on the GIL serializing callers (no concurrent/nested/free-threaded
-    // codegen).
-    auto &opts = llvm::cl::getRegisteredOptions();
-    auto it = opts.find("start-after");
+    // codegen). -start-after is a TableGen'd CodeGen library option rather than
+    // a cl::opt, so the only public way to set it is ParseCommandLineOptions,
+    // and there is no getter: "restore" resets it to its empty default, which
+    // is its value in an embedding that never parses LLVM flags.
     // LCOV_EXCL_START -- start-after is always registered by codegen
-    if (it == opts.end()) {
-      throw std::runtime_error("the -start-after option is not registered");
-    }
+    if (!setStartAfter("finalize-isel"))
+      throw std::runtime_error("could not set the -start-after option");
     // LCOV_EXCL_STOP
-    auto &startAfter = *static_cast<llvm::cl::opt<std::string> *>(it->second);
-    std::string saved = startAfter;
     struct Restore {
-      llvm::cl::opt<std::string> &opt;
-      std::string value;
-      ~Restore() { opt = value; }
-    } restore{startAfter, saved};
-    startAfter = "finalize-isel";
+      ~Restore() { setStartAfter(""); }
+    } restore;
+
+    auto &opts = llvm::cl::getRegisteredOptions();
 
     using SchedCtor = llvm::MachineSchedRegistry::ScheduleDAGCtor;
     using SchedOpt =
