@@ -280,7 +280,11 @@ class Pipeline(Pipeline):
         self.add_pass("acc-implicit-declare")
         return self
 
-    def acc_implicit_routine(self, device_type: "mlir::acc::DeviceType" = None):
+    def acc_implicit_routine(
+        self,
+        device_type: "mlir::acc::DeviceType" = None,
+        the_device_types: List[int] = None,
+    ):
         """Generate implicit acc routine for functions in acc regions
 
         This pass implements the implicit rules described in OpenACC specification
@@ -310,8 +314,12 @@ class Pipeline(Pipeline):
 
         Args:
             device_type: Target device type. One use case is ensuring that device_type-specific clauses are considered. Another is device-specific specializations.
+            the_device_types: Runtime acc_device_t values for which acc.on_device is true on the target
         """
-        self.add_pass("acc-implicit-routine", **{"device-type": device_type})
+        self.add_pass(
+            "acc-implicit-routine",
+            **{"device-type": device_type, "the-device-types": the_device_types}
+        )
         return self
 
     def acc_legalize_serial(self):
@@ -458,7 +466,7 @@ class Pipeline(Pipeline):
                       (folded if known): acc.on_device
 
         Args:
-            the_device_types: List of integers which represent the device we are specializing for
+            the_device_types: Runtime acc_device_t values for which acc.on_device is true on the target
         """
         self.add_pass(
             "acc-specialize-for-device", **{"the-device-types": the_device_types}
