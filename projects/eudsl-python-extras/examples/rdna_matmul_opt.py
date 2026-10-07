@@ -726,7 +726,11 @@ assert simplified_module.operation.verify()
 lowered_module = run_pipeline(
     simplified_module,
     Pipeline()
-    .Gpu(Pipeline().convert_gpu_to_rocdl(use_bare_ptr_memref_call_conv=True))
+    .Gpu(
+        Pipeline().convert_gpu_to_rocdl(
+            arch=get_hip_arch(), use_bare_ptr_memref_call_conv=True
+        )
+    )
     .gpu_to_llvm()
     .lower_to_llvm(),
     # .Nested("llvm.func", Pipeline().sroa()),

@@ -254,6 +254,7 @@ lowered_module = run_pipeline(
     Pipeline()
     .Gpu(
         Pipeline().convert_gpu_to_rocdl(
+            arch=get_hip_arch(),
             use_bare_ptr_memref_call_conv=True,
             runtime="HIP",
         )

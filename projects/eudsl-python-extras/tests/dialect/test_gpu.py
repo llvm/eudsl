@@ -563,7 +563,11 @@ def test_amdgpu(ctx: MLIRContext):
     lowered_module = run_pipeline(
         gpu_module,
         Pipeline()
-        .Gpu(Pipeline().convert_gpu_to_rocdl(use_bare_ptr_memref_call_conv=True))
+        .Gpu(
+            Pipeline().convert_gpu_to_rocdl(
+                arch=arch, use_bare_ptr_memref_call_conv=True
+            )
+        )
         .rocdl_attach_target(chip=arch, abi="500")
         .gpu_to_llvm()
         .lower_to_llvm(),
@@ -675,7 +679,11 @@ def test_amdgpu_square(ctx: MLIRContext):
     lowered_module = run_pipeline(
         gpu_module,
         Pipeline()
-        .Gpu(Pipeline().convert_gpu_to_rocdl(use_bare_ptr_memref_call_conv=True))
+        .Gpu(
+            Pipeline().convert_gpu_to_rocdl(
+                arch=arch, use_bare_ptr_memref_call_conv=True
+            )
+        )
         .rocdl_attach_target(chip=arch, abi="500")
         .gpu_to_llvm()
         .lower_to_llvm(),
@@ -803,7 +811,11 @@ def test_amdgpu_vector(ctx: MLIRContext):
     lowered_module = run_pipeline(
         gpu_module,
         Pipeline()
-        .Gpu(Pipeline().convert_gpu_to_rocdl(use_bare_ptr_memref_call_conv=True))
+        .Gpu(
+            Pipeline().convert_gpu_to_rocdl(
+                arch=arch, use_bare_ptr_memref_call_conv=True
+            )
+        )
         .rocdl_attach_target(chip=arch, abi="500")
         .gpu_to_llvm()
         .lower_to_llvm(),
@@ -913,7 +925,11 @@ def test_amdgpu_bank_conflicts(ctx: MLIRContext):
     lowered_module = run_pipeline(
         gpu_module,
         Pipeline()
-        .Gpu(Pipeline().convert_gpu_to_rocdl(use_bare_ptr_memref_call_conv=True))
+        .Gpu(
+            Pipeline().convert_gpu_to_rocdl(
+                arch=arch, use_bare_ptr_memref_call_conv=True
+            )
+        )
         .rocdl_attach_target(chip=arch, abi="500")
         .gpu_to_llvm()
         .lower_to_llvm(),
@@ -1051,7 +1067,7 @@ def test_amdgpu_vector_wmma(ctx: MLIRContext):
         Pipeline()
         .Gpu(
             Pipeline().convert_gpu_to_rocdl(
-                use_bare_ptr_memref_call_conv=True, runtime="HIP"
+                arch=arch, use_bare_ptr_memref_call_conv=True, runtime="HIP"
             )
         )
         .rocdl_attach_target(chip=arch, abi="500")
@@ -1633,9 +1649,7 @@ def test_gpu_func_external_decl_in_gpu_module_raises():
                     match="gpu.func does not support external declarations",
                 ):
 
-                    class MyModule(
-                        metaclass=GPUModuleMeta, targets=["#nvvm.target"]
-                    ):
+                    class MyModule(metaclass=GPUModuleMeta, targets=["#nvvm.target"]):
 
                         @gpu.func
                         def kernel(a: T.memref(4, 4, T.f32())): ...
