@@ -990,16 +990,17 @@ class Pipeline(Pipeline):
         )
         return self
 
-    def amdgpu_emulate_atomics(self, chipset: str = None):
-        """Emulate atomic operations on chipsets that do not support them
+    def amdgpu_emulate_atomics(self, arch: str = None, chipset: str = None):
+        """Emulate atomic operations the target does not support
 
-        This pass rewrites any AMDGPU-specific atomic operation that is not supported
-        on the given `chipset` into a compare-and-swap loop.
+        This pass rewrites any AMDGPU-specific atomic operation that the target does
+        not support into a compare-and-swap loop.
 
         Args:
-            chipset: Chipset that these operations will run on
+            arch: Target architecture, as in Clang, with optional target-ID modifiers. New-style triples such as amdgpu9.42-amd-amdhsa are preferred, and can be extended to a full target ID like amdgpu9.42-amd-amdhsa--gfx942:xnack+:sramecc-. Bare chip names like gfx1250 or gfx942:xnack- are also supported. Defaults to an invalid target so that one must be given explicitly
+            chipset: Deprecated alias for 'arch'.
         """
-        self.add_pass("amdgpu-emulate-atomics", **{"chipset": chipset})
+        self.add_pass("amdgpu-emulate-atomics", **{"arch": arch, "chipset": chipset})
         return self
 
     def amdgpu_maskedload_to_load(self):
@@ -1606,19 +1607,21 @@ class Pipeline(Pipeline):
         )
         return self
 
-    def convert_amdgpu_to_rocdl(self, chipset: str = None):
+    def convert_amdgpu_to_rocdl(self, arch: str = None, chipset: str = None):
         """Convert AMDGPU dialect to ROCDL dialect
 
         This pass converts supported AMDGPU ops to ROCDL dialect intrinsics.
 
         Args:
-            chipset: Chipset that these operations will run on
+            arch: Target architecture, as in Clang, with optional target-ID modifiers. New-style triples such as amdgpu9.42-amd-amdhsa are preferred, and can be extended to a full target ID like amdgpu9.42-amd-amdhsa--gfx942:xnack+:sramecc-. Bare chip names like gfx1250 or gfx942:xnack- are also supported. Defaults to an invalid target so that one must be given explicitly
+            chipset: Deprecated alias for 'arch'.
         """
-        self.add_pass("convert-amdgpu-to-rocdl", **{"chipset": chipset})
+        self.add_pass("convert-amdgpu-to-rocdl", **{"arch": arch, "chipset": chipset})
         return self
 
     def convert_arith_to_amdgpu(
         self,
+        arch: str = None,
         chipset: str = None,
         saturate_fp8_truncf: bool = None,
         allow_packed_f16_round_to_zero: bool = None,
@@ -1631,13 +1634,15 @@ class Pipeline(Pipeline):
         simultaniously.
 
         Args:
-            chipset: Chipset that these operations will run on
+            arch: Target architecture, as in Clang, with optional target-ID modifiers. New-style triples such as amdgpu9.42-amd-amdhsa are preferred, and can be extended to a full target ID like amdgpu9.42-amd-amdhsa--gfx942:xnack+:sramecc-. Bare chip names like gfx1250 or gfx942:xnack- are also supported. Defaults to an invalid target so that one must be given explicitly
+            chipset: Deprecated alias for 'arch'.
             saturate_fp8_truncf: Use saturating truncation for 8-bit float types
             allow_packed_f16_round_to_zero: Whether we should allow f32->f16 packed round-to-zero conversion
         """
         self.add_pass(
             "convert-arith-to-amdgpu",
             **{
+                "arch": arch,
                 "chipset": chipset,
                 "saturate-fp8-truncf": saturate_fp8_truncf,
                 "allow-packed-f16-round-to-zero": allow_packed_f16_round_to_zero,
@@ -1988,7 +1993,9 @@ class Pipeline(Pipeline):
 
     def convert_gpu_to_rocdl(
         self,
+        arch: str = None,
         chipset: str = None,
+        wavesize: int = None,
         index_bitwidth: int = None,
         use_bare_ptr_memref_call_conv: bool = None,
         runtime: "gpu::amd::Runtime" = None,
@@ -1996,7 +2003,9 @@ class Pipeline(Pipeline):
     ):
         """Generate ROCDL operations for gpu operations
         Args:
-            chipset: Chipset that these operations will run on
+            arch: Target architecture, as in Clang, with optional target-ID modifiers. New-style triples such as amdgpu9.42-amd-amdhsa are preferred, and can be extended to a full target ID like amdgpu9.42-amd-amdhsa--gfx942:xnack+:sramecc-. Bare chip names like gfx1250 or gfx942:xnack- are also supported. Defaults to an invalid target so that one must be given explicitly
+            chipset: Deprecated alias for 'arch'.
+            wavesize: Wavefront size (32 or 64) for targets that run at either, or 0 to use the architecture's default
             index_bitwidth: Bitwidth of the index type, 0 to use size of machine word
             use_bare_ptr_memref_call_conv: Replace memref arguments in GPU functions with bare pointers.All memrefs must have static shape
             runtime: Runtime code will be run on (default is Unknown, can also use HIP or OpenCL)
@@ -2005,7 +2014,9 @@ class Pipeline(Pipeline):
         self.add_pass(
             "convert-gpu-to-rocdl",
             **{
+                "arch": arch,
                 "chipset": chipset,
+                "wavesize": wavesize,
                 "index-bitwidth": index_bitwidth,
                 "use-bare-ptr-memref-call-conv": use_bare_ptr_memref_call_conv,
                 "runtime": runtime,
@@ -2167,19 +2178,20 @@ class Pipeline(Pipeline):
         self.add_pass("convert-math-to-nvvm")
         return self
 
-    def convert_math_to_rocdl(self, chipset: str = None):
+    def convert_math_to_rocdl(self, arch: str = None, chipset: str = None):
         """Convert Math dialect to ROCDL library calls
 
         This pass converts supported Math ops to ROCDL library calls.
 
-        The chipset option specifies the target AMDGPU architecture. If the chipset
-        is empty, none of the chipset-dependent patterns are added, and the pass
-        will not attempt to parse the chipset.
+        The `arch` option specifies the target AMDGPU architecture. If it is empty,
+        none of the target-dependent patterns are added and the pass does not
+        resolve a target.
 
         Args:
-            chipset: Chipset that these operations will run on
+            arch: Target architecture, as in Clang, with optional target-ID modifiers (e.g. amdgpu9.42-amd-amdhsa, gfx942, gfx942:xnack-). If empty, no target-dependent patterns are added
+            chipset: Deprecated alias for 'arch'.
         """
-        self.add_pass("convert-math-to-rocdl", **{"chipset": chipset})
+        self.add_pass("convert-math-to-rocdl", **{"arch": arch, "chipset": chipset})
         return self
 
     def convert_math_to_spirv(self):
@@ -4948,12 +4960,13 @@ class Pipeline(Pipeline):
     def rocdl_attach_target(
         self,
         module: str = None,
+        arch: str = None,
         triple: str = None,
         chip: str = None,
         features: str = None,
         abi: str = None,
         O: int = None,
-        wave64: bool = None,
+        wavesize: int = None,
         fast: bool = None,
         daz: bool = None,
         finite_only: bool = None,
@@ -4980,12 +4993,13 @@ class Pipeline(Pipeline):
 
         Args:
             module: Regex used to identify the modules to attach the target to.
-            triple: Target triple.
-            chip: Target chip.
+            arch: Target architecture, in the spelling the conversion passes take (e.g. gfx942, gfx90a:xnack+, amdgpu9.4-amd-amdhsa, amdgcn-amd-amdhsa--gfx90a:xnack-). When non-empty this supersedes 'triple' and 'chip', and its target-ID modifiers become the module's 'rocdl.xnack' and 'rocdl.sramecc' attributes rather than target features.
+            triple: Target triple. Ignored when 'arch' is given.
+            chip: Target chip. Ignored when 'arch' is given.
             features: Target features.
             abi: ABI version.
             O: Optimization level.
-            wave64: Use Wave64 mode.
+            wavesize: Wavefront size (32 or 64). 0 takes the size from the target when 'arch' is given, and Wave64 otherwise.
             fast: Enable fast relaxed math opt.
             daz: Enable denormals are zero opt.
             finite_only: Enable finite only opt.
@@ -4997,12 +5011,13 @@ class Pipeline(Pipeline):
             "rocdl-attach-target",
             **{
                 "module": module,
+                "arch": arch,
                 "triple": triple,
                 "chip": chip,
                 "features": features,
                 "abi": abi,
                 "O": O,
-                "wave64": wave64,
+                "wavesize": wavesize,
                 "fast": fast,
                 "daz": daz,
                 "finite-only": finite_only,
