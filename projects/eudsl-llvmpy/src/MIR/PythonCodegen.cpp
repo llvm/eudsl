@@ -336,7 +336,7 @@ createRegisteredPyStrategy(llvm::MachineSchedContext *c) {
   try {
     auto strategy = std::make_unique<OwningPyStrategy>(activeSchedClass());
     auto *dag = new llvm::ScheduleDAGMILive(c, std::move(strategy));
-    dag->addMutation(llvm::createCopyConstrainDAGMutation(dag->TII, dag->TRI));
+    dag->addMutation(llvm::createCopyConstrainDAGMutation(dag->TII));
     return dag;
   } catch (...) {
     // Constructing the strategy runs the subclass __init__, which can raise.
