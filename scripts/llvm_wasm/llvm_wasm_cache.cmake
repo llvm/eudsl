@@ -40,6 +40,10 @@ set(LLVM_INCLUDE_TESTS OFF CACHE BOOL "")
 set(LLVM_BUILD_TESTS OFF CACHE BOOL "")
 set(MLIR_INCLUDE_INTEGRATION_TESTS OFF CACHE BOOL "")
 set(MLIR_INCLUDE_TESTS OFF CACHE BOOL "")
+# Shared libs with symbol export lists: upstream passes these to em++ as an
+# @response-file, which pyodide's pywasmcross forwards to llvm-readobj (fails).
+set(LLVM_TOOL_LTO_BUILD OFF CACHE BOOL "")
+set(LLVM_TOOL_REMARKS_SHLIB_BUILD OFF CACHE BOOL "")
 
 ### Distributions ###
 
