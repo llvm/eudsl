@@ -391,6 +391,19 @@ jobs:
       workflow_call: true
       workflow_caller_run_id: ${{ github.run_id }}
 
+  call-build-orc-pgo:
+
+    needs: [build]
+
+    permissions:
+      contents: read
+      actions: read
+
+    uses: ./.github/workflows/build_test_orc_pgo.yml
+    with:
+      workflow_call: true
+      workflow_caller_run_id: ${{ github.run_id }}
+
   # build_mlir_python_bindings_wheel.yml and build_test_release_eudsl.yml each end in
   # their own deploy, so deploying off [build] alone would race them for the single
   # "pages" concurrency slot. Wait for those chains so this deploy lands last.
