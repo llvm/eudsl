@@ -268,7 +268,7 @@ Python coverage is gated in `pyproject.toml` (`--cov=llvm`, branch coverage,
 fail under 99%). C++ coverage runs through `scripts/cpp_coverage.sh`, which
 builds the extension instrumented, runs the suite under `LLVM_PROFILE_FILE`,
 merges the profile, and enforces a `src/IR` line-coverage threshold with
-`scripts/check_coverage.py`:
+the repo-root `scripts/check_coverage.py` (shared with other projects):
 
 ```bash
 COVERAGE_THRESHOLD=100 bash scripts/cpp_coverage.sh

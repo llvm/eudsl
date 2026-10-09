@@ -67,7 +67,7 @@ if [[ -z "$SO" || ! -f "$SO" ]]; then
 fi
 
 echo ">> checking src/IR + src/MIR coverage (threshold=${THRESHOLD}%)"
-"$PY" "${PROJ_DIR}/scripts/check_coverage.py" \
+"$PY" "${PROJ_DIR}/../../scripts/check_coverage.py" \
   --llvm-cov "$LLVM_COV" \
   --profdata "${COV_DIR}/eudslllvm.profdata" \
   --objects "$SO" \

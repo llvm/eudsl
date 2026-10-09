@@ -41,7 +41,8 @@ add_definitions(${LLVM_DEFINITIONS})
 # C++ source coverage (llvm-cov). When ON, the extension is built with
 # instrumentation; scripts/cpp_coverage.sh runs the test suite (which imports
 # the .so) under LLVM_PROFILE_FILE, merges the profraw, and enforces a
-# src/IR + src/MIR line-coverage threshold via scripts/check_coverage.py.
+# src/IR + src/MIR line-coverage threshold via the repo-root
+# scripts/check_coverage.py.
 option(EUDSL_LLVMPY_ENABLE_COVERAGE "Instrument eudslllvm_ext for llvm-cov" OFF)
 if(EUDSL_LLVMPY_ENABLE_COVERAGE)
   message(STATUS "EUDSL_LLVMPY: C++ coverage instrumentation enabled")
