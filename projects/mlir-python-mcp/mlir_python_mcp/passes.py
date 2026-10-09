@@ -6399,7 +6399,11 @@ class Pipeline(Pipeline):
         )
         return self
 
-    def tosa_to_linalg_named(self, prefer_conv2d_kernel_layout_hwcf: bool = None):
+    def tosa_to_linalg_named(
+        self,
+        prefer_conv2d_kernel_layout_hwcf: bool = None,
+        allow_non_finites: bool = None,
+    ):
         """Lower TOSA to LinAlg named operations
 
         Pass that converts TOSA operations to the equivalent operations using the
@@ -6407,10 +6411,14 @@ class Pipeline(Pipeline):
 
         Args:
             prefer_conv2d_kernel_layout_hwcf: Prefer generating linalg.conv_2d_nhwc_hwcf over linalg.conv_2d_nhwc_fhwc
+            allow_non_finites: When enabled, float max pooling is seeded with the infinite identity mandated by the TOSA specification. When disabled (default), the largest finite value is used instead. This controls only compiler-generated identity values; NaN results required by nan_mode are unaffected.
         """
         self.add_pass(
             "tosa-to-linalg-named",
-            **{"prefer-conv2d-kernel-layout-hwcf": prefer_conv2d_kernel_layout_hwcf}
+            **{
+                "prefer-conv2d-kernel-layout-hwcf": prefer_conv2d_kernel_layout_hwcf,
+                "allow-non-finites": allow_non_finites,
+            }
         )
         return self
 
