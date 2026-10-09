@@ -9,6 +9,21 @@ include(CMakePrintHelpers)
 
 set(LLVM_ENABLE_PROJECTS "llvm;mlir;clang" CACHE STRING "")
 
+if (NOT WIN32)
+  # compiler-rt builtins only (built by the separate `builtins` sub-build);
+  # every compiler-rt runtime is off.
+  set(LLVM_ENABLE_RUNTIMES "compiler-rt" CACHE STRING "")
+  set(COMPILER_RT_BUILD_BUILTINS ON CACHE BOOL "")
+  foreach(_crt SANITIZERS XRAY LIBFUZZER PROFILE MEMPROF CTX_PROFILE ORC GWP_ASAN)
+    set(COMPILER_RT_BUILD_${_crt} OFF CACHE BOOL "")
+  endforeach()
+  set(COMPILER_RT_INCLUDE_TESTS OFF CACHE BOOL "")
+  # macOS only; avoids needing iOS/watchOS/tvOS/visionOS SDKs.
+  foreach(_os IOS WATCHOS TVOS XROS)
+    set(COMPILER_RT_ENABLE_${_os} OFF CACHE BOOL "")
+  endforeach()
+endif()
+
 # LLVM options
 
 set(LLVM_BUILD_TOOLS ON CACHE BOOL "")
@@ -63,6 +78,7 @@ set(LLVM_ENABLE_CRASH_OVERRIDES OFF CACHE BOOL "")
 set(LLVM_ENABLE_Z3_SOLVER OFF CACHE BOOL "")
 set(LLVM_ENABLE_ZLIB OFF CACHE BOOL "")
 set(LLVM_ENABLE_ZSTD OFF CACHE BOOL "")
+set(LLVM_ENABLE_LZMA OFF CACHE BOOL "")
 set(LLVM_INCLUDE_BENCHMARKS OFF CACHE BOOL "")
 set(LLVM_INCLUDE_DOCS OFF CACHE BOOL "")
 set(LLVM_INCLUDE_EXAMPLES OFF CACHE BOOL "")
@@ -81,9 +97,10 @@ set(MLIR_INCLUDE_TESTS ${RUN_TESTS} CACHE BOOL "")
 set(LLVM_INSTALL_TOOLCHAIN_ONLY OFF CACHE BOOL "")
 
 set(LLVM_DISTRIBUTIONS MlirDevelopment CACHE STRING "")
-set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
+set(_mlir_dev_components
     clang-libraries
     clang-headers
+    clang-resource-headers
     # triggers ClangConfig.cmake and etc
     clang-cmake-exports
     # triggers ClangMlirDevelopmentTargets.cmake
@@ -118,11 +135,15 @@ set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS
     mlir-reduce
     mlir-tblgen
     mlir-translate
-    CACHE STRING "")
+)
 
 if (NOT WIN32)
-  list(APPEND LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS LLVM MLIR)
+  list(APPEND _mlir_dev_components LLVM MLIR builtins)
 endif()
+
+# Only cache entries survive a -C script, so the list must be complete before
+# it is cached (appending to the variable afterwards has no effect).
+set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS ${_mlir_dev_components} CACHE STRING "")
 
 get_cmake_property(_variableNames VARIABLES)
 list(SORT _variableNames)
