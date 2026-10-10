@@ -9,6 +9,8 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 
+#include <cassert>
+
 using namespace llvm;
 
 namespace orc_pgo {
@@ -35,13 +37,19 @@ static Value *siteIndex(IRBuilder<> &B, const CounterSite &S) {
     }
     return Idx;
   }
-  Value *Cond = isa<SelectInst>(S.Inst)
-                    ? cast<SelectInst>(S.Inst)->getCondition()
-                    : cast<CondBrInst>(S.Inst)->getCondition();
+  Value *Cond;
+  if (auto *Sel = dyn_cast<SelectInst>(S.Inst)) {
+    // A poison condition makes the select poison but is not itself UB; the
+    // counter index must not inherit that, so pin it to some value.
+    Cond = B.CreateFreeze(Sel->getCondition());
+  } else {
+    Cond = cast<CondBrInst>(S.Inst)->getCondition();
+  }
   return B.CreateSelect(Cond, B.getInt64(First), B.getInt64(First + 1));
 }
 
 GlobalVariable *instrumentModule(Module &M, const CounterLayout &L) {
+  assert(!M.getNamedValue(CountersName) && "module already instrumented");
   auto *ArrTy = ArrayType::get(Type::getInt64Ty(M.getContext()), L.numCounters());
   auto *Counters = new GlobalVariable(M, ArrTy, /*isConstant=*/false,
                                       GlobalValue::ExternalLinkage,
@@ -50,6 +58,7 @@ GlobalVariable *instrumentModule(Module &M, const CounterLayout &L) {
   Counters->setAlignment(Align(8));
 
   for (const FunctionCounters &FC : L.functions()) {
+    assert(FC.F->getParent() == &M && "layout computed on a different module");
     BasicBlock &Entry = FC.F->getEntryBlock();
     IRBuilder<> B(Entry.getFirstNonPHIOrDbgOrAlloca());
     emitIncrement(B, Counters, B.getInt64(FC.EntryCounter));

@@ -17,9 +17,6 @@ namespace orc_pgo::test {
 /// Aborts the test binary with the diagnostic if Text is invalid IR.
 std::unique_ptr<llvm::Module> parseIR(llvm::LLVMContext &Ctx, llvm::StringRef Text);
 
-/// Initializes the native target, asm printer and asm parser (once).
-void initLLVM();
-
 std::unique_ptr<llvm::orc::LLJIT> makeJIT();
 
 /// Parses IR into a fresh context, applies Transform, and adds it to a new JIT.

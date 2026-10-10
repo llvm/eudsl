@@ -6,15 +6,18 @@
 #include "orc-pgo/CounterLayout.h"
 #include "orc-pgo/Instrument.h"
 
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Passes/OptimizationLevel.h"
+#include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/raw_ostream.h"
 #include "gtest/gtest.h"
 
 #include <cstdint>
-#include <iterator>
 #include <vector>
 
 using namespace llvm;
@@ -82,6 +85,27 @@ Accesses countAccesses(const Function &F) {
   return A;
 }
 
+/// A pointer reduced to its base and accumulated constant byte offset.
+struct StrippedPtr {
+  const Value *Base;
+  APInt Offset;
+};
+
+StrippedPtr stripPtr(const Value *Ptr, const DataLayout &DL) {
+  APInt Off(DL.getIndexTypeSizeInBits(Ptr->getType()), 0);
+  const Value *Base = Ptr->stripAndAccumulateConstantOffsets(
+      DL, Off, /*AllowNonInbounds=*/false);
+  return {Base, Off};
+}
+
+/// Checks that the load addresses Counters[Idx] for a constant Idx.
+void expectConstantIndex(const LoadInst *L, const GlobalVariable *Counters,
+                         uint64_t Idx) {
+  StrippedPtr P = stripPtr(L->getPointerOperand(), L->getModule()->getDataLayout());
+  EXPECT_EQ(P.Base, Counters);
+  EXPECT_EQ(P.Offset.getZExtValue(), Idx * 8);
+}
+
 /// Checks that I is the store of a `load atomic monotonic; add 1; store atomic
 /// monotonic` increment of an i64 and returns the load (nullptr on failure).
 LoadInst *expectIncrement(Instruction *I) {
@@ -109,16 +133,21 @@ LoadInst *expectIncrement(Instruction *I) {
   EXPECT_EQ(Old->getOrdering(), AtomicOrdering::Monotonic);
   EXPECT_EQ(Old->getAlign(), Align(8));
   EXPECT_TRUE(Old->getType()->isIntegerTy(64));
-  EXPECT_EQ(Old->getPointerOperand(), St->getPointerOperand());
+  const DataLayout &DL = St->getModule()->getDataLayout();
+  StrippedPtr OldPtr = stripPtr(Old->getPointerOperand(), DL);
+  StrippedPtr StPtr = stripPtr(St->getPointerOperand(), DL);
+  EXPECT_EQ(OldPtr.Base, StPtr.Base);
+  EXPECT_EQ(OldPtr.Offset, StPtr.Offset);
   // load, add, store are adjacent.
   EXPECT_EQ(Old->getNextNode(), Add);
   EXPECT_EQ(Add->getNextNode(), St);
   return Old;
 }
 
-/// Checks that the load addresses Counters[select(Cond, First, First + 1)].
+/// Checks that the load addresses Counters[select(C, First, First + 1)] where
+/// C is Cond, or freeze(Cond) if Frozen.
 void expectSelectedIndex(const LoadInst *L, const GlobalVariable *Counters,
-                         const Value *Cond, uint64_t First) {
+                         const Value *Cond, uint64_t First, bool Frozen) {
   ASSERT_NE(L, nullptr);
   auto *GEP = dyn_cast<GetElementPtrInst>(L->getPointerOperand());
   ASSERT_NE(GEP, nullptr);
@@ -128,7 +157,13 @@ void expectSelectedIndex(const LoadInst *L, const GlobalVariable *Counters,
   EXPECT_TRUE(cast<ConstantInt>(GEP->getOperand(1))->isZero());
   auto *Sel = dyn_cast<SelectInst>(GEP->getOperand(2));
   ASSERT_NE(Sel, nullptr);
-  EXPECT_EQ(Sel->getCondition(), Cond);
+  if (Frozen) {
+    auto *Fr = dyn_cast<FreezeInst>(Sel->getCondition());
+    ASSERT_NE(Fr, nullptr);
+    EXPECT_EQ(Fr->getOperand(0), Cond);
+  } else {
+    EXPECT_EQ(Sel->getCondition(), Cond);
+  }
   EXPECT_EQ(cast<ConstantInt>(Sel->getTrueValue())->getZExtValue(), First);
   EXPECT_EQ(cast<ConstantInt>(Sel->getFalseValue())->getZExtValue(), First + 1);
 }
@@ -215,12 +250,12 @@ neg:
   auto *Br = cast<CondBrInst>(Entry.getTerminator());
   // Entry increment is first; the site increment is the last thing before br.
   LoadInst *SiteLoad = expectIncrement(Br->getPrevNode());
-  expectSelectedIndex(SiteLoad, GV, Br->getCondition(), 1);
+  expectSelectedIndex(SiteLoad, GV, Br->getCondition(), 1, /*Frozen=*/false);
   auto *First = dyn_cast<LoadInst>(&Entry.front());
   ASSERT_NE(First, nullptr);
   EXPECT_NE(First, SiteLoad);
   EXPECT_EQ(expectIncrement(First->getNextNode()->getNextNode()), First);
-  EXPECT_EQ(First->getPointerOperand(), GV);
+  expectConstantIndex(First, GV, 0);
   // Nothing else in the function touches memory: 2 increments only.
   EXPECT_EQ(countAccesses(F).Loads, 2u);
   EXPECT_EQ(countAccesses(F).Stores, 2u);
@@ -239,7 +274,7 @@ define i32 @sel(i32 %x) {
   Function &F = *M->getFunction("sel");
   auto *Sel = cast<SelectInst>(F.getEntryBlock().getTerminator()->getPrevNode());
   LoadInst *SiteLoad = expectIncrement(Sel->getPrevNode());
-  expectSelectedIndex(SiteLoad, GV, Sel->getCondition(), 1);
+  expectSelectedIndex(SiteLoad, GV, Sel->getCondition(), 1, /*Frozen=*/true);
   EXPECT_EQ(countAccesses(F).Loads, 2u);
   EXPECT_EQ(countAccesses(F).Stores, 2u);
 }
@@ -255,7 +290,7 @@ entry:
   %v = load i32, ptr %a
   ret i32 %v
 })");
-  instrumentModule(*M, CounterLayout::compute(*M));
+  GlobalVariable *GV = instrumentModule(*M, CounterLayout::compute(*M));
   ASSERT_FALSE(verifyModule(*M, &errs()));
   BasicBlock &Entry = M->getFunction("allocas")->getEntryBlock();
   auto It = Entry.begin();
@@ -264,6 +299,7 @@ entry:
   auto *Load = dyn_cast<LoadInst>(&*It);
   ASSERT_NE(Load, nullptr);
   EXPECT_TRUE(Load->isAtomic());
+  expectConstantIndex(Load, GV, 0);
   Instruction *Store = Load->getNextNode()->getNextNode();
   EXPECT_EQ(expectIncrement(Store), Load);
   // The original body follows the increment, unchanged.
@@ -272,6 +308,201 @@ entry:
   EXPECT_FALSE(Orig->isAtomic());
   EXPECT_EQ(Orig->getValueOperand(), M->getFunction("allocas")->getArg(0));
   EXPECT_EQ(Entry.size(), 2u + 3u + 3u);
+}
+
+TEST(Instrument, SiteAsFirstInstructionFollowsEntryIncrement) {
+  LLVMContext Ctx;
+  auto M = test::parseIR(Ctx, R"(
+define i32 @firstbr(i1 %c) {
+entry:
+  br i1 %c, label %t, label %f
+t:
+  ret i32 1
+f:
+  ret i32 2
+}
+define i32 @firstsel(i1 %c) {
+  %s = select i1 %c, i32 1, i32 2
+  ret i32 %s
+})");
+  GlobalVariable *GV = instrumentModule(*M, CounterLayout::compute(*M));
+  ASSERT_FALSE(verifyModule(*M, &errs()));
+
+  // firstbr: entry increment (counter 0), br increment (counters 1/2), br.
+  {
+    BasicBlock &Entry = M->getFunction("firstbr")->getEntryBlock();
+    auto *Br = cast<CondBrInst>(Entry.getTerminator());
+    auto *EntryLoad = dyn_cast<LoadInst>(&Entry.front());
+    ASSERT_NE(EntryLoad, nullptr);
+    expectConstantIndex(EntryLoad, GV, 0);
+    Instruction *EntryStore = EntryLoad->getNextNode()->getNextNode();
+    EXPECT_EQ(expectIncrement(EntryStore), EntryLoad);
+    auto *Idx = dyn_cast<SelectInst>(EntryStore->getNextNode());
+    ASSERT_NE(Idx, nullptr);
+    EXPECT_EQ(Idx->getCondition(), Br->getCondition());
+    expectSelectedIndex(expectIncrement(Br->getPrevNode()), GV, Br->getCondition(),
+                        1, /*Frozen=*/false);
+    EXPECT_EQ(Entry.size(), 3u + 5u + 1u);
+  }
+
+  // firstsel: entry increment (counter 3), select increment (counters 4/5), select.
+  {
+    BasicBlock &Entry = M->getFunction("firstsel")->getEntryBlock();
+    auto *Sel = cast<SelectInst>(Entry.getTerminator()->getPrevNode());
+    auto *EntryLoad = dyn_cast<LoadInst>(&Entry.front());
+    ASSERT_NE(EntryLoad, nullptr);
+    expectConstantIndex(EntryLoad, GV, 3);
+    Instruction *EntryStore = EntryLoad->getNextNode()->getNextNode();
+    EXPECT_EQ(expectIncrement(EntryStore), EntryLoad);
+    EXPECT_TRUE(isa<FreezeInst>(EntryStore->getNextNode()));
+    expectSelectedIndex(expectIncrement(Sel->getPrevNode()), GV, Sel->getCondition(),
+                        4, /*Frozen=*/true);
+    EXPECT_EQ(Entry.size(), 3u + 6u + 1u + 1u);
+  }
+}
+
+TEST(Instrument, SitesAsFirstInstructionAreCounted) {
+  auto Got = runCounted(R"(
+define i32 @firstbr(i1 zeroext %c) {
+entry:
+  br i1 %c, label %t, label %f
+t:
+  ret i32 1
+f:
+  ret i32 2
+}
+define i32 @firstsel(i1 zeroext %c) {
+  %s = select i1 %c, i32 1, i32 2
+  ret i32 %s
+})", 6, [](orc::LLJIT &J) {
+    auto *Br = test::lookupFn<int(bool)>(J, "firstbr");
+    auto *Sel = test::lookupFn<int(bool)>(J, "firstsel");
+    for (bool X : {true, true, true, false})
+      EXPECT_EQ(Br(X), X ? 1 : 2);
+    for (bool X : {true, false, false})
+      EXPECT_EQ(Sel(X), X ? 1 : 2);
+  });
+  EXPECT_EQ(Got, (std::vector<uint64_t>{4, 3, 1, 3, 1, 2}));
+}
+
+TEST(Instrument, EntryIncrementPrecedesDynamicAlloca) {
+  LLVMContext Ctx;
+  auto M = test::parseIR(Ctx, R"(
+define i32 @dyn(i32 %n) {
+entry:
+  %s = alloca i32
+  %a = alloca i32, i32 %n
+  store i32 %n, ptr %a
+  %v = load i32, ptr %a
+  ret i32 %v
+})");
+  GlobalVariable *GV = instrumentModule(*M, CounterLayout::compute(*M));
+  ASSERT_FALSE(verifyModule(*M, &errs()));
+  BasicBlock &Entry = M->getFunction("dyn")->getEntryBlock();
+  auto It = Entry.begin();
+  auto *Static = dyn_cast<AllocaInst>(&*It++);
+  ASSERT_NE(Static, nullptr);
+  EXPECT_TRUE(Static->isStaticAlloca());
+  auto *Load = dyn_cast<LoadInst>(&*It);
+  ASSERT_NE(Load, nullptr);
+  expectConstantIndex(Load, GV, 0);
+  Instruction *Store = Load->getNextNode()->getNextNode();
+  EXPECT_EQ(expectIncrement(Store), Load);
+  auto *Dynamic = dyn_cast<AllocaInst>(Store->getNextNode());
+  ASSERT_NE(Dynamic, nullptr);
+  EXPECT_FALSE(Dynamic->isStaticAlloca());
+  EXPECT_EQ(Entry.size(), 1u + 3u + 4u);
+}
+
+TEST(Instrument, SwitchOnNarrowAndWideConditions) {
+  auto Got = runCounted(R"(
+define i32 @sw8(i8 signext %x) {
+entry:
+  switch i8 %x, label %d [ i8 3, label %a
+                           i8 -2, label %b ]
+a:
+  ret i32 1
+b:
+  ret i32 2
+d:
+  ret i32 3
+}
+define i32 @sw64(i64 %x) {
+entry:
+  switch i64 %x, label %d [ i64 4294967296, label %a
+                            i64 -1, label %b ]
+a:
+  ret i32 1
+b:
+  ret i32 2
+d:
+  ret i32 3
+})", 8, [](orc::LLJIT &J) {
+    auto *Sw8 = test::lookupFn<int(int8_t)>(J, "sw8");
+    auto *Sw64 = test::lookupFn<int(int64_t)>(J, "sw64");
+    for (int8_t X : {3, 3, -2, 9})
+      Sw8(X);
+    // 0 is what 4294967296 truncates to; it must take the default.
+    for (int64_t X : {int64_t(1) << 32, int64_t(1) << 32, int64_t(-1), int64_t(0),
+                      int64_t(7), int64_t(7)})
+      Sw64(X);
+  });
+  // sw8: entry, default, 3, -2 | sw64: entry, default, 2^32, -1
+  EXPECT_EQ(Got, (std::vector<uint64_t>{4, 1, 2, 1, 6, 3, 2, 1}));
+}
+
+TEST(Instrument, CountsSurviveO2Pipeline) {
+  auto J = test::jitIR(R"(
+define i32 @prog(i32 %x, i32 %n) {
+entry:
+  %pos = icmp sgt i32 %x, 0
+  br i1 %pos, label %loop, label %neg
+loop:
+  %i = phi i32 [ 0, %entry ], [ %next, %loop ]
+  %acc = phi i32 [ 0, %entry ], [ %acc2, %loop ]
+  %odd = and i32 %i, 1
+  %isodd = icmp ne i32 %odd, 0
+  %d = select i1 %isodd, i32 3, i32 1
+  %acc2 = add i32 %acc, %d
+  %next = add i32 %i, 1
+  %more = icmp slt i32 %next, %n
+  br i1 %more, label %loop, label %after
+after:
+  switch i32 %acc2, label %other [ i32 1, label %one
+                                   i32 4, label %four ]
+one:
+  ret i32 100
+four:
+  ret i32 200
+other:
+  ret i32 %acc2
+neg:
+  ret i32 -1
+})", [](Module &M) {
+    instrumentModule(M, CounterLayout::compute(M));
+    LoopAnalysisManager LAM;
+    FunctionAnalysisManager FAM;
+    CGSCCAnalysisManager CGAM;
+    ModuleAnalysisManager MAM;
+    PassBuilder PB;
+    PB.registerModuleAnalyses(MAM);
+    PB.registerCGSCCAnalyses(CGAM);
+    PB.registerFunctionAnalyses(FAM);
+    PB.registerLoopAnalyses(LAM);
+    PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+    PB.buildPerModuleDefaultPipeline(OptimizationLevel::O2).run(M, MAM);
+    EXPECT_FALSE(verifyModule(M, &errs()));
+  });
+  auto *Prog = test::lookupFn<int(int, int)>(*J, "prog");
+  // acc after n iterations of +1, +3, +1, ...: n=1 -> 1, n=2 -> 4, n=3 -> 5.
+  EXPECT_EQ(Prog(1, 1), 100);
+  EXPECT_EQ(Prog(1, 2), 200);
+  EXPECT_EQ(Prog(1, 3), 5);
+  EXPECT_EQ(Prog(0, 5), -1);
+  auto *C = test::lookupFn<uint64_t>(*J, CountersName);
+  std::vector<uint64_t> Got(C, C + 10);
+  // entry | x>0 T/F | select odd/even | back edge T / exit | switch default/1/4
+  EXPECT_EQ(Got, (std::vector<uint64_t>{4, 3, 1, 2, 4, 3, 3, 1, 1, 1}));
 }
 
 TEST(Instrument, FunctionWithAllocasStillRuns) {

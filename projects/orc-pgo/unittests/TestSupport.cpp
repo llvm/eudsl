@@ -27,7 +27,8 @@ std::unique_ptr<Module> parseIR(LLVMContext &Ctx, StringRef Text) {
   return M;
 }
 
-void initLLVM() {
+/// Initializes the native target, asm printer and asm parser (once).
+static void initLLVM() {
   static std::once_flag Once;
   std::call_once(Once, [] {
     InitializeNativeTarget();
