@@ -31,9 +31,12 @@ bool isInternalName(llvm::StringRef Name);
 ///     block, since switch branch_weights carry one weight per slot;
 ///   - select with a scalar i1 condition: 2.
 /// Everything else is 0, including vector-condition selects and the other
-/// multi-successor terminators: invoke (its unwind edge is cold by default and
-/// edges into landing pads can't be split), and indirectbr/callbr (rare, and
-/// their edges generally can't be split to hold a counter).
+/// multi-successor terminators (invoke, indirectbr, callbr). Profiled sites are
+/// counted just before they execute, from the condition that picks the
+/// successor; these have no such condition (an invoke unwinds only if the
+/// callee throws, indirectbr/callbr pick their target at run time), so they
+/// would need counters in their successors instead. Little is lost: unwind
+/// edges are cold by default and indirectbr/callbr are rare.
 unsigned numSiteCounters(const llvm::Instruction &I);
 
 struct CounterSite {

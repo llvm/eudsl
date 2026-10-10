@@ -319,10 +319,9 @@ TEST(CounterLayout, SkippedFunctionsDoNotShiftIndices) {
 }
 
 // invoke, indirectbr and callbr have several successors but get no counters:
-// an invoke's unwind edge is cold by default (and edges into landing pads
-// can't be split), and indirectbr/callbr are rare with edges that generally
-// can't be split. Counting them later changes every subsequent index, so it
-// should be a deliberate change to this test.
+// the successor isn't decided by a condition available before they execute
+// (see numSiteCounters). Counting them later changes every subsequent index,
+// so it should be a deliberate change to this test.
 TEST(CounterLayout, UnprofiledTerminators) {
   LLVMContext Ctx;
   auto M = test::parseIR(Ctx, UnprofiledIR);
