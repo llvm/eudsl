@@ -22,7 +22,8 @@ inline constexpr llvm::StringLiteral CountersName = "__orc_pgo_counters";
 /// Each function's entry counter is bumped at the top of its entry block
 /// (after leading allocas); each site's counter is bumped immediately before
 /// the site instruction, with the index chosen by the same condition the
-/// instruction tests. No edges are split and no blocks are added. Increments
+/// instruction tests (frozen for selects, whose poison condition is not UB on
+/// its own). No edges are split and no blocks are added. Increments
 /// are a monotonic atomic load, add and monotonic atomic store, not an atomic
 /// read-modify-write, so concurrent increments may be lost.
 llvm::GlobalVariable *instrumentModule(llvm::Module &M, const CounterLayout &L);
