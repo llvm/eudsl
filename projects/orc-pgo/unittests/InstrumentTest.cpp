@@ -7,7 +7,9 @@
 #include "orc-pgo/Instrument.h"
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
@@ -63,7 +65,7 @@ std::vector<uint64_t> runCounted(StringRef Text, size_t N,
     EXPECT_FALSE(verifyModule(M, &errs()));
   });
   Run(*J);
-  auto *C = test::lookupFn<uint64_t>(*J, CountersName);
+  auto *C = test::lookupSym<uint64_t>(*J, CountersName);
   return std::vector<uint64_t>(C, C + N);
 }
 
@@ -106,8 +108,8 @@ void expectConstantIndex(const LoadInst *L, const GlobalVariable *Counters,
   EXPECT_EQ(P.Offset.getZExtValue(), Idx * 8);
 }
 
-/// Checks that I is the store of a `load atomic monotonic; add 1; store atomic
-/// monotonic` increment of an i64 and returns the load (nullptr on failure).
+/// Checks that I is the store of a `load atomic unordered; add 1; store atomic
+/// unordered` increment of an i64 and returns the load (nullptr on failure).
 LoadInst *expectIncrement(Instruction *I) {
   auto *St = dyn_cast_or_null<StoreInst>(I);
   if (!St) {
@@ -115,7 +117,7 @@ LoadInst *expectIncrement(Instruction *I) {
     return nullptr;
   }
   EXPECT_TRUE(St->isAtomic());
-  EXPECT_EQ(St->getOrdering(), AtomicOrdering::Monotonic);
+  EXPECT_EQ(St->getOrdering(), AtomicOrdering::Unordered);
   EXPECT_EQ(St->getAlign(), Align(8));
   auto *Add = dyn_cast<BinaryOperator>(St->getValueOperand());
   if (!Add || Add->getOpcode() != Instruction::Add) {
@@ -130,7 +132,7 @@ LoadInst *expectIncrement(Instruction *I) {
   auto *One = dyn_cast<ConstantInt>(Add->getOperand(1));
   EXPECT_TRUE(One && One->getType()->isIntegerTy(64) && One->isOne());
   EXPECT_TRUE(Old->isAtomic());
-  EXPECT_EQ(Old->getOrdering(), AtomicOrdering::Monotonic);
+  EXPECT_EQ(Old->getOrdering(), AtomicOrdering::Unordered);
   EXPECT_EQ(Old->getAlign(), Align(8));
   EXPECT_TRUE(Old->getType()->isIntegerTy(64));
   const DataLayout &DL = St->getModule()->getDataLayout();
@@ -196,16 +198,16 @@ TEST(Instrument, CountsEntriesAndEdges) {
   auto J = test::jitIR(IR, [](Module &M) {
     instrumentModule(M, CounterLayout::compute(M));
   });
-  auto *Branchy = test::lookupFn<int(int)>(*J, "branchy");
-  auto *Sw = test::lookupFn<int(int)>(*J, "sw");
-  auto *Sel = test::lookupFn<int(int)>(*J, "sel");
+  auto *Branchy = test::lookupSym<int(int)>(*J, "branchy");
+  auto *Sw = test::lookupSym<int(int)>(*J, "sw");
+  auto *Sel = test::lookupSym<int(int)>(*J, "sel");
   for (int X : {5, 5, 5, -1})
     Branchy(X);
   for (int X : {7, 7, 7, 0, 1, 1})
     Sw(X);
   for (int X : {1, 0, 0})
     Sel(X);
-  auto *C = test::lookupFn<uint64_t>(*J, CountersName);
+  auto *C = test::lookupSym<uint64_t>(*J, CountersName);
   std::vector<uint64_t> Got(C, C + 10);
   // branchy: entry, true, false | sw: entry, default, case0, case1 | sel: entry, true, false
   EXPECT_EQ(Got, (std::vector<uint64_t>{4, 3, 1, 6, 3, 1, 2, 3, 1, 2}));
@@ -223,9 +225,9 @@ TEST(Instrument, UntakenSitesStayZero) {
   // Only the true side of the branch and select, and the first case, are ever
   // taken; every other edge counter must still read zero.
   auto Got = runCounted(IR, 10, [](orc::LLJIT &J) {
-    test::lookupFn<int(int)>(J, "branchy")(1);
-    test::lookupFn<int(int)>(J, "sw")(0);
-    test::lookupFn<int(int)>(J, "sel")(1);
+    test::lookupSym<int(int)>(J, "branchy")(1);
+    test::lookupSym<int(int)>(J, "sw")(0);
+    test::lookupSym<int(int)>(J, "sel")(1);
   });
   EXPECT_EQ(Got, (std::vector<uint64_t>{1, 1, 0, 1, 0, 1, 0, 1, 1, 0}));
 }
@@ -375,8 +377,8 @@ define i32 @firstsel(i1 zeroext %c) {
   %s = select i1 %c, i32 1, i32 2
   ret i32 %s
 })", 6, [](orc::LLJIT &J) {
-    auto *Br = test::lookupFn<int(bool)>(J, "firstbr");
-    auto *Sel = test::lookupFn<int(bool)>(J, "firstsel");
+    auto *Br = test::lookupSym<int(bool)>(J, "firstbr");
+    auto *Sel = test::lookupSym<int(bool)>(J, "firstsel");
     for (bool X : {true, true, true, false})
       EXPECT_EQ(Br(X), X ? 1 : 2);
     for (bool X : {true, false, false})
@@ -438,8 +440,8 @@ b:
 d:
   ret i32 3
 })", 8, [](orc::LLJIT &J) {
-    auto *Sw8 = test::lookupFn<int(int8_t)>(J, "sw8");
-    auto *Sw64 = test::lookupFn<int(int64_t)>(J, "sw64");
+    auto *Sw8 = test::lookupSym<int(int8_t)>(J, "sw8");
+    auto *Sw64 = test::lookupSym<int(int64_t)>(J, "sw64");
     for (int8_t X : {3, 3, -2, 9})
       Sw8(X);
     // 0 is what 4294967296 truncates to; it must take the default.
@@ -449,6 +451,21 @@ d:
   });
   // sw8: entry, default, 3, -2 | sw64: entry, default, 2^32, -1
   EXPECT_EQ(Got, (std::vector<uint64_t>{4, 1, 2, 1, 6, 3, 2, 1}));
+}
+
+void runO2(Module &M) {
+  LoopAnalysisManager LAM;
+  FunctionAnalysisManager FAM;
+  CGSCCAnalysisManager CGAM;
+  ModuleAnalysisManager MAM;
+  PassBuilder PB;
+  PB.registerModuleAnalyses(MAM);
+  PB.registerCGSCCAnalyses(CGAM);
+  PB.registerFunctionAnalyses(FAM);
+  PB.registerLoopAnalyses(LAM);
+  PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+  PB.buildPerModuleDefaultPipeline(OptimizationLevel::O2).run(M, MAM);
+  EXPECT_FALSE(verifyModule(M, &errs()));
 }
 
 TEST(Instrument, CountsSurviveO2Pipeline) {
@@ -480,29 +497,80 @@ neg:
   ret i32 -1
 })", [](Module &M) {
     instrumentModule(M, CounterLayout::compute(M));
-    LoopAnalysisManager LAM;
-    FunctionAnalysisManager FAM;
-    CGSCCAnalysisManager CGAM;
-    ModuleAnalysisManager MAM;
-    PassBuilder PB;
-    PB.registerModuleAnalyses(MAM);
-    PB.registerCGSCCAnalyses(CGAM);
-    PB.registerFunctionAnalyses(FAM);
-    PB.registerLoopAnalyses(LAM);
-    PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
-    PB.buildPerModuleDefaultPipeline(OptimizationLevel::O2).run(M, MAM);
-    EXPECT_FALSE(verifyModule(M, &errs()));
+    runO2(M);
   });
-  auto *Prog = test::lookupFn<int(int, int)>(*J, "prog");
+  auto *Prog = test::lookupSym<int(int, int)>(*J, "prog");
   // acc after n iterations of +1, +3, +1, ...: n=1 -> 1, n=2 -> 4, n=3 -> 5.
   EXPECT_EQ(Prog(1, 1), 100);
   EXPECT_EQ(Prog(1, 2), 200);
   EXPECT_EQ(Prog(1, 3), 5);
   EXPECT_EQ(Prog(0, 5), -1);
-  auto *C = test::lookupFn<uint64_t>(*J, CountersName);
+  auto *C = test::lookupSym<uint64_t>(*J, CountersName);
   std::vector<uint64_t> Got(C, C + 10);
   // entry | x>0 T/F | select odd/even | back edge T / exit | switch default/1/4
   EXPECT_EQ(Got, (std::vector<uint64_t>{4, 3, 1, 2, 4, 3, 3, 1, 1, 1}));
+}
+
+// Unordered (unlike monotonic) accesses can be promoted by LICM: once @leaf is
+// inlined into the loop, its constant-index entry counter is updated once
+// after the loop instead of on every iteration.
+constexpr const char *InlinedLoopIR = R"(
+define i32 @leaf(i32 %x) {
+  %r = add i32 %x, 1
+  ret i32 %r
+}
+define i32 @caller(i32 %n) {
+entry:
+  br label %loop
+loop:
+  %i = phi i32 [ 0, %entry ], [ %next, %loop ]
+  %acc = phi i32 [ 0, %entry ], [ %acc2, %loop ]
+  %acc2 = call i32 @leaf(i32 %acc)
+  %next = add i32 %i, 1
+  %more = icmp slt i32 %next, %n
+  br i1 %more, label %loop, label %done
+done:
+  ret i32 %acc2
+}
+)";
+
+TEST(Instrument, InlinedEntryCounterIsHoistedOutOfLoop) {
+  LLVMContext Ctx;
+  auto M = test::parseIR(Ctx, InlinedLoopIR);
+  GlobalVariable *GV = instrumentModule(*M, CounterLayout::compute(*M));
+  runO2(*M);
+  Function &Caller = *M->getFunction("caller");
+  const DataLayout &DL = M->getDataLayout();
+  unsigned LoopStoresToLeafCounter = 0, StoresToLeafCounter = 0;
+  for (BasicBlock &BB : Caller) {
+    bool InLoop = is_contained(successors(&BB), &BB);
+    for (Instruction &I : BB) {
+      auto *St = dyn_cast<StoreInst>(&I);
+      if (!St)
+        continue;
+      StrippedPtr P = stripPtr(St->getPointerOperand(), DL);
+      if (P.Base == GV && P.Offset == 0) { // @leaf's entry counter
+        ++StoresToLeafCounter;
+        LoopStoresToLeafCounter += InLoop;
+      }
+    }
+  }
+  EXPECT_EQ(StoresToLeafCounter, 1u);
+  EXPECT_EQ(LoopStoresToLeafCounter, 0u);
+}
+
+TEST(Instrument, InlinedLoopCountsSurviveO2) {
+  auto J = test::jitIR(InlinedLoopIR, [](Module &M) {
+    instrumentModule(M, CounterLayout::compute(M));
+    runO2(M);
+  });
+  auto *Caller = test::lookupSym<int(int)>(*J, "caller");
+  EXPECT_EQ(Caller(5), 5);
+  EXPECT_EQ(Caller(1), 1);
+  auto *C = test::lookupSym<uint64_t>(*J, CountersName);
+  std::vector<uint64_t> Got(C, C + 4);
+  // leaf entry (5 + 1 calls) | caller entry | back edge taken / exit
+  EXPECT_EQ(Got, (std::vector<uint64_t>{6, 2, 4, 2}));
 }
 
 TEST(Instrument, FunctionWithAllocasStillRuns) {
@@ -514,8 +582,8 @@ entry:
   %v = load i32, ptr %a
   ret i32 %v
 })", 1, [](orc::LLJIT &J) {
-    EXPECT_EQ(test::lookupFn<int(int)>(J, "allocas")(41), 41);
-    EXPECT_EQ(test::lookupFn<int(int)>(J, "allocas")(42), 42);
+    EXPECT_EQ(test::lookupSym<int(int)>(J, "allocas")(41), 41);
+    EXPECT_EQ(test::lookupSym<int(int)>(J, "allocas")(42), 42);
   });
   EXPECT_EQ(Got, (std::vector<uint64_t>{2}));
 }
@@ -540,8 +608,8 @@ b:
   ret i32 2
 })";
   auto Got = runCounted(Text, 9, [](orc::LLJIT &J) {
-    auto *Shared = test::lookupFn<int(int)>(J, "shared");
-    auto *Mixed = test::lookupFn<int(int)>(J, "mixed");
+    auto *Shared = test::lookupSym<int(int)>(J, "shared");
+    auto *Mixed = test::lookupSym<int(int)>(J, "mixed");
     for (int X : {5, 5, 5, 0, 1, 1})
       Shared(X);
     for (int X : {0, 1, 1, 2, 2, 2, 9, 9, 9, 9})
@@ -567,7 +635,7 @@ c:
 d:
   ret i32 4
 })", 5, [](orc::LLJIT &J) {
-    auto *Sw = test::lookupFn<int(int)>(J, "sw");
+    auto *Sw = test::lookupSym<int(int)>(J, "sw");
     for (int X : {100, -5, -5, 7, 7, 7, 0, 0, 0, 0, 1})
       Sw(X);
   });
@@ -601,8 +669,8 @@ pos:
 neg:
   ret i32 -1
 })", 10, [](orc::LLJIT &J) {
-    auto *Multi = test::lookupFn<int(int)>(J, "multi");
-    auto *After = test::lookupFn<int(int)>(J, "after");
+    auto *Multi = test::lookupSym<int(int)>(J, "multi");
+    auto *After = test::lookupSym<int(int)>(J, "after");
     for (int X : {3, 3, 5, 20, 20, 20, 20})
       Multi(X);
     for (int X : {1, 1, -1})
@@ -625,7 +693,7 @@ body:
 exit:
   ret i32 %next
 })", 3, [](orc::LLJIT &J) {
-    auto *Loop = test::lookupFn<int(int)>(J, "loop");
+    auto *Loop = test::lookupSym<int(int)>(J, "loop");
     EXPECT_EQ(Loop(5), 5);
     EXPECT_EQ(Loop(3), 3);
   });
@@ -702,7 +770,7 @@ next:
   }
 }
 
-TEST(Instrument, EveryIncrementIsMonotonicAtomicLoadAddStore) {
+TEST(Instrument, EveryIncrementIsUnorderedAtomicLoadAddStore) {
   LLVMContext Ctx;
   auto M = test::parseIR(Ctx, IR);
   instrumentModule(*M, CounterLayout::compute(*M));

@@ -23,7 +23,7 @@ std::unique_ptr<llvm::orc::LLJIT> makeJIT();
 std::unique_ptr<llvm::orc::LLJIT>
 jitIR(llvm::StringRef IR, llvm::function_ref<void(llvm::Module &)> Transform = {});
 
-template <typename Fn> Fn *lookupFn(llvm::orc::LLJIT &J, llvm::StringRef Name) {
+template <typename Fn> Fn *lookupSym(llvm::orc::LLJIT &J, llvm::StringRef Name) {
   return llvm::cantFail(J.lookup(Name)).toPtr<Fn *>();
 }
 

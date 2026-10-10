@@ -19,10 +19,10 @@ static void emitIncrement(IRBuilder<> &B, GlobalVariable *Counters, Value *Idx) 
   Value *Ptr = B.CreateInBoundsGEP(Counters->getValueType(), Counters,
                                    {B.getInt64(0), Idx});
   LoadInst *Old = B.CreateAlignedLoad(B.getInt64Ty(), Ptr, Align(8));
-  Old->setAtomic(AtomicOrdering::Monotonic);
+  Old->setAtomic(AtomicOrdering::Unordered);
   StoreInst *St =
       B.CreateAlignedStore(B.CreateAdd(Old, B.getInt64(1)), Ptr, Align(8));
-  St->setAtomic(AtomicOrdering::Monotonic);
+  St->setAtomic(AtomicOrdering::Unordered);
 }
 
 /// Counter index taken at a site; successor/arm k maps to FirstCounter + k.

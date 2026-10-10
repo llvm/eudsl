@@ -24,7 +24,9 @@ inline constexpr llvm::StringLiteral CountersName = "__orc_pgo_counters";
 /// the site instruction, with the index chosen by the same condition the
 /// instruction tests (frozen for selects, whose poison condition is not UB on
 /// its own). No edges are split and no blocks are added. Increments
-/// are a monotonic atomic load, add and monotonic atomic store, not an atomic
-/// read-modify-write, so concurrent increments may be lost.
+/// are an unordered atomic load, add and unordered atomic store, not an atomic
+/// read-modify-write: concurrent increments may be lost, but racing threads
+/// never see torn or undefined values, and LICM can still promote a loop's
+/// counter to a register.
 llvm::GlobalVariable *instrumentModule(llvm::Module &M, const CounterLayout &L);
 } // namespace orc_pgo
