@@ -15,3 +15,4 @@ function(orc_pgo_add_unittest name)
 endfunction()
 
 orc_pgo_add_unittest(CounterLayoutTest CounterLayoutTest.cpp)
+orc_pgo_add_unittest(InstrumentTest InstrumentTest.cpp)

@@ -44,6 +44,7 @@ llvm_map_components_to_libnames(ORC_PGO_LLVM_LIBS
 
 add_library(OrcPgo STATIC
   lib/CounterLayout.cpp
+  lib/Instrument.cpp
 )
 target_include_directories(OrcPgo PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(OrcPgo PUBLIC ${ORC_PGO_LLVM_LIBS})
