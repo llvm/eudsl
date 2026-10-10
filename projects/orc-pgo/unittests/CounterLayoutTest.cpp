@@ -10,10 +10,12 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "gtest/gtest.h"
 
+#include <iterator>
 #include <string>
 
 using namespace llvm;
@@ -87,7 +89,8 @@ late:
 }
 )";
 
-// Skipped functions interleaved with eligible ones.
+// Skipped functions interleaved with eligible ones, including linkages and
+// names that must not be skipped.
 constexpr const char *InterleavedIR = R"(
 declare void @a()
 define void @f(i1 %c) {
@@ -97,6 +100,10 @@ t:
 }
 define void @__orc_pgo_x() { ret void }
 define available_externally void @g() { ret void }
+define linkonce_odr void @lo() { ret void }
+define void @__user_fn() { ret void }
+define internal void @in() { ret void }
+define weak void @wk() { ret void }
 define void @h() { ret void }
 )";
 
@@ -164,6 +171,15 @@ t:
   ret void
 }
 
+define void @two(i32 %x) {
+entry:
+  switch i32 %x, label %a [ i32 0, label %b ]
+a:
+  ret void
+b:
+  ret void
+}
+
 define <2 x i32> @vecops(i1 %c, <2 x i32> %x, <2 x i32> %y) {
   %s = select i1 %c, <2 x i32> %x, <2 x i32> %y
   ret <2 x i32> %s
@@ -214,8 +230,15 @@ void expectSameLayout(const CounterLayout &L1, const CounterLayout &L2) {
   }
 }
 
+Instruction &entryTerminator(Module &M, StringRef Fn) {
+  Function *F = M.getFunction(Fn);
+  if (!F)
+    report_fatal_error("no function named " + Fn);
+  return *F->getEntryBlock().getTerminator();
+}
+
 unsigned entryTerminatorCounters(Module &M, StringRef Fn) {
-  return numSiteCounters(*M.getFunction(Fn)->getEntryBlock().getTerminator());
+  return numSiteCounters(entryTerminator(M, Fn));
 }
 
 TEST(CounterLayout, InternalNames) {
@@ -223,9 +246,13 @@ TEST(CounterLayout, InternalNames) {
   EXPECT_TRUE(isInternalName("__orc_pgo"));
   EXPECT_FALSE(isInternalName("orc_pgo"));
   EXPECT_FALSE(isInternalName("main"));
+  // Near misses: a shorter prefix or a substring match must not count.
+  EXPECT_FALSE(isInternalName("__orc_other"));
+  EXPECT_FALSE(isInternalName("__cxx_global_var_init"));
+  EXPECT_FALSE(isInternalName("x__orc_pgo"));
 }
 
-TEST(CounterLayout, AssignsDeterministicPositions) {
+TEST(CounterLayout, AssignsExpectedPositions) {
   LLVMContext Ctx;
   auto M = test::parseIR(Ctx, IR);
   CounterLayout L = CounterLayout::compute(*M);
@@ -278,10 +305,12 @@ TEST(CounterLayout, SitesAreContiguousInLayoutOrder) {
   ASSERT_EQ(FC.Sites.size(), 4u);
 
   EXPECT_TRUE(isa<SelectInst>(FC.Sites[0].Inst));
+  EXPECT_EQ(FC.Sites[0].Inst->getParent()->getName(), "entry");
   EXPECT_EQ(FC.Sites[0].FirstCounter, 1u);
   EXPECT_EQ(FC.Sites[0].NumCounters, 2u);
 
   EXPECT_TRUE(isa<CondBrInst>(FC.Sites[1].Inst));
+  EXPECT_EQ(FC.Sites[1].Inst->getParent()->getName(), "entry");
   EXPECT_EQ(FC.Sites[1].FirstCounter, 3u);
   EXPECT_EQ(FC.Sites[1].NumCounters, 2u);
 
@@ -303,19 +332,20 @@ TEST(CounterLayout, SkippedFunctionsDoNotShiftIndices) {
   auto M = test::parseIR(Ctx, InterleavedIR);
   CounterLayout L = CounterLayout::compute(*M);
 
-  ASSERT_EQ(L.functions().size(), 2u);
-  const FunctionCounters &F = L.functions()[0];
-  EXPECT_EQ(F.F->getName(), "f");
-  EXPECT_EQ(F.FunctionIndex, 0u);
-  EXPECT_EQ(F.EntryCounter, 0u);
-  ASSERT_EQ(F.Sites.size(), 1u);
-  EXPECT_EQ(F.Sites[0].FirstCounter, 1u);
-
-  const FunctionCounters &H = L.functions()[1];
-  EXPECT_EQ(H.F->getName(), "h");
-  EXPECT_EQ(H.FunctionIndex, 1u);
-  EXPECT_EQ(H.EntryCounter, 3u);
-  EXPECT_EQ(L.numCounters(), 4u);
+  // @a (declaration), @__orc_pgo_x (internal) and @g (available_externally)
+  // are skipped; every other linkage and non-internal name is profiled.
+  const char *Names[] = {"f", "lo", "__user_fn", "in", "wk", "h"};
+  const uint64_t Entries[] = {0, 3, 4, 5, 6, 7};
+  ASSERT_EQ(L.functions().size(), std::size(Names));
+  for (unsigned I = 0; I < std::size(Names); ++I) {
+    const FunctionCounters &FC = L.functions()[I];
+    EXPECT_EQ(FC.F->getName(), Names[I]);
+    EXPECT_EQ(FC.FunctionIndex, I);
+    EXPECT_EQ(FC.EntryCounter, Entries[I]) << Names[I];
+  }
+  ASSERT_EQ(L.functions()[0].Sites.size(), 1u);
+  EXPECT_EQ(L.functions()[0].Sites[0].FirstCounter, 1u);
+  EXPECT_EQ(L.numCounters(), 8u);
 }
 
 // invoke, indirectbr and callbr have several successors but get no counters:
@@ -325,6 +355,9 @@ TEST(CounterLayout, SkippedFunctionsDoNotShiftIndices) {
 TEST(CounterLayout, UnprofiledTerminators) {
   LLVMContext Ctx;
   auto M = test::parseIR(Ctx, UnprofiledIR);
+  ASSERT_TRUE(isa<InvokeInst>(entryTerminator(*M, "inv")));
+  ASSERT_TRUE(isa<IndirectBrInst>(entryTerminator(*M, "ibr")));
+  ASSERT_TRUE(isa<CallBrInst>(entryTerminator(*M, "cbr")));
   for (Function &F : *M)
     for (Instruction &I : instructions(F))
       EXPECT_EQ(numSiteCounters(I), 0u) << I.getOpcodeName();
@@ -345,6 +378,7 @@ TEST(CounterLayout, CountsArmsNotUniqueSuccessors) {
   EXPECT_EQ(entryTerminatorCounters(*M, "dup"), 3u);
   EXPECT_EQ(entryTerminatorCounters(*M, "four"), 5u);
   EXPECT_EQ(entryTerminatorCounters(*M, "same"), 2u);
+  EXPECT_EQ(entryTerminatorCounters(*M, "two"), 2u);
 
   // An i1 condition counts even when the operands are vectors.
   Instruction &VecSel = M->getFunction("vecops")->getEntryBlock().front();
@@ -358,7 +392,9 @@ TEST(CounterLayout, LookupAndSkippedFunctions) {
   CounterLayout L = CounterLayout::compute(*M);
   for (const FunctionCounters &FC : L.functions())
     EXPECT_EQ(L.lookup(*FC.F), &FC);
-  EXPECT_EQ(L.lookup(*M->getFunction("sw"))->FunctionIndex, 1u);
+  const FunctionCounters *SW = L.lookup(*M->getFunction("sw"));
+  ASSERT_NE(SW, nullptr);
+  EXPECT_EQ(SW->FunctionIndex, 1u);
   EXPECT_EQ(L.lookup(*M->getFunction("ext")), nullptr);
   EXPECT_EQ(L.lookup(*M->getFunction("ae")), nullptr);
   EXPECT_EQ(L.lookup(*M->getFunction("__orc_pgo_helper")), nullptr);
@@ -379,7 +415,7 @@ TEST(CounterLayout, SameIRSameLayout) {
   auto M2 = test::parseIR(C2, IR);
   CounterLayout L1 = CounterLayout::compute(*M1);
   CounterLayout L2 = CounterLayout::compute(*M2);
-  expectSameLayout(L1, L2);
+  ASSERT_NO_FATAL_FAILURE(expectSameLayout(L1, L2));
   // Lookup is per module: a same-named function from the other copy is unknown.
   EXPECT_EQ(L1.lookup(*M2->getFunction("sw")), nullptr);
 }
@@ -398,7 +434,7 @@ TEST(CounterLayout, BitcodeRoundTripPreservesLayout) {
   CounterLayout L1 = CounterLayout::compute(*M1);
   CounterLayout L2 = CounterLayout::compute(*M2);
   ASSERT_GT(L1.numCounters(), 0u);
-  expectSameLayout(L1, L2);
+  ASSERT_NO_FATAL_FAILURE(expectSameLayout(L1, L2));
 }
 
 } // namespace
