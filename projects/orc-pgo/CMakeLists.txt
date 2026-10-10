@@ -19,7 +19,9 @@ add_compile_definitions(${_llvm_defs})
 
 option(ORC_PGO_ENABLE_COVERAGE "Build with source-based coverage" OFF)
 
-# Executables whose coverage is reported (tests + the driver tool).
+# Executables passed to llvm-cov as --objects (via coverage-objects.txt).
+# Libraries are instrumented with orc_pgo_add_coverage and measured through
+# the executables that link them.
 set_property(GLOBAL PROPERTY ORC_PGO_COVERAGE_OBJECTS "")
 
 function(orc_pgo_add_coverage target)
@@ -51,7 +53,8 @@ include(CTest)
 if(BUILD_TESTING)
   include(FetchContent)
   FetchContent_Declare(googletest
-    URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.tar.gz)
+    URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.tar.gz
+    URL_HASH SHA256=7b42b4d6ed48810c5362c265a17faebe90dc2373c885e5216439d37927f02926)
   set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
   set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(googletest)

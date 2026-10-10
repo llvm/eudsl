@@ -2,7 +2,7 @@
 #  Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 #  See https://llvm.org/LICENSE.txt for license information.
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-"""Compute overall line coverage for eudsl-llvmpy C++ sources and enforce a threshold.
+"""Compute overall C++ line/function coverage for a project's sources and enforce a threshold.
 
 Usage (with pre-generated LCOV file):
     check_coverage.py --lcov <path> --sources <dir>... [--threshold=97]
@@ -13,6 +13,12 @@ Usage (with llvm-cov, generates LCOV internally):
 
 Handles LCOV_EXCL_LINE, LCOV_EXCL_START, and LCOV_EXCL_STOP filtering by
 reading source files directly.
+
+Fails (rather than reporting a misleadingly high percentage) when a C/C++
+source file under --sources is absent from the coverage data (e.g. a static
+library member no test links in), when an LCOV_EXCL_START is never closed, or
+when llvm-cov reports functions with mismatched profile data (which it drops
+from the report).
 
 Exits 0 if coverage >= threshold, 1 otherwise.
 """
@@ -125,6 +131,9 @@ def demangle(names):
 def get_excluded_lines(filepath):
     """Read a source file and return the set of line numbers excluded by
     LCOV_EXCL_LINE, LCOV_EXCL_START, and LCOV_EXCL_STOP markers.
+
+    Raises ValueError for an LCOV_EXCL_START without a matching LCOV_EXCL_STOP,
+    which would otherwise silently exclude the rest of the file.
     """
     excluded = set()
     try:
@@ -134,9 +143,11 @@ def get_excluded_lines(filepath):
         return excluded
 
     in_exclusion_block = False
+    start_line = None
     for i, line in enumerate(lines, start=1):
         if "LCOV_EXCL_START" in line:
             in_exclusion_block = True
+            start_line = i
             excluded.add(i)
         elif "LCOV_EXCL_STOP" in line:
             in_exclusion_block = False
@@ -146,6 +157,10 @@ def get_excluded_lines(filepath):
         elif "LCOV_EXCL_LINE" in line:
             excluded.add(i)
 
+    if in_exclusion_block:
+        raise ValueError(
+            f"{filepath}:{start_line}: LCOV_EXCL_START without a matching LCOV_EXCL_STOP"
+        )
     return excluded
 
 
@@ -173,12 +188,47 @@ def generate_lcov(llvm_cov, profdata, objects):
     if result.returncode != 0:
         print(f"llvm-cov export failed:\n{result.stderr}", file=sys.stderr)
         sys.exit(1)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="")
+    # llvm-cov drops functions whose profile hash doesn't match the binary and
+    # only warns, which would silently shrink the denominator.
+    if "mismatched data" in result.stderr:
+        print("llvm-cov export reported mismatched profile data", file=sys.stderr)
+        sys.exit(1)
     return result.stdout
+
+
+SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".cxx")
+
+
+def find_missing_sources(source_dirs, reported, ignore_re):
+    """C/C++ source files under source_dirs with no record in the coverage data.
+
+    A file can be absent because nothing linked it in (an unreferenced static
+    library member emits no coverage mapping); it is then untested but would
+    not count against the percentage.
+    """
+    reported = {Path(f).resolve() for f in reported}
+    missing = []
+    for src in source_dirs:
+        for path in sorted(Path(src).rglob("*")):
+            if path.suffix not in SOURCE_SUFFIXES or not path.is_file():
+                continue
+            if ignore_re and ignore_re.search(str(path)):
+                continue
+            if path.resolve() not in reported:
+                missing.append(str(path))
+    return missing
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Check eudsl-llvmpy C++ source coverage"
+        description="Check C++ source coverage against a threshold"
+    )
+    parser.add_argument(
+        "--label",
+        default="C++",
+        help="Project name used in the report (default: C++)",
     )
     parser.add_argument("--lcov", default=None, help="Path to LCOV .info file")
     parser.add_argument("--llvm-cov", default=None, help="Path to llvm-cov binary")
@@ -235,7 +285,11 @@ def main():
         if ignore_re and ignore_re.search(filepath):
             continue
 
-        excluded = get_excluded_lines(filepath)
+        try:
+            excluded = get_excluded_lines(filepath)
+        except ValueError as e:
+            print(f"FAILED: {e}")
+            return 1
 
         total = 0
         covered = 0
@@ -290,10 +344,10 @@ def main():
     )
 
     print(
-        f"eudsl-llvmpy C++ coverage: {covered_lines}/{total_lines} lines ({percent:.2f}%)"
+        f"{args.label} coverage: {covered_lines}/{total_lines} lines ({percent:.2f}%)"
     )
     print(
-        f"eudsl-llvmpy C++ coverage: {covered_fns}/{total_fns} functions ({fn_percent:.2f}%)"
+        f"{args.label} coverage: {covered_fns}/{total_fns} functions ({fn_percent:.2f}%)"
     )
 
     # Demangle any missed function names for readable reporting.
@@ -326,9 +380,15 @@ def main():
         for ln, name in sorted(stats["f_missed"]):
             print(f"    missed function (line {ln}): {pretty.get(name, name)}")
 
+    missing = find_missing_sources(args.sources, file_hits.keys(), ignore_re)
+
     line_ok = percent >= args.threshold
     fn_ok = fn_percent >= fn_threshold
-    if not line_ok or not fn_ok:
+    if not line_ok or not fn_ok or missing:
+        if missing:
+            print("\nFAILED: source files with no coverage data (not linked into any tested object?):")
+            for m in missing:
+                print(f"  {m}")
         if not line_ok:
             print(
                 f"\nFAILED: line coverage {percent:.2f}% < threshold {args.threshold:.2f}%"

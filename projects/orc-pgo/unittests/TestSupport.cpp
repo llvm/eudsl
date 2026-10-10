@@ -5,25 +5,13 @@
 #include "TestSupport.h"
 
 #include "llvm/AsmParser/Parser.h"
-#include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
-
-#include <mutex>
 
 using namespace llvm;
 
 namespace orc_pgo::test {
-
-void initLLVM() {
-  static std::once_flag Once;
-  std::call_once(Once, [] {
-    InitializeNativeTarget();
-    InitializeNativeTargetAsmPrinter();
-    InitializeNativeTargetAsmParser();
-  });
-}
 
 std::unique_ptr<Module> parseIR(LLVMContext &Ctx, StringRef Text) {
   SMDiagnostic Err;
@@ -33,27 +21,6 @@ std::unique_ptr<Module> parseIR(LLVMContext &Ctx, StringRef Text) {
     report_fatal_error("invalid test IR");
   }
   return M;
-}
-
-std::unique_ptr<TargetMachine> hostTargetMachine() {
-  initLLVM();
-  auto JTMB = cantFail(orc::JITTargetMachineBuilder::detectHost());
-  return cantFail(JTMB.createTargetMachine());
-}
-
-std::unique_ptr<orc::LLJIT> makeJIT() {
-  initLLVM();
-  return cantFail(orc::LLJITBuilder().create());
-}
-
-std::unique_ptr<orc::LLJIT> jitIR(StringRef IR, function_ref<void(Module &)> Transform) {
-  auto Ctx = std::make_unique<LLVMContext>();
-  auto M = parseIR(*Ctx, IR);
-  if (Transform)
-    Transform(*M);
-  auto J = makeJIT();
-  cantFail(J->addIRModule(orc::ThreadSafeModule(std::move(M), std::move(Ctx))));
-  return J;
 }
 
 } // namespace orc_pgo::test

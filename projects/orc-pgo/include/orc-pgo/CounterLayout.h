@@ -19,13 +19,21 @@ class Module;
 
 namespace orc_pgo {
 
-/// Prefix of every symbol orc-pgo itself emits or provides.
 inline constexpr llvm::StringLiteral InternalPrefix = "__orc_pgo";
 
 bool isInternalName(llvm::StringRef Name);
 
 /// Number of counters for a profiled instruction (one per successor/arm), or
-/// 0 if the instruction is not profiled.
+/// 0 if the instruction is not profiled:
+///   - conditional br: 2;
+///   - switch with more than one successor: one per successor slot (default
+///     first, then each case), even when several slots share a destination
+///     block, since switch branch_weights carry one weight per slot;
+///   - select with a scalar i1 condition: 2.
+/// Everything else is 0, including vector-condition selects and the other
+/// multi-successor terminators: invoke (its unwind edge is cold by default and
+/// edges into landing pads can't be split), and indirectbr/callbr (rare, and
+/// their edges generally can't be split to hold a counter).
 unsigned numSiteCounters(const llvm::Instruction &I);
 
 struct CounterSite {
@@ -36,19 +44,32 @@ struct CounterSite {
 
 struct FunctionCounters {
   llvm::Function *F;
+  /// Position in CounterLayout::functions().
   unsigned FunctionIndex;
   uint64_t EntryCounter;
+  /// In instruction order; counters follow EntryCounter contiguously.
   std::vector<CounterSite> Sites;
 };
 
-/// Positional counter assignment. Computing it on two copies of the same IR
-/// yields identical indices, which is what lets the runtime map the AOT
-/// counters back onto the embedded snapshot without hashes or name tables.
+/// Positional counter assignment. Functions are visited in module order,
+/// skipping declarations, available_externally definitions and InternalPrefix
+/// names; each gets an entry counter followed by its sites' counters.
+///
+/// Indices depend only on function order, instruction order and these skip
+/// rules, so computing the layout on two copies of the same IR yields identical
+/// indices. That is what lets two copies (e.g. one instrumented and one kept
+/// pristine) agree on counter positions without hashes or name tables. The
+/// flip side: any IR difference between the copies silently misaligns every
+/// later counter.
+///
+/// The module must be fully materialized (an unmaterialized body would count
+/// as a definition with no sites).
 class CounterLayout {
 public:
   static CounterLayout compute(llvm::Module &M);
 
   llvm::ArrayRef<FunctionCounters> functions() const { return Functions; }
+  /// nullptr for functions the layout skips (or from another module).
   const FunctionCounters *lookup(const llvm::Function &F) const;
   uint64_t numCounters() const { return NumCounters; }
 

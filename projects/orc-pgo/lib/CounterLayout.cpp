@@ -27,9 +27,11 @@ unsigned numSiteCounters(const Instruction &I) {
 CounterLayout CounterLayout::compute(Module &M) {
   CounterLayout L;
   for (Function &F : M) {
+    assert(!F.isMaterializable() && "CounterLayout needs a materialized module");
     if (F.isDeclaration() || F.hasAvailableExternallyLinkage() ||
-        isInternalName(F.getName()))
+        isInternalName(F.getName())) {
       continue;
+    }
     FunctionCounters FC{&F, static_cast<unsigned>(L.Functions.size()),
                         L.NumCounters++, {}};
     for (Instruction &I : instructions(F)) {

@@ -27,6 +27,7 @@ on:
       - main
     paths:
       - "projects/orc-pgo/**"
+      - ".github/workflows/build_test_orc_pgo.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.sha }}-build_test_orc_pgo
@@ -94,12 +95,7 @@ jobs:
       - name: "C++ coverage (llvm-cov, threshold 100%)"
         run: |
 
-          # llvm-cov/llvm-profdata must match the instrumenting clang (raw
-          # .profraw formats are version-locked): on Linux that is setup_base's
-          # llvm-18 ($CC); on macOS the script resolves Apple clang's via xcrun.
-          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            export LLVM_COV="$(dirname "$CC")/llvm-cov"
-            export LLVM_PROFDATA="$(dirname "$CC")/llvm-profdata"
-          fi
+          # The script picks the llvm-cov/llvm-profdata matching $CC: setup_base's
+          # llvm on Linux, Apple clang's via xcrun on macOS.
           LLVM_INSTALL_DIR="$PWD/llvm-install" \
             bash projects/orc-pgo/scripts/cpp_coverage.sh
