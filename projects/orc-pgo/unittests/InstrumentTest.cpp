@@ -6,6 +6,7 @@
 #include "TestSupport.h"
 #include "orc-pgo/Image.h"
 #include "orc-pgo/Snapshot.h"
+#include "orc-pgo/Thunks.h"
 #include "orc-pgo/ValueProfRuntime.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -354,6 +355,55 @@ TEST(Instrument, GenIsDeterministicAcrossASnapshotReparse) {
     EXPECT_FALSE(P1.empty());
     EXPECT_EQ(P1, placement(**M2));
   }
+}
+
+// @die is inferred noreturn and cold, which makes the switch case that calls it
+// unlikely and changes where Gen places counters.
+constexpr const char *ColdCallIR = R"(
+source_filename = "cold.c"
+declare void @abort() noreturn nounwind cold
+define void @die() {
+  call void @abort()
+  unreachable
+}
+define i32 @f(i32 %x) {
+entry:
+  switch i32 %x, label %def [ i32 1, label %c1
+                              i32 2, label %c2 ]
+c1:
+  call void @die()
+  br label %m
+c2:
+  br label %m
+def:
+  br label %m
+m:
+  ret i32 %x
+}
+)";
+
+TEST(Instrument, GenPlacesCountersTheSameOnTheInferredModuleAndItsSnapshot) {
+  LLVMContext C1, C2, C3;
+  auto M1 = test::parseHostIR(C1, ColdCallIR);
+  inferFunctionAttributes(*M1);
+  ASSERT_TRUE(M1->getFunction("die")->doesNotReturn());
+  ASSERT_TRUE(M1->getFunction("die")->hasFnAttribute(Attribute::Cold));
+  // The build instruments M1 and tier-up annotates a re-parse of its snapshot.
+  Expected<std::unique_ptr<Module>> M2 = parseSnapshot(writeSnapshot(*M1), C2);
+  ASSERT_EQ(test::errorText(M2), "");
+  ASSERT_EQ(test::errorText(runPgoGen(*M1)), "");
+  ASSERT_EQ(test::errorText(runPgoGen(**M2)), "");
+  EXPECT_FALSE(verifyModule(*M1, &errs()));
+  EXPECT_FALSE(verifyModule(**M2, &errs()));
+  Placement Inferred = placement(*M1);
+  EXPECT_FALSE(Inferred.empty());
+  EXPECT_EQ(Inferred, placement(**M2));
+
+  // Inferring only after the snapshot would have let them differ.
+  auto Plain = test::parseHostIR(C3, ColdCallIR);
+  ASSERT_EQ(test::errorText(runPgoGen(*Plain)), "");
+  EXPECT_FALSE(verifyModule(*Plain, &errs()));
+  EXPECT_NE(Inferred, placement(*Plain));
 }
 
 /// Number of stores to a __profc_ counter array inside a loop of F.
