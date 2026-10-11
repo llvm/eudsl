@@ -63,6 +63,7 @@ orc_pgo_add_coverage(OrcPgoRuntime)
 add_library(OrcPgoBuild STATIC
   lib/Instrument.cpp
   lib/Thunks.cpp
+  lib/SymbolTable.cpp
 )
 target_link_libraries(OrcPgoBuild PUBLIC OrcPgoCommon)
 orc_pgo_add_coverage(OrcPgoBuild)
