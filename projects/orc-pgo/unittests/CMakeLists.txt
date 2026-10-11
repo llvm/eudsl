@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 add_library(OrcPgoTestSupport STATIC TestSupport.cpp)
-target_link_libraries(OrcPgoTestSupport PUBLIC OrcPgoCommon GTest::gtest)
+target_link_libraries(OrcPgoTestSupport PUBLIC OrcPgoCommon OrcPgoBuild OrcPgoRuntime GTest::gtest)
 target_include_directories(OrcPgoTestSupport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 function(orc_pgo_add_unittest name)
@@ -16,3 +16,5 @@ endfunction()
 
 orc_pgo_add_unittest(PgoOptionsTest PgoOptionsTest.cpp)
 orc_pgo_add_unittest(SnapshotTest SnapshotTest.cpp)
+orc_pgo_add_unittest(ValueProfRuntimeTest ValueProfRuntimeTest.cpp)
+orc_pgo_add_unittest(InstrumentTest InstrumentTest.cpp)

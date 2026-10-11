@@ -5,10 +5,12 @@
 #pragma once
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Target/TargetMachine.h"
 
 #include <memory>
 #include <string>
@@ -18,6 +20,11 @@ namespace orc_pgo::test {
 /// Aborts the test binary with the diagnostic if Text is invalid IR.
 std::unique_ptr<llvm::Module> parseIR(llvm::LLVMContext &Ctx,
                                       llvm::StringRef Text);
+
+/// parseIR, then sets the host triple and data layout, as instrumentation
+/// needs the object format the JIT will use.
+std::unique_ptr<llvm::Module> parseHostIR(llvm::LLVMContext &Ctx,
+                                          llvm::StringRef Text);
 
 /// The message of a failed Error, or "" on success. Consumes the error.
 std::string errorText(llvm::Error E);
@@ -30,6 +37,21 @@ std::string errorText(llvm::Expected<T> &E) {
 /// checkPgoOptions's error for a context not given parsePgoOptions's options.
 inline constexpr const char *MissingPgoOptionsError =
     "the module's LLVMContext was not given orc-pgo's LLVM options";
+
+/// A TargetMachine for the host, as the JIT compiles for.
+std::unique_ptr<llvm::TargetMachine> makeHostTargetMachine();
+
+std::unique_ptr<llvm::orc::LLJIT> makeJIT();
+
+/// Adds M to a new JIT that also provides orc-pgo's value-profiling callbacks.
+std::unique_ptr<llvm::orc::LLJIT>
+jitModule(std::unique_ptr<llvm::Module> M,
+          std::unique_ptr<llvm::LLVMContext> Ctx);
+
+template <typename T>
+T *lookupSym(llvm::orc::LLJIT &J, llvm::StringRef Name) {
+  return llvm::cantFail(J.lookup(Name)).toPtr<T *>();
+}
 
 /// While alive, the program has a required positional cl::opt, as many LLVM
 /// tools do, so cl::ParseCommandLineOptions and with it parsePgoOptions fail.
@@ -51,5 +73,8 @@ public:
 private:
   llvm::cl::opt<std::string> Opt{llvm::cl::Positional, llvm::cl::Required};
 };
+
+/// The default O2 pipeline, without PGO options.
+void runO2(llvm::Module &M);
 
 } // namespace orc_pgo::test
