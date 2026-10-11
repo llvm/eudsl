@@ -65,10 +65,24 @@ std::string errorText(Error E) {
   return E ? toString(std::move(E)) : std::string();
 }
 
-std::unique_ptr<TargetMachine> makeHostTargetMachine() {
-  initLLVM();
-  auto JTMB = cantFail(orc::JITTargetMachineBuilder::detectHost());
+static std::unique_ptr<TargetMachine>
+createTargetMachine(orc::JITTargetMachineBuilder JTMB,
+                    std::optional<Reloc::Model> RM) {
+  JTMB.setRelocationModel(RM);
   return cantFail(JTMB.createTargetMachine());
+}
+
+std::unique_ptr<TargetMachine>
+makeHostTargetMachine(std::optional<Reloc::Model> RM) {
+  initLLVM();
+  return createTargetMachine(
+      cantFail(orc::JITTargetMachineBuilder::detectHost()), RM);
+}
+
+std::unique_ptr<TargetMachine>
+makeTargetMachine(const Triple &TT, std::optional<Reloc::Model> RM) {
+  initLLVM();
+  return createTargetMachine(orc::JITTargetMachineBuilder(TT), RM);
 }
 
 std::unique_ptr<orc::LLJIT> makeJIT() {

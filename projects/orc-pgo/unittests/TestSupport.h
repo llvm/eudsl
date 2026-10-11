@@ -14,6 +14,7 @@
 #include "llvm/TargetParser/Triple.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace orc_pgo::test {
@@ -44,8 +45,14 @@ std::string errorText(llvm::Expected<T> &E) {
   return E ? std::string() : errorText(E.takeError());
 }
 
-/// A TargetMachine for the host, as the JIT compiles for.
-std::unique_ptr<llvm::TargetMachine> makeHostTargetMachine();
+/// A TargetMachine for the host, as the JIT compiles for, with RM if given.
+std::unique_ptr<llvm::TargetMachine>
+makeHostTargetMachine(std::optional<llvm::Reloc::Model> RM = std::nullopt);
+
+/// A TargetMachine for TT, for the generic CPU, with RM if given.
+std::unique_ptr<llvm::TargetMachine>
+makeTargetMachine(const llvm::Triple &TT,
+                  std::optional<llvm::Reloc::Model> RM = std::nullopt);
 
 std::unique_ptr<llvm::orc::LLJIT> makeJIT();
 

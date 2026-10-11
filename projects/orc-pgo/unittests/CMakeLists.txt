@@ -2,7 +2,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-add_library(OrcPgoTestSupport STATIC TestSupport.cpp)
+add_library(OrcPgoTestSupport STATIC TestSupport.cpp SimulatedAot.cpp)
 target_link_libraries(OrcPgoTestSupport PUBLIC OrcPgoCommon OrcPgoBuild OrcPgoRuntime GTest::gtest)
 target_include_directories(OrcPgoTestSupport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -23,3 +23,4 @@ orc_pgo_add_unittest(AnnotateTest AnnotateTest.cpp)
 orc_pgo_add_unittest(EligibilityTest EligibilityTest.cpp)
 orc_pgo_add_unittest(ThunksTest ThunksTest.cpp)
 orc_pgo_add_unittest(SymbolTableTest SymbolTableTest.cpp)
+orc_pgo_add_unittest(PipelineTest PipelineTest.cpp)

@@ -8,6 +8,7 @@
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/Passes/PassBuilder.h"
 
 #include <memory>
 
@@ -35,5 +36,14 @@ struct PgoAnalysisManagers {
 private:
   std::unique_ptr<llvm::TargetLibraryInfoImpl> TLII;
 };
+
+/// The pipeline tuning options clang uses for -O<Level>
+/// (EmitAssemblyHelper::RunOptimizationPipeline in clang's BackendUtil.cpp,
+/// with the defaults of CompilerInvocation.cpp): loop unrolling and
+/// interleaving, loop and SLP vectorization at O2 and above; loop interchange
+/// always; no loop fusion and no function merging; the call graph profile.
+/// PassBuilder's own defaults differ, e.g. for SLP vectorization.
+llvm::PipelineTuningOptions
+clangPipelineTuningOptions(llvm::OptimizationLevel Level);
 
 } // namespace orc_pgo
