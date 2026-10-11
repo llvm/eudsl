@@ -57,6 +57,7 @@ add_library(OrcPgoRuntime STATIC
   lib/ProfileBuilder.cpp
   lib/Annotate.cpp
   lib/TierUp.cpp
+  lib/Runtime.cpp
 )
 target_link_libraries(OrcPgoRuntime PUBLIC OrcPgoCommon)
 orc_pgo_add_coverage(OrcPgoRuntime)
