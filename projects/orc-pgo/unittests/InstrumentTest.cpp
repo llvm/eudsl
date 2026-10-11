@@ -524,6 +524,32 @@ TEST(Instrument, LoweredModulesNeedNoCompilerRtProfileRuntime) {
   EXPECT_NE(M->getFunction("__orc_pgo_instrument_memop"), nullptr);
 }
 
+// Linux JITs ELF, where ORC sees more of what Gen and lowering emit than on
+// MachO (comdats, e.g.), so link the lowered modules as ELF on every host.
+TEST(Instrument, LoweredModulesLinkAsElf) {
+  for (auto [IR, NumFunctions] :
+       {std::pair<StringRef, uint32_t>{ShapesIR, 7}, {ValueSitesIR, 5}}) {
+    auto Ctx = std::make_unique<LLVMContext>();
+    auto M = test::parseIRFor(*Ctx, IR, test::hostElfTriple());
+    ASSERT_EQ(test::errorText(runPgoGen(*M)), "");
+    ASSERT_EQ(test::errorText(lowerPgo(*M).takeError()), "");
+    // On ELF, Gen emits the version variable in a comdat any, and lowering
+    // keeps LLVM's form; ORC's IR layer calls it weak and JITLink strong, so
+    // jitModule makes it weak.
+    GlobalVariable *Version =
+        M->getGlobalVariable("__llvm_profile_raw_version");
+    ASSERT_NE(Version, nullptr);
+    EXPECT_TRUE(Version->hasExternalLinkage());
+    ASSERT_TRUE(Version->hasComdat());
+    EXPECT_EQ(Version->getComdat()->getSelectionKind(), Comdat::Any);
+    auto J = test::jitModule(test::makeJIT(M->getTargetTriple()), std::move(M),
+                             std::move(Ctx));
+    // Linking, without running any of it. (Asserting LLVMs abort here if the
+    // IR's symbol flags differ from the object's.)
+    EXPECT_EQ(*test::lookupSym<uint32_t>(*J, NumFunctionsName), NumFunctions);
+  }
+}
+
 TEST(Instrument, AnExistingProfileRuntimeHookIsKept) {
   LLVMContext Ctx;
   auto M =
