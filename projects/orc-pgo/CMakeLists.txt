@@ -44,6 +44,7 @@ llvm_map_components_to_libnames(ORC_PGO_LLVM_LIBS
 
 add_library(OrcPgoCommon STATIC
   lib/Analyses.cpp
+  lib/Eligibility.cpp
   lib/PgoOptions.cpp
   lib/Snapshot.cpp
 )
