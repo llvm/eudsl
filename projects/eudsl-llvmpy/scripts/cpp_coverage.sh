@@ -68,6 +68,7 @@ fi
 
 echo ">> checking src/IR + src/MIR coverage (threshold=${THRESHOLD}%)"
 "$PY" "${PROJ_DIR}/../../scripts/check_coverage.py" \
+  --label eudsl-llvmpy \
   --llvm-cov "$LLVM_COV" \
   --profdata "${COV_DIR}/eudslllvm.profdata" \
   --objects "$SO" \
