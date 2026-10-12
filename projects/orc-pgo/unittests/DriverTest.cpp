@@ -499,15 +499,14 @@ TEST_F(DriverTest, UnknownDriverOptionsFail) {
 TEST_F(DriverTest, VersionSucceeds) { EXPECT_EQ(drive({"--version"}), 0); }
 
 TEST_F(DriverTest, RunsCC1InProcess) {
-  // No -resource-dir: cc1 falls back to orc-pgo's, which has stddef.h. On
-  // Darwin cc1 never adds default include paths ("handled in the driver"), so
-  // the fallback cannot be observed through headers there.
-#ifdef __APPLE__
-  constexpr const char *Ok = "int n;\n";
-#else
-  constexpr const char *Ok = "#include <stddef.h>\nsize_t n;\n";
-#endif
-  EXPECT_EQ(drive({"-cc1", "-fsyntax-only", write("ok.c", Ok)}), 0);
+  // No -resource-dir: cc1 falls back to orc-pgo's, which has stddef.h. cc1
+  // only searches <resource-dir>/include itself for targets whose header
+  // search the driver does not own (not Darwin, not Linux), so use a bare
+  // OS-less triple to observe the fallback on every host.
+  EXPECT_EQ(drive({"-cc1", "-triple", "aarch64-unknown-unknown",
+                   "-nostdsysteminc", "-fsyntax-only",
+                   write("ok.c", "#include <stddef.h>\nsize_t n;\n")}),
+            0);
   int Exit;
   std::string Err = driveCapturingStderr({"-cc1", "-no-such-cc1-flag"}, Exit);
   EXPECT_EQ(Exit, 1);
