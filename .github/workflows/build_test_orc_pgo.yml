@@ -96,6 +96,12 @@ jobs:
           unzip -q mlir_wheel*.whl
           mv mlir_wheel llvm-install
 
+      - name: "Check the distro's compiler-rt builtins"
+        run: |
+
+          # orc-pgo links them into every executable it builds (#724).
+          find llvm-install/lib/clang \( -name 'libclang_rt.builtins*.a' -o -name 'libclang_rt.osx.a' \) | grep -q .
+
       - name: "C++ coverage (llvm-cov, threshold 100%)"
         run: |
 
