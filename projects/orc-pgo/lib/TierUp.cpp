@@ -259,7 +259,12 @@ void optimizeTierUp(Module &M, TargetMachine &TM) {
   FunctionAnalysisManager FAM;
   CGSCCAnalysisManager CGAM;
   ModuleAnalysisManager MAM;
-  PassBuilder PB(&TM, clangPipelineTuningOptions(OptimizationLevel::O3));
+  PipelineTuningOptions PTO = clangPipelineTuningOptions(OptimizationLevel::O3);
+  // The call graph profile is a section for the static linker's function
+  // ordering, which the JIT does not use. It is written with REL relocations,
+  // which JITLink's x86-64 ELF reader rejects.
+  PTO.CallGraphProfile = false;
+  PassBuilder PB(&TM, PTO);
   PB.registerModuleAnalyses(MAM);
   PB.registerCGSCCAnalyses(CGAM);
   PB.registerFunctionAnalyses(FAM);
