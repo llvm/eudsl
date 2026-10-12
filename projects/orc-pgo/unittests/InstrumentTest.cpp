@@ -16,7 +16,11 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/MC/TargetRegistry.h"
 #include "llvm/ProfileData/InstrProf.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Host.h"
 #include "gtest/gtest.h"
 
 #include <map>
@@ -443,8 +447,9 @@ TEST(Instrument, PromotedCountersAreExactAfterTheLoop) {
 // duplicates a loop header of at most 16 instructions, as costed by
 // TargetTransformInfo. Without a target every instruction costs 1, so this
 // header (2 phis, 6 adds, extractelement, trunc, icmp, br) is small enough. On
-// a real target each <64 x i64> add legalizes into many vector operations, so
-// the header costs well over 16 and the loop is left alone.
+// a baseline CPU (x86-64's SSE2, AArch64's NEON) each <64 x i64> add legalizes
+// into 32 128-bit adds, so the header costs well over 16 and the loop is left
+// alone. A host CPU could be wide enough (e.g. AVX-512) to rotate it.
 constexpr const char *WideHeaderIR = R"(
 source_filename = "w.c"
 define i32 @w(i32 %n, <64 x i64> %v) {
@@ -482,9 +487,22 @@ bool rotatedWithGuard(TargetMachine *TM) {
   return isa<CondBrInst>(M->getFunction("w")->getEntryBlock().getTerminator());
 }
 
+/// A TargetMachine for the host triple with its baseline CPU and no extra
+/// features, so costs don't depend on the machine the test runs on.
+std::unique_ptr<TargetMachine> makeBaselineTargetMachine() {
+  InitializeNativeTarget();
+  Triple TT(sys::getProcessTriple());
+  std::string Err;
+  const Target *T = TargetRegistry::lookupTarget(TT, Err);
+  EXPECT_TRUE(T) << Err;
+  StringRef CPU = TT.isX86() ? "x86-64" : "generic";
+  return std::unique_ptr<TargetMachine>(
+      T->createTargetMachine(TT, CPU, "", TargetOptions(), std::nullopt));
+}
+
 TEST(Instrument, LoopRotationCostsInstructionsWithTheGivenTarget) {
   EXPECT_TRUE(rotatedWithGuard(nullptr));
-  auto TM = test::makeHostTargetMachine();
+  auto TM = makeBaselineTargetMachine();
   EXPECT_FALSE(rotatedWithGuard(TM.get()));
 }
 
