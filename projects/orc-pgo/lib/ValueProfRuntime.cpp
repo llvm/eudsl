@@ -120,14 +120,21 @@ void instrumentValue(uint64_t TargetValue, void *DataPtr,
 } // namespace
 
 void setValueNodePool(void *Begin, void *End) {
-  // Nodes already handed out from the runtime pool are not reused except by a
-  // second call to this function, which starts both pools afresh.
+  // Values recorded so far (by static constructors, before the runtime
+  // starts) are in the runtime pool and stay linked, so it is left alone.
+  ImagePool.End.store(static_cast<prof::ValueProfNode *>(End));
+  ImagePool.Current.store(static_cast<prof::ValueProfNode *>(Begin));
+}
+
+void resetValueNodePools() {
+  // Nodes already handed out from the runtime pool are not reused except
+  // through here, once no value list refers to them.
   prof::ValueProfNode *Used =
       std::min(RuntimePool.Current.load(), RuntimePool.End.load());
   std::fill(RuntimeNodes, Used, prof::ValueProfNode{});
   RuntimePool.Current.store(RuntimeNodes);
-  ImagePool.End.store(static_cast<prof::ValueProfNode *>(End));
-  ImagePool.Current.store(static_cast<prof::ValueProfNode *>(Begin));
+  ImagePool.End.store(nullptr);
+  ImagePool.Current.store(nullptr);
   Exhausted.store(false);
 }
 
