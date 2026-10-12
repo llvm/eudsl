@@ -9,6 +9,7 @@
 // the orc-pgo runtime, static LLVM and compiler-rt builtins.
 
 #include "orc-pgo/Driver.h"
+#include "orc-pgo/Archive.h"
 #include "orc-pgo/Config.h"
 #include "orc-pgo/PgoOptions.h"
 #include "orc-pgo/Pipeline.h"
@@ -35,8 +36,10 @@
 #include "clang/Serialization/ObjectFilePCHContainerReader.h"
 #include "clang/Serialization/PCHContainerOperations.h"
 
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/BinaryFormat/Magic.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -72,6 +75,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -88,17 +92,18 @@ namespace orc_pgo {
 namespace {
 
 // Added to the native link of an instrumented program, around the runtime
-// archives. compiler-rt builtins are already clang's only choice on Darwin. On
-// Linux, -rtlib=compiler-rt alone would also drop the unwinder, so the dynamic
-// libgcc_s is requested explicitly: libstdc++ needs it, and the JIT registers
-// its frames with it.
+// archives. On Linux, --no-whole-archive ends any --whole-archive of the
+// user's, which must not apply to the runtime. compiler-rt builtins are
+// already clang's only choice on Darwin. On Linux, -rtlib=compiler-rt alone
+// would also drop the unwinder, so the dynamic libgcc_s is requested
+// explicitly: libstdc++ needs it, and the JIT registers its frames with it.
 #ifdef __APPLE__
 constexpr const char *RuntimeLinkPrefix[] = {"-rtlib=compiler-rt"};
 constexpr const char *RuntimeLinkSuffix[] = {"-Wl,-dead_strip"};
 #else
 constexpr const char *RuntimeLinkPrefix[] = {
     "-rtlib=compiler-rt", "-unwindlib=libgcc", "-Wl,--gc-sections",
-    "-Wl,--start-group"};
+    "-Wl,--no-whole-archive", "-Wl,--start-group"};
 constexpr const char *RuntimeLinkSuffix[] = {"-Wl,--end-group"};
 #endif
 
@@ -126,12 +131,43 @@ private:
   std::string &Errors;
 };
 
+/// A static archive input.
+struct LinkArchive {
+  std::unique_ptr<MemoryBuffer> Buffer;
+  ArchiveContents Contents;
+  /// Linked in full: -force_load, -all_load, or between --whole-archive and
+  /// --no-whole-archive.
+  bool Whole;
+};
+
+/// An option and the index of one of its values.
+using OptionValue = std::pair<const llvm::opt::Arg *, unsigned>;
+
 /// The link job's inputs, by how the link step handles them.
 struct LinkInputs {
   /// Merged into the AOT module.
   std::vector<std::string> Bitcode;
+  /// In command-line order. The members of the bitcode ones are linked into
+  /// the AOT module as needed; the references of the native ones decide which
+  /// of those members are needed.
+  std::vector<LinkArchive> Archives;
+  /// Their references decide which archive members are needed.
+  std::vector<std::unique_ptr<MemoryBuffer>> NativeObjects;
   /// Inputs that the AOT object replaces on the native link line.
   StringSet<> Replaced;
+  /// Option values that name bitcode archives (-force_load), which the native
+  /// link must not see.
+  DenseSet<OptionValue> Dropped;
+  /// -all_load is in effect. ld64 applies it to every archive, runtime
+  /// archives included, so with an AOT object it is replaced by a -force_load
+  /// of each native archive in Archives instead.
+  bool AllLoad = false;
+
+  bool hasBitcode() const {
+    return !Bitcode.empty() || any_of(Archives, [](const LinkArchive &A) {
+      return A.Contents == ArchiveContents::Bitcode;
+    });
+  }
 };
 
 } // namespace
@@ -299,21 +335,241 @@ static Error applyLinkTimeLLVMOptions(const Compilation &C) {
   return checkPgoOptionConflicts(Values);
 }
 
-static LinkInputs classifyLinkInputs(const Command &Link) {
-  LinkInputs Inputs;
-  for (const InputInfo &II : Link.getInputInfos()) {
-    StringRef Path = II.getFilename();
-    ErrorOr<std::unique_ptr<MemoryBuffer>> Buf = MemoryBuffer::getFile(Path);
-    if (Buf && identify_magic((*Buf)->getBuffer()) == file_magic::bitcode) {
-      Inputs.Bitcode.push_back(Path.str());
-      Inputs.Replaced.insert(Path);
+// The suffixes of the shared libraries that the linker prefers to lib<name>.a
+// in the same directory.
+#ifdef __APPLE__
+constexpr const char *SharedLibrarySuffixes[] = {".tbd", ".dylib"};
+#else
+constexpr const char *SharedLibrarySuffixes[] = {".so"};
+#endif
+
+/// The static archive that the linker takes for -l<Name>, or null if it takes
+/// something else. In each -L directory in order, lib<Name>.a comes after the
+/// shared library lib<Name>.so (.tbd, .dylib on Darwin), unless -static is
+/// given, and the first match wins. The file may not be an archive orc-pgo can
+/// read (a universal one, say): classifyLibrary decides. Not modeled: the
+/// linker's default search directories, -l:<file>, -Bstatic and -Bdynamic
+/// (positional), -search_dylibs_first.
+static std::unique_ptr<MemoryBuffer> findLibrary(const Compilation &C,
+                                                 StringRef Name) {
+  const bool Static = C.getArgs().hasArg(clang::options::OPT_static);
+  for (const std::string &Dir :
+       C.getArgs().getAllArgValues(clang::options::OPT_L)) {
+    SmallString<256> Path(Dir);
+    sys::path::append(Path, "lib" + Name);
+    SmallString<256> Base = Path;
+    if (!Static) {
+      for (const char *Suffix : SharedLibrarySuffixes) {
+        if (sys::fs::exists(Base + Suffix))
+          return nullptr;
+      }
     }
+    Path += ".a";
+    if (ErrorOr<std::unique_ptr<MemoryBuffer>> Buf =
+            MemoryBuffer::getFile(Path))
+      return std::move(*Buf);
   }
-  return Inputs;
+  return nullptr;
 }
 
-/// Merges the bitcode inputs and writes the instrumented AOT object to a
-/// temporary file that C removes. Returns the file's path.
+/// Adds an archive once: when it's given again, it keeps its place and is
+/// Whole if either is. Whole archives are linked in full, and so are all
+/// archives with -all_load.
+static void addArchive(LinkInputs &Inputs, std::unique_ptr<MemoryBuffer> Buffer,
+                       ArchiveContents Contents, bool Whole) {
+  Whole |= Inputs.AllLoad;
+  for (LinkArchive &A : Inputs.Archives) {
+    if (A.Buffer->getBufferIdentifier() == Buffer->getBufferIdentifier()) {
+      A.Whole |= Whole;
+      return;
+    }
+  }
+  Inputs.Archives.push_back({std::move(Buffer), Contents, Whole});
+}
+
+/// Classifies the static archive in Buffer and adds it.
+static Expected<ArchiveContents>
+addArchiveInput(LinkInputs &Inputs, std::unique_ptr<MemoryBuffer> Buffer,
+                bool Whole) {
+  Expected<ArchiveContents> Kind = classifyArchive(Buffer->getMemBufferRef());
+  if (!Kind)
+    return Kind.takeError();
+  addArchive(Inputs, std::move(Buffer), *Kind, Whole);
+  return *Kind;
+}
+
+static bool isLinkerOption(const llvm::opt::Arg &A) {
+  return A.getOption().matches(clang::options::OPT_Wl_COMMA) ||
+         A.getOption().matches(clang::options::OPT_Xlinker);
+}
+
+/// An archive that the linker reads from an option value (-force_load's path,
+/// or a file name in -Wl,): a bitcode one is linked here instead, so the
+/// native link must not see the values Keys. Anything else is for the system
+/// linker to read or report.
+static Error addLinkerOptionArchive(LinkInputs &Inputs, StringRef Path,
+                                    bool Whole, ArrayRef<OptionValue> Keys) {
+  ErrorOr<std::unique_ptr<MemoryBuffer>> Buf = MemoryBuffer::getFile(Path);
+  if (!Buf || identify_magic((*Buf)->getBuffer()) != file_magic::archive)
+    return Error::success();
+  Expected<ArchiveContents> Kind =
+      addArchiveInput(Inputs, std::move(*Buf), Whole);
+  if (!Kind)
+    return Kind.takeError();
+  if (*Kind == ArchiveContents::Bitcode)
+    Inputs.Dropped.insert(Keys.begin(), Keys.end());
+  return Error::success();
+}
+
+/// Reads the link job's inputs. The -l libraries are only looked at if
+/// Libraries is set.
+static Expected<LinkInputs>
+readLinkInputs(const Compilation &C, const Command &Link, bool Libraries) {
+  namespace options = clang::options;
+  LinkInputs Inputs;
+#ifdef __APPLE__
+  for (const llvm::opt::Arg *A : C.getInputArgs()) {
+    if (A->getOption().matches(options::OPT_all__load) ||
+        (isLinkerOption(*A) && any_of(A->getValues(), [](StringRef V) {
+           return V == "-all_load";
+         }))) {
+      Inputs.AllLoad = true;
+    }
+  }
+  OptionValue ForceLoadOption{nullptr, 0};
+  // Direct -force_load options are not among the link action's inputs. Each
+  // is added when the walk reaches its place on the command line.
+  SmallVector<const llvm::opt::Arg *, 2> DirectForceLoads;
+  for (const llvm::opt::Arg *A :
+       C.getInputArgs().filtered(options::OPT_force__load))
+    DirectForceLoads.push_back(A);
+  size_t NextForceLoad = 0;
+  auto AddForceLoadsBefore = [&](unsigned Index) -> Error {
+    while (NextForceLoad != DirectForceLoads.size() &&
+           DirectForceLoads[NextForceLoad]->getIndex() < Index) {
+      const llvm::opt::Arg *A = DirectForceLoads[NextForceLoad++];
+      if (Error E = addLinkerOptionArchive(Inputs, A->getValue(),
+                                           /*Whole=*/true, {{A, 0}}))
+        return E;
+    }
+    return Error::success();
+  };
+#endif
+
+  // Command::getInputInfos has only the file inputs; the linker-input
+  // arguments (-l, -Wl, -Xlinker, ...) are found among the link action's
+  // inputs. Their order is the command line's.
+  bool WholeArchive = false;
+  SmallVector<bool, 2> SavedWholeArchive;
+  size_t NextFile = 0;
+  for (const clang::driver::Action *A : Link.getSource().getInputs()) {
+    const auto *IA = dyn_cast<clang::driver::InputAction>(A);
+#ifdef __APPLE__
+    // Compiled sources are not archives: only the other inputs flush the
+    // -force_load options that precede them.
+    if (IA)
+      if (Error E = AddForceLoadsBefore(IA->getInputArg().getIndex()))
+        return std::move(E);
+#endif
+    if (IA && !IA->getInputArg().getOption().matches(options::OPT_INPUT)) {
+      const llvm::opt::Arg &Arg = IA->getInputArg();
+      if (Arg.getOption().matches(options::OPT_l)) {
+        std::unique_ptr<MemoryBuffer> Buf =
+            Libraries ? findLibrary(C, Arg.getValue()) : nullptr;
+        if (!Buf)
+          continue;
+        std::string Path = Buf->getBufferIdentifier().str();
+        Expected<std::optional<ArchiveContents>> Kind =
+            classifyLibrary(Buf->getMemBufferRef());
+        if (!Kind)
+          return Kind.takeError();
+        if (!*Kind)
+          continue;
+        // The static linker can't read a bitcode archive found in a -L
+        // directory, so that one must be passed by path.
+        if (**Kind == ArchiveContents::Bitcode)
+          return createStringError(
+              "-l%s resolves to the bitcode archive %s; pass bitcode archives "
+              "by path",
+              Arg.getValue(), Path.c_str());
+        addArchive(Inputs, std::move(Buf), **Kind, WholeArchive);
+      } else if (isLinkerOption(Arg)) {
+        for (unsigned I = 0; I != Arg.getNumValues(); ++I) {
+          StringRef V = Arg.getValue(I);
+#ifdef __APPLE__
+          if (ForceLoadOption.first) {
+            if (Error E = addLinkerOptionArchive(Inputs, V, /*Whole=*/true,
+                                                 {ForceLoadOption, {&Arg, I}}))
+              return std::move(E);
+            ForceLoadOption = {nullptr, 0};
+            continue;
+          }
+          if (V == "-force_load")
+            ForceLoadOption = {&Arg, I};
+#endif
+          if (V == "--whole-archive") {
+            WholeArchive = true;
+          } else if (V == "--no-whole-archive") {
+            WholeArchive = false;
+          } else if (V == "--push-state") {
+            SavedWholeArchive.push_back(WholeArchive);
+          } else if (V == "--pop-state") {
+            if (!SavedWholeArchive.empty())
+              WholeArchive = SavedWholeArchive.pop_back_val();
+          } else if (!V.starts_with("-")) {
+            // CMake passes a whole archive as
+            // -Wl,--push-state,--whole-archive,<path>,--pop-state.
+            if (Error E = addLinkerOptionArchive(Inputs, V, WholeArchive,
+                                                 {{&Arg, I}}))
+              return std::move(E);
+          }
+        }
+      }
+      continue;
+    }
+
+    assert(NextFile < Link.getInputInfos().size());
+    StringRef Path = Link.getInputInfos()[NextFile++].getFilename();
+    // Unreadable inputs are left for the system linker to report.
+    ErrorOr<std::unique_ptr<MemoryBuffer>> Buf = MemoryBuffer::getFile(Path);
+    file_magic Magic = Buf ? identify_magic((*Buf)->getBuffer())
+                           : file_magic(file_magic::unknown);
+    if (Magic == file_magic::bitcode) {
+      Inputs.Bitcode.push_back(Path.str());
+      Inputs.Replaced.insert(Path);
+    } else if (Magic == file_magic::archive) {
+      Expected<ArchiveContents> Kind =
+          addArchiveInput(Inputs, std::move(*Buf), WholeArchive);
+      if (!Kind)
+        return Kind.takeError();
+      if (*Kind == ArchiveContents::Bitcode)
+        Inputs.Replaced.insert(Path);
+    } else if (Magic == file_magic::elf_relocatable ||
+               Magic == file_magic::macho_object) {
+      Inputs.NativeObjects.push_back(std::move(*Buf));
+    }
+  }
+#ifdef __APPLE__
+  if (Error E = AddForceLoadsBefore(std::numeric_limits<unsigned>::max()))
+    return std::move(E);
+#endif
+  return std::move(Inputs);
+}
+
+/// The libraries that -l names are of no interest to a link without bitcode
+/// inputs, which is the system linker's alone.
+static Expected<LinkInputs> classifyLinkInputs(const Compilation &C,
+                                               const Command &Link) {
+  Expected<LinkInputs> Inputs = readLinkInputs(C, Link, /*Libraries=*/false);
+  if (!Inputs || !Inputs->hasBitcode())
+    return Inputs;
+  return readLinkInputs(C, Link, /*Libraries=*/true);
+}
+
+/// Merges the bitcode inputs and the archive members they need, then writes
+/// the instrumented AOT object to a temporary file that C removes. Returns
+/// the file's path, or null if no bitcode was linked (the only bitcode is in
+/// archives, and no member of them is needed).
 static Expected<const char *> buildAot(Compilation &C,
                                        const LinkInputs &Inputs) {
   // The runtime starts from main, and there is one image per executable.
@@ -329,6 +585,17 @@ static Expected<const char *> buildAot(Compilation &C,
       linkBitcodeFiles(Inputs.Bitcode, Ctx);
   if (!M)
     return M.takeError();
+  SmallVector<ArchiveInput, 4> Archives;
+  SmallVector<MemoryBufferRef, 4> Natives;
+  for (const LinkArchive &A : Inputs.Archives)
+    Archives.emplace_back(A.Buffer->getMemBufferRef(), A.Whole, A.Contents);
+  for (const std::unique_ptr<MemoryBuffer> &B : Inputs.NativeObjects)
+    Natives.push_back(B->getMemBufferRef());
+  Expected<unsigned> Members = linkArchiveMembers(**M, Archives, Natives);
+  if (!Members)
+    return Members.takeError();
+  if (Inputs.Bitcode.empty() && *Members == 0)
+    return static_cast<const char *>(nullptr);
   Expected<std::unique_ptr<TargetMachine>> TM =
       createTargetMachine((*M)->getTargetTriple());
   if (!TM)
@@ -399,8 +666,27 @@ static Expected<const char *> buildAotSafely(Compilation &C,
   return std::move(*Result);
 }
 
+/// Renders a -Wl, or -Xlinker option, without the values that are not for the
+/// native link.
+static void renderLinkerOption(const llvm::opt::Arg &A,
+                               const llvm::opt::ArgList &Args,
+                               const LinkInputs &Inputs, bool DropAllLoad,
+                               llvm::opt::ArgStringList &Out) {
+  SmallVector<StringRef, 4> Kept;
+  for (unsigned I = 0; I != A.getNumValues(); ++I) {
+    StringRef V = A.getValue(I);
+    if (!Inputs.Dropped.contains({&A, I}) && !(DropAllLoad && V == "-all_load"))
+      Kept.push_back(V);
+  }
+  if (Kept.size() == A.getNumValues())
+    A.render(Args, Out);
+  else if (!Kept.empty())
+    Out.push_back(Args.MakeArgString("-Wl," + join(Kept, ",")));
+}
+
 /// The command line for the native link:
-/// - the original options, minus inputs, linker inputs, LTO, -x, -mllvm and --;
+/// - the original options, minus inputs, linker inputs, LTO, -x, -mllvm, --
+///   and -force_load of bitcode archives;
 /// - the link job's inputs in order, with the first replaced input swapped
 ///   for AotObject and the other replaced inputs dropped;
 /// - then, if there is an AOT object, the runtime.
@@ -411,9 +697,12 @@ static llvm::opt::ArgStringList relinkArgs(const Compilation &C,
   namespace options = clang::options;
   const llvm::opt::InputArgList &Args = C.getInputArgs();
   llvm::opt::ArgStringList Out{C.getDriver().getDriverProgramPath()};
+  const bool DropAllLoad = AotObject && Inputs.AllLoad;
   for (const llvm::opt::Arg *A : Args) {
     const llvm::opt::Option &O = A->getOption();
-    if (O.getKind() == llvm::opt::Option::InputClass ||
+    if (Inputs.Dropped.contains({A, 0}) ||
+        (DropAllLoad && O.matches(options::OPT_all__load)) ||
+        O.getKind() == llvm::opt::Option::InputClass ||
         O.hasFlag(options::LinkerInput) || O.matches(options::OPT_flto_EQ) ||
         O.matches(options::OPT_fno_lto) || O.matches(options::OPT_x) ||
         O.matches(options::OPT_mllvm) || O.matches(options::OPT__DASH_DASH)) {
@@ -429,8 +718,12 @@ static llvm::opt::ArgStringList relinkArgs(const Compilation &C,
   size_t NextFile = 0;
   for (const clang::driver::Action *A : Link.getSource().getInputs()) {
     if (const auto *IA = dyn_cast<clang::driver::InputAction>(A)) {
-      if (!IA->getInputArg().getOption().matches(options::OPT_INPUT)) {
-        IA->getInputArg().render(C.getArgs(), Out);
+      const llvm::opt::Arg &Arg = IA->getInputArg();
+      if (!Arg.getOption().matches(options::OPT_INPUT)) {
+        if (isLinkerOption(Arg))
+          renderLinkerOption(Arg, C.getArgs(), Inputs, DropAllLoad, Out);
+        else
+          Arg.render(C.getArgs(), Out);
         continue;
       }
     }
@@ -448,6 +741,19 @@ static llvm::opt::ArgStringList relinkArgs(const Compilation &C,
   // The original compile options are still present; their objects aren't.
   Out.push_back("-Qunused-arguments");
   if (AotObject) {
+    // The runtime is C++ whatever the program's language: link as clang++
+    // does, even if this was a C link (--driver-mode=gcc). The last mode wins.
+    Out.push_back("--driver-mode=g++");
+#ifdef __APPLE__
+    // In place of -all_load, which would also load the runtime archives.
+    if (Inputs.AllLoad) {
+      for (const LinkArchive &A : Inputs.Archives) {
+        if (A.Contents == ArchiveContents::Native)
+          Out.push_back(C.getArgs().MakeArgString(
+              "-Wl,-force_load," + A.Buffer->getBufferIdentifier()));
+      }
+    }
+#endif
     Out.append(std::begin(RuntimeLinkPrefix), std::end(RuntimeLinkPrefix));
     Out.append(std::begin(RuntimeArchives), std::end(RuntimeArchives));
     Out.append(std::begin(RuntimeLinkSuffix), std::end(RuntimeLinkSuffix));
@@ -564,16 +870,19 @@ static int runDriver(ArrayRef<const char *> Args) {
       return Res;
   }
 
-  LinkInputs Inputs = classifyLinkInputs(Link);
+  Expected<LinkInputs> Inputs = classifyLinkInputs(*C, Link);
+  if (!Inputs)
+    return reportError(Inputs.takeError());
   const char *AotObject = nullptr;
-  if (!Inputs.Bitcode.empty()) {
-    Expected<const char *> Object = buildAotSafely(*C, Inputs);
+  if (Inputs->hasBitcode()) {
+    Expected<const char *> Object = buildAotSafely(*C, *Inputs);
     if (!Object)
       return reportError(Object.takeError());
     AotObject = *Object;
   }
 
-  llvm::opt::ArgStringList NativeArgs = relinkArgs(*C, Link, Inputs, AotObject);
+  llvm::opt::ArgStringList NativeArgs =
+      relinkArgs(*C, Link, *Inputs, AotObject);
   Driver Native(Exe, sys::getDefaultTargetTriple(), Diags, "orc-pgo");
   Native.ResourceDir = ORC_PGO_CLANG_RESOURCE_DIR;
   std::unique_ptr<Compilation> NativeLink(Native.BuildCompilation(NativeArgs));
@@ -612,6 +921,8 @@ int driverMain(ArrayRef<const char *> Argv) {
     return reportError(std::move(E));
   if (Args.size() >= 2 && StringRef(Args[1]).starts_with("-cc1"))
     return cc1Tool(Args);
+  if (Args.size() >= 2 && StringRef(Args[1]) == "--orc-pgo-ar")
+    return runArchiver(ArrayRef(Args).drop_front(2));
   return runDriver(augmentArgs(Args, ORC_PGO_DEFAULT_SYSROOT));
 }
 
