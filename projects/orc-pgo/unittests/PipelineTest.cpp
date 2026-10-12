@@ -141,10 +141,13 @@ std::vector<std::string> tableNames(const Module &M) {
 struct Built {
   LLVMContext InputCtx;
   std::unique_ptr<Module> Input;
-  std::unique_ptr<TargetMachine> TM = test::makeHostTargetMachine(Reloc::PIC_);
+  std::unique_ptr<TargetMachine> TM;
   AotModule Aot;
 
-  explicit Built(StringRef IR) : Input(test::parseIR(InputCtx, IR)) {
+  explicit Built(StringRef IR)
+      : Built(IR, test::makeHostTargetMachine(Reloc::PIC_)) {}
+  Built(StringRef IR, std::unique_ptr<TargetMachine> BuildTM)
+      : Input(test::parseIR(InputCtx, IR)), TM(std::move(BuildTM)) {
     Expected<AotModule> A = buildAotModule(*Input, *TM);
     if (!A)
       report_fatal_error(A.takeError());
@@ -557,9 +560,11 @@ TEST(Pipeline, TierUpAnnotatesTheCountersGenPlacedDespiteInferredColdCalls) {
 // Loop rotation duplicates a loop header only if TargetTransformInfo costs it
 // at 16 instructions or fewer. Without a target every instruction costs 1, so
 // this header (2 phis, 3 adds and 3 muls, extractelement, trunc, icmp, br)
-// rotates. On a real target each <64 x i64> operation legalizes into many, so
-// it doesn't. The adds and muls alternate so that O2 can't fold them into one
-// operation, which would make the header cheap on wide-vector targets.
+// rotates. On a baseline CPU (x86-64's SSE2, AArch64's NEON) each <64 x i64>
+// operation legalizes into 32 128-bit ones or more, so it doesn't. The adds and
+// muls alternate so that O2 can't fold them into one operation, which would
+// make the header cheap. The test builds for the generic CPU: a host CPU could
+// be wide enough (e.g. AVX-512) to rotate the loop.
 constexpr const char *WideHeaderIR = R"(
 source_filename = "w.c"
 define i32 @w(i32 %n, ptr %p) {
@@ -603,7 +608,8 @@ TEST(Pipeline, LoweringRotatesLoopsWithTheBuildsTarget) {
 
   // The build lowers with its TargetMachine, as clang does, so neither
   // lowering nor O2 rotates the loop.
-  Built B(WideHeaderIR);
+  Built B(WideHeaderIR, test::makeTargetMachine(Triple(sys::getProcessTriple()),
+                                                Reloc::PIC_));
   Function *Body = B.M().getFunction(("w" + AotSuffix).str());
   ASSERT_NE(Body, nullptr);
   EXPECT_FALSE(entryIsGuarded(*Body));
