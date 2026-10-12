@@ -45,7 +45,7 @@ struct SimulatedAot {
 
 /// Runs buildAotModule on IR for the host, then JITs and initializes the
 /// result as described above. Installs the image's value-node pool with
-/// setValueNodePool, as __orc_pgo_start does.
+/// setValueNodePool (after resetValueNodePools), as __orc_pgo_start does.
 SimulatedAot simulateAot(llvm::StringRef IR,
                          llvm::ArrayRef<std::string> ExtraSymbols = {},
                          llvm::ArrayRef<HostSymbol> HostSymbols = {});

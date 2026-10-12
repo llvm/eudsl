@@ -83,6 +83,7 @@ SimulatedAot simulateAot(StringRef IR, ArrayRef<std::string> ExtraSymbols,
   if (!Registered)
     report_fatal_error("the registration constructor did not run");
   S.Image = Registered;
+  resetValueNodePools();
   setValueNodePool(S.Image->VNodePool[0], S.Image->VNodePool[1]);
   return S;
 }
