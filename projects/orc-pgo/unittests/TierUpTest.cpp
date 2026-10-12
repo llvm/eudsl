@@ -499,6 +499,25 @@ TEST(TierUp, O3RunsTheSlpVectorizer) {
   EXPECT_GE(VectorAdds, 1u);
 }
 
+TEST(TierUp, O3LeavesNoCallGraphProfile) {
+  // clang's pipeline adds the "CG Profile" module flag, which makes the
+  // backend emit a .llvm.call-graph-profile section that JITLink cannot link
+  // on x86-64 ELF. hot calls through counted edges, so the pass would add it.
+  auto S = test::simulateAot(ProgramIR);
+  auto *Hot = S.sym<int(int)>("hot");
+  for (int I = 0; I < 30; ++I)
+    ASSERT_EQ(Hot(2), 9);
+  LLVMContext Ctx;
+  auto M = snapshotOf(S, Ctx);
+  ASSERT_EQ(test::errorText(
+                prepareTierUpModule(*M, *profileOf(S), {"hot"}, 0).takeError()),
+            "");
+  auto TM = test::makeHostTargetMachine(Reloc::PIC_);
+  optimizeTierUp(*M, *TM);
+  ASSERT_FALSE(verifyModule(*M, &errs()));
+  EXPECT_EQ(M->getModuleFlag("CG Profile"), nullptr);
+}
+
 // The linker may replace a weak definition by another one, so a tier-up
 // module must keep calling and reading the program's.
 constexpr const char *InterposableIR = R"(
