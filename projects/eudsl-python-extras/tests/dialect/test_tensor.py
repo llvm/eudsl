@@ -736,12 +736,16 @@ def test_promotion_python_constant_win(ctx: MLIRContext):
 
 
 def test_promotion_arith(ctx: MLIRContext):
-    ten_arr_int = np.random.randint(0, 10, (2, 2)).astype(np.int32)
+    # Distinct elements so MLIR doesn't fold the constant to a splat (dense<2>).
+    start = np.random.randint(0, 10)
+    ten_arr_int = np.arange(start, start + 4).reshape(2, 2).astype(np.int32)
     ten = TensorValue(ten_arr_int)
     one = arith.constant(1, type=T.i32())
     x = ten + one
 
-    ten_arr_float = np.random.randint(0, 10, (3, 3)).astype(np.float32)
+    # Keep values < 10: the expected string relies on "N.000000e+00" printing.
+    start = np.random.randint(0, 2)
+    ten_arr_float = np.arange(start, start + 9).reshape(3, 3).astype(np.float32)
     ten = TensorValue(ten_arr_float)
     one = arith.constant(1.0, type=T.f32())
     x = ten + one

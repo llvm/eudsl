@@ -880,8 +880,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           [](llvm::RecordVal &self, const llvm::Init *V,
              llvm::SMLoc NewLoc) -> bool { return self.setValue(V, NewLoc); },
           "v"_a, "new_loc"_a)
-      .def("add_reference_loc", &llvm::RecordVal::addReferenceLoc, "loc"_a)
-      .def("get_reference_locs", &llvm::RecordVal::getReferenceLocs)
       .def("set_used", &llvm::RecordVal::setUsed, "used"_a)
       .def("is_used", &llvm::RecordVal::isUsed)
       .def("dump", eudsl::dump<llvm::RecordVal>, "to_str"_a = false)
@@ -1013,6 +1011,12 @@ NB_MODULE(eudsl_tblgen_ext, m) {
            &llvm::Record::getForwardDeclarationLocs)
       .def("append_reference_loc", &llvm::Record::appendReferenceLoc, "loc"_a)
       .def("get_reference_locs", &llvm::Record::getReferenceLocs)
+      .def("append_value_reference_loc",
+           &llvm::Record::appendValueReferenceLoc, "name"_a, "loc"_a)
+      .def("append_value_reference_locs",
+           &llvm::Record::appendValueReferenceLocs, "from_"_a, "name"_a)
+      .def("get_value_reference_locs", &llvm::Record::getValueReferenceLocs,
+           "name"_a)
       .def("update_class_loc", &llvm::Record::updateClassLoc, "loc"_a)
       .def("get_type", &llvm::Record::getType,
            nb::rv_policy::reference_internal)

@@ -19,7 +19,6 @@
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/SMLoc.h"
 #include <cassert>
-#include <memory>
 #include <set>
 #include <string>
 
@@ -140,6 +139,7 @@ enum TokKind {
   XInstances,
   XIf,
   XCond,
+  XSwitch,
   XEq,
   XIsA,
   XDag,
@@ -157,6 +157,7 @@ enum TokKind {
   XToLower,
   XToUpper,
   XRange,
+  XSort,
   XGetDagArg,
   XGetDagName,
   XSetDagArg,
@@ -209,6 +210,7 @@ class TGLexer {
 public:
   typedef std::set<std::string> DependenciesSetTy;
 
+private:
   /// Dependencies - This is the list of all included files.
   DependenciesSetTy Dependencies;
 
@@ -239,6 +241,7 @@ public:
   SMLoc getLoc() const;
   SMRange getLocRange() const;
 
+private:
   /// LexToken - Read the next token and return its code.
   tgtok::TokKind LexToken(bool FileOrLineStart = false);
 
