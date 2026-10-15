@@ -21,9 +21,9 @@ struct _ArrayRef {};
 struct _MutableArrayRef {};
 struct _SmallVector {};
 
-extern nanobind::class_<_SmallVector> smallVector;
-extern nanobind::class_<_ArrayRef> arrayRef;
-extern nanobind::class_<_MutableArrayRef> mutableArrayRef;
+extern nanobind::class_<_SmallVector> &smallVector;
+extern nanobind::class_<_ArrayRef> &arrayRef;
+extern nanobind::class_<_MutableArrayRef> &mutableArrayRef;
 
 template <typename Element, int Size = 4, typename... Args>
 std::tuple<nanobind::class_<llvm::SmallVector<Element, Size>>,
