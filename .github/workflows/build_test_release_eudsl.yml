@@ -484,7 +484,7 @@ jobs:
           # Build deps for the --no-build-isolation instrumented build, plus the
           # test runner.
           $python3_command -m pip install \
-            "nanobind==2.12.0" ninja "scikit-build-core==0.10.7" \
+            "nanobind==2.13.0" ninja "scikit-build-core==0.10.7" \
             typing_extensions numpy pytest pytest-cov
           # The ILP register-allocation tests need OR-Tools (optional `ilp`
           # extra); best-effort so the C++ coverage run also exercises them.
