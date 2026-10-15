@@ -372,6 +372,8 @@ jobs:
       - name: "Test mlir-python-bindings"
         run: |
           
+          # --no-index so a missing wheel fails instead of falling back to PyPI
+          pip install mlir-python-bindings --no-index --no-deps -v -f wheelhouse
           pip install mlir-python-bindings numpy -v -f wheelhouse
           cd third_party/llvm-project/mlir/test/python/dialects
           for f in *.py; do
@@ -454,6 +456,8 @@ jobs:
           pyodide xbuildenv install 0.29.4
           pyodide venv venv
           . venv/bin/activate
+          # --no-index so a missing wheel fails instead of falling back to PyPI
+          pip install mlir-python-bindings --no-index --no-deps -f wheelhouse
           pip install mlir-python-bindings -f wheelhouse
           
           pushd third_party/llvm-project/mlir/test/python/dialects
