@@ -69,7 +69,9 @@ def test_emit(ctx: MLIRContext):
 def test_declare_byte_rep(ctx: MLIRContext):
     def demo_fun1(): ...
 
-    if sys.version_info.minor == 14:
+    if sys.version_info.minor == 15:
+        assert demo_fun1.__code__.co_code == b"\x80\x00\x00\x00P\x07!\x00"
+    elif sys.version_info.minor == 14:
         assert demo_fun1.__code__.co_code == b"\x80\x00R\x00#\x00"
     elif sys.version_info.minor == 13:
         assert demo_fun1.__code__.co_code == b"\x95\x00g\x00"
