@@ -337,7 +337,10 @@ jobs:
             python-version: "3.14"
 
           - runs-on: macos-14
-            python-version: "3.15"
+            python-version: "3.14t"
+
+          - runs-on: macos-14
+            python-version: "3.15t"
 
     runs-on: ${{ matrix.runs-on }}
 
