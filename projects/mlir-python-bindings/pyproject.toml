@@ -6,7 +6,7 @@
 [project]
 name = "mlir-python-bindings"
 dynamic = ["version"]
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.19.5",
     "PyYAML>=5.4.0, <=6.0.1",
@@ -76,7 +76,7 @@ manylinux-x86_64-image = "quay.io/pypa/manylinux_2_34_x86_64"
 archs = ["native"]
 
 [tool.cibuildwheel.linux]
-build = "cp310-* cp311-* cp312-* cp313-* cp314-* cp314t-*"
+build = "cp311-* cp312-* cp313-* cp314-* cp314t-* cp315-* cp315t-*"
 skip = ["*-manylinux_i686", "*-musllinux*"]
 environment-pass = [
     "CMAKE_CXX_FLAGS",
@@ -90,12 +90,12 @@ repair-wheel-command = [
 ]
 
 [tool.cibuildwheel.macos]
-build = "cp310-* cp311-* cp312-* cp313-* cp314-* cp314t-*"
+build = "cp311-* cp312-* cp313-* cp314-* cp314t-* cp315-* cp315t-*"
 repair-wheel-command = [
     "DYLD_LIBRARY_PATH=$CMAKE_PREFIX_PATH/lib delocate-wheel --exclude libmetalirconverter.dylib --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
 ]
 
 [tool.cibuildwheel.windows]
-build = "cp310-* cp311-* cp312-* cp313-* cp314-* cp314t-*"
+build = "cp311-* cp312-* cp313-* cp314-* cp314t-* cp315-* cp315t-*"
 skip = ["*-win32"]
 repair-wheel-command = ""
