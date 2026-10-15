@@ -275,9 +275,6 @@ jobs:
           - runs-on: macos-14
             python-version: "3.14t"
 
-          - runs-on: macos-14
-            python-version: "3.15t"
-
     runs-on: ${{ matrix.runs-on }}
 
     name: "Test tblgen ${{ matrix.name }} ${{ matrix.python-version }}"
