@@ -59,9 +59,13 @@ struct HackInit : public llvm::Init {
 };
 
 namespace eudsl {
-nb::class_<_SmallVector> smallVector;
-nb::class_<_ArrayRef> arrayRef;
-nb::class_<_MutableArrayRef> mutableArrayRef;
+// Intentionally leaked: a static nb::class_ would decref its type object from
+// a C++ static destructor after the interpreter has finalized, which aborts on
+// free-threaded 3.15. The module keeps the types alive anyway.
+nb::class_<_SmallVector> &smallVector = *new nb::class_<_SmallVector>();
+nb::class_<_ArrayRef> &arrayRef = *new nb::class_<_ArrayRef>();
+nb::class_<_MutableArrayRef> &mutableArrayRef =
+    *new nb::class_<_MutableArrayRef>();
 
 template <typename T>
 static std::optional<std::string> dump(const T &self, bool toStr = false) {
