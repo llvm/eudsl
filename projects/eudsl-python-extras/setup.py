@@ -59,7 +59,7 @@ setup(
         ],
         "mlir": ["mlir-python-bindings"],
     },
-    python_requires=">=3.10",
+    python_requires=">=3.11",
     include_package_data=True,
     packages=packages,
     # lhs is package namespace, rhs is path (relative to this setup.py)

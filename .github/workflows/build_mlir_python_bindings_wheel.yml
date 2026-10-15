@@ -255,7 +255,7 @@ jobs:
           export CIBW_MANYLINUX_AARCH64_IMAGE=quay.io/pypa/manylinux_2_34_aarch64
           export CIBW_MANYLINUX_X86_64_IMAGE=quay.io/pypa/manylinux_2_34_x86_64
           export CIBW_ARCHS=native
-          export CIBW_BUILD="cp310-* cp311-* cp312-* cp313-* cp314-* cp314t-*"
+          export CIBW_BUILD="cp311-* cp312-* cp313-* cp314-* cp314t-* cp315-* cp315t-*"
           export CIBW_SKIP="*-manylinux_i686 *-musllinux* *-win32"
           export CIBW_ENVIRONMENT_PASS_LINUX="CMAKE_CXX_FLAGS CMAKE_C_FLAGS CMAKE_PREFIX_PATH MLIR_DIR WHEEL_VERSION MLIR_INCLUDE_TESTS"
           export CIBW_REPAIR_WHEEL_COMMAND_LINUX="LD_LIBRARY_PATH=$CMAKE_PREFIX_PATH/lib auditwheel repair -w {dest_dir} {wheel}"
@@ -300,8 +300,9 @@ jobs:
           "windows-2022"
         ]
         python-version: [
-          "3.10", "3.11", "3.12",
-          "3.13", "3.14", "3.14t"
+          "3.11", "3.12",
+          "3.13", "3.14", "3.14t",
+          "3.15", "3.15t"
         ]
         include: [
           {runs-on: "ubuntu-22.04", name: "ubuntu_x86_64", os: "ubuntu"},
@@ -317,8 +318,11 @@ jobs:
           - runs-on: windows-2022
             python-version: "3.14t"
 
-          - runs-on: macos-14
-            python-version: "3.10"
+          - runs-on: windows-2022
+            python-version: "3.15"
+
+          - runs-on: windows-2022
+            python-version: "3.15t"
 
           - runs-on: macos-14
             python-version: "3.11"
@@ -331,6 +335,9 @@ jobs:
 
           - runs-on: macos-14
             python-version: "3.14"
+
+          - runs-on: macos-14
+            python-version: "3.15"
 
     runs-on: ${{ matrix.runs-on }}
 

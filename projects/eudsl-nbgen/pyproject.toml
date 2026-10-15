@@ -6,7 +6,7 @@
 [project]
 name = "eudsl-nbgen"
 version = "0.0.1"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 
 [project.urls]
 Homepage = "https://github.com/llvm/eudsl"
@@ -48,7 +48,7 @@ LLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN = "ON"
 [tool.cibuildwheel]
 build-verbosity = 1
 # build only one version
-build = ["cp39*"]
+build = ["cp311*"]
 skip = ["*-manylinux_i686", "*-musllinux*", "pp*", "*-win32"]
 archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
