@@ -25,7 +25,7 @@ requires = [
     "scikit-build-core>=0.10.7",
     "typing_extensions>=4.12.2",
     "nanobind==2.13.0",
-    "numpy>=1.19.5, <=2.3.0",
+    "numpy>=1.19.5",
 ]
 build-backend = "scikit_build_core.build"
 
