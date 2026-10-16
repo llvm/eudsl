@@ -163,12 +163,14 @@ jobs:
           # Pyodide as the console instead (checked against PYODIDE_VERSION
           # below). Loading it from the CDN rather than vendoring the full
           # distribution keeps ~400 MB out of the Pages artifact.
+          # Absolute paths: with --lite-dir, piplite resolves relative wheel paths
+          # against the lite dir, not the working directory.
           jupyter lite build \
-            --lite-dir pages/jupyter \
-            --contents pages/jupyter/contents \
-            --output-dir page/jupyter \
-            --piplite-wheels $MLIR_PYTHON_WHEEL_NAME \
-            --piplite-wheels $EUDSL_PYTHON_EXTRAS_WHEEL_NAME
+            --lite-dir "$PWD/pages/jupyter" \
+            --contents "$PWD/pages/jupyter/contents" \
+            --output-dir "$PWD/page/jupyter" \
+            --piplite-wheels "$PWD/$MLIR_PYTHON_WHEEL_NAME" \
+            --piplite-wheels "$PWD/$EUDSL_PYTHON_EXTRAS_WHEEL_NAME"
 
       # A half-built `page/` must never reach the upload step: Pages serves whatever
       # the last deployment contained, so publishing a partial tree silently deletes
