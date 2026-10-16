@@ -44,6 +44,9 @@ install.components = ["install-mlirdevelopment-distribution"]
 cmake.args = ["-C", "llvm_wasm_cache.cmake"]
 
 [tool.scikit-build.cmake.define]
+# Release's -O3 -DNDEBUG comes after pyodide's -Oz on the command line, so the
+# last -O wins and wasm is optimized like native (-O3), not for size.
+# HandleLLVMOptions then undoes the -DNDEBUG to match the assertions-enabled LLVM.
 CMAKE_BUILD_TYPE = { env = "CMAKE_BUILD_TYPE", default = "Release" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
@@ -53,6 +56,9 @@ CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "
 # That surfaces confusingly as LLVM's CheckCompilerVersion probe failing to
 # compile, which CMake then reports as "libstdc++ version must be at least 7.4".
 # -fwasm-exceptions supersedes it, so LLVM_ENABLE_EH below still works.
+# -sASSERTIONS (emscripten's runtime checks) stays on in released wheels, like
+# LLVM_ENABLE_ASSERTIONS: it turns missing symbols, stack overflows and bad
+# dynamic loads into readable errors, which is most of what goes wrong on wasm.
 CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
 CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
 CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT"
