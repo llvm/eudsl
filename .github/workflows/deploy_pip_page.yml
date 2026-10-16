@@ -43,10 +43,10 @@ jobs:
 
     steps:
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: false
 
@@ -65,7 +65,7 @@ jobs:
           mkdir -p page && mv index.html page
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -256,7 +256,7 @@ jobs:
                   raise SystemExit(f"page/console/index.html loads {wheel}, which is not in page/console/")
           PY
 
-      - uses: geekyeggo/delete-artifact@v5
+      - uses: geekyeggo/delete-artifact@v6
         if: success() && github.event_name != 'pull_request'
         with:
           name: github-pages
@@ -264,11 +264,11 @@ jobs:
 
       - name: Upload artifact
         if: success() && github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: page
 
       - name: Deploy to GitHub Pages
         if: success() && github.event_name != 'pull_request'
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

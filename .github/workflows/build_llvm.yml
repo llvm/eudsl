@@ -111,7 +111,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: true
 
@@ -199,35 +199,35 @@ jobs:
           popd
 
       - name: Upload LLVM distro artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mlir_${{ matrix.name }}_artifact
           path: llvm-install
           if-no-files-found: warn
 
       - name: Upload mlir-native-tools artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mlir_native_tools_${{ matrix.name }}_artifact
           path: wheelhouse/mlir_native_tools*
           if-no-files-found: warn
 
       - name: Upload mlir-wheel artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mlir_wheel_${{ matrix.name }}_artifact
           path: wheelhouse/mlir_wheel*
           if-no-files-found: warn
 
       - name: Upload ccache log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: llvm_ccache_log_${{ matrix.name }}
           path: ${{ startsWith(matrix.os, 'windows') && 'D:\a\ccache.log' || '/tmp/ccache.log' }}
 
       - name: Release current commit
         if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
-        uses: ncipollo/release-action@v1.12.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           artifacts: "*.tar.gz,wheelhouse/*.whl"
           token: "${{ secrets.GITHUB_TOKEN }}"
@@ -239,7 +239,7 @@ jobs:
           makeLatest: true
 
       - name: "Save cache"
-        uses: actions/cache/save@v3
+        uses: actions/cache/save@v5
         if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
         with:
           path: ${{ steps.setup_base.outputs.cache-dir }}
@@ -271,7 +271,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: true
 
@@ -321,27 +321,27 @@ jobs:
           $CCACHE -s
 
       - name: Upload ccache log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: llvm_ccache_log_mlir_wasm32
           path: '/tmp/ccache.log'
 
       - name: "Save cache"
-        uses: actions/cache/save@v3
+        uses: actions/cache/save@v5
         if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
         with:
           path: ${{ steps.setup_base.outputs.cache-dir }}
           key: ${{ env.cache-key }}
 
       - name: Upload LLVM distro artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mlir_ubuntu_wasm32_artifact
           path: llvm-install
           if-no-files-found: warn
 
       - name: Upload mlir-wheel artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mlir_wheel_ubuntu_wasm32_artifact
           path: wheelhouse/mlir_wheel*
@@ -349,7 +349,7 @@ jobs:
 
       - name: Release current commit
         if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
-        uses: ncipollo/release-action@v1.12.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           artifacts: "*.tar.gz,wheelhouse/*.whl"
           token: "${{ secrets.GITHUB_TOKEN }}"

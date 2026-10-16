@@ -50,7 +50,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: false
 
@@ -74,7 +74,7 @@ jobs:
           popd
 
       - name: Upload eudsl-python-extras sdist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           path: projects/eudsl-python-extras/dist/*.tar.gz
           name: eudsl_python_extras_sdist_artifact
@@ -147,7 +147,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: false
 
@@ -157,7 +157,7 @@ jobs:
           python-version: "${{ matrix.python-version }}"
 
       - name: "Download mlir-python-bindings artifacts"
-        uses: dawidd6/action-download-artifact@v11
+        uses: dawidd6/action-download-artifact@v17
         if: ${{ inputs.workflow_call }}
         with:
           name: mlir_python_bindings_${{ matrix.name }}_artifact
@@ -175,7 +175,7 @@ jobs:
       - name: "Install development dependencies"
         run: python -m pip install pytest mlir-native-tools -f https://github.com/llvm/eudsl/releases/expanded_assets/llvm
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: eudsl_python_extras_sdist_artifact
           path: dist
@@ -278,13 +278,13 @@ jobs:
 
     steps:
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: eudsl_python_extras_sdist_artifact
           path: dist
 
       - name: Release current commit
-        uses: ncipollo/release-action@v1.12.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           artifacts: "dist/eudsl_python_extras*.tar.gz"
           token: "${{ secrets.GITHUB_TOKEN }}"

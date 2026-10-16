@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: true
 
@@ -70,7 +70,7 @@ jobs:
           cp "$extras" projects/mlir-python-mcp/mlir_python_mcp/passes.py
 
       - name: Generate token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         id: generate-token
         with:
           app-id: ${{ secrets.BUMP_LLVM_CREATE_PR_APP_ID }}
@@ -78,7 +78,7 @@ jobs:
 
       - name: "Create Pull Request"
         id: cpr
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.generate-token.outputs.token }}
           commit-message: "[LLVM] Bump to ${{ steps.sync-llvm-project.outputs.LLVM_SHA_SHORT }}"
