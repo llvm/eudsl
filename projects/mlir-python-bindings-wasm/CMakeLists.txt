@@ -31,10 +31,6 @@ if(POLICY CMP0116)
   cmake_policy(SET CMP0116 NEW)
 endif()
 
-if(POLICY CMP0135)
-  cmake_policy(SET CMP0135 NEW)
-endif()
-
 find_package(MLIR REQUIRED CONFIG)
 find_package(LLD REQUIRED CONFIG)
 
