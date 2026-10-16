@@ -174,7 +174,7 @@ jobs:
           if [ x"${{ matrix.os }}" == x"almalinux" ] || [ x"${{ matrix.os }}" == x"ubuntu" ]; then
             PLAT="linux"
           elif [ x"${{ matrix.os }}" == x"macos" ]; then
-            PLAT="macosx_12_0"
+            PLAT="macosx_${MACOSX_DEPLOYMENT_TARGET/./_}"
           elif [ x"${{ matrix.os }}" == x"windows" ]; then
             PLAT="win"
           fi
