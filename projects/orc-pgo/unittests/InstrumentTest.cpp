@@ -176,6 +176,7 @@ Instrumented instrument(StringRef IR, bool RunO2 = false,
   Instrumented I;
   I.J = test::jitModule(std::move(M), std::move(Ctx));
   auto *Pool = test::lookupSym<void *>(*I.J, VNodePoolName);
+  resetValueNodePools();
   setValueNodePool(Pool[0], Pool[1]);
   auto *Table = test::lookupSym<OrcPgoFunctionRecord>(*I.J, FunctionTableName);
   uint32_t N = *test::lookupSym<uint32_t>(*I.J, NumFunctionsName);

@@ -85,6 +85,7 @@ TEST(ProfileBuilder, RecordsTheLiveCountersOfEveryFunction) {
 
 TEST(ProfileBuilder, MapsIndirectCallTargetsToNameHashes) {
   static prof::ValueProfNode Pool[8];
+  resetValueNodePools();
   setValueNodePool(Pool, Pool + 8);
   int TargetA, TargetB; // stand-ins for two function addresses
   FakeFunction Caller{{6}}, A{{1}}, B{{1}};
@@ -110,6 +111,7 @@ TEST(ProfileBuilder, MapsIndirectCallTargetsToNameHashes) {
 
 TEST(ProfileBuilder, KeepsMemopSizesAsRecorded) {
   static prof::ValueProfNode Pool[8];
+  resetValueNodePools();
   setValueNodePool(Pool, Pool + 8);
   FakeFunction Copy{{3}};
   for (uint64_t N : {8, 8, 100})

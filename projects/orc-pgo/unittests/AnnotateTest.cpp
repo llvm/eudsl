@@ -108,6 +108,7 @@ struct Profiled {
     EXPECT_EQ(test::errorText(L), "");
     J = test::jitModule(std::move(M), std::move(Ctx));
     auto *Pool = test::lookupSym<void *>(*J, VNodePoolName);
+    resetValueNodePools();
     setValueNodePool(Pool[0], Pool[1]);
     Table =
         ArrayRef(test::lookupSym<OrcPgoFunctionRecord>(*J, FunctionTableName),
