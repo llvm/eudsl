@@ -129,16 +129,17 @@ jobs:
           unzip -q mlir_wheel*.whl
           mv mlir_wheel llvm-install
           
+          echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
+          echo "PIP_FIND_LINKS=$PWD/wheelhouse" >> $GITHUB_ENV
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            echo "LLVM_DIR=/host/$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
-            echo "MLIR_DIR=/host/$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
-            echo "Clang_DIR=/host/$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
-            echo "PIP_FIND_LINKS=/host/$PWD/wheelhouse" >> $GITHUB_ENV
-          else
-            echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
-            echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
-            echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
-            echo "PIP_FIND_LINKS=$PWD/wheelhouse" >> $GITHUB_ENV
+            # The host filesystem is mounted at /host inside the cibuildwheel
+            # container. Only the container should see /host paths: host-side
+            # pip (e.g. cibuildwheel's abi3audit venv) also reads PIP_FIND_LINKS.
+            # cibuildwheel applies `environment` after `environment-pass`, so
+            # these override the passed-through host values.
+            echo "CIBW_ENVIRONMENT_LINUX=LLVM_DIR=/host$PWD/llvm-install/lib/cmake/llvm MLIR_DIR=/host$PWD/llvm-install/lib/cmake/mlir Clang_DIR=/host$PWD/llvm-install/lib/cmake/clang PIP_FIND_LINKS=/host$PWD/wheelhouse" >> $GITHUB_ENV
           fi
           
           $python3_command -m pip install cibuildwheel
@@ -166,7 +167,9 @@ jobs:
       - name: "Build eudsl-llvmpy"
         run: |
           
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          # Linux wheels must go through cibuildwheel (manylinux container +
+          # auditwheel); a host `pip wheel` produces a non-portable linux_* wheel.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
               export CCACHE_DIR=/host/$CCACHE_DIR
               export CC=clang
@@ -183,7 +186,9 @@ jobs:
       - name: "Build eudsl-nbgen"
         run: |
 
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          # Linux wheels must be built in the manylinux container; a host
+          # `pip wheel` on ubuntu-22.04 isn't portable to older glibc.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
               export CCACHE_DIR=/host/$CCACHE_DIR
               export CC=clang
