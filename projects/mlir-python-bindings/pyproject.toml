@@ -62,6 +62,7 @@ CMAKE_C_VISIBILITY_PRESET = "hidden"
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 
 MLIR_DIR = { env = "MLIR_DIR", default = "" }
+nanobind_DIR = { env = "nanobind_DIR", default = "" }
 CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
 # Non-optional
 CMAKE_BUILD_TYPE = { env = "CMAKE_BUILD_TYPE", default = "Release" }
@@ -83,6 +84,7 @@ environment-pass = [
     "CMAKE_C_FLAGS",
     "CMAKE_PREFIX_PATH",
     "MLIR_DIR",
+    "nanobind_DIR",
     "WHEEL_VERSION",
     "CMAKE_C_COMPILER_LAUNCHER",
     "CMAKE_CXX_COMPILER_LAUNCHER",
