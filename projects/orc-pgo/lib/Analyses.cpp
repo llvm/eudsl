@@ -24,4 +24,18 @@ PgoAnalysisManagers::PgoAnalysisManagers(const Module &M, TargetMachine *TM)
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 }
 
+PipelineTuningOptions clangPipelineTuningOptions(OptimizationLevel Level) {
+  bool Optimizing = Level >= OptimizationLevel::O2;
+  PipelineTuningOptions PTO;
+  PTO.LoopUnrolling = Optimizing;
+  PTO.LoopInterchange = true;
+  PTO.LoopFusion = false;
+  PTO.LoopInterleaving = Optimizing;
+  PTO.LoopVectorization = Optimizing;
+  PTO.SLPVectorization = Optimizing;
+  PTO.MergeFunctions = false;
+  PTO.CallGraphProfile = true;
+  return PTO;
+}
+
 } // namespace orc_pgo
