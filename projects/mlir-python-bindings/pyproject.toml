@@ -98,7 +98,7 @@ environment-pass = [
 ]
 # The manylinux image has no ccache; same install as projects/eudsl-tblgen.
 before-all = [
-    "if [ \"$(arch)\" = \"x86_64\" ]; then curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz && tar -xf ccache-4.10.2-linux-x86_64.tar.xz && make -C ccache-4.10.2-linux-x86_64 install; else dnf install -y ccache; fi",
+    "curl -sLO https://github.com/ccache/ccache/releases/download/v4.14.1/ccache-4.14.1-linux-$(arch)-musl-static.tar.xz && tar -xf ccache-4.14.1-linux-$(arch)-musl-static.tar.xz && make -C ccache-4.14.1-linux-$(arch)-musl-static install",
     "ccache --version",
 ]
 # Cumulative, so each build shows the hits it got from the previous ones.
