@@ -193,12 +193,26 @@ jobs:
             echo "MLIR_DIR=/host/$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
             echo "Clang_DIR=/host/$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
             echo "CMAKE_PREFIX_PATH=/host/$PWD/llvm-install" >> $GITHUB_ENV
+            echo "nanobind_DIR=/host/$PWD/nanobind-install/nanobind/cmake" >> $GITHUB_ENV
           else
             echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
             echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
             echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
             echo "CMAKE_PREFIX_PATH=$PWD/llvm-install" >> $GITHUB_ENV
+            echo "nanobind_DIR=$PWD/nanobind-install/nanobind/cmake" >> $GITHUB_ENV
           fi
+          
+          # Build against a nanobind at a fixed path. The one pip installs into each
+          # build-isolation env lives under a random temp dir, so every TU that
+          # includes nanobind would get new paths and miss ccache on every run.
+          # wasm32 pins its own (older) nanobind.
+          if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
+            nanobind_pyproject=projects/mlir-python-bindings-wasm/pyproject.toml
+          else
+            nanobind_pyproject=projects/mlir-python-bindings/pyproject.toml
+          fi
+          nanobind_req="$(grep -o '"nanobind *[=<>~!][^"]*"' $nanobind_pyproject | tr -d '" ')"
+          $python3_command -m pip install --no-deps --target "$PWD/nanobind-install" "$nanobind_req"
           
           $python3_command -m pip install cibuildwheel
           

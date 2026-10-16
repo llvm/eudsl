@@ -45,6 +45,7 @@ install.components = ["MLIRPythonWasmModules"]
 
 [tool.scikit-build.cmake.define]
 MLIR_DIR = { env = "MLIR_DIR", default = "" }
+nanobind_DIR = { env = "nanobind_DIR", default = "" }
 CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
 CMAKE_BUILD_TYPE = { env = "CMAKE_BUILD_TYPE", default = "Release" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
