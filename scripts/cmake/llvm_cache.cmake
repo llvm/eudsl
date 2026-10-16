@@ -48,6 +48,9 @@ set(LLVM_FORCE_ENABLE_STATS ON CACHE BOOL "")
 # because AMD target td files are insane...
 set(LLVM_TARGETS_TO_BUILD "host;NVPTX;AMDGPU" CACHE STRING "")
 set(LLVM_EXPERIMENTAL_TARGETS_TO_BUILD "DirectX" CACHE STRING "")
+# Assertion-enabled tablegen makes the AMDGPU backend take forever to build;
+# this builds release tablegen tools (via a NATIVE sub-build) instead.
+set(LLVM_OPTIMIZED_TABLEGEN ON CACHE BOOL "")
 set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 set(LLVM_VERSION_SUFFIX "" CACHE STRING "")
 set(CMAKE_PLATFORM_NO_VERSIONED_SONAME ON CACHE BOOL "")
