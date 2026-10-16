@@ -97,7 +97,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
 
       - name: "Setup base"
         uses: ./.github/actions/setup_base
@@ -117,7 +117,7 @@ jobs:
 
       - name: Download LLVM distro artifacts
         if: ${{ inputs.workflow_call }}
-        uses: dawidd6/action-download-artifact@v11
+        uses: dawidd6/action-download-artifact@v17
         with:
           name: mlir_wheel_${{ (matrix.name == 'ubuntu_x86_64' || matrix.name == 'ubuntu_aarch64') && 'manylinux' || matrix.os }}_${{ matrix.target-arch }}_artifact
           path: "./"
@@ -221,21 +221,21 @@ jobs:
           cmake --build "$PWD/eudsl-build" --target install
 
       - name: "Save cache"
-        uses: actions/cache/save@v3
+        uses: actions/cache/save@v5
         if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
         with:
           path: ${{ steps.setup_base.outputs.cache-dir }}
           key: ${{ env.cache-key }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse/*.whl
           if-no-files-found: warn
 
       - name: Upload ccache log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: eudsl_ccache_log_${{ matrix.name }}
           path: ${{ startsWith(matrix.os, 'windows') && 'D:\a\ccache.log' || '/tmp/ccache.log' }}
@@ -299,7 +299,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: false
 
@@ -308,7 +308,7 @@ jobs:
         with:
           python-version: "${{ matrix.python-version }}"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse
@@ -380,7 +380,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: false
 
@@ -389,7 +389,7 @@ jobs:
         with:
           python-version: "${{ matrix.python-version }}"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse
@@ -450,7 +450,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: false
 
@@ -464,7 +464,7 @@ jobs:
           target-arch: "arm64"
           python-version: "3.12"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: eudsl_macos_arm64_artifact
           path: wheelhouse
@@ -477,7 +477,7 @@ jobs:
 
       - name: "Download LLVM distro artifact"
         if: ${{ inputs.workflow_call }}
-        uses: dawidd6/action-download-artifact@v11
+        uses: dawidd6/action-download-artifact@v17
         with:
           name: mlir_wheel_macos_arm64_artifact
           path: "./"
@@ -547,13 +547,13 @@ jobs:
 
     steps:
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse
 
       - name: Release current commit
-        uses: ncipollo/release-action@v1.12.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           artifacts: "wheelhouse/eudsl*.whl"
           token: "${{ secrets.GITHUB_TOKEN }}"
