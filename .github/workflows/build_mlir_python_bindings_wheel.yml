@@ -525,6 +525,16 @@ jobs:
 
     steps:
 
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts/clean_gh_releases.py
+          sparse-checkout-cone-mode: false
+
+      - name: Make room in the mlir-python-bindings release
+        run: |
+          python3 -m pip install PyGithub
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} python3 scripts/clean_gh_releases.py mlir-python-bindings
+
       - uses: actions/download-artifact@v7
         with:
           name: mlir_python_bindings_${{ matrix.name }}_artifact
