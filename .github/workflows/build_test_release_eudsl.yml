@@ -139,7 +139,13 @@ jobs:
             # pip (e.g. cibuildwheel's abi3audit venv) also reads PIP_FIND_LINKS.
             # cibuildwheel applies `environment` after `environment-pass`, so
             # these override the passed-through host values.
-            echo "CIBW_ENVIRONMENT_LINUX=LLVM_DIR=/host$PWD/llvm-install/lib/cmake/llvm MLIR_DIR=/host$PWD/llvm-install/lib/cmake/mlir Clang_DIR=/host$PWD/llvm-install/lib/cmake/clang PIP_FIND_LINKS=/host$PWD/wheelhouse" >> $GITHUB_ENV
+            cibw_env=(
+              "LLVM_DIR=/host$PWD/llvm-install/lib/cmake/llvm"
+              "MLIR_DIR=/host$PWD/llvm-install/lib/cmake/mlir"
+              "Clang_DIR=/host$PWD/llvm-install/lib/cmake/clang"
+              "PIP_FIND_LINKS=/host$PWD/wheelhouse"
+            )
+            echo "CIBW_ENVIRONMENT_LINUX=${cibw_env[*]}" >> $GITHUB_ENV
           fi
           
           $python3_command -m pip install cibuildwheel
