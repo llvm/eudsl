@@ -90,11 +90,27 @@ class WasmExecutionEngine:
         return self.invoke_with_return_type(name, ctypes_args)
 
     def invoke_with_return_type(self, name, ctypes_args, return_type=None):
-        func = self.lookup(name, return_type)
-        packed_args = (ctypes.c_void_p * len(ctypes_args))()
-        for argNum in range(len(ctypes_args)):
-            packed_args[argNum] = ctypes.cast(ctypes_args[argNum], ctypes.c_void_p)
-        return func(packed_args)
+        """Call `name` (normally `_mlir_ciface_<func>`) with `ctypes_args`.
+
+        Arguments are taken the same way as ExecutionEngine.invoke -- one
+        pointer per argument, e.g. pointer(pointer(memref_descriptor)). But
+        unlike the native ExecutionEngine nothing generates the packed
+        `_mlir_<name>(void **)` wrapper here, so packing the arguments into an
+        array and passing that one pointer calls `name` with the wrong
+        arguments and silently computes garbage. Instead do what the packed
+        wrapper would have done: load each argument out of its pointer and pass
+        them directly.
+        """
+        if name == "main":
+            raise ValueError("functions named `main` are not supported on wasm")
+        func = _mlirWasmExecutionEngine.get_symbol_address(name)
+        if not func:
+            raise RuntimeError("Unknown function " + name)
+        prototype = ctypes.CFUNCTYPE(
+            return_type, *([ctypes.c_void_p] * len(ctypes_args))
+        )
+        args = [ctypes.cast(arg.contents, ctypes.c_void_p) for arg in ctypes_args]
+        return prototype(func)(*args)
 
 
 # These are copy-pasta from np_to_memref but for 32b arch (wasm32)

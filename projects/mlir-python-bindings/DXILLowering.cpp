@@ -197,7 +197,7 @@ Function *makeVoidEntry(Function &F) {
 void rewriteKernel(Function &F) {
   Module &M = *F.getParent();
   BasicBlock &Entry = F.getEntryBlock();
-  IRBuilder<> EntryB(&Entry, Entry.getFirstInsertionPt());
+  IRBuilder<> EntryB(Entry.getFirstInsertionPt());
 
   unsigned Binding = 0;
   for (Argument &Arg : F.args()) {

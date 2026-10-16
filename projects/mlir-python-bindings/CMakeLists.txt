@@ -32,7 +32,7 @@ if(POLICY CMP0116)
 endif()
 
 if(POLICY CMP0135)
-  cmake_policy(SET CMP0116 OLD)
+  cmake_policy(SET CMP0135 NEW)
 endif()
 
 if(MSVC OR WIN32)
