@@ -60,8 +60,8 @@ def _build_add(mmi, declare_liveins=True):
 _HP_N = 48
 
 
-def _build_high_pressure(mmi):
-    mf = mmi.machine_function("hp")
+def _build_high_pressure(mmi, name="hp", count=_HP_N):
+    mf = mmi.machine_function(name)
     b = mir.MachineIRBuilder(mf)
     entry = mf.blocks[0]
     gpr32 = mf.reg_class("GPR32")
@@ -70,7 +70,7 @@ def _build_high_pressure(mmi):
     copy = mf.opcode("COPY")
     addrr = mf.opcode("ADDWrr")
     terms = []
-    for _ in range(_HP_N):
+    for _ in range(count):
         t = mf.reg_info.create_virtual_register(gpr32)
         ins = b.build_instr(copy)
         ins.add_reg(t, is_def=True)
@@ -92,6 +92,134 @@ def _build_high_pressure(mmi):
     for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
         mf.set_property(getattr(mir.MachineFunctionProperty, prop))
     return mf
+
+
+@pytest.mark.parametrize("python_allocator", [False, True])
+def test_regalloc_assignments_by_function_matches_single_function_results(
+    python_allocator,
+):
+    allocator = "greedy"
+    if python_allocator:
+        allocator = "ra-batch-capture"
+        mir.register_regalloc(allocator, mir.BasicRegAlloc)
+    functions = (("hp", 48), ("hp.2", 52))
+    expected = {}
+    for name, count in functions:
+        with ir.Context() as ctx:
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(ir.Module("single", ctx), tm, name)
+            _build_high_pressure(mmi, name=name, count=count)
+            expected[name] = mmi.regalloc_assignments(allocator)
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mod = ir.parse_assembly("declare void @external()", ctx, "batch")
+        mmi = mir.create_machine_function(mod, tm, functions[0][0])
+        mmi.add_machine_function(functions[1][0])
+        for name, count in functions:
+            _build_high_pressure(mmi, name=name, count=count)
+        results = mmi.regalloc_assignments_by_function(allocator)
+        with pytest.raises(RuntimeError, match="already emitted"):
+            mmi.regalloc_assignments_by_function(allocator)
+        with pytest.raises(RuntimeError, match="un-emitted"):
+            mmi.add_machine_function("late")
+    assert set(results) == set(expected)
+    for name in results:
+        actual, single = results[name], expected[name]
+        assert actual.assignments == single.assignments
+        assert actual.spilled == single.spilled
+        assert actual.copies_remaining == single.copies_remaining
+        assert actual.spilled
+    assert set(results["hp"].assignments) & set(results["hp.2"].assignments)
+    assert results["hp"] is not results["hp.2"]
+    assert_no_leaks()
+
+
+def test_regalloc_assignments_by_function_keeps_empty_snapshots():
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "empty")
+        mf = mmi.machine_function("empty")
+        builder = mir.MachineIRBuilder(mf)
+        builder.build_instr(mf.opcode("RET_ReallyLR"))
+        for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
+            mf.set_property(getattr(mir.MachineFunctionProperty, prop))
+        results = mmi.regalloc_assignments_by_function()
+    assert set(results) == {"empty"}
+    assert results["empty"].assignments == {}
+    assert results["empty"].spilled == []
+    assert results["empty"].copies_remaining == 0
+    assert_no_leaks()
+
+
+def test_regalloc_assignments_by_function_outlives_module():
+    def capture():
+        with ir.Context() as ctx:
+            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+            mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "hp")
+            mmi.add_machine_function("add")
+            _build_high_pressure(mmi)
+            _build_add(mmi)
+            return mmi.regalloc_assignments_by_function()
+
+    results = capture()
+    assert ir.Context._get_live_module_count() == 0
+    assert set(results) == {"hp", "add"}
+    assert results["hp"].assignments
+    assert results["hp"].spilled
+    assert results["add"].spilled == []
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize(
+    "method", ["regalloc_assignments", "regalloc_assignments_by_function"]
+)
+def test_regalloc_capture_cannot_reenter_active_pipeline(method):
+    modules, calls = [], []
+
+    class Checking(mir.BasicRegAlloc):
+        def __init__(self):
+            super().__init__()
+            with pytest.raises(RuntimeError, match="requires a module built"):
+                getattr(modules[0], method)("greedy")
+            calls.append("rejected")
+
+    mir.register_regalloc("ra-capture-reentry", Checking)
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "add")
+        _build_add(mmi)
+        modules.append(mmi)
+        try:
+            results = mmi.regalloc_assignments_by_function("ra-capture-reentry")
+        finally:
+            modules.clear()
+    assert set(results) == {"add"}
+    assert calls == ["rejected"]
+    assert_no_leaks()
+
+
+def test_regalloc_assignments_by_function_preserves_first_error():
+    calls = []
+
+    class Raising(mir.BasicRegAlloc):
+        def __init__(self):
+            super().__init__()
+            calls.append("init")
+            raise ValueError("first batch allocator error")
+
+    mir.register_regalloc("ra-capture-batch-error", Raising)
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "hp")
+        mmi.add_machine_function("hp.2")
+        for name in ("hp", "hp.2"):
+            _build_high_pressure(mmi, name=name)
+        with pytest.raises(ValueError, match="first batch allocator error"):
+            mmi.regalloc_assignments_by_function("ra-capture-batch-error")
+        with pytest.raises(RuntimeError, match="already emitted"):
+            mmi.regalloc_assignments_by_function()
+    assert calls == ["init"]
+    assert_no_leaks()
 
 
 def test_regalloc_assignments_native_greedy():

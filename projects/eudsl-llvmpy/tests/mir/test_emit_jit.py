@@ -18,7 +18,7 @@ from textwrap import dedent
 import pytest
 
 import llvm
-from llvm import ir, jit, mir
+from llvm import ir, jit, mir, types
 from llvm.testing import assert_no_leaks
 
 # Object emission uses an AArch64 target (cross ELF), so needs the AArch64
@@ -32,11 +32,11 @@ _AARCH64_LINUX = "aarch64-unknown-linux-gnu"
 _IS_AARCH64 = platform.machine() in ("arm64", "aarch64")
 
 
-def _build_selected_add(mmi, declare_liveins=True):
+def _build_selected_add(mmi, declare_liveins=True, name="add", opcode="ADDWrr"):
     """Hand-build a fully-selected AArch64 add(i32,i32)->i32 MachineFunction:
     liveins $w0/$w1, two COPYs in, ADDWrr, a COPY to $w0, RET_ReallyLR. With
     declare_liveins=False the live-ins are omitted, so the MIR fails verify()."""
-    mf = mmi.machine_function("add")
+    mf = mmi.machine_function(name)
     b = mir.MachineIRBuilder(mf)
     entry = mf.blocks[0]
     gpr32 = mf.reg_class("GPR32")
@@ -50,7 +50,7 @@ def _build_selected_add(mmi, declare_liveins=True):
         c = b.build_instr(copy)
         c.add_reg(dst, is_def=True)
         c.add_reg(src)
-    add = b.build_instr(mf.opcode("ADDWrr"))
+    add = b.build_instr(mf.opcode(opcode))
     add.add_reg(v2, is_def=True)
     add.add_reg(v0)
     add.add_reg(v1)
@@ -77,6 +77,142 @@ def test_emit_object_produces_a_relocatable_object():
         # symbol name lives null-terminated in the ELF string table. (Executing
         # it is checked separately on AArch64 hosts.)
         assert b"add\x00" in obj
+    assert_no_leaks()
+
+
+@pytest.mark.skipif(
+    not _IS_AARCH64, reason="executing AArch64 MIR needs an AArch64 host"
+)
+@pytest.mark.parametrize("custom_regalloc", [False, True])
+@pytest.mark.parametrize("typed", [False, True])
+def test_jit_executes_two_functions_from_one_emission(custom_regalloc, typed):
+    instances = []
+
+    class Recorder(mir.BasicRegAlloc):
+        def __init__(self):
+            super().__init__()
+            instances.append(self)
+
+        def post_optimization(self):
+            self.function_name = self.machine_function.name
+
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine()
+        i32 = types.i32(ctx)
+        fn_ty = types.FunctionType.get(i32, [i32, i32], context=ctx) if typed else None
+        mmi = mir.create_machine_function(
+            ir.Module("m", ctx), tm, "add", function_type=fn_ty
+        )
+        mmi.add_machine_function("sub", function_type=fn_ty)
+        _build_selected_add(mmi)
+        _build_selected_add(mmi, name="sub", opcode="SUBWrr")
+        if custom_regalloc:
+            mir.register_regalloc("ra-two-functions", Recorder)
+            obj = mmi.emit_object(regalloc="ra-two-functions")
+            assert len(instances) == 2
+            assert instances[0] is not instances[1]
+            assert [instance.function_name for instance in instances] == ["add", "sub"]
+        else:
+            obj = mmi.emit_object()
+
+        j = jit.LLJIT()
+        j.add_object(obj)
+        signature = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_int32, ctypes.c_int32)
+        add, sub = signature(j.lookup("add")), signature(j.lookup("sub"))
+        for a, b in ((2, 3), (40, 2), (-5, 5), (2**30, -1)):
+            assert add(a, b) == a + b
+            assert sub(a, b) == a - b
+        del j
+        assert list(mmi.machine_functions) == []
+        with pytest.raises(RuntimeError, match="un-emitted"):
+            mmi.add_machine_function("late")
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize("operation", ["emit_object", "regalloc_assignments"])
+def test_add_machine_function_rejected_during_codegen(operation):
+    modules = []
+    rejected = []
+
+    class Recorder(mir.BasicRegAlloc):
+        def post_optimization(self):
+            with pytest.raises(RuntimeError, match="un-emitted"):
+                modules[0].add_machine_function("late")
+            rejected.append(self.machine_function.name)
+
+    mir.register_regalloc("ra-add-during-codegen", Recorder)
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "add")
+        _build_selected_add(mmi)
+        modules.append(mmi)
+        try:
+            getattr(mmi, operation)(regalloc="ra-add-during-codegen")
+        finally:
+            modules.clear()
+        assert rejected == ["add"]
+        assert "@late" not in mmi.to_mir()
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize("failure", ["init", "select"])
+def test_multi_function_allocator_preserves_first_error(failure):
+    calls = []
+
+    class Broken(mir.BasicRegAlloc):
+        def __init__(self):
+            super().__init__()
+            calls.append("init")
+            if len(calls) > 1:
+                raise RuntimeError("later function must not re-enter Python")
+            if failure == "init":
+                raise ValueError("first allocator error")
+
+        def select_or_split(self, li):
+            calls.append("select")
+            raise ValueError("first allocator error")
+
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "add")
+        mmi.add_machine_function("sub")
+        _build_selected_add(mmi)
+        _build_selected_add(mmi, name="sub", opcode="SUBWrr")
+        mir.register_regalloc("ra-multi-error", Broken)
+        with pytest.raises(ValueError, match="first allocator error"):
+            mmi.emit_object(regalloc="ra-multi-error")
+        assert calls == (["init"] if failure == "init" else ["init", "select"])
+        with pytest.raises(RuntimeError, match="un-emitted"):
+            mmi.add_machine_function("late")
+
+        fresh = mir.create_machine_function(ir.Module("fresh", ctx), tm, "add")
+        _build_selected_add(fresh)
+        assert fresh.emit_object()[:4] == b"\x7fELF"
+    assert_no_leaks()
+
+
+def test_regalloc_assignments_rejects_multiple_functions_without_consuming_module():
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "add")
+        mmi.add_machine_function("sub")
+        _build_selected_add(mmi)
+        _build_selected_add(mmi, name="sub", opcode="SUBWrr")
+        with pytest.raises(ValueError, match="exactly one MachineFunction"):
+            mmi.regalloc_assignments("greedy")
+        assert mmi.emit_object()[:4] == b"\x7fELF"
+    assert_no_leaks()
+
+
+def test_add_machine_function_rejected_after_regalloc_assignments():
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mod = ir.parse_assembly("declare void @external()", ctx, "m")
+        mmi = mir.create_machine_function(mod, tm, "add")
+        _build_selected_add(mmi)
+        mmi.regalloc_assignments("greedy")
+        with pytest.raises(RuntimeError, match="un-emitted"):
+            mmi.add_machine_function("late")
     assert_no_leaks()
 
 

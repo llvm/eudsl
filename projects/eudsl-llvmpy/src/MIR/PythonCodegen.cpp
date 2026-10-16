@@ -333,6 +333,8 @@ createRegisteredPyStrategy(llvm::MachineSchedContext *c) {
   if (!activeSchedClass.is_valid())
     return llvm::createSchedLive(c);
   // LCOV_EXCL_STOP
+  if (eudsl::pendingCodegenError)
+    return llvm::createSchedLive(c);
   try {
     auto strategy = std::make_unique<OwningPyStrategy>(activeSchedClass());
     auto *dag = new llvm::ScheduleDAGMILive(c, std::move(strategy));
@@ -1001,18 +1003,12 @@ public:
       fallback.pyAllocate();
     };
 
-    // LCOV_EXCL_START -- a module from create_machine_function holds exactly
-    // one MachineFunction, so this runs once per emit_object and a stash from
-    // an earlier function is never already pending. Defensive for a
-    // hypothetical multi-function module: don't re-enter Python (which would
-    // clobber the pending error); allocate natively so this function's MIR
-    // stays valid and the original error still re-raises.
+    // After an earlier function failed, finish natively without re-entering
+    // Python so the pipeline preserves the original exception.
     if (eudsl::pendingCodegenError) {
       runNative();
       return true;
     }
-    // LCOV_EXCL_STOP
-
     nb::object obj;
     try {
       obj = activeRegAllocClass();

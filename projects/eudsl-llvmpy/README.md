@@ -181,6 +181,17 @@ the IR layering above. It covers three uses: **inspect** MIR the compiler
 produces, **build** MIR from Python (generic GlobalISel `G_*` or target-specific),
 and **lower** built MIR to native code.
 
+For hand-built MIR, `mir.create_machine_function(module, target, name)` creates
+the first function and consumes the IR module. Call
+`mmi.add_machine_function(name, function_type=None, linkage=ir.Linkage.EXTERNAL)`
+on the returned `MirModule` to add more functions before a single
+`mmi.emit_object()`. Registered Python allocators and schedulers get distinct
+instances per function.
+`mmi.regalloc_assignments_by_function()` runs allocation once and returns a
+function-name-keyed map of assignment, spill, and copy-count snapshots, keeping
+function-local virtual-register ids separate. The existing
+`regalloc_assignments()` returns a flat snapshot for single-function modules.
+
 ### Building generic MIR: `@machine_function`
 
 `@machine_function` mirrors the IR `@function` DSL, one level lower. Parameters

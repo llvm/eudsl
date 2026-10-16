@@ -53,6 +53,7 @@
 #include <nanobind/stl/variant.h>
 #include <nanobind/stl/vector.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
@@ -368,6 +369,8 @@ public:
   }
 
   bool runOnMachineFunction(llvm::MachineFunction &mfn) override {
+    RegAllocAssignments &result = results[mfn.getName().str()];
+    result = RegAllocAssignments{};
     llvm::VirtRegMap &vrm =
         getAnalysis<llvm::VirtRegMapWrapperLegacy>().getVRM();
     llvm::MachineRegisterInfo &mri = mfn.getRegInfo();
@@ -412,12 +415,42 @@ public:
     return false;
   }
 
-  RegAllocAssignments &getResult() { return result; }
+  std::map<std::string, RegAllocAssignments> &getResults() { return results; }
 
 private:
-  RegAllocAssignments result;
+  std::map<std::string, RegAllocAssignments> results;
 };
 char VRMCapturePass::ID = 0;
+
+static llvm::Function *
+createMachineFunctionStub(llvm::Module &module, const std::string &name,
+                          llvm::FunctionType *fnTy,
+                          llvm::GlobalValue::LinkageTypes linkage) {
+  if (name.empty())
+    throw nb::value_error("function name must not be empty");
+  if (module.getFunction(name)) {
+    throw nb::value_error(
+        ("module already has a function named '" + name + "'").c_str());
+  }
+  if (module.getNamedValue(name)) {
+    throw nb::value_error(
+        ("module already has a symbol named '" + name + "'").c_str());
+  }
+  if (fnTy && &fnTy->getContext() != &module.getContext())
+    throw nb::value_error("function type belongs to a different context");
+  if (!fnTy)
+    fnTy = llvm::FunctionType::get(llvm::Type::getVoidTy(module.getContext()),
+                                   /*isVarArg=*/false);
+  llvm::Function *f = llvm::Function::Create(fnTy, linkage, name, module);
+  // Codegen visits definitions only; the selected MIR supplies the real body.
+  llvm::Value *ret = fnTy->getReturnType()->isVoidTy()
+                         ? nullptr
+                         : llvm::PoisonValue::get(fnTy->getReturnType());
+  llvm::ReturnInst::Create(
+      module.getContext(), ret,
+      llvm::BasicBlock::Create(module.getContext(), "entry", f));
+  return f;
+}
 
 // Owns everything the MachineFunctions transitively depend on, so none of it is
 // freed out from under them: the LLVMContext (pinned by `ctxKeepAlive`), the IR
@@ -451,6 +484,23 @@ public:
   }
 
   llvm::Module &module() { return *module_; }
+
+  llvm::MachineFunction *
+  addMachineFunction(const std::string &name, llvm::FunctionType *fnTy,
+                     llvm::GlobalValue::LinkageTypes linkage) {
+    BuildOwned *build = std::get_if<BuildOwned>(&state_);
+    if (!build || !build->mmiwp) {
+      throw std::runtime_error(
+          "add_machine_function requires an un-emitted module built with "
+          "create_machine_function");
+    }
+    llvm::Function *f =
+        createMachineFunctionStub(*module_, name, fnTy, linkage);
+    llvm::MachineFunction &mf =
+        build->mmiwp->getMMI().getOrCreateMachineFunction(*f);
+    mf.push_back(mf.CreateMachineBasicBlock());
+    return &mf;
+  }
 
   // The query handle the read accessors used to get for free as a field: the
   // active alternative knows how to produce its own llvm::MachineModuleInfo*.
@@ -700,11 +750,12 @@ public:
   // emitObject this is build-path-only and one-shot: the build wrapper is
   // adopted into the pipeline, so the BuildOwned is consumed into an
   // EmittedOwned.
-  RegAllocAssignments regallocAssignments(const std::string &regalloc) {
+  std::map<std::string, RegAllocAssignments>
+  regallocAssignmentsByFunction(const std::string &regalloc) {
     if (std::holds_alternative<EmittedOwned>(state_))
       throw std::runtime_error("object already emitted");
     BuildOwned *build = std::get_if<BuildOwned>(&state_);
-    if (!build) {
+    if (!build || !build->mmiwp) {
       throw std::runtime_error(
           "regalloc_assignments requires a module built with "
           "create_machine_function");
@@ -770,7 +821,6 @@ public:
     // pipeline gets this through TargetPassConfig, which we bypass here.
     llvm::initializeCodeGen(*llvm::PassRegistry::getPassRegistry());
 
-    RegAllocAssignments out;
     auto pm = std::make_unique<llvm::legacy::PassManager>();
     // The wrapper (holding the built MachineFunctions) is adopted into `pm`;
     // it provides the MMI the MachineFunctionPasses query. `info` stays valid
@@ -804,7 +854,7 @@ public:
         throw;
       }
     }
-    out = std::move(capturePass->getResult());
+    auto out = std::move(capturePass->getResults());
     // Consume the BuildOwned into an EmittedOwned so a later query keeps `info`
     // valid and a second run refuses cleanly.
     state_ = EmittedOwned{std::move(pm), info};
@@ -815,6 +865,24 @@ public:
           eudsl::withDetail("register allocation failed", diag));
     // LCOV_EXCL_STOP
     return out;
+  }
+
+  RegAllocAssignments regallocAssignments(const std::string &regalloc) {
+    if (BuildOwned *build = std::get_if<BuildOwned>(&state_);
+        build && build->mmiwp) {
+      llvm::MachineModuleInfo &info = build->mmiwp->getMMI();
+      // Preserve the flat single-function API without merging local vreg ids.
+      if (std::count_if(module_->begin(), module_->end(),
+                        [&info](llvm::Function &f) {
+                          return info.getMachineFunction(f) != nullptr;
+                        }) > 1) {
+        throw nb::value_error(
+            "regalloc_assignments requires exactly one MachineFunction; "
+            "use regalloc_assignments_by_function for multiple functions");
+      }
+    }
+    auto results = regallocAssignmentsByFunction(regalloc);
+    return std::move(results.begin()->second);
   }
 
 private:
@@ -1671,6 +1739,13 @@ void populate_mir(nb::module_ &m) {
               "eliminate (a coalescing-quality measure).");
 
   nb::class_<MirModule>(m, "MirModule")
+      .def("add_machine_function", &MirModule::addMachineFunction, "name"_a,
+           "function_type"_a = nullptr,
+           "linkage"_a = llvm::GlobalValue::LinkageTypes::ExternalLinkage,
+           nb::rv_policy::reference_internal,
+           "Append a MachineFunction with an empty entry block to a module "
+           "built with create_machine_function. Only valid before emission "
+           "or regalloc_assignments; returns the new MachineFunction.")
       .def(
           "machine_function",
           [](MirModule &self,
@@ -1725,7 +1800,15 @@ void populate_mir(nb::module_ &m) {
            "return the post-RA vreg->physreg assignment map, without emitting "
            "an object. Verifies the MIR first, raising if it is malformed; an "
            "unknown allocator name raises. Build-path-only and one-shot, like "
-           "emit_object.");
+           "emit_object. Requires exactly one MachineFunction because virtual "
+           "register ids are function-local. For multiple functions use "
+           "regalloc_assignments_by_function.")
+      .def("regalloc_assignments_by_function",
+           &MirModule::regallocAssignmentsByFunction, "regalloc"_a = "greedy",
+           "Run register allocation once and return a function-name -> "
+           "RegAllocAssignments map. Virtual-register ids, spills, and copy "
+           "counts are kept separate for each function. Build-path-only and "
+           "one-shot, like regalloc_assignments.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the
@@ -1865,12 +1948,6 @@ void populate_mir(nb::module_ &m) {
       "create_machine_function",
       [](eudsl::Module &mod, llvm::TargetMachine &tm, const std::string &name,
          llvm::FunctionType *fnTy, llvm::GlobalValue::LinkageTypes linkage) {
-        // Validate before take() so a rejected call leaves the module usable.
-        // Function::Create does not fail on a name collision -- it appends a
-        // numeric suffix (`f` -> `f.1`), which would then make
-        // machine_function(name) throw a confusing "no function named" error.
-        if (name.empty())
-          throw nb::value_error("function name must not be empty");
         if (mod.get().getFunction(name)) {
           throw nb::value_error(
               ("module already has a function named '" + name + "'").c_str());
@@ -1888,20 +1965,15 @@ void populate_mir(nb::module_ &m) {
                                       .c_str());
           }
         }
+        // Validate and seed before take() so a rejected call leaves the
+        // module usable.
+        llvm::Function *f =
+            createMachineFunctionStub(mod.get(), name, fnTy, linkage);
 
         std::shared_ptr<llvm::LLVMContext> ctxKeepAlive =
             mod.context().shared();
         std::unique_ptr<llvm::Module> module = mod.take();
         module->setDataLayout(tm.createDataLayout());
-
-        if (!fnTy)
-          fnTy = llvm::FunctionType::get(
-              llvm::Type::getVoidTy(module->getContext()), /*isVarArg=*/false);
-        llvm::Function *f =
-            llvm::Function::Create(fnTy, linkage, name, *module);
-        llvm::ReturnInst::Create(
-            module->getContext(),
-            llvm::BasicBlock::Create(module->getContext(), "entry", f));
 
         auto mmiwp = std::make_unique<llvm::MachineModuleInfoWrapperPass>(&tm);
         llvm::MachineFunction &mf =
