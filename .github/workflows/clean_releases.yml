@@ -16,6 +16,9 @@ jobs:
       id-token: write
       contents: write
 
+    outputs:
+      n_deleted: ${{ steps.delete.outputs.n_deleted }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -26,6 +29,7 @@ jobs:
           python-version: "3.12"
 
       - name: Delete from here
+        id: delete
         shell: bash
         run: |
           
@@ -34,7 +38,9 @@ jobs:
 
   call-deploy-pip-page:
 
-    if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+    # Redeploy so the pip index stops linking to the assets that were just deleted --
+    # including when the script deleted some and then failed with "missed some".
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.delete_releases.outputs.n_deleted != '0') }}
 
     needs: [delete_releases]
 
