@@ -93,6 +93,32 @@ def test_create_machine_function_rejects_duplicate_name():
     assert_no_leaks()
 
 
+def test_create_machine_function_rejects_other_definitions():
+    # Codegen would visit @a with an empty MachineFunction (no ISel ran for it)
+    # and abort, so the module must not carry other definitions.
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly("define void @a() {\n  ret void\n}\n", ctx, "m")
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        with pytest.raises(ValueError, match="already defines function 'a'"):
+            mir.create_machine_function(mod, tm, "f")
+        assert not mod._is_consumed
+    assert_no_leaks()
+
+
+def test_create_machine_function_allows_skipped_functions():
+    # Codegen skips declarations and available_externally definitions.
+    src = (
+        "declare void @external()\n"
+        "define available_externally void @inl() {\n  ret void\n}\n"
+    )
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly(src, ctx, "m")
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(mod, tm, "f")
+        assert [mf.name for mf in mmi.machine_functions] == ["f"]
+    assert_no_leaks()
+
+
 def test_build_generic_arithmetic():
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)

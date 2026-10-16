@@ -1875,6 +1875,19 @@ void populate_mir(nb::module_ &m) {
           throw nb::value_error(
               ("module already has a function named '" + name + "'").c_str());
         }
+        // Codegen visits every definition except available_externally ones.
+        // No ISel ran for a pre-existing definition, so it would reach the
+        // pipeline as an empty MachineFunction and abort in MachineDominators.
+        for (llvm::Function &other : mod.get()) {
+          if (!other.isDeclaration() &&
+              !other.hasAvailableExternallyLinkage()) {
+            throw nb::value_error(("module already defines function '" +
+                                   other.getName().str() +
+                                   "'; create_machine_function requires a "
+                                   "module with no other function definitions")
+                                      .c_str());
+          }
+        }
 
         std::shared_ptr<llvm::LLVMContext> ctxKeepAlive =
             mod.context().shared();
