@@ -48,3 +48,6 @@ docs/superpowers/
 /llvm-build/
 /llvm-install/
 /nanobind-install/
+
+# jupyter lite build state (written into --lite-dir)
+.jupyterlite.doit.db
