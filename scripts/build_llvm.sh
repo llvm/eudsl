@@ -43,7 +43,6 @@ cmake_options=(
   # this flag keeps changing names in CMake...
   -DPython3_EXECUTABLE="$Python3_EXECUTABLE"
   -DPython_EXECUTABLE="$Python3_EXECUTABLE"
-  -DPYTHON_EXECUTABLE="$Python3_EXECUTABLE"
   -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}"
   -DCMAKE_PLATFORM_NO_VERSIONED_SONAME=ON
   -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
@@ -51,7 +50,7 @@ cmake_options=(
 
 if [ -x "$(command -v ccache)" ]; then
   echo 'using ccache' >&2
-  export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros
+  export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,pch_defines,time_macros
   export CCACHE_CPP2=true
   export CCACHE_UMASK=002
   cmake_options+=(

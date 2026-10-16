@@ -31,7 +31,7 @@ echo "*********************** BUILDING LLVM *********************************"
 
 if [ -x "$(command -v $EMSDK/ccache/git-emscripten_64bit/bin/ccache)" ]; then
   echo 'using ccache' >&2
-  export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros
+  export CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,pch_defines,time_macros
   export CCACHE_CPP2=true
   export CCACHE_UMASK=002
   export CCACHE_COMPILERCHECK="string:$($EMSDK/upstream/bin/clang --version | head -n 1)"
