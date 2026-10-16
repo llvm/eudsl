@@ -147,7 +147,7 @@ runs:
     #    `with: path: ....` is not executed in our chosen shell (and so findind the dir will fail)
     # 5. action/save-restore will tell you there's no cache matching the key when the paths differ
     #    (even if the cache key does exist)
-    # 6. on almalinux8, ccache distribution is very old
+    # 6. on almalinux (8 and 9), the distro/EPEL ccache is very old
     # 7. action/save-restore needs a subdir in the cached dir (that's why CCACHE_DIR=.container-cache/ccache)
     - name: "Canonicalize cache dir"
       id: canonicalize-cache-dir
@@ -178,14 +178,12 @@ runs:
           # the logs with "libtinfo.so: no version information available" here.
           dnf install -y sudo tmate python3-pip git clang
         
-          # install ccache
-          if [[ "${{ inputs.host-arch }}" == "x86_64" ]]; then
-            curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz
-            tar -xf ccache-4.10.2-linux-x86_64.tar.xz
-            pushd ccache-4.10.2-linux-x86_64 && make install && popd
-          elif [[ "${{ inputs.host-arch }}" == "aarch64" ]]; then
-            dnf install -y ccache
-          fi
+          # install ccache: the same upstream release on both arches (EPEL's is much
+          # older). The musl-static builds don't depend on the image's glibc.
+          ccache_dist="ccache-4.14.1-linux-${{ inputs.host-arch }}-musl-static"
+          curl -sLO "https://github.com/ccache/ccache/releases/download/v4.14.1/$ccache_dist.tar.xz"
+          tar -xf "$ccache_dist.tar.xz"
+          pushd "$ccache_dist" && make install && popd
         
           # install gh-cli
           if [[ "${{ inputs.host-arch }}" == "x86_64" ]]; then
