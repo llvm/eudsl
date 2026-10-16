@@ -291,8 +291,8 @@ runs:
         fi
         
         if [[ "${{ matrix.os }}" == "macos" ]]; then
-          echo MACOSX_DEPLOYMENT_TARGET=11.0 >> $GITHUB_ENV
-          echo CMAKE_OSX_DEPLOYMENT_TARGET=11.0 >> $GITHUB_ENV
+          echo MACOSX_DEPLOYMENT_TARGET=13.0 >> $GITHUB_ENV
+          echo CMAKE_OSX_DEPLOYMENT_TARGET=13.0 >> $GITHUB_ENV
         fi
 
     # pyodide-build compares the HOST python's major.minor against the cross-build
