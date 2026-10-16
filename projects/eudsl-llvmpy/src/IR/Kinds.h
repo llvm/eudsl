@@ -15,10 +15,11 @@
 
 #pragma once
 
+// nanobind pulls in Python.h, which must come before any system header.
+#include <nanobind/nanobind.h>
+
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Value.h>
-
-#include <nanobind/nanobind.h>
 
 #include <type_traits>
 #include <typeinfo>
