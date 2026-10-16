@@ -1,0 +1,2 @@
+caught: negative area
+warm=1090000 hot=1090000 muldiv=1142942847143/1142942847143 created=1000
