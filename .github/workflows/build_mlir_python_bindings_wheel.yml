@@ -111,12 +111,19 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: false
 
       - name: "Get submodules"
-        run: git submodule update --init --depth=1
+        run: |
+
+          # dawn, SPIRV-* and abseil-cpp are only for the wasm build's Tint.
+          if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
+            git submodule update --init --depth=1
+          else
+            git submodule update --init --depth=1 third_party/llvm-project
+          fi
 
       - name: "Setup base"
         uses: ./.github/actions/setup_base
@@ -151,7 +158,7 @@ jobs:
 
       - name: Download LLVM distro artifacts
         if: ${{ inputs.workflow_call }}
-        uses: dawidd6/action-download-artifact@v11
+        uses: dawidd6/action-download-artifact@v17
         with:
           name: mlir_wheel_${{ (matrix.name == 'ubuntu_x86_64' || matrix.name == 'ubuntu_aarch64') && 'manylinux' || matrix.os }}_${{ matrix.target-arch }}_artifact
           path: "./"
@@ -165,7 +172,7 @@ jobs:
 
       - name: Download mlir-native-tools artifacts
         if: ${{ inputs.workflow_call }}
-        uses: dawidd6/action-download-artifact@v11
+        uses: dawidd6/action-download-artifact@v17
         with:
           name: mlir_native_tools_${{ matrix.os == 'ubuntu' && 'manylinux' || matrix.os }}_${{ matrix.host-arch }}_artifact
           path: "./"
@@ -242,6 +249,14 @@ jobs:
             export PYODIDE_BUILD_EXPORTS=whole_archive
             pyodide build "$PWD/projects/mlir-python-bindings-wasm" -o wheelhouse --compression-level 10
           else
+            if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+              # cibuildwheel builds in a manylinux container, which sees the
+              # host's / at /host and has its own ccache (installed by
+              # before-all in pyproject.toml).
+              export CCACHE_DIR=/host/$CCACHE_DIR
+              export CMAKE_C_COMPILER_LAUNCHER=ccache
+              export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+            fi
             $python3_command -m cibuildwheel "$PWD/projects/mlir-python-bindings" --output-dir wheelhouse
           fi
 
@@ -270,8 +285,15 @@ jobs:
           $python3_command -m pip install build
           $python3_command -m build "$PWD/projects/mlir-python-mcp" --outdir wheelhouse
 
+      - name: "Save cache"
+        uses: actions/cache/save@v3
+        if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
+        with:
+          path: ${{ steps.setup_base.outputs.cache-dir }}
+          key: ${{ env.cache-key }}
+
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mlir_python_bindings_${{ matrix.name }}_artifact
           path: wheelhouse/*.whl
@@ -352,7 +374,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: false
 
@@ -364,7 +386,7 @@ jobs:
         with:
           python-version: "${{ matrix.python-version }}"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: mlir_python_bindings_${{ matrix.name }}_artifact
           path: wheelhouse
@@ -430,17 +452,17 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: true
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: mlir_python_bindings_ubuntu_wasm32_artifact
           path: wheelhouse
 
       - name: "Install Python"
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -448,7 +470,7 @@ jobs:
         shell: bash
         run: |
 
-          pip install pyodide-build>=0.28.0
+          pip install "pyodide-build>=0.28.0"
           # Pin the cross-build environment, or `pyodide venv` builds one from the
           # latest release and the wheel's ABI tag stops matching the interpreter
           # testing it. Keep in sync with PYODIDE_VERSION in
@@ -503,13 +525,13 @@ jobs:
 
     steps:
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: mlir_python_bindings_${{ matrix.name }}_artifact
           path: wheelhouse
 
       - name: Release current commit
-        uses: ncipollo/release-action@v1.12.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           artifacts: "wheelhouse/mlir_python_bindings*.whl"
           token: "${{ secrets.GITHUB_TOKEN }}"
@@ -537,13 +559,13 @@ jobs:
 
     steps:
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: mlir_python_bindings_ubuntu_x86_64_artifact
           path: wheelhouse
 
       - name: Release current commit
-        uses: ncipollo/release-action@v1.12.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           artifacts: "wheelhouse/mlir_python_mcp*.whl"
           token: "${{ secrets.GITHUB_TOKEN }}"
@@ -557,7 +579,17 @@ jobs:
 
   call-build-eudsl-python-extras:
 
-    needs: [build-mlir-python-bindings]
+    # Wait for the release: build_test_release_eudsl_python_extras.yml ends in a
+    # pip page deploy, which would otherwise publish the previous bindings. The
+    # release only runs on main/workflow_dispatch; everywhere else go ahead once
+    # the build is done.
+    if: >-
+      !cancelled() && needs.build-mlir-python-bindings.result == 'success' &&
+      (needs.release-mlir-python-bindings.result == 'success' ||
+       (needs.release-mlir-python-bindings.result == 'skipped' &&
+        !((github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch')))
+
+    needs: [build-mlir-python-bindings, release-mlir-python-bindings]
 
     permissions:
       contents: write

@@ -84,7 +84,23 @@ environment-pass = [
     "CMAKE_PREFIX_PATH",
     "MLIR_DIR",
     "WHEEL_VERSION",
+    "CMAKE_C_COMPILER_LAUNCHER",
+    "CMAKE_CXX_COMPILER_LAUNCHER",
+    # ccache
+    "CCACHE_DIR",
+    "CCACHE_MAXSIZE",
+    "CCACHE_SLOPPINESS",
+    "CCACHE_CPP2",
+    "CCACHE_UMASK",
+    "CCACHE_NOHASHDIR",
 ]
+# The manylinux image has no ccache; same install as projects/eudsl-tblgen.
+before-all = [
+    "if [ \"$(arch)\" = \"x86_64\" ]; then curl -sLO https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz && tar -xf ccache-4.10.2-linux-x86_64.tar.xz && make -C ccache-4.10.2-linux-x86_64 install; else dnf install -y ccache; fi",
+    "ccache --version",
+]
+# Cumulative, so each build shows the hits it got from the previous ones.
+before-build = ["ccache -s"]
 repair-wheel-command = [
     "LD_LIBRARY_PATH=$CMAKE_PREFIX_PATH/lib auditwheel repair -w {dest_dir} {wheel}",
 ]

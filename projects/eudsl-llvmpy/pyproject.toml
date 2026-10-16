@@ -20,7 +20,6 @@ Homepage = "https://github.com/llvm/eudsl"
 [build-system]
 requires = [
     "nanobind==2.13.0",
-    "ninja",
     "scikit-build-core==0.10.7",
     "typing_extensions>=4.12.2",
 ]
@@ -49,10 +48,11 @@ CMAKE_OSX_DEPLOYMENT_TARGET = { env = "CMAKE_OSX_DEPLOYMENT_TARGET", default = "
 CMAKE_C_VISIBILITY_PRESET = "hidden"
 CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 CMAKE_VISIBILITY_INLINES_HIDDEN = "ON"
-CMAKE_INSTALL_DO_STRIP = "ON"
 CMAKE_VERBOSE_MAKEFILE = "ON"
+# Nothing here uses PCH; defining this skips HandleLLVMOptions' ccache+PCH
+# warning on Windows.
+CMAKE_DISABLE_PRECOMPILE_HEADERS = "ON"
 LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
-LLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN = "ON"
 
 [tool.pytest.ini_options]
 addopts = "--cov=llvm --cov-report=term-missing --cov-fail-under=99"
@@ -75,7 +75,7 @@ omit = [
 [tool.cibuildwheel]
 build-verbosity = 1
 build = ["cp312-*"]
-skip = ["*-manylinux_i686", "*-musllinux*", "pp*", "*-win32"]
+skip = ["*-manylinux_i686", "*-musllinux*", "*-win32"]
 archs = ["auto64"]
 manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "quay.io/pypa/manylinux_2_34_aarch64"
@@ -91,7 +91,7 @@ environment-pass = [
     "LLVM_DIR",
     # ccache
     "CCACHE_DIR",
-    "CCACHE_MAXSIZE=700M",
+    "CCACHE_MAXSIZE",
     "CCACHE_SLOPPINESS",
     "CCACHE_CPP2",
     "CCACHE_UMASK",

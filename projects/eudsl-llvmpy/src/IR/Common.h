@@ -4,17 +4,18 @@
 
 #pragma once
 
+// nanobind pulls in Python.h, which must come before any system header.
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
+
 #include "IR/Ownership.h"
 #include <llvm/IR/CallingConv.h>
 
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
-
-#include <nanobind/nanobind.h>
-#include <nanobind/stl/optional.h>
-#include <nanobind/stl/string.h>
-#include <nanobind/stl/vector.h>
 
 #include <cstdint>
 #include <string>

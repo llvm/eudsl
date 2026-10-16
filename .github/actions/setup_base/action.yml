@@ -53,13 +53,30 @@ runs:
         
         dnf install -y sudo
 
+    # Inlined from szenius/set-timezone@v2.0, which has no Node 24 release.
+    # Asia/Singapore is an arbitrary choice.
     - name: "Set unified TZ"
-      uses: szenius/set-timezone@v2.0
-      with:
-        # this is an arbitrary choice
-        timezoneLinux: "Asia/Singapore"
-        timezoneMacos: "Asia/Singapore"
-        timezoneWindows: "Singapore Standard Time"
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+
+        # timedatectl needs systemd, which the manylinux containers don't run;
+        # the action never failed the step there either.
+        sudo timedatectl set-timezone Asia/Singapore || echo "timedatectl unavailable; leaving TZ unchanged"
+
+    - name: "Set unified TZ"
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+
+        sudo systemsetup -settimezone Asia/Singapore
+
+    - name: "Set unified TZ"
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+
+        tzutil /s "Singapore Standard Time"
 
     # Zip stores naive local time with no timezone, and the step above puts the
     # runners in Asia/Singapore. So a wheel built at 13:09 UTC records 21:09, and
@@ -145,7 +162,7 @@ runs:
         fi
 
     - name: "Restore cache"
-      uses: actions/cache/restore@v3
+      uses: actions/cache/restore@v5
       with:
         path: ${{ steps.canonicalize-cache-dir.outputs.cache-dir }}
         key:  ${{ inputs.cache-key }}
@@ -184,7 +201,7 @@ runs:
         fi
 
     - name: "Install Python"
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6
       if: ${{ startsWith(inputs.os, 'macos') || startsWith(inputs.os, 'windows') || startsWith(inputs.os, 'ubuntu') }}
       with:
         python-version: ${{ inputs.python-version }}
@@ -283,7 +300,7 @@ runs:
     # host interpreter too -- not inputs.python-version, which defaults to 3.12.
     - name: Install host Python for the cross-build environment
       if: inputs.target-arch == 'wasm32'
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6
       with:
         python-version: '3.13'
 

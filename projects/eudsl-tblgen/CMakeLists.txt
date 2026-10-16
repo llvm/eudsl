@@ -37,7 +37,6 @@ endif()
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
-add_definitions(${LLVM_DEFINITIONS})
 
 if(NOT TARGET LLVMSupport)
   message(FATAL_ERROR "LLVMSupport not found")
@@ -88,7 +87,6 @@ target_link_libraries(eudsl_tblgen_ext PRIVATE ${eudsl_tblgen_ext_libs})
 
 set(nanobind_options
   -Wno-cast-qual
-  -Wno-deprecated-literal-operator
   -Wno-covered-switch-default
   -Wno-nested-anon-types
   -Wno-zero-length-array
@@ -97,6 +95,13 @@ set(nanobind_options
   $<$<PLATFORM_ID:Linux>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Darwin>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>)
+# AppleClang 15 doesn't know -Wdeprecated-literal-operator.
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag(-Wdeprecated-literal-operator
+  CXX_SUPPORTS_WDEPRECATED_LITERAL_OPERATOR)
+if(CXX_SUPPORTS_WDEPRECATED_LITERAL_OPERATOR)
+  list(APPEND nanobind_options -Wno-deprecated-literal-operator)
+endif()
 target_compile_options(eudsl_tblgen_ext PRIVATE ${nanobind_options})
 # The nanobind helper library name varies with STABLE_ABI (-abi3) and
 # FREE_THREADED (-ft), so probe every variant instead of hardcoding two.

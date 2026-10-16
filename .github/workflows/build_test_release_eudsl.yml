@@ -97,7 +97,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
 
       - name: "Setup base"
         uses: ./.github/actions/setup_base
@@ -117,7 +117,7 @@ jobs:
 
       - name: Download LLVM distro artifacts
         if: ${{ inputs.workflow_call }}
-        uses: dawidd6/action-download-artifact@v11
+        uses: dawidd6/action-download-artifact@v17
         with:
           name: mlir_wheel_${{ (matrix.name == 'ubuntu_x86_64' || matrix.name == 'ubuntu_aarch64') && 'manylinux' || matrix.os }}_${{ matrix.target-arch }}_artifact
           path: "./"
@@ -129,16 +129,23 @@ jobs:
           unzip -q mlir_wheel*.whl
           mv mlir_wheel llvm-install
           
+          echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
+          echo "PIP_FIND_LINKS=$PWD/wheelhouse" >> $GITHUB_ENV
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            echo "LLVM_DIR=/host/$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
-            echo "MLIR_DIR=/host/$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
-            echo "Clang_DIR=/host/$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
-            echo "PIP_FIND_LINKS=/host/$PWD/wheelhouse" >> $GITHUB_ENV
-          else
-            echo "LLVM_DIR=$PWD/llvm-install/lib/cmake/llvm" >> $GITHUB_ENV
-            echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
-            echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
-            echo "PIP_FIND_LINKS=$PWD/wheelhouse" >> $GITHUB_ENV
+            # The host filesystem is mounted at /host inside the cibuildwheel
+            # container. Only the container should see /host paths: host-side
+            # pip (e.g. cibuildwheel's abi3audit venv) also reads PIP_FIND_LINKS.
+            # cibuildwheel applies `environment` after `environment-pass`, so
+            # these override the passed-through host values.
+            cibw_env=(
+              "LLVM_DIR=/host$PWD/llvm-install/lib/cmake/llvm"
+              "MLIR_DIR=/host$PWD/llvm-install/lib/cmake/mlir"
+              "Clang_DIR=/host$PWD/llvm-install/lib/cmake/clang"
+              "PIP_FIND_LINKS=/host$PWD/wheelhouse"
+            )
+            echo "CIBW_ENVIRONMENT_LINUX=${cibw_env[*]}" >> $GITHUB_ENV
           fi
           
           $python3_command -m pip install cibuildwheel
@@ -166,7 +173,9 @@ jobs:
       - name: "Build eudsl-llvmpy"
         run: |
           
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          # Linux wheels must go through cibuildwheel (manylinux container +
+          # auditwheel); a host `pip wheel` produces a non-portable linux_* wheel.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
               export CCACHE_DIR=/host/$CCACHE_DIR
               export CC=clang
@@ -183,7 +192,9 @@ jobs:
       - name: "Build eudsl-nbgen"
         run: |
 
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          # Linux wheels must be built in the manylinux container; a host
+          # `pip wheel` on ubuntu-22.04 isn't portable to older glibc.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
               export CCACHE_DIR=/host/$CCACHE_DIR
               export CC=clang
@@ -210,21 +221,21 @@ jobs:
           cmake --build "$PWD/eudsl-build" --target install
 
       - name: "Save cache"
-        uses: actions/cache/save@v3
+        uses: actions/cache/save@v5
         if: (!cancelled() && github.event_name == 'push' && github.ref_name == 'main')
         with:
           path: ${{ steps.setup_base.outputs.cache-dir }}
           key: ${{ env.cache-key }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse/*.whl
           if-no-files-found: warn
 
       - name: Upload ccache log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: eudsl_ccache_log_${{ matrix.name }}
           path: ${{ startsWith(matrix.os, 'windows') && 'D:\a\ccache.log' || '/tmp/ccache.log' }}
@@ -288,7 +299,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: false
 
@@ -297,7 +308,7 @@ jobs:
         with:
           python-version: "${{ matrix.python-version }}"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse
@@ -369,7 +380,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: false
 
@@ -378,7 +389,7 @@ jobs:
         with:
           python-version: "${{ matrix.python-version }}"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse
@@ -439,7 +450,7 @@ jobs:
 
     steps:
       - name: "Check out repository"
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.1.0
         with:
           submodules: false
 
@@ -453,7 +464,7 @@ jobs:
           target-arch: "arm64"
           python-version: "3.12"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: eudsl_macos_arm64_artifact
           path: wheelhouse
@@ -466,7 +477,7 @@ jobs:
 
       - name: "Download LLVM distro artifact"
         if: ${{ inputs.workflow_call }}
-        uses: dawidd6/action-download-artifact@v11
+        uses: dawidd6/action-download-artifact@v17
         with:
           name: mlir_wheel_macos_arm64_artifact
           path: "./"
@@ -536,13 +547,13 @@ jobs:
 
     steps:
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: eudsl_${{ matrix.name }}_artifact
           path: wheelhouse
 
       - name: Release current commit
-        uses: ncipollo/release-action@v1.12.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           artifacts: "wheelhouse/eudsl*.whl"
           token: "${{ secrets.GITHUB_TOKEN }}"

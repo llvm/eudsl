@@ -1,8 +1,16 @@
 name: Deploy static content to Pages
 
 on:
+  # Every workflow that uploads to a release redeploys this page when it finishes, so
+  # a push only needs to deploy for changes nothing else picks up: the page sources
+  # and the files this workflow checks them against. Deploying on every push instead
+  # races those workflows and can ship the previous commit's release assets.
   push:
     branches: ["main"]
+    paths:
+      - ".github/workflows/deploy_pip_page.yml"
+      - ".github/actions/setup_base/action.yml"
+      - "pages/**"
   workflow_dispatch:
   workflow_call:
   pull_request:
@@ -43,10 +51,10 @@ jobs:
 
     steps:
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: false
 
@@ -65,7 +73,7 @@ jobs:
           mkdir -p page && mv index.html page
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -256,19 +264,18 @@ jobs:
                   raise SystemExit(f"page/console/index.html loads {wheel}, which is not in page/console/")
           PY
 
-      - uses: geekyeggo/delete-artifact@v5
+      - uses: geekyeggo/delete-artifact@v6
         if: success() && github.event_name != 'pull_request'
         with:
           name: github-pages
-          failOnError: false
 
       - name: Upload artifact
         if: success() && github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: page
 
       - name: Deploy to GitHub Pages
         if: success() && github.event_name != 'pull_request'
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

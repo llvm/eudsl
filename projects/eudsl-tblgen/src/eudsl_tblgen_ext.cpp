@@ -3,6 +3,18 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Copyright (c) 2024.
 
+// nanobind pulls in Python.h, which must come before any system header.
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/bind_map.h>
+// ReSharper disable once CppUnusedIncludeDirective
+#include <nanobind/stl/shared_ptr.h>
+// ReSharper disable once CppUnusedIncludeDirective
+#include <nanobind/stl/string.h>
+// ReSharper disable once CppUnusedIncludeDirective
+#include <nanobind/stl/unique_ptr.h>
+// ReSharper disable once CppUnusedIncludeDirective
+#include <nanobind/stl/vector.h>
+
 #include "TGParser.h"
 #include "mlir/TableGen/Argument.h"
 #include "mlir/TableGen/AttrOrTypeDef.h"
@@ -32,17 +44,6 @@
 #include "llvm/Support/SourceMgr.h"
 // #include "llvm/TableGen/CodeGenHelpers.h"
 #include "llvm/TableGen/Record.h"
-
-#include <nanobind/nanobind.h>
-#include <nanobind/stl/bind_map.h>
-// ReSharper disable once CppUnusedIncludeDirective
-#include <nanobind/stl/shared_ptr.h>
-// ReSharper disable once CppUnusedIncludeDirective
-#include <nanobind/stl/string.h>
-// ReSharper disable once CppUnusedIncludeDirective
-#include <nanobind/stl/unique_ptr.h>
-// ReSharper disable once CppUnusedIncludeDirective
-#include <nanobind/stl/vector.h>
 
 #include "eudsl/util.h"
 // ReSharper disable once CppUnusedIncludeDirective

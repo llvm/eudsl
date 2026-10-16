@@ -78,6 +78,11 @@ set(DAWN_SRC_DIR "${_tint_dawn}/src")
 set(DAWN_ABSEIL_DIR "${_tint_abseil}")
 set(DAWN_SPIRV_TOOLS_DIR "${_tint_spirv_tools}")
 set(DAWN_SPIRV_HEADERS_DIR "${_tint_spirv_headers}")
+# dawn/CMakeLists.txt (~line 486) derives these for src/tint/CMakeLists.txt.
+# Left unset, tint's include paths collapse to "/include", "/source", etc.
+set(TINT_ROOT_SOURCE_DIR "${_tint_dawn}")
+set(TINT_SPIRV_HEADERS_DIR "${DAWN_SPIRV_HEADERS_DIR}")
+set(TINT_SPIRV_TOOLS_DIR "${DAWN_SPIRV_TOOLS_DIR}")
 set(DAWN_WERROR OFF)
 set(DAWN_BUILD_PROTOBUF OFF)
 set(DAWN_ENABLE_SPIRV_VALIDATION OFF)
@@ -110,6 +115,11 @@ set(_tint_include_dirs
   "${_tint_spirv_tools}"
   "${_tint_spirv_tools}/include"
 )
+
+# Dawn's code generator (which we skip) normally populates these; nothing does
+# here, but dawn_public_config/dawn_internal_config still point at them, so
+# create them to keep clang from warning "no such include directory".
+file(MAKE_DIRECTORY "${DAWN_BUILD_GEN_DIR}/include" "${DAWN_BUILD_GEN_DIR}/src")
 
 # dawn's cmake helpers (dawn_add_library et al). These are standalone modules;
 # including them does not pull in any dawn target.

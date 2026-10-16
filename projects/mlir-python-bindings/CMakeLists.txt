@@ -31,10 +31,6 @@ if(POLICY CMP0116)
   cmake_policy(SET CMP0116 NEW)
 endif()
 
-if(POLICY CMP0135)
-  cmake_policy(SET CMP0116 OLD)
-endif()
-
 if(MSVC OR WIN32)
   add_compile_options(
     $<$<CONFIG:>:/MT> # ---------|
