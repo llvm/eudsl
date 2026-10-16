@@ -44,6 +44,7 @@ CMAKE_VERBOSE_MAKEFILE = "ON"
 # warning on Windows.
 CMAKE_DISABLE_PRECOMPILE_HEADERS = "ON"
 LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
+nanobind_DIR = { env = "nanobind_DIR", default = "" }
 MLIR_DIR = { env = "MLIR_DIR", default = "EMPTY" }
 
 [tool.cibuildwheel]
