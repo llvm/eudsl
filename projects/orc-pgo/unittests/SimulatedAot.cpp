@@ -4,6 +4,7 @@
 
 #include "SimulatedAot.h"
 #include "orc-pgo/Pipeline.h"
+#include "orc-pgo/Snapshot.h"
 #include "orc-pgo/ValueProfRuntime.h"
 
 #include "llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
@@ -82,8 +83,25 @@ SimulatedAot simulateAot(StringRef IR, ArrayRef<std::string> ExtraSymbols,
   if (!Registered)
     report_fatal_error("the registration constructor did not run");
   S.Image = Registered;
+  resetValueNodePools();
   setValueNodePool(S.Image->VNodePool[0], S.Image->VNodePool[1]);
   return S;
+}
+
+std::string editedSnapshot(const OrcPgoImage &Image,
+                           function_ref<void(Module &)> Edit) {
+  LLVMContext Ctx;
+  std::unique_ptr<Module> M = cantFail(
+      parseSnapshot(StringRef(Image.Snapshot, Image.SnapshotSize), Ctx));
+  Edit(*M);
+  return writeSnapshot(*M);
+}
+
+OrcPgoImage withSnapshot(const OrcPgoImage &Image, const std::string &Bitcode) {
+  OrcPgoImage Edited = Image;
+  Edited.Snapshot = Bitcode.data();
+  Edited.SnapshotSize = Bitcode.size();
+  return Edited;
 }
 
 unsigned simulatedStartCalls() { return StartCalls; }
