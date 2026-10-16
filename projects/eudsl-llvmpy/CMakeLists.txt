@@ -36,7 +36,6 @@ endif()
 
 include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
-add_definitions(${LLVM_DEFINITIONS})
 
 # C++ source coverage (llvm-cov). When ON, the extension is built with
 # instrumentation; scripts/cpp_coverage.sh runs the test suite (which imports
@@ -94,7 +93,6 @@ find_package(nanobind CONFIG REQUIRED)
 
 set(nanobind_options
   -Wno-cast-qual
-  -Wno-deprecated-literal-operator
   -Wno-covered-switch-default
   -Wno-nested-anon-types
   -Wno-zero-length-array
@@ -104,6 +102,13 @@ set(nanobind_options
   $<$<PLATFORM_ID:Darwin>:-fexceptions -frtti>
   $<$<PLATFORM_ID:Windows>:/EHsc /GR>
 )
+# AppleClang 15 doesn't know -Wdeprecated-literal-operator.
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag(-Wdeprecated-literal-operator
+  CXX_SUPPORTS_WDEPRECATED_LITERAL_OPERATOR)
+if(CXX_SUPPORTS_WDEPRECATED_LITERAL_OPERATOR)
+  list(APPEND nanobind_options -Wno-deprecated-literal-operator)
+endif()
 
 set(EUDSLLLVM_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/src")
 include_directories(${EUDSLLLVM_SRC_DIR})
