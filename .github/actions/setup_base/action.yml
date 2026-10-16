@@ -174,7 +174,9 @@ runs:
         
         if [[ "${{ inputs.os }}" == "almalinux" ]]; then
           dnf install -y epel-release 
-          dnf install -y sudo ncurses-compat-libs tmate python3-pip git
+          # The distro clang, not setup-cpp's: that one is built for Ubuntu and floods
+          # the logs with "libtinfo.so: no version information available" here.
+          dnf install -y sudo tmate python3-pip git clang
         
           # install ccache
           if [[ "${{ inputs.host-arch }}" == "x86_64" ]]; then
@@ -211,7 +213,7 @@ runs:
       if: ${{ startsWith(inputs.os, 'almalinux') || startsWith(inputs.os, 'ubuntu') || startsWith(inputs.os, 'windows') }}
       with:
         # https://github.com/actions/runner-images/issues/12435
-        compiler: ${{ startsWith(inputs.os, 'windows') && 'llvm-19' || 'llvm-18' }}
+        compiler: ${{ startsWith(inputs.os, 'windows') && 'llvm-19' || startsWith(inputs.os, 'ubuntu') && 'llvm-18' || '' }}
         cmake: true
         ninja: true
         ccache: ${{ startsWith(inputs.os, 'windows') || startsWith(inputs.os, 'ubuntu') }}
@@ -230,8 +232,8 @@ runs:
       shell: bash
       run: |
         if [[ "${{ inputs.os }}" == "almalinux" ]]; then
-          echo "CC=/github/home/llvm/bin/clang" >> $GITHUB_ENV
-          echo "CXX=/github/home/llvm/bin/clang++" >> $GITHUB_ENV
+          echo "CC=/usr/bin/clang" >> $GITHUB_ENV
+          echo "CXX=/usr/bin/clang++" >> $GITHUB_ENV
         elif [[ "${{ inputs.os }}" == "ubuntu" ]]; then
           echo "CC=/usr/lib/llvm-18/bin/clang" >> $GITHUB_ENV
           echo "CXX=/usr/lib/llvm-18/bin/clang++" >> $GITHUB_ENV
