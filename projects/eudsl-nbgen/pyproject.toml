@@ -92,6 +92,7 @@ before-all = [
 ]
 # synchronize TZ with host so ccache files have correct timestamp
 container-engine = { name = "docker", create-args = ["-v", "/etc/timezone:/etc/timezone:ro", "-v", "/etc/localtime:/etc/localtime:ro"] }
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
 
 [tool.cibuildwheel.macos]
 before-build = [
