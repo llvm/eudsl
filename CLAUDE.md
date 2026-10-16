@@ -19,15 +19,13 @@ walk nested repos report every missing file -- once over 221k "deleted" files in
 
 `.gitmodules` cannot prevent this: it only configures this repo's direct
 submodules, and dawn's nested ones are declared in dawn's own `.gitmodules`.
-Instead, mark them all inactive in dawn's local config, which makes
-`git submodule update --init --recursive` skip them:
+Instead, use `scripts/init_submodules.sh` (CI uses it too) rather than
+`git submodule update --init` directly. It does the same shallow,
+non-recursive init, then deinitializes dawn's nested submodules and marks them
+all inactive in dawn's local config (`submodule.active ':(exclude)*'`), so a
+later `git submodule update --init --recursive` skips them. Pass paths to init
+only some submodules, e.g. `scripts/init_submodules.sh third_party/llvm-project`.
 
-```
-git -C third_party/dawn submodule deinit --all -f
-git -C third_party/dawn config submodule.active ':(exclude)*'
-```
-
-This lives in `.git/modules/third_party/dawn/config`, so redo it after a fresh
-clone. `deinit` fails to unregister names containing regex characters
-(`libc++/src`, `libc++abi/src`); remove those with
-`git -C third_party/dawn config --remove-section 'submodule.third_party/libc++/src'`.
+The inactive setting lives in `.git/modules/third_party/dawn/config`, so rerun
+the script after a fresh clone. It also works around `deinit` failing to
+unregister names containing regex characters (`libc++/src`, `libc++abi/src`).

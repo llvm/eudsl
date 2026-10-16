@@ -132,7 +132,7 @@ jobs:
       # abseil-cpp) are for mlir-python-bindings-wasm. After setup_base so the
       # manylinux containers have git's safe.directory set.
       - name: "Get submodules"
-        run: git submodule update --init --depth=1 third_party/llvm-project
+        run: scripts/init_submodules.sh third_party/llvm-project
 
       - name: "Build LLVM and MLIR"
         id: build
@@ -302,7 +302,7 @@ jobs:
 
       # See above: only llvm-project is needed.
       - name: "Get submodules"
-        run: git submodule update --init --depth=1 third_party/llvm-project
+        run: scripts/init_submodules.sh third_party/llvm-project
 
       - name: Build MLIR and LLVM
         run: |
