@@ -174,7 +174,7 @@ jobs:
           PLAT="${PLAT}_${{ matrix.host-arch }}"
           
           pushd projects/mlir-native-tools
-          $python3_command setup.py bdist_wheel --dist-dir ../../wheelhouse --plat $PLAT
+          $python3_command -m pip wheel . --no-deps --no-build-isolation -w ../../wheelhouse --config-settings=--build-option=--plat-name=$PLAT
           popd
           
           ###############################
@@ -195,7 +195,7 @@ jobs:
           cp -R $LLVM_INSTALL_DIR/* mlir_wheel
           # remove so no one is confused (the distro wheel is for arbitrary python version)
           rm -rf mlir_wheel/python_packages
-          $python3_command setup.py bdist_wheel --dist-dir ../../wheelhouse --plat $PLAT
+          $python3_command -m pip wheel . --no-deps --no-build-isolation -w ../../wheelhouse --config-settings=--build-option=--plat-name=$PLAT
           popd
 
       - name: Upload LLVM distro artifacts
