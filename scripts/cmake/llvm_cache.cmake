@@ -5,8 +5,6 @@
 # Copyright (c) 2024.
 #
 
-include(CMakePrintHelpers)
-
 set(LLVM_ENABLE_PROJECTS "llvm;mlir;clang" CACHE STRING "")
 
 if (NOT WIN32)
@@ -35,8 +33,6 @@ set(LLVM_ENABLE_DUMP ON CACHE BOOL "")
 set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
 if (WIN32)
   set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded CACHE STRING "")
-  list(APPEND CMAKE_C_FLAGS "/MT")
-  list(APPEND CMAKE_CXX_FLAGS "/MT")
 endif()
 
 # useful things
@@ -50,7 +46,6 @@ set(LLVM_FORCE_ENABLE_STATS ON CACHE BOOL "")
 # because AMD target td files are insane...
 set(LLVM_TARGETS_TO_BUILD "host;NVPTX;AMDGPU" CACHE STRING "")
 set(LLVM_EXPERIMENTAL_TARGETS_TO_BUILD "DirectX" CACHE STRING "")
-set(LLVM_OPTIMIZED_TABLEGEN ON CACHE BOOL "")
 set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 set(LLVM_VERSION_SUFFIX "" CACHE STRING "")
 set(CMAKE_PLATFORM_NO_VERSIONED_SONAME ON CACHE BOOL "")
@@ -68,7 +63,6 @@ set(LLVM_ENABLE_OCAMLDOC OFF CACHE BOOL "")
 set(LLVM_ENABLE_BINDINGS OFF CACHE BOOL "")
 set(LLVM_BUILD_BENCHMARKS OFF CACHE BOOL "")
 set(LLVM_BUILD_EXAMPLES OFF CACHE BOOL "")
-set(LLVM_ENABLE_LIBCXX OFF CACHE BOOL "")
 set(LLVM_ENABLE_LIBCXX OFF CACHE BOOL "")
 set(LLVM_ENABLE_LIBEDIT OFF CACHE BOOL "")
 set(LLVM_ENABLE_LIBXML2 OFF CACHE BOOL "")
@@ -144,7 +138,3 @@ endif()
 # Only cache entries survive a -C script, so the list must be complete before
 # it is cached (appending to the variable afterwards has no effect).
 set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS ${_mlir_dev_components} CACHE STRING "")
-
-get_cmake_property(_variableNames VARIABLES)
-list(SORT _variableNames)
-cmake_print_variables(${_variableNames})

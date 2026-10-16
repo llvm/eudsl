@@ -32,6 +32,10 @@ inputs:
     required: false
     description: ''
     default: '3.12'
+  ccache-maxsize:
+    required: false
+    description: ''
+    default: '700M'
 
 outputs:
   cache-dir:
@@ -241,10 +245,11 @@ runs:
         export CCACHE_DIR="${{ steps.canonicalize-cache-dir.outputs.cache-dir }}/ccache"
         mkdir -p $CCACHE_DIR
         echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
-        echo "CCACHE_COMPILERCHECK=string:$($CC --version | head -n 1)" >> $GITHUB_ENV
-        echo $CCACHE_COMPILERCHECK
-        echo "CCACHE_MAXSIZE=700M" >> $GITHUB_ENV
-        echo "CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros" >> $GITHUB_ENV
+        CCACHE_COMPILERCHECK="string:$($CC --version | head -n 1)"
+        echo "CCACHE_COMPILERCHECK=$CCACHE_COMPILERCHECK" >> $GITHUB_ENV
+        echo "CCACHE_COMPILERCHECK=$CCACHE_COMPILERCHECK"
+        echo "CCACHE_MAXSIZE=${{ inputs.ccache-maxsize }}" >> $GITHUB_ENV
+        echo "CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,pch_defines,time_macros" >> $GITHUB_ENV
         echo "CCACHE_CPP2=true" >> $GITHUB_ENV
         echo "CCACHE_NOHASHDIR=true" >> $GITHUB_ENV
         echo "CCACHE_UMASK=002" >> $GITHUB_ENV

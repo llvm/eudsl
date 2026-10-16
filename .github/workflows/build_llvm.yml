@@ -113,7 +113,7 @@ jobs:
       - name: "Check out repository"
         uses: actions/checkout@v4.2.2
         with:
-          submodules: true
+          submodules: false
 
       - name: "Setup base"
         uses: ./.github/actions/setup_base
@@ -126,6 +126,13 @@ jobs:
           target-arch: ${{ matrix.target-arch }}
           container: ${{ matrix.container }}
           runs-on: ${{ matrix.runs-on }}
+          ccache-maxsize: "2G"
+
+      # Only llvm-project is needed here; the other submodules (dawn, SPIRV-*,
+      # abseil-cpp) are for mlir-python-bindings-wasm. After setup_base so the
+      # manylinux containers have git's safe.directory set.
+      - name: "Get submodules"
+        run: git submodule update --init --depth=1 third_party/llvm-project
 
       - name: "Build LLVM and MLIR"
         id: build
@@ -273,7 +280,7 @@ jobs:
       - name: "Check out repository"
         uses: actions/checkout@v4.2.2
         with:
-          submodules: true
+          submodules: false
 
       - name: "Setup base"
         uses: ./.github/actions/setup_base
@@ -284,6 +291,12 @@ jobs:
           os: "ubuntu"
           host-arch: "x86_64"
           target-arch: "wasm32"
+          runs-on: "ubuntu-22.04"
+          ccache-maxsize: "2G"
+
+      # See above: only llvm-project is needed.
+      - name: "Get submodules"
+        run: git submodule update --init --depth=1 third_party/llvm-project
 
       - name: Build MLIR and LLVM
         run: |
@@ -310,7 +323,6 @@ jobs:
           export LLVM_SOURCE_DIR="$PWD/third_party/llvm-project"
           pushd $LLVM_SOURCE_DIR && LLVM_SHA_SHORT="$(git rev-parse --short HEAD)" && popd
           export WHEEL_VERSION="$(date +'%Y%m%d')+$LLVM_SHA_SHORT"
-          echo "WHEEL_VERSION=$WHEEL_VERSION" >> $GITHUB_OUTPUT
           
           ###############################
           # Build MLIR/LLVM distro
@@ -333,13 +345,6 @@ jobs:
           path: ${{ steps.setup_base.outputs.cache-dir }}
           key: ${{ env.cache-key }}
 
-      - name: Upload LLVM distro artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mlir_ubuntu_wasm32_artifact
-          path: llvm-install
-          if-no-files-found: warn
-
       - name: Upload mlir-wheel artifact
         uses: actions/upload-artifact@v4
         with:
@@ -351,7 +356,7 @@ jobs:
         if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
         uses: ncipollo/release-action@v1.12.0
         with:
-          artifacts: "*.tar.gz,wheelhouse/*.whl"
+          artifacts: "wheelhouse/*.whl"
           token: "${{ secrets.GITHUB_TOKEN }}"
           tag: "llvm"
           name: "llvm"
