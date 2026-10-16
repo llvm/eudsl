@@ -14,6 +14,10 @@ set(LLVM_HOST_TRIPLE "wasm32-unknown-emscripten" CACHE STRING "")
 set(LLVM_BUILD_STATIC ON CACHE BOOL "")
 set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 set(LLVM_ENABLE_EH ON CACHE BOOL "")
+# Same as the native distro (scripts/cmake/llvm_cache.cmake), so wasm and native
+# behave the same. Downstream builds include HandleLLVMOptions, which then adds
+# -UNDEBUG after pyodide's -DNDEBUG so they match these libraries.
+set(LLVM_ENABLE_ASSERTIONS ON CACHE BOOL "")
 
 set(MLIR_ENABLE_BINDINGS_PYTHON ON CACHE BOOL "")
 set(MLIR_ENABLE_EXECUTION_ENGINE ON CACHE BOOL "")
