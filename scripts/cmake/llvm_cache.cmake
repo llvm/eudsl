@@ -5,6 +5,8 @@
 # Copyright (c) 2024.
 #
 
+include(CMakePrintHelpers)
+
 set(LLVM_ENABLE_PROJECTS "llvm;mlir;clang" CACHE STRING "")
 
 if (NOT WIN32)
@@ -138,3 +140,7 @@ endif()
 # Only cache entries survive a -C script, so the list must be complete before
 # it is cached (appending to the variable afterwards has no effect).
 set(LLVM_MlirDevelopment_DISTRIBUTION_COMPONENTS ${_mlir_dev_components} CACHE STRING "")
+
+get_cmake_property(_variableNames VARIABLES)
+list(SORT _variableNames)
+cmake_print_variables(${_variableNames})
