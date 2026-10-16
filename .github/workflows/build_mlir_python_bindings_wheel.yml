@@ -297,7 +297,17 @@ jobs:
         run: |
 
           $python3_command -m pip install build
-          $python3_command -m build "$PWD/projects/mlir-python-mcp" --outdir wheelhouse
+          $python3_command -m build "$PWD/projects/mlir-python-mcp" --outdir mcp-wheelhouse
+
+      # Its own artifact, so release-mlir-python-mcp doesn't download all of the
+      # ubuntu_x86_64 bindings wheels just to pick this one out.
+      - name: Upload mlir-python-mcp artifact
+        if: matrix.name == 'ubuntu_x86_64'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mlir_python_mcp_artifact
+          path: mcp-wheelhouse/mlir_python_mcp*.whl
+          if-no-files-found: error
 
       - name: "Save cache"
         uses: actions/cache/save@v3
@@ -585,7 +595,7 @@ jobs:
 
       - uses: actions/download-artifact@v7
         with:
-          name: mlir_python_bindings_ubuntu_x86_64_artifact
+          name: mlir_python_mcp_artifact
           path: wheelhouse
 
       - name: Release current commit
