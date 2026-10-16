@@ -1146,42 +1146,47 @@ NB_MODULE(eudsl_tblgen_ext, m) {
         return "Record(" + self.getNameInitAsString() + ")";
       });
 
-  // Because of the unique_ptr key we have to do this...
-  using RecordMap =
-      std::map<std::string, std::unique_ptr<llvm::Record>, std::less<>>;
+  // RecordKeeper::getClasses/getDefs return name-sorted
+  // ArrayRef<const Record *>; wrap them in a name-keyed mapping view.
+  struct RecordMap {
+    std::vector<const llvm::Record *> records;
+    const llvm::Record *lookup(llvm::StringRef k) const {
+      auto it = llvm::lower_bound(records, k,
+                                  [](const llvm::Record *r, llvm::StringRef k) {
+                                    return r->getName() < k;
+                                  });
+      return it != records.end() && (*it)->getName() == k ? *it : nullptr;
+    }
+  };
   using GlobalMap = std::map<std::string, const llvm::Init *, std::less<>>;
   nb::bind_map<GlobalMap, nb::rv_policy::reference_internal>(m, "GlobalMap");
 
+  auto recordMapKeys = [](const RecordMap &m) {
+    nb::list keys;
+    for (const llvm::Record *r : m.records)
+      keys.append(nb::str(r->getName().data(), r->getName().size()));
+    return keys;
+  };
   nb::class_<RecordMap>(m, "RecordMap")
-      .def("__len__", [](const RecordMap &m) { return m.size(); })
-      .def("__bool__", [](const RecordMap &m) { return !m.empty(); })
+      .def("__len__", [](const RecordMap &m) { return m.records.size(); })
+      .def("__bool__", [](const RecordMap &m) { return !m.records.empty(); })
       .def("__contains__",
            [](const RecordMap &m, const std::string &k) {
-             return m.find(k) != m.end();
+             return m.lookup(k) != nullptr;
            })
       .def("__contains__", [](const RecordMap &, nb::handle) { return false; })
-      .def(
-          "__iter__",
-          [](RecordMap &m) {
-            return nb::make_key_iterator<nb::rv_policy::reference>(
-                nb::type<RecordMap>(), "KeyIterator", m.begin(), m.end());
-          },
-          nb::rv_policy::reference_internal)
-      .def(
-          "keys",
-          [](RecordMap &m) {
-            return nb::make_key_iterator<nb::rv_policy::reference>(
-                nb::type<RecordMap>(), "KeyIterator", m.begin(), m.end());
-          },
-          nb::rv_policy::reference_internal)
+      .def("__iter__",
+           [recordMapKeys](const RecordMap &m) {
+             return nb::iter(recordMapKeys(m));
+           })
+      .def("keys", recordMapKeys)
       .def(
           "__getitem__",
-          [](RecordMap &m, const std::string &k) {
-            if (!m.count(k))
-              throw nb::key_error();
-            // hack because by default (i.e, when using bind_map)
-            // the unique_ptr is moved out of the map
-            return m[k].get();
+          [](const RecordMap &m, const std::string &k) {
+            const llvm::Record *r = m.lookup(k);
+            if (!r)
+              throw nb::key_error(k.c_str());
+            return r;
           },
           nb::rv_policy::reference_internal);
 
@@ -1225,10 +1230,18 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           "macro_names"_a = nb::list(),
           "no_warn_on_unused_template_args"_a = true)
       .def("get_input_filename", &llvm::RecordKeeper::getInputFilename)
-      .def("get_classes", &llvm::RecordKeeper::getClasses,
-           nb::rv_policy::reference_internal)
-      .def("get_defs", &llvm::RecordKeeper::getDefs,
-           nb::rv_policy::reference_internal)
+      .def(
+          "get_classes",
+          [](const llvm::RecordKeeper &self) {
+            return RecordMap{self.getClasses().vec()};
+          },
+          nb::keep_alive<0, 1>())
+      .def(
+          "get_defs",
+          [](const llvm::RecordKeeper &self) {
+            return RecordMap{self.getDefs().vec()};
+          },
+          nb::keep_alive<0, 1>())
       .def("get_globals", &llvm::RecordKeeper::getGlobals,
            nb::rv_policy::reference_internal)
       .def("get_class", &llvm::RecordKeeper::getClass, "name"_a,
