@@ -149,11 +149,16 @@ function(eudsl_nbgen target input_file)
   endif()
 
   add_library(${target} STATIC "${_full_gen_file}.sharded.cpp" ${_shards})
-  execute_process(
-    COMMAND "${Python_EXECUTABLE}" -m nanobind --include_dir
-    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_include_dir
-    RESULT_VARIABLE _has_err_find_nanobind
-  )
+  # Use the same nanobind as find_package(nanobind) when there is one.
+  if(nanobind_DIR)
+    set(nanobind_include_dir "${nanobind_DIR}/../include")
+  else()
+    execute_process(
+      COMMAND "${Python_EXECUTABLE}" -m nanobind --include_dir
+      OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_include_dir
+      RESULT_VARIABLE _has_err_find_nanobind
+    )
+  endif()
   if ((_has_err_find_nanobind AND NOT _has_err_find_nanobind EQUAL 0) OR NOT EXISTS "${nanobind_include_dir}")
     message(FATAL_ERROR "couldn't find nanobind include dir: ${_has_err_find_nanobind}")
   endif()

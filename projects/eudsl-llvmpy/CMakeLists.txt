@@ -86,9 +86,13 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/src/IR/TargetInit.h.in"
                "${EUDSLLLVM_BINARY_DIR}/IR/TargetInit.h" @ONLY)
 include_directories("${EUDSLLLVM_BINARY_DIR}")
 
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_DIR)
+# CI passes a nanobind installed at a fixed path: the one in pip's build-isolation
+# env lives under a random temp dir, which defeats ccache.
+if(NOT nanobind_DIR)
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_DIR)
+endif()
 find_package(nanobind CONFIG REQUIRED)
 
 set(nanobind_options

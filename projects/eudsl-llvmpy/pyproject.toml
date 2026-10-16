@@ -53,6 +53,7 @@ CMAKE_VERBOSE_MAKEFILE = "ON"
 # warning on Windows.
 CMAKE_DISABLE_PRECOMPILE_HEADERS = "ON"
 LLVM_DIR = { env = "LLVM_DIR", default = "EMPTY" }
+nanobind_DIR = { env = "nanobind_DIR", default = "" }
 
 [tool.pytest.ini_options]
 addopts = "--cov=llvm --cov-report=term-missing --cov-fail-under=99"

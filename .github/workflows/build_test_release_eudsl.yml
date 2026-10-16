@@ -133,6 +133,14 @@ jobs:
           echo "MLIR_DIR=$PWD/llvm-install/lib/cmake/mlir" >> $GITHUB_ENV
           echo "Clang_DIR=$PWD/llvm-install/lib/cmake/clang" >> $GITHUB_ENV
           echo "PIP_FIND_LINKS=$PWD/wheelhouse" >> $GITHUB_ENV
+          
+          # Build against a nanobind at a fixed path. The one pip installs into each
+          # build-isolation env lives under a random temp dir, so every TU that
+          # includes nanobind would get new paths and miss ccache on every run.
+          nanobind_req="$(grep -o 'nanobind==[0-9.]*' projects/eudsl-tblgen/pyproject.toml)"
+          $python3_command -m pip install --no-deps --target "$PWD/nanobind-install" "$nanobind_req"
+          echo "nanobind_DIR=$PWD/nanobind-install/nanobind/cmake" >> $GITHUB_ENV
+          
           if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
             # The host filesystem is mounted at /host inside the cibuildwheel
             # container. Only the container should see /host paths: host-side
@@ -144,6 +152,7 @@ jobs:
               "MLIR_DIR=/host$PWD/llvm-install/lib/cmake/mlir"
               "Clang_DIR=/host$PWD/llvm-install/lib/cmake/clang"
               "PIP_FIND_LINKS=/host$PWD/wheelhouse"
+              "nanobind_DIR=/host$PWD/nanobind-install/nanobind/cmake"
             )
             echo "CIBW_ENVIRONMENT_LINUX=${cibw_env[*]}" >> $GITHUB_ENV
           fi
