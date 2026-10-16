@@ -92,11 +92,6 @@ before-all = [
 ]
 # synchronize TZ with host so ccache files have correct timestamp
 container-engine = { name = "docker", create-args = ["-v", "/etc/timezone:/etc/timezone:ro", "-v", "/etc/localtime:/etc/localtime:ro"] }
-# Override the top-level [] so the wheel gets a manylinux tag instead of linux_*.
-# Nothing gets grafted: eudsl_nbgen and libLLVM.so only need policy libs (libc,
-# libm, libstdc++, libgcc_s), and the executable finds libLLVM.so through its
-# $ORIGIN/../lib RUNPATH, so auditwheel only retags and leaves both ELF files
-# byte-for-byte unchanged.
 repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
 
 [tool.cibuildwheel.macos]
