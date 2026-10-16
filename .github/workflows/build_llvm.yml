@@ -232,6 +232,12 @@ jobs:
           name: llvm_ccache_log_${{ matrix.name }}
           path: ${{ startsWith(matrix.os, 'windows') && 'D:\a\ccache.log' || '/tmp/ccache.log' }}
 
+      - name: Make room in the llvm release
+        if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+        run: |
+          $python3_command -m pip install PyGithub
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} $python3_command scripts/clean_gh_releases.py llvm
+
       - name: Release current commit
         if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
         uses: ncipollo/release-action@v1.21.0
@@ -351,6 +357,12 @@ jobs:
           name: mlir_wheel_ubuntu_wasm32_artifact
           path: wheelhouse/mlir_wheel*
           if-no-files-found: warn
+
+      - name: Make room in the llvm release
+        if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
+        run: |
+          $python3_command -m pip install PyGithub
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} $python3_command scripts/clean_gh_releases.py llvm
 
       - name: Release current commit
         if: (github.event_name == 'push' && github.ref_name == 'main') || github.event_name == 'workflow_dispatch'
