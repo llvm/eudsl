@@ -120,9 +120,9 @@ jobs:
 
           # dawn, SPIRV-* and abseil-cpp are only for the wasm build's Tint.
           if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
-            git submodule update --init --depth=1
+            scripts/init_submodules.sh
           else
-            git submodule update --init --depth=1 third_party/llvm-project
+            scripts/init_submodules.sh third_party/llvm-project
           fi
 
       - name: "Setup base"
@@ -401,7 +401,7 @@ jobs:
           submodules: false
 
       - name: "Get submodules"
-        run: git submodule update --init --depth=1
+        run: scripts/init_submodules.sh
 
       - name: "Install Python"
         uses: actions/setup-python@v6.0.0

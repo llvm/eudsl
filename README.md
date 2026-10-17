@@ -62,6 +62,15 @@ If you don't want to install locally, here is a [colab notebook minimal working 
 
 **Strong recommendation**: check the CI scripts @ [.github/workflows](.github/workflows) - they do a fresh checkout and build on every commit and are written to be read by a non-CI expert.
 
+Initialize the submodules with
+
+```shell
+$ cd <EUDSL_CHECKOUT_DIR>
+$ ./scripts/init_submodules.sh
+```
+
+rather than `git submodule update --init --recursive`. It does the same shallow, non-recursive init as CI and keeps `third_party/dawn`'s nested submodules, which aren't needed, from being checked out. Pass paths to initialize only some submodules, e.g. `./scripts/init_submodules.sh third_party/llvm-project`.
+
 Firstly, you need a distribution of LLVM. You can build LLVM from source using our submodule by doing (on Mac/Linux or mingw):
 
 ```shell
