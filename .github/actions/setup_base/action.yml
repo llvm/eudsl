@@ -319,7 +319,7 @@ runs:
         #
         # Keep PYODIDE_VERSION in sync with:
         #   pages/console/index.html          (the pyodide CDN url)
-        #   pages/jupyter/requirements.txt    (jupyterlite-pyodide-kernel)
+        #   pages/jupyter/jupyter-lite.json   (the pyodide CDN url)
         #   scripts/llvm_wasm/Dockerfile
         #   projects/mlir-python-bindings-wasm/build.sh
         PYODIDE_VERSION=0.29.4

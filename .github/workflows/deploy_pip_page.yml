@@ -28,8 +28,9 @@ concurrency:
 
 # The Pyodide that runs the deployed pages. Must match the cross-build environment
 # the wheel was built against, or the wheel's ABI tag will not load. Keep in sync
-# with PYODIDE_VERSION in .github/actions/setup_base/action.yml and the CDN url in
-# pages/console/index.html; the "Verify page contents" step checks the latter.
+# with PYODIDE_VERSION in .github/actions/setup_base/action.yml and the CDN urls in
+# pages/console/index.html and pages/jupyter/jupyter-lite.json; the "Verify page
+# contents" step checks them.
 #
 # PYODIDE_PY_TAG / PYODIDE_PLATFORM_TAG are what that Pyodide's cross-build env
 # reports as python_version and pyemscripten_platform_version. This job does not
@@ -158,17 +159,18 @@ jobs:
 
           # jupyterlite-pyodide-kernel pins its own Pyodide (0.29.3 in 0.7.2),
           # which is not necessarily the one the wheel was built against.
-          # JUPYTERLITE_PYODIDE_URL makes the build vendor a specific
-          # distribution instead, so the notebook and the console run the same
-          # Pyodide as the wheel's ABI. Keep in sync with PYODIDE_VERSION in
-          # .github/actions/setup_base/action.yml.
-          export JUPYTERLITE_PYODIDE_URL="https://github.com/pyodide/pyodide/releases/download/${PYODIDE_VERSION}/pyodide-${PYODIDE_VERSION}.tar.bz2"
-
+          # pages/jupyter/jupyter-lite.json points the kernel at the same CDN
+          # Pyodide as the console instead (checked against PYODIDE_VERSION
+          # below). Loading it from the CDN rather than vendoring the full
+          # distribution keeps ~400 MB out of the Pages artifact.
+          # Absolute paths: with --lite-dir, piplite resolves relative wheel paths
+          # against the lite dir, not the working directory.
           jupyter lite build \
-            --contents pages/jupyter/contents \
-            --output-dir page/jupyter \
-            --piplite-wheels $MLIR_PYTHON_WHEEL_NAME \
-            --piplite-wheels $EUDSL_PYTHON_EXTRAS_WHEEL_NAME
+            --lite-dir "$PWD/pages/jupyter" \
+            --contents "$PWD/pages/jupyter/contents" \
+            --output-dir "$PWD/page/jupyter" \
+            --piplite-wheels "$PWD/$MLIR_PYTHON_WHEEL_NAME" \
+            --piplite-wheels "$PWD/$EUDSL_PYTHON_EXTRAS_WHEEL_NAME"
 
       # A half-built `page/` must never reach the upload step: Pages serves whatever
       # the last deployment contained, so publishing a partial tree silently deletes
@@ -190,30 +192,26 @@ jobs:
           # its pipeline.
           console_pyodide=$(grep -oE 'cdn\.jsdelivr\.net/pyodide/v[0-9.]+' pages/console/index.html \
                             | head -1 | grep -oE '[0-9.]+$' || true)
+          jupyter_pyodide=$(grep -oE 'cdn\.jsdelivr\.net/pyodide/v[0-9.]+' page/jupyter/jupyter-lite.json \
+                            | head -1 | grep -oE '[0-9.]+$' || true)
           setup_pyodide=$(grep -oE '^ *PYODIDE_VERSION=[0-9.]+' .github/actions/setup_base/action.yml \
                           | head -1 | grep -oE '[0-9.]+$' || true)
-          for name in console_pyodide setup_pyodide PYODIDE_VERSION; do
+          for name in console_pyodide jupyter_pyodide setup_pyodide PYODIDE_VERSION; do
             if [ -z "${!name:-}" ]; then
               echo "::error::could not determine $name -- the version check cannot run." \
-                   "Did pages/console/index.html or setup_base/action.yml change format?"
+                   "Did pages/console/index.html, pages/jupyter/jupyter-lite.json or" \
+                   "setup_base/action.yml change format?"
               exit 1
             fi
           done
-          for got in "$console_pyodide" "$PYODIDE_VERSION"; do
+          for got in "$console_pyodide" "$jupyter_pyodide" "$PYODIDE_VERSION"; do
             if [ "$got" != "$setup_pyodide" ]; then
               echo "::error::Pyodide version mismatch: console=$console_pyodide," \
-                   "deploy workflow=$PYODIDE_VERSION, wheel built against $setup_pyodide." \
-                   "The wheel will not load."
+                   "jupyter=$jupyter_pyodide, deploy workflow=$PYODIDE_VERSION," \
+                   "wheel built against $setup_pyodide. The wheel will not load."
               exit 1
             fi
           done
-
-          # With JUPYTERLITE_PYODIDE_URL set, jupyterlite vendors that Pyodide
-          # into static/pyodide (PyodideAddon.output_pyodide) instead of falling
-          # back to the CDN default that jupyterlite-pyodide-kernel pins. If this
-          # is missing the notebook is running a different Pyodide than the
-          # wheel was built for.
-          test -f page/jupyter/static/pyodide/pyodide.js
 
           test -f page/index.html
           test -f page/console/index.html
