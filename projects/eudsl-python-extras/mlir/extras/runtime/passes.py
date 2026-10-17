@@ -3346,12 +3346,12 @@ class Pipeline(Pipeline):
         return self
 
     def llvm_target_to_target_features(self, initialize_llvm_targets: bool = None):
-        """Update attached #llvm.target's features per the described target
+        """Derive and store the target's DLTI features
 
         Obtain the TargetMachine specified by the attached #llvm.target's attributes
-        and obtain from it the full list of features of the selected target. Updates
-        the attached #llvm.target so that its features reflect the full list of
-        features.
+        and obtain from it the full list of features of the selected target. Stores
+        the resulting features under the `features` key of the operation's DLTI
+        map.
 
         Args:
             initialize_llvm_targets: Whether to pre-load all available target machines, that LLVM is configured to support, into the TargetRegistry.
