@@ -136,8 +136,17 @@ def test_add_machine_function_rejected_during_codegen(operation):
 
     class Recorder(mir.BasicRegAlloc):
         def post_optimization(self):
-            with pytest.raises(RuntimeError, match="un-emitted"):
+            with pytest.raises(RuntimeError, match="codegen is already running"):
                 modules[0].add_machine_function("late")
+            for query in (
+                lambda: modules[0].emit_object(),
+                lambda: modules[0].regalloc_assignments(),
+                lambda: modules[0].to_mir(),
+                lambda: modules[0].machine_functions,
+                lambda: modules[0].machine_function("add"),
+            ):
+                with pytest.raises(RuntimeError, match="codegen is already running"):
+                    query()
             rejected.append(self.machine_function.name)
 
     mir.register_regalloc("ra-add-during-codegen", Recorder)
@@ -191,19 +200,6 @@ def test_multi_function_allocator_preserves_first_error(failure):
     assert_no_leaks()
 
 
-def test_regalloc_assignments_rejects_multiple_functions_without_consuming_module():
-    with ir.Context() as ctx:
-        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
-        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "add")
-        mmi.add_machine_function("sub")
-        _build_selected_add(mmi)
-        _build_selected_add(mmi, name="sub", opcode="SUBWrr")
-        with pytest.raises(ValueError, match="exactly one MachineFunction"):
-            mmi.regalloc_assignments("greedy")
-        assert mmi.emit_object()[:4] == b"\x7fELF"
-    assert_no_leaks()
-
-
 def test_add_machine_function_rejected_after_regalloc_assignments():
     with ir.Context() as ctx:
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -213,6 +209,133 @@ def test_add_machine_function_rejected_after_regalloc_assignments():
         mmi.regalloc_assignments("greedy")
         with pytest.raises(RuntimeError, match="un-emitted"):
             mmi.add_machine_function("late")
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize("operation", ["emit_object", "regalloc_assignments"])
+@pytest.mark.parametrize("callback_error", [False, True])
+def test_codegen_invalidates_saved_machine_handles(operation, callback_error):
+    saved = []
+    callback_handles = []
+
+    class Recorder(mir.BasicRegAlloc):
+        def post_optimization(self):
+            for previous, _ in saved[:2]:
+                with pytest.warns(RuntimeWarning, match="uninitialized instance"):
+                    with pytest.raises(TypeError):
+                        previous.name
+            mf = self.machine_function
+            callback_handles.append(mf)
+            saved.extend(
+                [
+                    (mf, "name"),
+                    (mf.blocks[0], "number"),
+                    (mir.MachineIRBuilder(mf), "machine_function"),
+                ]
+            )
+            if callback_error:
+                raise ValueError("handle lifetime regression")
+
+    mir.register_regalloc("ra-handle-lifetime", Recorder)
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "add")
+        added = mmi.add_machine_function("sub")
+        first = _build_selected_add(mmi)
+        _build_selected_add(mmi, name="sub", opcode="SUBWrr")
+        block = first.blocks[0]
+        instruction = block.instructions[0]
+        operand = instruction.operand(0)
+        mri = first.reg_info
+        reg_class = first.reg_class("GPR32")
+        builder = mir.MachineIRBuilder(first)
+        ir_function = first.function
+        numbered = first.block_numbered(block.number)
+        assert numbered is block
+        assert added is mmi.machine_function("sub")
+        assert first is mmi.machine_functions[0]
+        saved.extend(
+            [
+                (first, "name"),
+                (added, "name"),
+                (block, "number"),
+                (instruction, "opcode"),
+                (operand, "is_reg"),
+                (builder, "insert_block"),
+            ]
+        )
+        with builder:
+            if callback_error:
+                with pytest.raises(ValueError, match="handle lifetime regression"):
+                    getattr(mmi, operation)(regalloc="ra-handle-lifetime")
+            else:
+                result = getattr(mmi, operation)(regalloc="ra-handle-lifetime")
+                if operation == "regalloc_assignments":
+                    assert list(result) == ["add", "sub"]
+        assert mmi.machine_functions == []
+        with pytest.raises(KeyError, match="has no MachineFunction"):
+            mmi.machine_function("add")
+        assert ir_function.name == "add"
+        for value, attribute in saved:
+            with pytest.warns(RuntimeWarning, match="uninitialized instance"):
+                with pytest.raises(TypeError):
+                    getattr(value, attribute)
+        with pytest.warns(RuntimeWarning, match="uninitialized instance"):
+            with pytest.raises(TypeError):
+                mri.create_virtual_register(reg_class)
+        with pytest.raises(RuntimeError, match="no current MachineIRBuilder"):
+            mir.current_machine_builder()
+    saved.clear()
+    callback_handles.clear()
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize("operation", ["emit_object", "regalloc_assignments"])
+def test_codegen_validation_failure_preserves_machine_handles(operation):
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "add")
+        mf = _build_selected_add(mmi)
+        block = mf.blocks[0]
+        with pytest.raises(RuntimeError, match="unknown regalloc"):
+            getattr(mmi, operation)(regalloc="ra-no-such-allocator")
+        assert mf.name == "add"
+        assert block.parent is mf
+        assert mf.verify()
+        getattr(mmi, operation)(
+            regalloc="greedy" if operation != "emit_object" else None
+        )
+    assert_no_leaks()
+
+
+def test_codegen_does_not_reuse_invalidated_wrappers_for_new_objects():
+    saved = []
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        for i in range(32):
+            mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "add")
+            mf = _build_selected_add(mmi)
+            block = mf.blocks[0]
+            instruction = block.instructions[0]
+            operand = instruction.operand(0)
+            builder = mir.MachineIRBuilder(mf)
+            assert mmi.machine_function("add") is mf
+            assert mmi.machine_functions[0] is mf
+            assert mf.blocks[0] is block
+            assert block.instructions[0] is instruction
+            assert instruction.operand(0) is operand
+            assert mf.reg_info is mf.reg_info
+            assert builder.machine_function is mf
+            saved.extend([(mf, "name"), (block, "number"), (instruction, "opcode")])
+            if i % 2:
+                assert mmi.emit_object()[:4] == b"\x7fELF"
+            else:
+                assert list(mmi.regalloc_assignments()) == ["add"]
+        for value, attribute in saved:
+            with pytest.warns(RuntimeWarning, match="uninitialized instance"):
+                with pytest.raises(TypeError):
+                    getattr(value, attribute)
+    saved.clear()
     assert_no_leaks()
 
 

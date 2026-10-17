@@ -95,21 +95,21 @@ def _build_high_pressure(mmi, name="hp", count=_HP_N):
 
 
 @pytest.mark.parametrize("python_allocator", [False, True])
-def test_regalloc_assignments_by_function_matches_single_function_results(
+def test_regalloc_assignments_multiple_functions_match_single_runs(
     python_allocator,
 ):
     allocator = "greedy"
     if python_allocator:
         allocator = "ra-batch-capture"
         mir.register_regalloc(allocator, mir.BasicRegAlloc)
-    functions = (("hp", 48), ("hp.2", 52))
+    functions = (("zeta", 48), ("alpha", 52))
     expected = {}
     for name, count in functions:
         with ir.Context() as ctx:
             tm = jit.TargetMachine(triple=_AARCH64_LINUX)
             mmi = mir.create_machine_function(ir.Module("single", ctx), tm, name)
             _build_high_pressure(mmi, name=name, count=count)
-            expected[name] = mmi.regalloc_assignments(allocator)
+            expected[name] = mmi.regalloc_assignments(allocator)[name]
     with ir.Context() as ctx:
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mod = ir.parse_assembly("declare void @external()", ctx, "batch")
@@ -117,24 +117,41 @@ def test_regalloc_assignments_by_function_matches_single_function_results(
         mmi.add_machine_function(functions[1][0])
         for name, count in functions:
             _build_high_pressure(mmi, name=name, count=count)
-        results = mmi.regalloc_assignments_by_function(allocator)
+        results = mmi.regalloc_assignments(allocator)
         with pytest.raises(RuntimeError, match="already emitted"):
-            mmi.regalloc_assignments_by_function(allocator)
+            mmi.regalloc_assignments(allocator)
         with pytest.raises(RuntimeError, match="un-emitted"):
             mmi.add_machine_function("late")
-    assert set(results) == set(expected)
+    assert list(results) == list(expected)
     for name in results:
         actual, single = results[name], expected[name]
         assert actual.assignments == single.assignments
         assert actual.spilled == single.spilled
         assert actual.copies_remaining == single.copies_remaining
         assert actual.spilled
-    assert set(results["hp"].assignments) & set(results["hp.2"].assignments)
-    assert results["hp"] is not results["hp.2"]
+    assert set(results["zeta"].assignments) & set(results["alpha"].assignments)
+    assert results["zeta"] is not results["alpha"]
     assert_no_leaks()
 
 
-def test_regalloc_assignments_by_function_keeps_empty_snapshots():
+@pytest.mark.parametrize(
+    "names",
+    [("zeta", "alpha"), ("\u03b6", "\u03b1")],
+)
+def test_regalloc_assignments_preserves_function_names_and_order(names):
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, names[0])
+        mmi.add_machine_function(names[1])
+        for name in names:
+            _build_high_pressure(mmi, name=name, count=3)
+        result = mmi.regalloc_assignments()
+        assert list(result) == list(names)
+        assert all(snapshot.assignments for snapshot in result.values())
+    assert_no_leaks()
+
+
+def test_regalloc_assignments_keeps_empty_snapshots():
     with ir.Context() as ctx:
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "empty")
@@ -143,7 +160,7 @@ def test_regalloc_assignments_by_function_keeps_empty_snapshots():
         builder.build_instr(mf.opcode("RET_ReallyLR"))
         for prop in ("IsSSA", "TracksLiveness", "NoPHIs"):
             mf.set_property(getattr(mir.MachineFunctionProperty, prop))
-        results = mmi.regalloc_assignments_by_function()
+        results = mmi.regalloc_assignments()
     assert set(results) == {"empty"}
     assert results["empty"].assignments == {}
     assert results["empty"].spilled == []
@@ -151,7 +168,7 @@ def test_regalloc_assignments_by_function_keeps_empty_snapshots():
     assert_no_leaks()
 
 
-def test_regalloc_assignments_by_function_outlives_module():
+def test_regalloc_assignments_multiple_functions_outlive_module():
     def capture():
         with ir.Context() as ctx:
             tm = jit.TargetMachine(triple=_AARCH64_LINUX)
@@ -159,7 +176,7 @@ def test_regalloc_assignments_by_function_outlives_module():
             mmi.add_machine_function("add")
             _build_high_pressure(mmi)
             _build_add(mmi)
-            return mmi.regalloc_assignments_by_function()
+            return mmi.regalloc_assignments()
 
     results = capture()
     assert ir.Context._get_live_module_count() == 0
@@ -170,17 +187,14 @@ def test_regalloc_assignments_by_function_outlives_module():
     assert_no_leaks()
 
 
-@pytest.mark.parametrize(
-    "method", ["regalloc_assignments", "regalloc_assignments_by_function"]
-)
-def test_regalloc_capture_cannot_reenter_active_pipeline(method):
+def test_regalloc_capture_cannot_reenter_active_pipeline():
     modules, calls = [], []
 
     class Checking(mir.BasicRegAlloc):
         def __init__(self):
             super().__init__()
-            with pytest.raises(RuntimeError, match="requires a module built"):
-                getattr(modules[0], method)("greedy")
+            with pytest.raises(RuntimeError, match="codegen is already running"):
+                modules[0].regalloc_assignments("greedy")
             calls.append("rejected")
 
     mir.register_regalloc("ra-capture-reentry", Checking)
@@ -190,7 +204,7 @@ def test_regalloc_capture_cannot_reenter_active_pipeline(method):
         _build_add(mmi)
         modules.append(mmi)
         try:
-            results = mmi.regalloc_assignments_by_function("ra-capture-reentry")
+            results = mmi.regalloc_assignments("ra-capture-reentry")
         finally:
             modules.clear()
     assert set(results) == {"add"}
@@ -198,7 +212,7 @@ def test_regalloc_capture_cannot_reenter_active_pipeline(method):
     assert_no_leaks()
 
 
-def test_regalloc_assignments_by_function_preserves_first_error():
+def test_regalloc_assignments_preserves_first_error():
     calls = []
 
     class Raising(mir.BasicRegAlloc):
@@ -215,9 +229,9 @@ def test_regalloc_assignments_by_function_preserves_first_error():
         for name in ("hp", "hp.2"):
             _build_high_pressure(mmi, name=name)
         with pytest.raises(ValueError, match="first batch allocator error"):
-            mmi.regalloc_assignments_by_function("ra-capture-batch-error")
+            mmi.regalloc_assignments("ra-capture-batch-error")
         with pytest.raises(RuntimeError, match="already emitted"):
-            mmi.regalloc_assignments_by_function()
+            mmi.regalloc_assignments()
     assert calls == ["init"]
     assert_no_leaks()
 
@@ -229,7 +243,7 @@ def test_regalloc_assignments_native_greedy():
         mmi = mir.create_machine_function(mod, tm, "add")
         mf = _build_add(mmi)
         w0, w1 = mf.physreg("W0").id, mf.physreg("W1").id
-        result = mmi.regalloc_assignments(regalloc="greedy")
+        result = mmi.regalloc_assignments(regalloc="greedy")["add"]
         assignments = dict(result.assignments)
         spilled = list(result.spilled)
     # Every virtual register present at RA is accounted for: assigned or spilled.
@@ -259,7 +273,7 @@ def test_regalloc_assignments_greedy_matches_basic():
             tm = jit.TargetMachine(triple=_AARCH64_LINUX)
             mmi = mir.create_machine_function(mod, tm, "add")
             _build_add(mmi)
-            return dict(mmi.regalloc_assignments(regalloc=alloc).assignments)
+            return dict(mmi.regalloc_assignments(regalloc=alloc)["add"].assignments)
 
     mir.register_regalloc("ra-basic-oracle", mir.BasicRegAlloc)
     assert assignments("greedy") == assignments("ra-basic-oracle")
@@ -273,7 +287,7 @@ def test_regalloc_assignments_python_allocator():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_add(mmi)
-        result = mmi.regalloc_assignments(regalloc="ra-basic-cap")
+        result = mmi.regalloc_assignments(regalloc="ra-basic-cap")["add"]
     assert result.assignments and result.spilled == []
     assert_no_leaks()
 
@@ -295,7 +309,7 @@ def test_regalloc_assignments_spills_under_pressure():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "hp")
         _build_high_pressure(mmi)
-        result = mmi.regalloc_assignments(regalloc="greedy")
+        result = mmi.regalloc_assignments(regalloc="greedy")["hp"]
     # 48 simultaneously-live vregs exceed the GPR32 file, so some spill: the
     # spilled set is non-empty and disjoint from the assigned set.
     assert result.spilled
@@ -325,7 +339,7 @@ def test_regalloc_assignments_result_outlives_module():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_add(mmi)
-        result = mmi.regalloc_assignments(regalloc="greedy")
+        result = mmi.regalloc_assignments(regalloc="greedy")["add"]
     assert dict(result.assignments)  # readable after teardown
     assert result.spilled == []
     assert_no_leaks()
@@ -386,7 +400,7 @@ def test_regalloc_assignments_copies_remaining_all_coalesced():
             for ins in blk.instructions
             if ins.opcode_name == "COPY"
         )
-        result = mmi.regalloc_assignments(regalloc="greedy")
+        result = mmi.regalloc_assignments(regalloc="greedy")["add"]
         copies = result.copies_remaining
     assert copies_before >= 1  # the function really does contain copies...
     assert copies == 0  # ...and after allocation all were coalesced away
@@ -422,7 +436,7 @@ def test_regalloc_assignments_copies_remaining_counts_surviving_move():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "mv")
         _build_cross_reg_move(mmi)
-        result = mmi.regalloc_assignments(regalloc="greedy")
+        result = mmi.regalloc_assignments(regalloc="greedy")["mv"]
         copies = result.copies_remaining
     # The W1 -> W0 move cannot be coalesced away: one COPY survives.
     assert copies >= 1

@@ -579,7 +579,7 @@ def test_decision_level_matches_native_on_small_input():
             tm = jit.TargetMachine(triple=_AARCH64_LINUX)
             mmi = mir.create_machine_function(mod, tm, "add")
             _build_add(mmi)
-            return mmi.regalloc_assignments(regalloc=regalloc)
+            return mmi.regalloc_assignments(regalloc=regalloc)["add"]
 
     native = assignments("greedy")
     ours = assignments("ra-greedy-dec")
@@ -1657,7 +1657,7 @@ def test_region_split_fires_naturally():
             tm = jit.TargetMachine(triple=_AARCH64_LINUX)
             mmi = mir.create_machine_function(mod, tm, "dia")
             _build_diamond_pressure(mmi)
-            return mmi.regalloc_assignments(regalloc=regalloc)
+            return mmi.regalloc_assignments(regalloc=regalloc)["dia"]
 
     ours = assignments("ra-greedy-regionnat")
     native = assignments("greedy")
@@ -1695,7 +1695,7 @@ def test_region_split_decision_level_matches_native():
             tm = jit.TargetMachine(triple=_AARCH64_LINUX)
             mmi = mir.create_machine_function(mod, tm, "thrup")
             _build_thru_pressure(mmi)
-            return mmi.regalloc_assignments(regalloc=regalloc)
+            return mmi.regalloc_assignments(regalloc=regalloc)["thrup"]
 
     native = assignments("greedy")
     ours = assignments("ra-greedy-regiondec")
@@ -2019,7 +2019,7 @@ def test_region_split_use_block_interference_matches_native():
             tm = jit.TargetMachine(triple=_AARCH64_LINUX)
             mmi = mir.create_machine_function(mod, tm, "up")
             _build_use_pressure(mmi)
-            return mmi.regalloc_assignments(regalloc=regalloc)
+            return mmi.regalloc_assignments(regalloc=regalloc)["up"]
 
     ours = assignments("ra-greedy-up")
     native = assignments("greedy")

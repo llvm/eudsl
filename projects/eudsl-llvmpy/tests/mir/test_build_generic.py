@@ -140,6 +140,7 @@ def test_add_machine_function_honors_function_type_and_linkage():
     "name, message",
     [
         ("", "must not be empty"),
+        ("g\x00suffix", "must not contain NUL"),
         ("f", "already has a function named"),
         ("decl", "already has a function named"),
         ("data", "already has a symbol named"),
@@ -152,8 +153,10 @@ def test_add_machine_function_rejects_name_without_mutating_module(name, message
         )
         tm = jit.TargetMachine(triple=_TRIPLE)
         mmi = mir.create_machine_function(mod, tm, "f")
+        before = mmi.to_mir()
         with pytest.raises(ValueError, match=message):
             mmi.add_machine_function(name)
+        assert mmi.to_mir() == before
         assert [mf.name for mf in mmi.machine_functions] == ["f"]
         assert mmi.add_machine_function("g").name == "g"
     assert_no_leaks()
@@ -180,6 +183,8 @@ def test_create_machine_function_allows_skipped_functions():
         tm = jit.TargetMachine(triple=_TRIPLE)
         mmi = mir.create_machine_function(mod, tm, "f")
         assert [mf.name for mf in mmi.machine_functions] == ["f"]
+        mmi.add_machine_function("g")
+        assert [mf.name for mf in mmi.machine_functions] == ["f", "g"]
     assert_no_leaks()
 
 
@@ -240,6 +245,28 @@ def test_added_function_rejects_foreign_register_with_the_same_id():
         assert foreign.id == local.id
         with pytest.raises(ValueError, match="different MachineFunction"):
             second.build_add(s32, foreign, local)
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize("wrong_self", [None, object()])
+def test_machine_builder_exit_rejects_wrong_self(wrong_self):
+    with pytest.raises(TypeError):
+        mir.MachineIRBuilder.__exit__(wrong_self, None, None, None)
+
+
+@pytest.mark.parametrize("name", ["\x00", "f\x00suffix"])
+def test_create_machine_function_rejects_nul_without_mutating_module(name):
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        before = str(mod)
+        with pytest.raises(ValueError, match="must not contain NUL"):
+            mir.create_machine_function(mod, tm, name)
+        assert not mod._is_consumed
+        assert str(mod) == before
+        assert (
+            mir.create_machine_function(mod, tm, "f").machine_function("f").name == "f"
+        )
     assert_no_leaks()
 
 

@@ -187,10 +187,11 @@ the first function and consumes the IR module. Call
 on the returned `MirModule` to add more functions before a single
 `mmi.emit_object()`. Registered Python allocators and schedulers get distinct
 instances per function.
-`mmi.regalloc_assignments_by_function()` runs allocation once and returns a
-function-name-keyed map of assignment, spill, and copy-count snapshots, keeping
-function-local virtual-register ids separate. The existing
-`regalloc_assignments()` returns a flat snapshot for single-function modules.
+`mmi.regalloc_assignments()` runs allocation once and returns assignment, spill,
+and copy-count snapshots keyed by function name, in definition order. This keeps
+function-local virtual-register ids separate.
+Emission and allocation invalidate borrowed MIR handles, including on pipeline
+failure. The returned allocation snapshots own their data.
 
 ### Building generic MIR: `@machine_function`
 
