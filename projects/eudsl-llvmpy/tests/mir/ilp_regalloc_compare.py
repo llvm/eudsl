@@ -103,7 +103,7 @@ def _run_one(fixture, fname, name, regalloc, is_ilp):
             tm = jit.TargetMachine(triple=_TRIPLE)
             mmi = mir.create_machine_function(mod, tm, fname)
             fixture(mmi, fname)
-            result = mmi.regalloc_assignments(regalloc=regalloc)
+            result = mmi.regalloc_assignments(regalloc=regalloc)[fname]
             assignments = dict(result.assignments)
             spilled = list(result.spilled)
             copies_remaining = result.copies_remaining
