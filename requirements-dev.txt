@@ -1,4 +1,5 @@
-nanobind>=2.9.2,<3.0
+# Same as the build-system pins in the eudsl-* and mlir-python-bindings pyprojects.
+nanobind==2.13.0
 numpy>=2.0.2
 scikit-build-core==0.10.7
 pytest

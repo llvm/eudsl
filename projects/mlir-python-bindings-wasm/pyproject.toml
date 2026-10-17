@@ -47,6 +47,9 @@ install.components = ["MLIRPythonWasmModules"]
 MLIR_DIR = { env = "MLIR_DIR", default = "" }
 nanobind_DIR = { env = "nanobind_DIR", default = "" }
 CMAKE_PREFIX_PATH = { env = "CMAKE_PREFIX_PATH", default = "" }
+# Release's -O3 -DNDEBUG comes after pyodide's -Oz on the command line, so the
+# last -O wins and wasm is optimized like native (-O3), not for size.
+# HandleLLVMOptions then undoes the -DNDEBUG to match the assertions-enabled LLVM.
 CMAKE_BUILD_TYPE = { env = "CMAKE_BUILD_TYPE", default = "Release" }
 CMAKE_C_COMPILER_LAUNCHER = { env = "CMAKE_C_COMPILER_LAUNCHER", default = "" }
 CMAKE_CXX_COMPILER_LAUNCHER = { env = "CMAKE_CXX_COMPILER_LAUNCHER", default = "" }
@@ -79,6 +82,9 @@ CMAKE_CXX_VISIBILITY_PRESET = "hidden"
 # in the dylink.0 RUNTIME_PATH is only visible after a build -- check it with
 # auditwheel_emscripten.module.parse_dylink_section, which should report
 # runtime_paths=['$ORIGIN'] rather than [''] or ['\'].
+# -sASSERTIONS (emscripten's runtime checks) stays on in released wheels, like
+# LLVM_ENABLE_ASSERTIONS: it turns missing symbols, stack overflows and bad
+# dynamic loads into readable errors, which is most of what goes wrong on wasm.
 CMAKE_EXE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\$ORIGIN"
 CMAKE_SHARED_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\$ORIGIN"
 CMAKE_MODULE_LINKER_FLAGS = "-sALLOW_TABLE_GROWTH -sASSERTIONS -sWASM_BIGINT -Wl,-rpath,\\$ORIGIN"
