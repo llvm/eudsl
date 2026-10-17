@@ -133,7 +133,13 @@ def index_cast(
 
 
 @register_attribute_builder("Arith_CmpIPredicateAttr", replace=True)
-def _arith_CmpIPredicateAttr(predicate: Union[str, Attribute], context: Context):
+def _arith_CmpIPredicateAttr(
+    predicate: Union[str, int, "CmpIPredicate", Attribute], context: Context
+):
+    if isinstance(predicate, Attribute):
+        return predicate
+    if isinstance(predicate, CmpIPredicate):
+        return _arith_cmpipredicateattr(predicate, context)
     predicates = {
         "eq": CmpIPredicate.eq,
         "ne": CmpIPredicate.ne,
@@ -156,15 +162,19 @@ def _arith_CmpIPredicateAttr(predicate: Union[str, Attribute], context: Context)
         8: CmpIPredicate.ugt,
         9: CmpIPredicate.uge,
     }
-    if isinstance(predicate, Attribute):
-        return predicate
     predicate = str(predicate)
     assert predicate in predicates, f"{predicate=} not in predicates"
     return _arith_cmpipredicateattr(predicates[predicate], context)
 
 
 @register_attribute_builder("Arith_CmpFPredicateAttr", replace=True)
-def _arith_CmpFPredicateAttr(predicate: Union[str, Attribute], context: Context):
+def _arith_CmpFPredicateAttr(
+    predicate: Union[str, int, "CmpFPredicate", Attribute], context: Context
+):
+    if isinstance(predicate, Attribute):
+        return predicate
+    if isinstance(predicate, CmpFPredicate):
+        return _arith_cmpfpredicateattr(predicate, context)
     predicates = {
         "false": CmpFPredicate.AlwaysFalse,
         # ordered comparison
@@ -190,11 +200,44 @@ def _arith_CmpFPredicateAttr(predicate: Union[str, Attribute], context: Context)
         # return always true
         "true": CmpFPredicate.AlwaysTrue,
     }
-    if isinstance(predicate, Attribute):
-        return predicate
     predicate = str(predicate)
     assert predicate in predicates, f"{predicate=} not in predicates"
     return _arith_cmpfpredicateattr(predicates[predicate], context)
+
+
+# Canonical predicate keys are the *signed* CmpIPredicate enum members.
+# Each ArithValue comparison dunder now passes one of these enum members
+# (instead of an ad-hoc string like "lt") as `predicate`; _binary_op below
+# resolves it to the correct concrete int/float, signed/unsigned enum.
+_CMPI_PREDICATES = {
+    CmpIPredicate.eq: (CmpIPredicate.eq, CmpIPredicate.eq),
+    CmpIPredicate.ne: (CmpIPredicate.ne, CmpIPredicate.ne),
+    CmpIPredicate.slt: (CmpIPredicate.slt, CmpIPredicate.ult),
+    CmpIPredicate.sle: (CmpIPredicate.sle, CmpIPredicate.ule),
+    CmpIPredicate.sgt: (CmpIPredicate.sgt, CmpIPredicate.ugt),
+    CmpIPredicate.sge: (CmpIPredicate.sge, CmpIPredicate.uge),
+}
+
+_CMPF_PREDICATES = {
+    CmpIPredicate.eq: (CmpFPredicate.OEQ, CmpFPredicate.UEQ),
+    CmpIPredicate.ne: (CmpFPredicate.ONE, CmpFPredicate.UNE),
+    CmpIPredicate.slt: (CmpFPredicate.OLT, CmpFPredicate.ULT),
+    CmpIPredicate.sle: (CmpFPredicate.OLE, CmpFPredicate.ULE),
+    CmpIPredicate.sgt: (CmpFPredicate.OGT, CmpFPredicate.UGT),
+    CmpIPredicate.sge: (CmpFPredicate.OGE, CmpFPredicate.UGE),
+}
+
+# Maps a canonical predicate enum to the corresponding `operator` module
+# attribute name, used only on the constant-folding path where we need to
+# call e.g. operator.lt(lhs_literal, rhs_literal).
+_CMP_PREDICATE_TO_OPERATOR_NAME = {
+    CmpIPredicate.eq: "eq",
+    CmpIPredicate.ne: "ne",
+    CmpIPredicate.slt: "lt",
+    CmpIPredicate.sle: "le",
+    CmpIPredicate.sgt: "gt",
+    CmpIPredicate.sge: "ge",
+}
 
 
 def _binary_op(
@@ -240,7 +283,7 @@ def _binary_op(
         # the corresponding operation on the literal values; e.g., operator.add.
         # note this is the same as op = operator.__dict__[op].
         if predicate is not None:
-            op = predicate
+            op = _CMP_PREDICATE_TO_OPERATOR_NAME[predicate]
         op = operator.attrgetter(op)(operator)
         return klass(op(lhs, rhs), fold=True)
 
@@ -272,23 +315,23 @@ def _binary_op(
 
     if predicate is not None:
         if isinstance(lhs.dtype, FloatType):
-            # ordered comparison - see above
-            predicate = "o" + predicate
+            enum_predicate, _ = _CMPF_PREDICATES[predicate]
         else:
             assert isinstance(
                 lhs.dtype, (IntegerType, IndexType)
             ), f"unsupported dtype for comparison: {lhs.dtype}"
+            signed_enum, unsigned_enum = _CMPI_PREDICATES[predicate]
             # eq, ne signs don't matter
-            if predicate not in {"eq", "ne"}:
-                if signedness is not None:
-                    predicate = signedness + predicate
-                else:
-                    if isinstance(lhs.dtype, IndexType) or lhs.dtype.is_unsigned:
-                        predicate = "u" + predicate
-                    else:
-                        assert lhs.dtype.is_signed or lhs.dtype.is_signless
-                        predicate = "s" + predicate
-        return lhs.__class__(op(predicate, lhs, rhs, loc=loc), dtype=lhs.dtype)
+            if predicate in {CmpIPredicate.eq, CmpIPredicate.ne}:
+                enum_predicate = signed_enum
+            elif signedness is not None:
+                enum_predicate = unsigned_enum if signedness == "u" else signed_enum
+            elif isinstance(lhs.dtype, IndexType) or lhs.dtype.is_unsigned:
+                enum_predicate = unsigned_enum
+            else:
+                assert lhs.dtype.is_signed or lhs.dtype.is_signless
+                enum_predicate = signed_enum
+        return lhs.__class__(op(enum_predicate, lhs, rhs, loc=loc), dtype=lhs.dtype)
     else:
         return lhs.__class__(op(lhs, rhs, loc=loc), dtype=lhs.dtype)
 
@@ -394,7 +437,7 @@ class ArithValue(Value):
                 return False
         if self is other:
             return True
-        return _binary_op(self, other, op="cmp", predicate="eq")
+        return _binary_op(self, other, op="cmp", predicate=CmpIPredicate.eq)
 
     def __ne__(self, other):
         if not isinstance(other, self.__class__):
@@ -405,17 +448,17 @@ class ArithValue(Value):
                 return True
         if self is other:
             return False
-        return _binary_op(self, other, op="cmp", predicate="ne")
+        return _binary_op(self, other, op="cmp", predicate=CmpIPredicate.ne)
 
-    __le__ = partialmethod(_binary_op, op="cmp", predicate="le")
-    __lt__ = partialmethod(_binary_op, op="cmp", predicate="lt")
-    __ge__ = partialmethod(_binary_op, op="cmp", predicate="ge")
-    __gt__ = partialmethod(_binary_op, op="cmp", predicate="gt")
+    __le__ = partialmethod(_binary_op, op="cmp", predicate=CmpIPredicate.sle)
+    __lt__ = partialmethod(_binary_op, op="cmp", predicate=CmpIPredicate.slt)
+    __ge__ = partialmethod(_binary_op, op="cmp", predicate=CmpIPredicate.sge)
+    __gt__ = partialmethod(_binary_op, op="cmp", predicate=CmpIPredicate.sgt)
 
-    __rle__ = partialmethod(_rbinary_op, op="cmp", predicate="le")
-    __rlt__ = partialmethod(_rbinary_op, op="cmp", predicate="lt")
-    __rge__ = partialmethod(_rbinary_op, op="cmp", predicate="ge")
-    __rgt__ = partialmethod(_rbinary_op, op="cmp", predicate="gt")
+    __rle__ = partialmethod(_rbinary_op, op="cmp", predicate=CmpIPredicate.sle)
+    __rlt__ = partialmethod(_rbinary_op, op="cmp", predicate=CmpIPredicate.slt)
+    __rge__ = partialmethod(_rbinary_op, op="cmp", predicate=CmpIPredicate.sge)
+    __rgt__ = partialmethod(_rbinary_op, op="cmp", predicate=CmpIPredicate.sgt)
 
     def _eq(self, other):
         return Value(self) == Value(other)
@@ -535,6 +578,5 @@ class ArithPatchFunction(FunctionPatcher):
 class ArithCanonicalizer(Canonicalizer):
     cst_transformers = [CanonicalizeFMA]
     function_patchers = [ArithPatchFunction]
-
 
 canonicalizer = ArithCanonicalizer()
