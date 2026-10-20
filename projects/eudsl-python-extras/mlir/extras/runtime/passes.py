@@ -1423,13 +1423,15 @@ class Pipeline(Pipeline):
         This pass implements an approach to aggressively move allocations upwards
         out of loop nests. It does not move allocations into common dominators.
 
-        `memref.alloc` operations directly in the `before` region of `scf.while`
-        may also be hoisted when their buffers are forwarded through loop results.
+        Allocations directly in the `before` region of `scf.while` may also be
+        hoisted when their buffers are forwarded through loop results. They must
+        advertise `HoistingKind::Loop` through `AllocationOpInterface`.
         This extension requires a loop strictly inside the transformation target.
         Its parent must stop further loop hoisting: it must either be a non-loop
         operation or have the `HasParallelRegion` trait. No alias may be carried
         back to `before`, and all alias uses, including uses of loop results, must
-        permit reusing the allocation across iterations.
+        permit reusing the allocation across iterations. Stack allocations remain
+        within their original automatic allocation scope.
 
         """
         self.add_pass("buffer-loop-hoisting")
@@ -5691,6 +5693,7 @@ class Pipeline(Pipeline):
         enable_gpu_libgen: bool = None,
         sparse_emit_strategy: "mlir::SparseEmitStrategy" = None,
         parallelization_strategy: SparseParallelizationStrategy = None,
+        enable_runtime_library: bool = None,
     ):
         """Mini-pipeline that combines bufferization and sparsifiation
 
@@ -5703,6 +5706,7 @@ class Pipeline(Pipeline):
             enable_gpu_libgen: Enable GPU acceleration by means of direct library calls
             sparse_emit_strategy: Emit functional code or interfaces (to debug) for sparse loops
             parallelization_strategy: Set the parallelization strategy
+            enable_runtime_library: Enable runtime library for manipulating sparse tensors
         """
         self.add_pass(
             "sparsification-and-bufferization",
@@ -5713,6 +5717,7 @@ class Pipeline(Pipeline):
                 "enable-gpu-libgen": enable_gpu_libgen,
                 "sparse-emit-strategy": sparse_emit_strategy,
                 "parallelization-strategy": parallelization_strategy,
+                "enable-runtime-library": enable_runtime_library,
             }
         )
         return self
