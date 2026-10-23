@@ -32,9 +32,9 @@ _AARCH64_LINUX = "aarch64-unknown-linux-gnu"
 _IS_AARCH64 = platform.machine() in ("arm64", "aarch64")
 
 
-def _build_selected_add(mmi):
+def _build_selected_add(mmi, name="add"):
     """Hand-build a fully-selected AArch64 add(i32,i32)->i32 MachineFunction."""
-    mf = mmi.machine_function("add")
+    mf = mmi.machine_function(name)
     b = mir.MachineIRBuilder(mf)
     entry = mf.blocks[0]
     gpr32 = mf.reg_class("GPR32")
@@ -209,9 +209,7 @@ def test_two_strategies_coexist():
 
 
 def test_fresh_instance_per_function():
-    """The registry ctor constructs a fresh strategy instance per
-    MachineFunction, not a reused singleton. Two emissions (each with one
-    MachineFunction) must construct two *distinct* instances."""
+    """Two functions in one emission get distinct scheduler instances."""
     instances = []
 
     class Counting(_TopDownFirstReady):
@@ -220,15 +218,48 @@ def test_fresh_instance_per_function():
             instances.append(self)
 
     mir.register_scheduler("t6-perfunc", Counting)
-    for _ in range(2):
-        with ir.Context() as ctx:
-            mod = ir.Module("m", ctx)
-            tm = jit.TargetMachine(triple=_AARCH64_LINUX)
-            mmi = mir.create_machine_function(mod, tm, "add")
-            _build_selected_add(mmi)
-            mmi.emit_object(scheduler="t6-perfunc")
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "add")
+        mmi.add_machine_function("other")
+        _build_selected_add(mmi)
+        _build_selected_add(mmi, name="other")
+        mmi.emit_object(scheduler="t6-perfunc")
     assert len(instances) == 2  # one instance per MachineFunction emitted
     assert instances[0] is not instances[1]  # fresh, not a cached singleton
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize("failure", ["init", "pick"])
+def test_multi_function_scheduler_preserves_first_error(failure):
+    calls = []
+
+    class Broken(_TopDownFirstReady):
+        def __init__(self):
+            super().__init__()
+            calls.append("init")
+            if len(calls) > 1:
+                raise RuntimeError("later function must not re-enter Python")
+            if failure == "init":
+                raise ValueError("first scheduler error")
+
+        def pick_node(self):
+            raise ValueError("first scheduler error")
+
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "add")
+        mmi.add_machine_function("other")
+        _build_selected_add(mmi)
+        _build_selected_add(mmi, name="other")
+        mir.register_scheduler("sched-multi-error", Broken)
+        with pytest.raises(ValueError, match="first scheduler error"):
+            mmi.emit_object(scheduler="sched-multi-error")
+        assert calls == ["init"]
+
+        fresh = mir.create_machine_function(ir.Module("fresh", ctx), tm, "add")
+        _build_selected_add(fresh)
+        assert fresh.emit_object()[:4] == b"\x7fELF"
     assert_no_leaks()
 
 
