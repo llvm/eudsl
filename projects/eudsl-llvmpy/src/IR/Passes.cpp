@@ -165,7 +165,7 @@ struct PassPipelineEnv {
   PassPipelineEnv(eudsl::Module &mod, const llvm::PipelineTuningOptions &opts,
                   bool debug, bool verifyEach)
       : si(mod.get().getContext(), debug, verifyEach),
-        pb(nullptr, opts, std::nullopt, &pic) {
+        pb(mod.get().getContext(), nullptr, opts, std::nullopt, &pic) {
     si.registerCallbacks(pic);
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
