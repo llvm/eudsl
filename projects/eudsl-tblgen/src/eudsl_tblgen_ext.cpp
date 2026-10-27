@@ -958,6 +958,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           nb::rv_policy::reference_internal);
 
   eudsl::bind_array_ref<const llvm::Init *>(m);
+  eudsl::bind_array_ref<llvm::RecordVal>(m);
   nb::class_<llvm::Record>(m, "Record")
       .def(
           "get_direct_super_classes",
@@ -1030,7 +1031,6 @@ NB_MODULE(eudsl_tblgen_ext, m) {
       .def("is_class", &llvm::Record::isClass)
       .def("is_multi_class", &llvm::Record::isMultiClass)
       .def("is_anonymous", &llvm::Record::isAnonymous)
-      .def("get_template_args", &llvm::Record::getTemplateArgs)
       .def("get_assertions", &llvm::Record::getAssertions)
       .def("get_dumps", &llvm::Record::getDumps)
       .def(
@@ -1039,7 +1039,17 @@ NB_MODULE(eudsl_tblgen_ext, m) {
           nb::rv_policy::reference_internal)
       .def("has_direct_super_class", &llvm::Record::hasDirectSuperClass,
            "super_class"_a)
-      .def("is_template_arg", &llvm::Record::isTemplateArg, "name"_a)
+      .def(
+          "get_template_arg",
+          [](llvm::Record &self, const llvm::Init *Name)
+              -> const llvm::RecordVal * { return self.getTemplateArg(Name); },
+          "name"_a, nb::rv_policy::reference_internal)
+      .def(
+          "is_template_arg",
+          [](llvm::Record &self, const llvm::Init *Name) {
+            return self.getTemplateArg(Name) != nullptr;
+          },
+          "name"_a)
       .def(
           "get_value",
           [](llvm::Record &self, const llvm::Init *Name)
@@ -1062,7 +1072,7 @@ NB_MODULE(eudsl_tblgen_ext, m) {
             return self.getValue(Name);
           },
           "name"_a, nb::rv_policy::reference_internal)
-      .def("add_template_arg", &llvm::Record::addTemplateArg, "name"_a)
+      .def("add_template_arg", &llvm::Record::addTemplateArg, "arg"_a)
       .def("add_value", &llvm::Record::addValue, "rv"_a)
       .def(
           "remove_value",

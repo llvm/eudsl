@@ -366,7 +366,7 @@ struct PtrTaker {
 };
 
 struct TemplateArgsTag {
-  using type = SmallVector<const Init *, 0> Record::*;
+  using type = SmallVector<RecordVal, 0> Record::*;
 };
 
 template struct PtrTaker<TemplateArgsTag, &Record::TemplateArgs>;
@@ -374,11 +374,11 @@ template struct PtrTaker<TemplateArgsTag, &Record::TemplateArgs>;
 static void
 addOrReplaceTemplateArgs(Record *rec,
                          SmallVector<const ArgumentInit *, 4> newTemplateArgs) {
-  SmallVector<const Init *, 0> *mutableTemplateArgs =
+  SmallVector<RecordVal, 0> *mutableTemplateArgs =
       &(*rec.*Storage<TemplateArgsTag>::ptr);
   for (const ArgumentInit *newTemplateArg : newTemplateArgs) {
-    const Init **i = llvm::find_if(*mutableTemplateArgs, [&](const Init *tArg) {
-      const auto *oTArg = llvm::dyn_cast<ArgumentInit>(tArg);
+    RecordVal *i = llvm::find_if(*mutableTemplateArgs, [&](const RecordVal &tArg) {
+      const auto *oTArg = llvm::cast<ArgumentInit>(tArg.getNameInit());
       if (oTArg->isNamed()) {
         if (newTemplateArg->isNamed())
           return oTArg->getName() == newTemplateArg->getName();
@@ -390,13 +390,10 @@ addOrReplaceTemplateArgs(Record *rec,
     });
     auto newVal = RecordVal(newTemplateArg, RecordRecTy::get(rec),
                             RecordVal::FK_TemplateArg);
-    if (i == mutableTemplateArgs->end()) {
-      mutableTemplateArgs->push_back(newTemplateArg);
-    } else {
-      rec->removeValue(*i);
-      *i = newTemplateArg;
-    }
-    rec->addValue(newVal);
+    if (i == mutableTemplateArgs->end())
+      mutableTemplateArgs->push_back(newVal);
+    else
+      *i = newVal;
   }
 }
 
@@ -429,14 +426,14 @@ bool TGParser::AddParentClass(Record *CurRec, ClassReference &ParentClass) {
   else
     Name = CurRec->getNameInit();
   auto canName = getCanonicalRecName(CurRec);
-  recordTemplateArgs[canName] = SubClass.TemplateArgs;
+  recordTemplateArgs[canName] = ParentClass.TemplateArgs;
   R.set(QualifiedNameOfImplicitName(*SC), Name);
 
   CurRec->resolveReferences(R);
   // we only want to keep args for defs not classes which pass
   // args to other classes (i think so?)
-  if (!CurRec->isClass() && !SubClass.TemplateArgs.empty())
-    addOrReplaceTemplateArgs(CurRec, SubClass.TemplateArgs);
+  if (!CurRec->isClass() && !ParentClass.TemplateArgs.empty())
+    addOrReplaceTemplateArgs(CurRec, ParentClass.TemplateArgs);
 
   // Since everything went well, we can now set the "superclass" list for the
   // current record.
