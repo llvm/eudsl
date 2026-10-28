@@ -2139,23 +2139,29 @@ class Pipeline(Pipeline):
         return self
 
     def convert_math_to_funcs(
-        self, min_width_of_fpowi_exponent: int = None, convert_ctlz: bool = None
+        self,
+        min_width_of_fpowi_exponent: int = None,
+        convert_ctlz: bool = None,
+        set_llvm_linkage: bool = None,
     ):
         """Convert Math operations to calls of outlined implementations.
 
         This pass converts supported Math ops to calls of compiler generated
         functions implementing these operations in software.
-        The LLVM dialect is used for LinkonceODR linkage of the generated functions.
+        The LLVM dialect is used for LinkonceODR linkage of the generated functions,
+        unless `set-llvm-linkage` is disabled.
 
         Args:
             min_width_of_fpowi_exponent: Convert FPowI only if the width of its exponent's integer type is greater than or equal to this value
             convert_ctlz: Convert math.ctlz to a software implementation. Enable for targets that do not natively support ctlz.
+            set_llvm_linkage: Give the generated functions LinkonceODR LLVM linkage. Disable for targets that do not lower through LLVM.
         """
         self.add_pass(
             "convert-math-to-funcs",
             **{
                 "min-width-of-fpowi-exponent": min_width_of_fpowi_exponent,
                 "convert-ctlz": convert_ctlz,
+                "set-llvm-linkage": set_llvm_linkage,
             }
         )
         return self

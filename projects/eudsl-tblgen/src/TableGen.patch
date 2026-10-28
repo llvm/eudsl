@@ -10,11 +10,10 @@
  #include "llvm/Support/SourceMgr.h"
 --- a/TGParser.cpp
 +++ b/TGParser.cpp
-@@ -346,6 +346,65 @@
-                           InitType);
+@@ -340,7 +340,63 @@
    }
    return false;
-+}
+ }
 +
 +static std::string getCanonicalRecName(Record *CurRec) {
 +  const Init *Name;
@@ -39,9 +38,9 @@
 +  };
 +  inline static Transferer tr;
 +};
-+
+ 
 +struct TemplateArgsTag {
-+  using type = SmallVector<const Init *, 0> Record::*;
++  using type = SmallVector<RecordVal, 0> Record::*;
 +};
 +
 +template struct PtrTaker<TemplateArgsTag, &Record::TemplateArgs>;
@@ -49,11 +48,11 @@
 +static void
 +addOrReplaceTemplateArgs(Record *rec,
 +                         SmallVector<const ArgumentInit *, 4> newTemplateArgs) {
-+  SmallVector<const Init *, 0> *mutableTemplateArgs =
++  SmallVector<RecordVal, 0> *mutableTemplateArgs =
 +      &(*rec.*Storage<TemplateArgsTag>::ptr);
 +  for (const ArgumentInit *newTemplateArg : newTemplateArgs) {
-+    const Init **i = llvm::find_if(*mutableTemplateArgs, [&](const Init *tArg) {
-+      const auto *oTArg = llvm::dyn_cast<ArgumentInit>(tArg);
++    RecordVal *i = llvm::find_if(*mutableTemplateArgs, [&](const RecordVal &tArg) {
++      const auto *oTArg = llvm::cast<ArgumentInit>(tArg.getNameInit());
 +      if (oTArg->isNamed()) {
 +        if (newTemplateArg->isNamed())
 +          return oTArg->getName() == newTemplateArg->getName();
@@ -65,34 +64,33 @@
 +    });
 +    auto newVal = RecordVal(newTemplateArg, RecordRecTy::get(rec),
 +                            RecordVal::FK_TemplateArg);
-+    if (i == mutableTemplateArgs->end()) {
-+      mutableTemplateArgs->push_back(newTemplateArg);
-+    } else {
-+      rec->removeValue(*i);
-+      *i = newTemplateArg;
-+    }
-+    rec->addValue(newVal);
++    if (i == mutableTemplateArgs->end())
++      mutableTemplateArgs->push_back(newVal);
++    else
++      *i = newVal;
 +  }
- }
- 
- /// AddSubClass - Add SubClass as a subclass to CurRec, resolving its template
-@@ -377,9 +436,15 @@
++}
++
+ /// Add ParentClass as a parent class of CurRec, resolving its template args as
+ /// ParentClass's template arguments.
+ bool TGParser::AddParentClass(Record *CurRec, ClassReference &ParentClass) {
+@@ -369,9 +425,15 @@
                          StringRecTy::get(Records));
    else
      Name = CurRec->getNameInit();
 +  auto canName = getCanonicalRecName(CurRec);
-+  recordTemplateArgs[canName] = SubClass.TemplateArgs;
++  recordTemplateArgs[canName] = ParentClass.TemplateArgs;
    R.set(QualifiedNameOfImplicitName(*SC), Name);
  
    CurRec->resolveReferences(R);
 +  // we only want to keep args for defs not classes which pass
 +  // args to other classes (i think so?)
-+  if (!CurRec->isClass() && !SubClass.TemplateArgs.empty())
-+    addOrReplaceTemplateArgs(CurRec, SubClass.TemplateArgs);
++  if (!CurRec->isClass() && !ParentClass.TemplateArgs.empty())
++    addOrReplaceTemplateArgs(CurRec, ParentClass.TemplateArgs);
  
    // Since everything went well, we can now set the "superclass" list for the
    // current record.
-@@ -572,7 +637,20 @@
+@@ -563,7 +625,20 @@
        MapResolver R(Rec.get());
        for (const auto &S : Substs)
          R.set(S.first, S.second);
@@ -113,7 +111,7 @@
  
        if (Dest)
          Dest->push_back(std::move(Rec));
-@@ -615,7 +693,7 @@
+@@ -606,7 +681,7 @@
    Rec->emitRecordDumps();
  
    // If ObjectBody has template arguments, it's an error.

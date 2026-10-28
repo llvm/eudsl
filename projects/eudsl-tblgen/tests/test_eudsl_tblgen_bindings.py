@@ -201,7 +201,7 @@ def test_init_complex(record_keeper_test_dialect):
 
     assert (
         repr(op.get_values())
-        == 'RecordValues(opDialect=Test_Dialect, opName=types, cppNamespace=test, summary=, description=, opDocGroup=?, arguments=(ins I32:$a, SI64:$b, UI8:$c, Index:$d, F32:$e, NoneType:$f, anonymous_348), results=(outs), regions=(region), successors=(successor), builders=?, skipDefaultBuilders=0, assemblyFormat=?, hasCustomAssemblyFormat=0, hasVerifier=0, hasRegionVerifier=0, hasCanonicalizer=0, hasCanonicalizeMethod=0, hasFolder=0, useCustomPropertiesEncoding=0, traits=[], extraClassDeclaration=?, extraClassDefinition=?, 0: "types"=?)'
+        == 'RecordValues(opDialect=Test_Dialect, opName=types, cppNamespace=test, summary=, description=, opDocGroup=?, arguments=(ins I32:$a, SI64:$b, UI8:$c, Index:$d, F32:$e, NoneType:$f, anonymous_348), results=(outs), regions=(region), successors=(successor), builders=?, skipDefaultBuilders=0, assemblyFormat=?, hasCustomAssemblyFormat=0, hasVerifier=0, hasRegionVerifier=0, hasCanonicalizer=0, hasCanonicalizeMethod=0, hasFolder=0, useCustomPropertiesEncoding=0, traits=[], extraClassDeclaration=?, extraClassDefinition=?)'
     )
 
     arguments = op.get_values().arguments
@@ -305,14 +305,17 @@ def test_intrinsic_args(record_keeper_test_dialect):
     assert base_class.dump(to_str=True) == base_correct_dump
 
     base_template_args = base_class.get_template_args()
-    assert isinstance(base_template_args, ArrayRef[Init])
+    assert isinstance(base_template_args, ArrayRef[RecordVal])
     assert len(base_template_args) == 1
 
-    mnemonic = base_template_args[0]
-    assert isinstance(mnemonic, StringInit)
-    assert mnemonic.dump(True) == '"Test_AndConcatOp:othermnemonic"'
+    mnemonic_name = base_template_args[0].get_name_init()
+    assert isinstance(mnemonic_name, StringInit)
+    assert mnemonic_name.dump(True) == '"Test_AndConcatOp:othermnemonic"'
+    assert base_class.is_template_arg(mnemonic_name)
+    # template args are no longer stored alongside fields
+    assert base_class.get_value(mnemonic_name) is None
 
-    mnemonic = base_class.get_value(mnemonic.get_value())
+    mnemonic = base_class.get_template_arg(mnemonic_name)
     assert mnemonic.is_template_arg()
     assert mnemonic.is_used()
 
@@ -365,9 +368,10 @@ def test_intrinsic_args(record_keeper_test_dialect):
     assert op.dump(True) == op_correct_dump
 
     template_args = op.get_template_args()
-    assert isinstance(template_args, ArrayRef[ArgumentInit])
+    assert isinstance(template_args, ArrayRef[RecordVal])
     assert len(template_args) == 1
-    init = template_args[0]
+    assert template_args[0].is_template_arg()
+    init = template_args[0].get_name_init()
     assert isinstance(init, ArgumentInit)
     assert init.is_positional()
     assert init.get_index() == 0
