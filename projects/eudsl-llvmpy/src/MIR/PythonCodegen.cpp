@@ -5,6 +5,7 @@
 #include "IR/Common.h"
 #include "MIR/AllocationOrder.h"
 #include "MIR/Diagnostics.h"
+#include "MIR/Handles.h"
 #include "MIR/InterferenceCache.h"
 #include "MIR/RegAllocBase.h"
 #include "MIR/SplitKit.h"
@@ -226,7 +227,9 @@ public:
     if (eudsl::pendingCodegenError || !nb::hasattr(self, "enter_mbb"))
       return;
     try {
-      self.attr("enter_mbb")(nb::cast(mbb, nb::rv_policy::reference));
+      nb::object block = nb::cast(mbb, nb::rv_policy::reference);
+      block = eudsl::trackMachineHandles(block, self);
+      self.attr("enter_mbb")(block);
     } catch (...) {
       eudsl::pendingCodegenError = std::current_exception();
     }
@@ -333,6 +336,8 @@ createRegisteredPyStrategy(llvm::MachineSchedContext *c) {
   if (!activeSchedClass.is_valid())
     return llvm::createSchedLive(c);
   // LCOV_EXCL_STOP
+  if (eudsl::pendingCodegenError)
+    return llvm::createSchedLive(c);
   try {
     auto strategy = std::make_unique<OwningPyStrategy>(activeSchedClass());
     auto *dag = new llvm::ScheduleDAGMILive(c, std::move(strategy));
@@ -1001,18 +1006,12 @@ public:
       fallback.pyAllocate();
     };
 
-    // LCOV_EXCL_START -- a module from create_machine_function holds exactly
-    // one MachineFunction, so this runs once per emit_object and a stash from
-    // an earlier function is never already pending. Defensive for a
-    // hypothetical multi-function module: don't re-enter Python (which would
-    // clobber the pending error); allocate natively so this function's MIR
-    // stays valid and the original error still re-raises.
+    // After an earlier function failed, finish natively without re-entering
+    // Python so the pipeline preserves the original exception.
     if (eudsl::pendingCodegenError) {
       runNative();
       return true;
     }
-    // LCOV_EXCL_STOP
-
     nb::object obj;
     try {
       obj = activeRegAllocClass();
@@ -1177,6 +1176,7 @@ void populate_python_codegen(nb::module_ &m) {
       .def_prop_ro(
           "instr", [](llvm::SUnit &su) { return su.getInstr(); },
           nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "The representative MachineInstr this unit wraps.");
 
   // The scheduling DAG passed to initialize(dag). Opaque for now -- a strategy
@@ -1303,6 +1303,7 @@ void populate_python_codegen(nb::module_ &m) {
       .def_prop_ro(
           "machine_function", &PyRegAllocBase::machineFunction,
           nb::rv_policy::reference,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "The MachineFunction being allocated. Borrowed and valid only within "
           "an allocator callback; do not retain.")
       .def_prop_ro(
@@ -1939,6 +1940,7 @@ void populate_python_codegen(nb::module_ &m) {
             return l.getInstructionFromIndex(idx);
           },
           nb::rv_policy::reference, "idx"_a,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "The MachineInstr at `idx`, or None. Borrowed; do not retain.")
       .def_prop_ro(
           "slot_indexes",
@@ -1986,7 +1988,7 @@ void populate_python_codegen(nb::module_ &m) {
             l.shrinkToUses(&l.getInterval(llvm::Register(reg)), &dead);
             return std::vector<llvm::MachineInstr *>(dead.begin(), dead.end());
           },
-          "reg"_a,
+          nb::call_policy<eudsl::TrackMachineHandles>(), "reg"_a,
           "Recompute `reg`'s interval from its remaining uses after "
           "redirecting some, marking now-dead defs; returns those dead "
           "instructions (feed them to LiveRangeEdit.eliminate_dead_defs).");

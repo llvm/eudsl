@@ -5,7 +5,9 @@
 #include "IR/Common.h"
 #include "IR/Ownership.h"
 #include "MIR/Diagnostics.h"
+#include "MIR/Handles.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/Hashing.h>
 #include <llvm/CodeGen/GlobalISel/MachineIRBuilder.h>
 #include <llvm/CodeGen/MIRParser/MIRParser.h>
@@ -55,6 +57,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -82,6 +85,139 @@ void clearActiveRegAllocClass();
 void populate_python_codegen(nb::module_ &m);
 
 namespace {
+
+class MirModule;
+class MachineHandleTracker;
+
+static auto &machineHandleTrackers() {
+  static std::unordered_map<llvm::MachineFunction *, MachineHandleTracker *>
+      trackers;
+  return trackers;
+}
+
+// reference_internal keeps an owner alive, but codegen can delete its contents.
+// Weak references avoid an owner -> handle -> owner cycle, including builders.
+class MachineHandleTracker {
+public:
+  explicit MachineHandleTracker(MirModule &owner) : owner(owner) {}
+  ~MachineHandleTracker() { unregister(); }
+
+  void add(llvm::MachineFunction &mf) {
+    functions.try_emplace(&mf);
+    machineHandleTrackers().insert_or_assign(&mf, this);
+  }
+
+  nb::object track(llvm::MachineFunction *mf, nb::handle value,
+                   nb::handle parent) {
+    auto &handles = functions.at(mf);
+    auto key = std::make_pair(nb::inst_ptr<void>(value), value.type().ptr());
+    if (auto it = handles.find(key); it != handles.end()) {
+      nb::object existing = it->second();
+      if (!existing.is_none() && nb::inst_ready(existing))
+        return existing;
+    }
+    // nanobind's pointer registry can still contain an invalidated wrapper
+    // when LLVM reuses its address. Never revive that wrapper for a new object.
+    if (parent.is_valid() && !nb::inst_ready(value)) {
+      nb::object fresh = nb::inst_reference(
+          value.type(), nb::inst_ptr<void>(value), ownerHandle());
+      handles.insert_or_assign(key, nb::weakref(fresh));
+      return fresh;
+    }
+    handles.insert_or_assign(key, nb::weakref(value));
+    return nb::borrow(value);
+  }
+
+  void invalidate(llvm::MachineFunction *mf) {
+    invalidateHandles(functions.at(mf));
+    unregister(mf);
+    functions.erase(mf);
+  }
+
+  void invalidateViews() {
+    for (auto &[mf, handles] : functions)
+      invalidateHandles(handles);
+  }
+
+private:
+  using Handles = llvm::DenseMap<std::pair<void *, PyObject *>, nb::weakref>;
+  nb::object ownerHandle();
+
+  static void invalidateHandles(Handles &handles) {
+    for (auto &[ptr, weak] : handles) {
+      nb::object value = weak();
+      if (!value.is_none()) {
+        nb::inst_set_state(value, /*ready=*/false,
+                           /*destruct=*/nb::inst_state(value).second);
+      }
+    }
+    handles.clear();
+  }
+
+  void unregister(llvm::MachineFunction *mf) {
+    auto &trackers = machineHandleTrackers();
+    if (auto it = trackers.find(mf); it != trackers.end() && it->second == this)
+      trackers.erase(it);
+  }
+
+  void unregister() {
+    for (auto &[mf, handles] : functions)
+      unregister(mf);
+    functions.clear();
+  }
+
+  MirModule &owner;
+  std::unordered_map<llvm::MachineFunction *, Handles> functions;
+};
+
+struct InvalidateMachineHandles {
+  MachineHandleTracker &tracker;
+  ~InvalidateMachineHandles() { tracker.invalidateViews(); }
+};
+
+class InvalidateMachineFunctionPass : public llvm::MachineFunctionPass {
+public:
+  static char ID;
+  explicit InvalidateMachineFunctionPass(MachineHandleTracker &tracker)
+      : llvm::MachineFunctionPass(ID), tracker(tracker) {}
+
+  bool runOnMachineFunction(llvm::MachineFunction &mf) override {
+    tracker.invalidate(&mf);
+    return false;
+  }
+
+  void getAnalysisUsage(llvm::AnalysisUsage &au) const override {
+    au.setPreservesAll();
+    llvm::MachineFunctionPass::getAnalysisUsage(au);
+  }
+
+private:
+  MachineHandleTracker &tracker;
+};
+char InvalidateMachineFunctionPass::ID = 0;
+
+// Invalidate callback-created views before each function is freed, rather than
+// leaving them dangling while callbacks for the next function run.
+class MachinePassManager : public llvm::legacy::PassManager {
+public:
+  explicit MachinePassManager(MachineHandleTracker &tracker)
+      : tracker(tracker) {}
+
+  void add(llvm::Pass *pass) override {
+    static llvm::AnalysisID freeID = [] {
+      std::unique_ptr<llvm::FunctionPass> free(
+          llvm::createFreeMachineFunctionPass());
+      return free->getPassID();
+    }();
+    if (pass->getPassID() == freeID)
+      llvm::legacy::PassManager::add(
+          new InvalidateMachineFunctionPass(tracker));
+    llvm::legacy::PassManager::add(pass);
+  }
+
+private:
+  MachineHandleTracker &tracker;
+};
 
 // A machine register paired with the MachineFunction that owns it. A virtual
 // register's numeric id is only an index into its own function's
@@ -368,6 +504,8 @@ public:
   }
 
   bool runOnMachineFunction(llvm::MachineFunction &mfn) override {
+    RegAllocAssignments &result =
+        results.emplace_back(mfn.getName().str(), RegAllocAssignments{}).second;
     llvm::VirtRegMap &vrm =
         getAnalysis<llvm::VirtRegMapWrapperLegacy>().getVRM();
     llvm::MachineRegisterInfo &mri = mfn.getRegInfo();
@@ -412,12 +550,46 @@ public:
     return false;
   }
 
-  RegAllocAssignments &getResult() { return result; }
+  std::vector<std::pair<std::string, RegAllocAssignments>> &getResults() {
+    return results;
+  }
 
 private:
-  RegAllocAssignments result;
+  std::vector<std::pair<std::string, RegAllocAssignments>> results;
 };
 char VRMCapturePass::ID = 0;
+
+static llvm::Function *
+createMachineFunctionStub(llvm::Module &module, const std::string &name,
+                          llvm::FunctionType *fnTy,
+                          llvm::GlobalValue::LinkageTypes linkage) {
+  if (name.empty())
+    throw nb::value_error("function name must not be empty");
+  if (name.find('\0') != std::string::npos)
+    throw nb::value_error("function name must not contain NUL bytes");
+  if (llvm::GlobalValue *existing = module.getNamedValue(name)) {
+    throw nb::value_error(
+        ("module already has a " +
+         std::string(llvm::isa<llvm::Function>(existing) ? "function"
+                                                         : "symbol") +
+         " named '" + name + "'")
+            .c_str());
+  }
+  if (fnTy && &fnTy->getContext() != &module.getContext())
+    throw nb::value_error("function type belongs to a different context");
+  if (!fnTy)
+    fnTy = llvm::FunctionType::get(llvm::Type::getVoidTy(module.getContext()),
+                                   /*isVarArg=*/false);
+  llvm::Function *f = llvm::Function::Create(fnTy, linkage, name, module);
+  // Codegen visits definitions only; the selected MIR supplies the real body.
+  llvm::Value *ret = fnTy->getReturnType()->isVoidTy()
+                         ? nullptr
+                         : llvm::PoisonValue::get(fnTy->getReturnType());
+  llvm::ReturnInst::Create(
+      module.getContext(), ret,
+      llvm::BasicBlock::Create(module.getContext(), "entry", f));
+  return f;
+}
 
 // Owns everything the MachineFunctions transitively depend on, so none of it is
 // freed out from under them: the LLVMContext (pinned by `ctxKeepAlive`), the IR
@@ -452,9 +624,32 @@ public:
 
   llvm::Module &module() { return *module_; }
 
+  llvm::MachineFunction *
+  addMachineFunction(const std::string &name, llvm::FunctionType *fnTy,
+                     llvm::GlobalValue::LinkageTypes linkage) {
+    BuildOwned *build = std::get_if<BuildOwned>(&state_);
+    if (!build) {
+      throw std::runtime_error(
+          "add_machine_function requires an un-emitted module built with "
+          "create_machine_function");
+    }
+    if (!build->mmiwp)
+      throw std::runtime_error("codegen is already running for this module");
+    llvm::Function *f =
+        createMachineFunctionStub(*module_, name, fnTy, linkage);
+    llvm::MachineFunction &mf =
+        build->mmiwp->getMMI().getOrCreateMachineFunction(*f);
+    mf.push_back(mf.CreateMachineBasicBlock());
+    handles_.add(mf);
+    return &mf;
+  }
+
   // The query handle the read accessors used to get for free as a field: the
   // active alternative knows how to produce its own llvm::MachineModuleInfo*.
   llvm::MachineModuleInfo *mmi() {
+    if (BuildOwned *build = std::get_if<BuildOwned>(&state_);
+        build && !build->mmiwp)
+      throw std::runtime_error("codegen is already running for this module");
     return std::visit([](auto &s) { return s.queryHandle(); }, state_);
   }
 
@@ -489,6 +684,8 @@ public:
       throw std::runtime_error(
           "emit_object requires a module built with create_machine_function");
     }
+    if (!build->mmiwp)
+      throw std::runtime_error("codegen is already running for this module");
     llvm::TargetMachine *tm = build->tm;
     llvm::MachineModuleInfo *info = &build->mmiwp->getMMI();
 
@@ -631,7 +828,7 @@ public:
     // no deferred flush surprises when `pm` outlives here).
     llvm::SmallVector<char, 0> buf;
     llvm::raw_svector_ostream os(buf);
-    auto pm = std::make_unique<llvm::legacy::PassManager>();
+    auto pm = std::make_unique<MachinePassManager>(handles_);
     // addPassesToEmitFile adopts the MMIWrapperPass into `pm` (which we keep,
     // so `info` stays valid); it holds the built MachineFunctions.
     // LCOV_EXCL_START -- AArch64 can always emit an object file
@@ -659,6 +856,8 @@ public:
     // re-raises any Python exception a scheduler override stashed during the
     // run.
     std::string diag;
+    handles_.invalidateViews();
+    InvalidateMachineHandles invalidate{handles_};
     {
       eudsl::ScopedDiagnosticCapture capture(module_->getContext(), diag);
       try {
@@ -700,7 +899,7 @@ public:
   // emitObject this is build-path-only and one-shot: the build wrapper is
   // adopted into the pipeline, so the BuildOwned is consumed into an
   // EmittedOwned.
-  RegAllocAssignments regallocAssignments(const std::string &regalloc) {
+  nb::dict regallocAssignments(const std::string &regalloc) {
     if (std::holds_alternative<EmittedOwned>(state_))
       throw std::runtime_error("object already emitted");
     BuildOwned *build = std::get_if<BuildOwned>(&state_);
@@ -709,6 +908,8 @@ public:
           "regalloc_assignments requires a module built with "
           "create_machine_function");
     }
+    if (!build->mmiwp)
+      throw std::runtime_error("codegen is already running for this module");
     llvm::MachineModuleInfo *info = &build->mmiwp->getMMI();
 
     // Resolve the allocator's pass constructor: a Python-registered class (via
@@ -770,8 +971,7 @@ public:
     // pipeline gets this through TargetPassConfig, which we bypass here.
     llvm::initializeCodeGen(*llvm::PassRegistry::getPassRegistry());
 
-    RegAllocAssignments out;
-    auto pm = std::make_unique<llvm::legacy::PassManager>();
+    auto pm = std::make_unique<MachinePassManager>(handles_);
     // The wrapper (holding the built MachineFunctions) is adopted into `pm`;
     // it provides the MMI the MachineFunctionPasses query. `info` stays valid
     // because `pm` keeps the wrapper alive.
@@ -791,8 +991,11 @@ public:
     // outlives a borrowed pointer once `pm` is parked in EmittedOwned.
     auto *capturePass = new VRMCapturePass();
     pm->add(capturePass);
+    pm->add(llvm::createFreeMachineFunctionPass());
 
     std::string diag;
+    handles_.invalidateViews();
+    InvalidateMachineHandles invalidate{handles_};
     {
       eudsl::ScopedDiagnosticCapture capture(module_->getContext(), diag);
       try {
@@ -804,7 +1007,6 @@ public:
         throw;
       }
     }
-    out = std::move(capturePass->getResult());
     // Consume the BuildOwned into an EmittedOwned so a later query keeps `info`
     // valid and a second run refuses cleanly.
     state_ = EmittedOwned{std::move(pm), info};
@@ -814,6 +1016,9 @@ public:
       throw std::runtime_error(
           eudsl::withDetail("register allocation failed", diag));
     // LCOV_EXCL_STOP
+    nb::dict out;
+    for (auto &[name, result] : capturePass->getResults())
+      out[nb::str(name.data(), name.size())] = nb::cast(std::move(result));
     return out;
   }
 
@@ -823,14 +1028,49 @@ private:
       std::unique_ptr<llvm::Module> module,
       std::variant<CodegenOwned, ParseOwned, BuildOwned, EmittedOwned> state)
       : ctxKeepAlive_(std::move(ctx)), module_(std::move(module)),
-        state_(std::move(state)) {}
+        state_(std::move(state)), handles_(*this) {
+    for (llvm::Function &f : *module_) {
+      if (llvm::MachineFunction *mf = mmi()->getMachineFunction(f))
+        handles_.add(*mf);
+    }
+  }
 
   std::shared_ptr<llvm::LLVMContext> ctxKeepAlive_;
   std::unique_ptr<llvm::Module> module_;
   std::variant<CodegenOwned, ParseOwned, BuildOwned, EmittedOwned> state_;
+  MachineHandleTracker handles_;
 };
 
+nb::object MachineHandleTracker::ownerHandle() { return nb::find(&owner); }
+
 } // namespace
+
+nb::object eudsl::trackMachineHandles(nb::handle value, nb::handle parent) {
+  if (nb::isinstance<nb::list>(value)) {
+    nb::list list = nb::borrow<nb::list>(value);
+    for (size_t i = 0; i < list.size(); ++i)
+      list[i] = trackMachineHandles(list[i], parent);
+    return list;
+  }
+  llvm::MachineFunction *mf = nullptr;
+  if (nb::isinstance<llvm::MachineFunction>(value))
+    mf = nb::inst_ptr<llvm::MachineFunction>(value);
+  else if (nb::isinstance<llvm::MachineBasicBlock>(value))
+    mf = nb::inst_ptr<llvm::MachineBasicBlock>(value)->getParent();
+  else if (nb::isinstance<llvm::MachineInstr>(value))
+    mf = nb::inst_ptr<llvm::MachineInstr>(value)->getMF();
+  else if (nb::isinstance<llvm::MachineOperand>(value))
+    mf = nb::inst_ptr<llvm::MachineOperand>(value)->getParent()->getMF();
+  else if (nb::isinstance<llvm::MachineRegisterInfo>(value))
+    mf = const_cast<llvm::MachineFunction *>(
+        &nb::inst_ptr<llvm::MachineRegisterInfo>(value)->getMF());
+  else if (nb::isinstance<llvm::MachineIRBuilder>(value))
+    mf = &nb::inst_ptr<llvm::MachineIRBuilder>(value)->getMF();
+  if (auto it = machineHandleTrackers().find(mf);
+      it != machineHandleTrackers().end())
+    return it->second->track(mf, value, parent);
+  return nb::borrow(value);
+}
 
 // LowLevelType (LLT) is the generic-MIR type: a target-independent "bag of
 // bits" describing a scalar/pointer/vector operand, distinct from the uniqued
@@ -981,7 +1221,8 @@ void populate_mir(nb::module_ &m) {
   // llvm::MachineOperand -- one operand of a MachineInstr. is_def/is_use are
   // register-only in LLVM (they assert otherwise), so they are guarded to
   // report false for non-register operands rather than crash.
-  nb::class_<llvm::MachineOperand>(m, "MachineOperand")
+  nb::class_<llvm::MachineOperand>(m, "MachineOperand",
+                                   nb::is_weak_referenceable())
       .def_prop_ro("is_reg",
                    [](llvm::MachineOperand &self) { return self.isReg(); })
       .def_prop_ro("is_imm",
@@ -1116,7 +1357,8 @@ void populate_mir(nb::module_ &m) {
               throw nb::value_error("operand is not a MachineBasicBlock");
             return self.getMBB();
           },
-          nb::rv_policy::reference_internal)
+          nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>())
       .def_prop_ro("index",
                    [](llvm::MachineOperand &self) {
                      if (!self.isFI() && !self.isCPI() && !self.isJTI() &&
@@ -1153,7 +1395,7 @@ void populate_mir(nb::module_ &m) {
   // llvm::MachineInstr -- one machine instruction. opcode is the target opcode
   // number; opcode_name resolves its mnemonic via the function's
   // TargetInstrInfo. Non-owning (lives in its MachineBasicBlock).
-  nb::class_<llvm::MachineInstr>(m, "MachineInstr")
+  nb::class_<llvm::MachineInstr>(m, "MachineInstr", nb::is_weak_referenceable())
       .def_prop_ro("opcode",
                    [](llvm::MachineInstr &self) { return self.getOpcode(); })
       .def_prop_ro("opcode_name",
@@ -1185,7 +1427,8 @@ void populate_mir(nb::module_ &m) {
               throw nb::index_error("operand index out of range");
             return &self.getOperand(i);
           },
-          "index"_a, nb::rv_policy::reference_internal)
+          "index"_a, nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>())
       .def(
           "substitute_register",
           [](llvm::MachineInstr &self, unsigned fromReg, unsigned toReg,
@@ -1204,7 +1447,8 @@ void populate_mir(nb::module_ &m) {
           [](llvm::MachineInstr &self) -> const llvm::MachineBasicBlock * {
             return self.getParent();
           },
-          nb::rv_policy::reference_internal)
+          nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>())
       .def_prop_ro("num_defs",
                    [](llvm::MachineInstr &self) { return self.getNumDefs(); })
       .def_prop_ro("num_explicit_operands",
@@ -1349,7 +1593,8 @@ void populate_mir(nb::module_ &m) {
 
   // llvm::MachineBasicBlock -- a machine basic block. `instructions` is the
   // ordered list of its MachineInstrs.
-  nb::class_<llvm::MachineBasicBlock>(m, "MachineBasicBlock")
+  nb::class_<llvm::MachineBasicBlock>(m, "MachineBasicBlock",
+                                      nb::is_weak_referenceable())
       .def_prop_ro(
           "name",
           [](llvm::MachineBasicBlock &self) { return self.getName().str(); })
@@ -1364,13 +1609,15 @@ void populate_mir(nb::module_ &m) {
               instrs.push_back(&mi);
             return instrs;
           },
-          nb::rv_policy::reference_internal)
+          nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>())
       .def_prop_ro(
           "parent",
           [](llvm::MachineBasicBlock &self) -> llvm::MachineFunction * {
             return self.getParent();
           },
-          nb::rv_policy::reference_internal)
+          nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>())
       .def_prop_ro(
           "is_entry_block",
           [](llvm::MachineBasicBlock &self) { return self.isEntryBlock(); })
@@ -1390,7 +1637,8 @@ void populate_mir(nb::module_ &m) {
                                                          self.succ_end());
             return succs;
           },
-          nb::rv_policy::reference_internal)
+          nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>())
       .def_prop_ro(
           "predecessors",
           [](llvm::MachineBasicBlock &self) {
@@ -1398,7 +1646,8 @@ void populate_mir(nb::module_ &m) {
                                                          self.pred_end());
             return preds;
           },
-          nb::rv_policy::reference_internal)
+          nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>())
       .def(
           "add_successor",
           [](llvm::MachineBasicBlock &self, llvm::MachineBasicBlock *succ) {
@@ -1440,7 +1689,8 @@ void populate_mir(nb::module_ &m) {
   // register-class/hint lookups and virtual-register creation. Non-owning:
   // reached from MachineFunction via `reg_info`, borrowed and valid only as
   // long as the function is.
-  nb::class_<llvm::MachineRegisterInfo>(m, "MachineRegisterInfo")
+  nb::class_<llvm::MachineRegisterInfo>(m, "MachineRegisterInfo",
+                                        nb::is_weak_referenceable())
       .def(
           "reg_class",
           [](llvm::MachineRegisterInfo &self,
@@ -1491,7 +1741,8 @@ void populate_mir(nb::module_ &m) {
   // instruction selection. Non-owning: it lives inside the MachineModuleInfo
   // that produced it, so it is returned by pointer with the owning wrapper kept
   // alive (reference_internal).
-  nb::class_<llvm::MachineFunction>(m, "MachineFunction")
+  nb::class_<llvm::MachineFunction>(m, "MachineFunction",
+                                    nb::is_weak_referenceable())
       .def_prop_ro(
           "name",
           [](llvm::MachineFunction &self) { return self.getName().str(); })
@@ -1503,7 +1754,8 @@ void populate_mir(nb::module_ &m) {
               blocks.push_back(&mbb);
             return blocks;
           },
-          nb::rv_policy::reference_internal)
+          nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>())
       .def_prop_ro("num_blocks",
                    [](llvm::MachineFunction &self) { return self.size(); })
       .def(
@@ -1512,20 +1764,23 @@ void populate_mir(nb::module_ &m) {
              unsigned mbbNumber) -> llvm::MachineBasicBlock * {
             return self.getBlockNumbered(mbbNumber);
           },
-          "mbb_number"_a, nb::rv_policy::reference,
+          "mbb_number"_a, nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "The MachineBasicBlock with number `mbb_number`.")
       .def_prop_ro(
           "function",
           [](llvm::MachineFunction &self) -> const llvm::Function * {
             return &self.getFunction();
           },
-          nb::rv_policy::reference_internal)
+          nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>())
       .def_prop_ro(
           "reg_info",
           [](llvm::MachineFunction &self) -> llvm::MachineRegisterInfo * {
             return &self.getRegInfo();
           },
           nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "The MachineRegisterInfo for this function -- virtual-register "
           "creation and register-class/hint queries.")
       .def_prop_ro(
@@ -1534,6 +1789,7 @@ void populate_mir(nb::module_ &m) {
             return &self.getSubtarget();
           },
           nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "The TargetSubtargetInfo this function is being compiled for -- "
           "register_info/instr_info reach the target-static TargetRegisterInfo "
           "/TargetInstrInfo from it.")
@@ -1613,6 +1869,7 @@ void populate_mir(nb::module_ &m) {
           },
           "basic_block"_a.none() = nb::none(),
           nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "Append a new, empty MachineBasicBlock to the function, optionally "
           "linked to an IR BasicBlock for debug info/naming.")
       .def(
@@ -1671,6 +1928,14 @@ void populate_mir(nb::module_ &m) {
               "eliminate (a coalescing-quality measure).");
 
   nb::class_<MirModule>(m, "MirModule")
+      .def("add_machine_function", &MirModule::addMachineFunction, "name"_a,
+           "function_type"_a = nullptr,
+           "linkage"_a = llvm::GlobalValue::LinkageTypes::ExternalLinkage,
+           nb::rv_policy::reference_internal,
+           nb::call_policy<eudsl::TrackMachineHandles>(),
+           "Append a MachineFunction with an empty entry block to a module "
+           "built with create_machine_function. Only valid before emission "
+           "or regalloc_assignments; returns the new MachineFunction.")
       .def(
           "machine_function",
           [](MirModule &self,
@@ -1687,7 +1952,8 @@ void populate_mir(nb::module_ &m) {
             }
             return mf;
           },
-          "name"_a, nb::rv_policy::reference_internal)
+          "name"_a, nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>())
       .def_prop_ro(
           "machine_functions",
           [](MirModule &self) {
@@ -1700,6 +1966,7 @@ void populate_mir(nb::module_ &m) {
             return mfs;
           },
           nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "The MachineFunctions in the module (functions without one -- e.g. "
           "declarations -- are skipped).")
       .def("to_mir", &MirModule::toMIR,
@@ -1717,15 +1984,20 @@ void populate_mir(nb::module_ &m) {
           "names a registered RegAllocBase subclass (see register_regalloc), "
           "it "
           "drives register allocation instead of the target default; an "
-          "unregistered name raises.")
-      .def("regalloc_assignments", &MirModule::regallocAssignments,
-           "regalloc"_a,
-           "Run register allocation with the named allocator (a native name "
-           "like 'greedy', or a register_regalloc name) over the built MIR and "
-           "return the post-RA vreg->physreg assignment map, without emitting "
-           "an object. Verifies the MIR first, raising if it is malformed; an "
-           "unknown allocator name raises. Build-path-only and one-shot, like "
-           "emit_object.");
+          "unregistered name raises. Running the pipeline invalidates borrowed "
+          "MIR handles, including on failure.")
+      .def(
+          "regalloc_assignments", &MirModule::regallocAssignments,
+          "regalloc"_a = "greedy",
+          "Run register allocation with the named allocator (a native name "
+          "like 'greedy', or a register_regalloc name) over the built MIR and "
+          "return a function-name -> RegAllocAssignments map, without "
+          "emitting an object. Virtual-register ids are function-local, so "
+          "assignments, spills, and copy counts are kept separate per "
+          "function. Verifies the MIR first, raising if it is malformed; an "
+          "unknown allocator name raises. Build-path-only and one-shot, like "
+          "emit_object. Running the pipeline invalidates borrowed MIR handles; "
+          "the returned snapshots own their data.");
 
   // Run instruction selection on an IR module and hand back the MirModule that
   // owns the resulting MachineFunctions. Consumes the
@@ -1865,21 +2137,11 @@ void populate_mir(nb::module_ &m) {
       "create_machine_function",
       [](eudsl::Module &mod, llvm::TargetMachine &tm, const std::string &name,
          llvm::FunctionType *fnTy, llvm::GlobalValue::LinkageTypes linkage) {
-        // Validate before take() so a rejected call leaves the module usable.
-        // Function::Create does not fail on a name collision -- it appends a
-        // numeric suffix (`f` -> `f.1`), which would then make
-        // machine_function(name) throw a confusing "no function named" error.
-        if (name.empty())
-          throw nb::value_error("function name must not be empty");
-        if (mod.get().getFunction(name)) {
-          throw nb::value_error(
-              ("module already has a function named '" + name + "'").c_str());
-        }
         // Codegen visits every definition except available_externally ones.
         // No ISel ran for a pre-existing definition, so it would reach the
         // pipeline as an empty MachineFunction and abort in MachineDominators.
         for (llvm::Function &other : mod.get()) {
-          if (!other.isDeclaration() &&
+          if (other.getName() != name && !other.isDeclaration() &&
               !other.hasAvailableExternallyLinkage()) {
             throw nb::value_error(("module already defines function '" +
                                    other.getName().str() +
@@ -1888,20 +2150,15 @@ void populate_mir(nb::module_ &m) {
                                       .c_str());
           }
         }
+        // Validate and seed before take() so a rejected call leaves the
+        // module usable.
+        llvm::Function *f =
+            createMachineFunctionStub(mod.get(), name, fnTy, linkage);
 
         std::shared_ptr<llvm::LLVMContext> ctxKeepAlive =
             mod.context().shared();
         std::unique_ptr<llvm::Module> module = mod.take();
         module->setDataLayout(tm.createDataLayout());
-
-        if (!fnTy)
-          fnTy = llvm::FunctionType::get(
-              llvm::Type::getVoidTy(module->getContext()), /*isVarArg=*/false);
-        llvm::Function *f =
-            llvm::Function::Create(fnTy, linkage, name, *module);
-        llvm::ReturnInst::Create(
-            module->getContext(),
-            llvm::BasicBlock::Create(module->getContext(), "entry", f));
 
         auto mmiwp = std::make_unique<llvm::MachineModuleInfoWrapperPass>(&tm);
         llvm::MachineFunction &mf =
@@ -1922,7 +2179,8 @@ void populate_mir(nb::module_ &m) {
   // function's entry block. Entering the builder as a context manager
   // (`with MachineIRBuilder(mf):`) makes it the current builder for the
   // duration of the block; current_machine_builder() reads it back.
-  nb::class_<llvm::MachineIRBuilder>(m, "MachineIRBuilder")
+  nb::class_<llvm::MachineIRBuilder>(m, "MachineIRBuilder",
+                                     nb::is_weak_referenceable())
       .def(
           "__init__",
           [](llvm::MachineIRBuilder *self, llvm::MachineFunction &mf) {
@@ -1936,7 +2194,8 @@ void populate_mir(nb::module_ &m) {
             new (self) llvm::MachineIRBuilder(mf);
             self->setMBB(mf.front());
           },
-          "machine_function"_a, nb::keep_alive<1, 2>())
+          "machine_function"_a, nb::keep_alive<1, 2>(),
+          nb::call_policy<eudsl::TrackMachineHandles>())
       .def(
           "__enter__",
           [](llvm::MachineIRBuilder *self) -> llvm::MachineIRBuilder * {
@@ -1947,7 +2206,12 @@ void populate_mir(nb::module_ &m) {
           nb::rv_policy::reference)
       .def(
           "__exit__",
-          [](llvm::MachineIRBuilder *self, nb::handle, nb::handle, nb::handle) {
+          [](nb::handle value, nb::handle, nb::handle, nb::handle) {
+            if (!nb::isinstance<llvm::MachineIRBuilder>(value))
+              throw nb::type_error("__exit__ requires a MachineIRBuilder");
+            // Exiting an entered builder must still unwind the stack if codegen
+            // invalidated its MIR handles inside the with block.
+            auto *self = nb::inst_ptr<llvm::MachineIRBuilder>(value);
             auto &stack = machineBuilderStack();
             if (stack.empty() || stack.back() != self)
               throw nb::value_error("unbalanced MachineIRBuilder enter/exit");
@@ -2017,6 +2281,7 @@ void populate_mir(nb::module_ &m) {
             return &self.getMBB();
           },
           nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "The block new instructions are appended to.")
       .def(
           "set_block",
@@ -2031,6 +2296,7 @@ void populate_mir(nb::module_ &m) {
             return &self.getMF();
           },
           nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "The MachineFunction this builder inserts into.")
       .def(
           "build_icmp",
@@ -2067,6 +2333,7 @@ void populate_mir(nb::module_ &m) {
             return self.buildBr(*dest).getInstr();
           },
           "dest"_a, nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "Build an unconditional branch (G_BR) to `dest`; returns the "
           "instruction so its target can be repointed.")
       .def(
@@ -2090,6 +2357,7 @@ void populate_mir(nb::module_ &m) {
             return self.buildBr(*dest).getInstr();
           },
           "dest"_a, nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "Unconditional branch to `dest` that also wires the CFG successor "
           "edge from the current block (add_successor + build_br in one step); "
           "returns the G_BR so its target can be repointed. This helper owns "
@@ -2121,6 +2389,7 @@ void populate_mir(nb::module_ &m) {
           },
           "cond"_a, "true_block"_a, "false_block"_a,
           nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "Conditional branch: G_BRCOND on `cond` to `true_block`, fallthrough "
           "G_BR to `false_block`, wiring both CFG successor edges from the "
           "current block (build_brcond + build_br + two add_successor calls in "
@@ -2168,6 +2437,7 @@ void populate_mir(nb::module_ &m) {
             return phi.getInstr();
           },
           "type"_a, nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "Build a G_PHI with only its def (of type `type`); add incomings "
           "later "
           "with MachineInstr.add_phi_incoming. Its def is operand 0.")
@@ -2179,6 +2449,7 @@ void populate_mir(nb::module_ &m) {
             return self.buildInstr(opcode).getInstr();
           },
           "opcode"_a, nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "Build and insert an empty instruction of the given opcode; append "
           "operands with MachineInstr.add_def/add_use/add_imm/add_mbb. The "
           "BuildMI analogue for target-specific opcodes. Like BuildMI, the "
@@ -2221,6 +2492,7 @@ void populate_mir(nb::module_ &m) {
             return self.buildInstr(opcode, dstOps, srcOps).getInstr();
           },
           "opcode"_a, "dsts"_a, "srcs"_a, nb::rv_policy::reference_internal,
+          nb::call_policy<eudsl::TrackMachineHandles>(),
           "Build an instruction from typed destination and source operands "
           "(the buildInstr(opcode, DstOps, SrcOps) analogue). Each dst is an "
           "LLT (a fresh generic vreg of that type is created and defined) or a "
