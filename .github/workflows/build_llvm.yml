@@ -76,7 +76,7 @@ jobs:
             target-arch: amd64
 
           - name: "macos_arm64"
-            runs-on: "macos-14"
+            runs-on: "macos-15"
             os: "macos"
             host-arch: arm64
             target-arch: arm64
