@@ -6168,7 +6168,7 @@ class Pipeline(Pipeline):
         return self
 
     def tosa_convert_integer_types_bitwidth(
-        self, bitwidth_mappings: List["std::pair<unsigned, unsigned>"] = None
+        self, bitwidth_mappings: List[UnsignedPair] = None
     ):
         """Convert selected TOSA integer types bitwidth
 
