@@ -6167,6 +6167,38 @@ class Pipeline(Pipeline):
         self.add_pass("tosa-convert-integer-type-to-signless")
         return self
 
+    def tosa_convert_integer_types_bitwidth(
+        self, bitwidth_mappings: List["std::pair<unsigned, unsigned>"] = None
+    ):
+        """Convert selected TOSA integer types bitwidth
+
+        Converts integer types using `bitwidth-mappings`, a required list of
+        `<source>:<destination>` bitwidth pairs.
+        Only `4:8` and `48:64` are supported, mapping i4 to i8 and i48 to i64.
+        Specify either mapping or both with `bitwidth-mappings=4:8,48:64`.
+        This facilitates lowering to dialects that do not support such
+        non-standard bitwidths.
+
+        Mappings apply once to the original width, leaving unmapped widths unchanged.
+        Signless values are expected. Widening sign-extends constants.
+        The caller is responsible for ensuring the conversion is appropriate.
+
+        Conversion covers types, function signatures and attribute payloads
+        throughout the module, including non-TOSA operations.
+        External callers and implementations must use the converted signatures.
+
+        Run after `tosa-validate`: converted IR may not conform to the TOSA
+        specification.
+
+        Args:
+            bitwidth_mappings: Integer bitwidth mappings <source>:<destination> (required, non-empty; supported: 4:8, 48:64)
+        """
+        self.add_pass(
+            "tosa-convert-integer-types-bitwidth",
+            **{"bitwidth-mappings": bitwidth_mappings}
+        )
+        return self
+
     def tosa_downgrade_1_1_to_1_0(self):
         """Downgrade TOSA 1.1 specification constructs to TOSA 1.0
 
