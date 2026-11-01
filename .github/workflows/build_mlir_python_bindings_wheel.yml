@@ -436,6 +436,11 @@ jobs:
         run: |
 
           python -c 'import sys; assert not sys._is_gil_enabled()'
+          # ir/diagnostic_handler.py imports _mlirPythonTestNanobind, which is
+          # only built for lit and isn't in the wheel. grep fails if the entry
+          # changes so this doesn't silently stop applying.
+          grep -q '("ir/diagnostic_handler", run),' multithreaded_tests.py
+          sed -i.bak '/("ir\/diagnostic_handler", run),/d' multithreaded_tests.py
           python -W "error:The global interpreter lock (GIL) has been enabled:RuntimeWarning" multithreaded_tests.py
 
       - name: "Test DXIL matmul"
