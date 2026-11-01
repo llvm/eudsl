@@ -31,6 +31,7 @@
 #include <llvm/CodeGen/MachineScheduler.h>
 #include <llvm/CodeGen/Passes.h>
 #include <llvm/CodeGen/RegAllocRegistry.h>
+#include <llvm/CodeGen/RegisterClassInfo.h>
 #include <llvm/CodeGen/ScheduleDAG.h>
 #include <llvm/CodeGen/ScheduleDAGMutation.h>
 #include <llvm/CodeGen/SlotIndexes.h>
@@ -382,7 +383,7 @@ public:
   selectOrSplit(const llvm::LiveInterval &vreg,
                 llvm::SmallVectorImpl<llvm::Register> &splitLVRs) override {
     auto order =
-        llvm::AllocationOrder::create(vreg.reg(), *VRM, RegClassInfo, Matrix);
+        llvm::AllocationOrder::create(vreg.reg(), *VRM, *RegClassInfo, Matrix);
     for (llvm::MCRegister phys : order) {
       if (Matrix->checkInterference(vreg, phys) == llvm::LiveRegMatrix::IK_Free)
         return phys;
@@ -395,11 +396,11 @@ public:
 
   // Public wrappers the harness pass uses to reach the protected driver.
   void pyInit(llvm::VirtRegMap &vrm, llvm::LiveIntervals &lis,
-              llvm::LiveRegMatrix &mat, llvm::Spiller &sp,
-              llvm::MachineFunction &mfn) {
+              llvm::LiveRegMatrix &mat, llvm::RegisterClassInfo &rci,
+              llvm::Spiller &sp, llvm::MachineFunction &mfn) {
     injectedSpiller = &sp;
     mf = &mfn;
-    init(vrm, lis, mat);
+    init(vrm, lis, mat, rci);
   }
   void pyAllocate() {
     allocatePhysRegs();
@@ -554,11 +555,12 @@ public:
   }
 
   void pyInit(llvm::VirtRegMap &vrm, llvm::LiveIntervals &lis,
-              llvm::LiveRegMatrix &mat, llvm::Spiller &sp,
-              llvm::MachineFunction &mfn, llvm::SplitAnalysis *sa,
-              llvm::SplitEditor *se, llvm::MachineBlockFrequencyInfo *mbfi,
-              llvm::EdgeBundles *eb, llvm::SpillPlacement *spl,
-              llvm::VirtRegAuxInfo *vrai, llvm::MachineLoopInfo *ml) {
+              llvm::LiveRegMatrix &mat, llvm::RegisterClassInfo &rci,
+              llvm::Spiller &sp, llvm::MachineFunction &mfn,
+              llvm::SplitAnalysis *sa, llvm::SplitEditor *se,
+              llvm::MachineBlockFrequencyInfo *mbfi, llvm::EdgeBundles *eb,
+              llvm::SpillPlacement *spl, llvm::VirtRegAuxInfo *vrai,
+              llvm::MachineLoopInfo *ml) {
     splitAnalysis = sa;
     splitEditor = se;
     blockFreqInfo = mbfi;
@@ -567,7 +569,7 @@ public:
     auxInfo = vrai;
     loops = ml;
     regCosts = mfn.getSubtarget().getRegisterInfo()->getRegisterCosts(mfn);
-    NativeRegAlloc::pyInit(vrm, lis, mat, sp, mfn);
+    NativeRegAlloc::pyInit(vrm, lis, mat, rci, sp, mfn);
     // Matches RAGreedy::IntfCache.init: MF, the matrix's per-regunit unions,
     // slot indexes, LIS, TRI.
     intfCache.init(mf, Matrix->getLiveUnions(), LIS->getSlotIndexes(), LIS,
@@ -590,7 +592,7 @@ public:
   }
   llvm::EdgeBundles *edgeBundlesPtr() { return edgeBundles; }
   llvm::SpillPlacement *spillPlacerPtr() { return spillPlacer; }
-  llvm::RegisterClassInfo *regClassInfo() { return &RegClassInfo; }
+  llvm::RegisterClassInfo *regClassInfo() { return RegClassInfo; }
   llvm::VirtRegAuxInfo *auxInfoPtr() { return auxInfo; }
   llvm::InterferenceCache *interferenceCachePtr() { return &intfCache; }
 
@@ -640,7 +642,7 @@ public:
   // Physregs, in target allocation order, that Python may try for `li`.
   std::vector<unsigned> allocationOrder(const llvm::LiveInterval &li) {
     auto order =
-        llvm::AllocationOrder::create(li.reg(), *VRM, RegClassInfo, Matrix);
+        llvm::AllocationOrder::create(li.reg(), *VRM, *RegClassInfo, Matrix);
     std::vector<unsigned> ids;
     for (llvm::MCRegister r : order)
       ids.push_back(r.id());
@@ -835,7 +837,7 @@ private:
                                     unsigned id) {
     llvm::MCRegister phys(id);
     auto order =
-        llvm::AllocationOrder::create(vreg.reg(), *VRM, RegClassInfo, Matrix);
+        llvm::AllocationOrder::create(vreg.reg(), *VRM, *RegClassInfo, Matrix);
     for (llvm::MCRegister cand : order) {
       if (cand == phys) {
         if (Matrix->checkInterference(vreg, phys) ==
@@ -948,6 +950,7 @@ public:
     au.addPreserved<llvm::VirtRegMapWrapperLegacy>();
     au.addRequired<llvm::LiveRegMatrixWrapperLegacy>();
     au.addPreserved<llvm::LiveRegMatrixWrapperLegacy>();
+    au.addRequired<llvm::MachineRegisterClassInfoWrapperPass>();
     au.addRequired<llvm::EdgeBundlesWrapperLegacy>();
     au.addRequired<llvm::SpillPlacementWrapperLegacy>();
     llvm::MachineFunctionPass::getAnalysisUsage(au);
@@ -965,6 +968,8 @@ public:
         getAnalysis<llvm::LiveIntervalsWrapperPass>().getLIS();
     llvm::LiveRegMatrix &mat =
         getAnalysis<llvm::LiveRegMatrixWrapperLegacy>().getLRM();
+    llvm::RegisterClassInfo &rci =
+        getAnalysis<llvm::MachineRegisterClassInfoWrapperPass>().getRCI();
     llvm::MachineBlockFrequencyInfo &mbfi =
         getAnalysis<llvm::MachineBlockFrequencyInfoWrapperPass>().getMBFI();
     llvm::LiveStacks &livestks =
@@ -997,7 +1002,7 @@ public:
 
     auto runNative = [&] {
       NativeRegAlloc fallback;
-      fallback.pyInit(vrm, lis, mat, *spiller, mfn);
+      fallback.pyInit(vrm, lis, mat, rci, *spiller, mfn);
       fallback.pyAllocate();
     };
 
@@ -1027,8 +1032,8 @@ public:
     }
     auto *base =
         static_cast<PyRegAllocBase *>(nb::inst_ptr<PyRegAllocBase>(obj));
-    base->pyInit(vrm, lis, mat, *spiller, mfn, &sa, &se, &mbfi, &edgeBundles,
-                 &spillPlacer, &vrai, &loops);
+    base->pyInit(vrm, lis, mat, rci, *spiller, mfn, &sa, &se, &mbfi,
+                 &edgeBundles, &spillPlacer, &vrai, &loops);
     base->pyAllocate();
     // Hold the instance until the pass is destroyed so its C++ subobject (and
     // any Python-recorded witness state) outlives this call; dropped under the
@@ -1073,6 +1078,7 @@ INITIALIZE_PASS_DEPENDENCY(MachineDominatorTreeWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(MachineLoopInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(VirtRegMapWrapperLegacy)
 INITIALIZE_PASS_DEPENDENCY(LiveRegMatrixWrapperLegacy)
+INITIALIZE_PASS_DEPENDENCY(MachineRegisterClassInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(ProfileSummaryInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(MachineBlockFrequencyInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(EdgeBundlesWrapperLegacy)

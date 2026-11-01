@@ -427,6 +427,22 @@ jobs:
             python $f
           done
 
+      # Unlike the loop above this checks results: unittest exits nonzero on
+      # failure. The script silently skips everything when the GIL is enabled,
+      # so fail if loading any extension re-enables it.
+      - name: "Test mlir-python-bindings multithreaded"
+        if: endsWith(matrix.python-version, 't')
+        working-directory: third_party/llvm-project/mlir/test/python
+        run: |
+
+          python -c 'import sys; assert not sys._is_gil_enabled()'
+          # ir/diagnostic_handler.py imports _mlirPythonTestNanobind, which is
+          # only built for lit and isn't in the wheel. grep fails if the entry
+          # changes so this doesn't silently stop applying.
+          grep -q '("ir/diagnostic_handler", run),' multithreaded_tests.py
+          sed -i.bak '/("ir\/diagnostic_handler", run),/d' multithreaded_tests.py
+          python -W "error:The global interpreter lock (GIL) has been enabled:RuntimeWarning" multithreaded_tests.py
+
       - name: "Test DXIL matmul"
         if: matrix.runs-on == 'macos-15'
         run: |

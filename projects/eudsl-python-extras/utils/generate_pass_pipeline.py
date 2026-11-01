@@ -72,6 +72,7 @@ TYPE_MAP = {
     "mlir::arm_sme::ArmStreaming": '"arm_sme::ArmStreaming"',
     "std::string": "str",
     "std::pair<std::string, int32_t>": "StringIntPair",
+    "std::pair<unsigned, unsigned>": "UnsignedPair",
     "uint64_t": "int",
     "unsigned": "int",
     "mlir::GreedySimplifyRegionLevel": "GreedySimplifyRegionLevel",
