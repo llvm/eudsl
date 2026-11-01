@@ -325,3 +325,26 @@ class StringIntPair:
         if not isinstance(other, StringIntPair):
             return NotImplemented
         return (self.string, self.integer) == (other.string, other.integer)
+
+
+class UnsignedPair:
+    """A pass option of C++ type std::pair<unsigned, unsigned>.
+
+    Parsed as `<first>:<second>`, e.g. tosa-convert-integer-types-bitwidth's
+    `bitwidth-mappings=4:8,48:64`.
+    """
+
+    def __init__(self, first: int, second: int):
+        self.first = first
+        self.second = second
+
+    def __str__(self):
+        return f"{self.first}:{self.second}"
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.first!r}, {self.second!r})"
+
+    def __eq__(self, other):
+        if not isinstance(other, UnsignedPair):
+            return NotImplemented
+        return (self.first, self.second) == (other.first, other.second)

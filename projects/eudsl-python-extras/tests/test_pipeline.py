@@ -5,6 +5,7 @@ from mlir.extras.runtime._passes_base import (
     get_module_name_for_debug_dump,
     MlirCompilerError,
     StringIntPair,
+    UnsignedPair,
 )
 from mlir.extras.runtime.passes import Pipeline as pipe
 from mlir.extras.testing import MLIRContext, mlir_ctx as ctx
@@ -165,6 +166,21 @@ def test_string_int_pair_list_option(ctx: MLIRContext):
     # MLIR has to accept what we serialized
     pm = PassManager.parse(str(p))
     assert "custom-op-domain-to-opcode={foo:1,bar:2}" in str(pm)
+
+
+def test_unsigned_pair_list_option(ctx: MLIRContext):
+    from mlir.passmanager import PassManager
+
+    assert repr(UnsignedPair(4, 8)) == "UnsignedPair(4, 8)"
+    assert UnsignedPair(4, 8) == UnsignedPair(4, 8)
+    assert UnsignedPair(4, 8) != UnsignedPair(48, 64)
+    p = pipe().tosa_convert_integer_types_bitwidth(
+        bitwidth_mappings=[UnsignedPair(4, 8), UnsignedPair(48, 64)]
+    )
+    assert "bitwidth-mappings=4:8,48:64" in str(p)
+    # MLIR has to accept what we serialized
+    pm = PassManager.parse(str(p))
+    assert "bitwidth-mappings={4:8,48:64}" in str(pm)
 
 
 def test_get_module_name_for_debug_dump(ctx: MLIRContext):
