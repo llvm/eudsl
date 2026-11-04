@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import ast
 import difflib
 import io
 import pkgutil
@@ -654,9 +655,21 @@ class MLIRMCPServer:
         stdout = io.StringIO()
         stderr = io.StringIO()
         try:
+            # Split off a trailing expression and eval it after exec'ing the
+            # rest, so it runs once and its value can be shown. Re-evaluating
+            # the last line after exec'ing all the code would run it twice.
+            tree = ast.parse(code)
+            last_expr = None
+            if tree.body and isinstance(tree.body[-1], ast.Expr):
+                last_expr = ast.Expression(tree.body.pop().value)
+            val = None
             with redirect_stdout(stdout), redirect_stderr(stderr):
                 with session.ctx, ir.Location.unknown():
-                    exec(code, session.namespace)
+                    exec(compile(tree, "<string>", "exec"), session.namespace)
+                    if last_expr is not None:
+                        val = eval(
+                            compile(last_expr, "<string>", "eval"), session.namespace
+                        )
             # Restore protected namespace keys that user code may have overwritten
             session._populate_namespace()
             out = stdout.getvalue()
@@ -667,14 +680,9 @@ class MLIRMCPServer:
             if err:
                 parts.append(f"Stderr:\n{err.rstrip()}")
             if not parts:
-                try:
-                    last_line = code.strip().splitlines()[-1]
-                    val = eval(last_line, session.namespace)
-                    if val is not None:
-                        parts.append(repr(val))
-                    else:
-                        parts.append("Executed successfully (no output).")
-                except Exception:
+                if val is not None:
+                    parts.append(repr(val))
+                else:
                     parts.append("Executed successfully (no output).")
             return [_text("\n".join(parts))]
         except Exception:

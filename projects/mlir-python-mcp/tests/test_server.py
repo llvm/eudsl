@@ -70,6 +70,15 @@ class TestExecutePython:
         )
         assert "Executed successfully" in result[0].text
 
+    async def test_trailing_expression_runs_once(self, server):
+        await server._dispatch("execute_python", {"code": "xs = []\nxs.append(1)"})
+        result = await server._dispatch("execute_python", {"code": "xs"})
+        assert result[0].text == "[1]"
+
+    async def test_multiline_trailing_expression(self, server):
+        result = await server._dispatch("execute_python", {"code": "(1 +\n 2)"})
+        assert result[0].text == "3"
+
 
 class TestListVariables:
     async def test_empty(self, server):
