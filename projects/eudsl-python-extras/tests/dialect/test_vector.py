@@ -108,7 +108,7 @@ def test_e2e(ctx: MLIRContext):
                     lowering_strategy=VectorMultiReductionLowering.InnerParallel
                 )
                 transform.apply_patterns.vector.split_transfer_full_partial(
-                    split_transfer_strategy=VectorTransferSplit.LinalgCopy
+                    split_transfer_strategy=VectorTransferSplit.MemRefCopy
                 )
                 transform.apply_patterns.vector.transfer_to_scf(
                     max_transfer_rank=1, full_unroll=True

@@ -100,7 +100,11 @@ def test_pipeline_tuning_options_defaults():
     assert isinstance(pto.loop_vectorization, bool)
     assert isinstance(pto.slp_vectorization, bool)
     assert isinstance(pto.loop_interleaving, bool)
-    assert isinstance(pto.merge_functions, bool)
+    # Unset optionals take the library option value from the PassBuilder's
+    # LLVMContext.
+    assert pto.merge_functions is None
+    pto.merge_functions = True
+    assert pto.merge_functions is True
 
 
 def test_run_passes_with_debug(capsys):
