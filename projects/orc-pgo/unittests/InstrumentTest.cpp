@@ -165,6 +165,7 @@ struct Instrumented {
 Instrumented instrument(StringRef IR, bool RunO2 = false,
                         TargetMachine *TM = nullptr) {
   auto Ctx = std::make_unique<LLVMContext>();
+  test::setPgoOptions(*Ctx);
   auto M = test::parseHostIR(*Ctx, IR);
   EXPECT_EQ(test::errorText(runPgoGen(*M)), "");
   Expected<LoweredPgo> L = lowerPgo(*M, TM);
@@ -236,6 +237,7 @@ TEST(Instrument, DiamondCountsEntryAndOneInnerEdge) {
 
 TEST(Instrument, TableHashIsTheInstrumentationHash) {
   auto Ctx = std::make_unique<LLVMContext>();
+  test::setPgoOptions(*Ctx);
   auto M = test::parseHostIR(*Ctx, ShapesIR);
   ASSERT_EQ(test::errorText(runPgoGen(*M)), "");
   EXPECT_FALSE(verifyModule(*M, &errs()));
@@ -342,6 +344,8 @@ Placement placement(Module &M) {
 TEST(Instrument, GenIsDeterministicAcrossASnapshotReparse) {
   for (StringRef IR : {ShapesIR, ValueSitesIR, InlinedLoopIR}) {
     LLVMContext C1, C2;
+    test::setPgoOptions(C1);
+    test::setPgoOptions(C2);
     auto M1 = test::parseHostIR(C1, IR);
     Expected<std::unique_ptr<Module>> M2 =
         parseSnapshot(writeSnapshot(*M1), C2);
@@ -386,6 +390,7 @@ TEST(Instrument, LoopCountersArePromotedOutOfLoops) {
   // Clang lowers with counter promotion: a loop's counter lives in a register
   // and is stored once, on the loop's exit.
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = lowered(Ctx);
   EXPECT_EQ(counterStoresInLoops(*M->getFunction("loop2")), 0u);
 }
@@ -396,6 +401,7 @@ TEST(Instrument, CountersOfLoopsWhoseExitReturnsAreNotPromoted) {
   // is in do-while form, which post-PGO loop rotation leaves alone, so its
   // exit stays a dedicated, returning block; @contloop's exit continues.
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = test::parseHostIR(Ctx, R"(
 source_filename = "r.c"
 define i32 @retloop(i32 %n) {
@@ -480,6 +486,7 @@ exit:
 /// rotation put a guard there.
 bool rotatedWithGuard(TargetMachine *TM) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = test::parseHostIR(Ctx, WideHeaderIR);
   EXPECT_EQ(test::errorText(runPgoGen(*M)), "");
   EXPECT_EQ(test::errorText(lowerPgo(*M, TM).takeError()), "");
@@ -526,6 +533,7 @@ TEST(Instrument, CountersAreExactAfterO2InlinesThem) {
 
 TEST(Instrument, LoweredModulesNeedNoCompilerRtProfileRuntime) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = test::parseHostIR(Ctx, ValueSitesIR);
   ASSERT_EQ(test::errorText(runPgoGen(*M)), "");
   Expected<LoweredPgo> L = lowerPgo(*M);
@@ -548,6 +556,7 @@ TEST(Instrument, LoweredModulesLinkAsElf) {
   for (auto [IR, NumFunctions] :
        {std::pair<StringRef, uint32_t>{ShapesIR, 7}, {ValueSitesIR, 5}}) {
     auto Ctx = std::make_unique<LLVMContext>();
+    test::setPgoOptions(*Ctx);
     auto M = test::parseIRFor(*Ctx, IR, test::hostElfTriple());
     ASSERT_EQ(test::errorText(runPgoGen(*M)), "");
     ASSERT_EQ(test::errorText(lowerPgo(*M).takeError()), "");
@@ -570,6 +579,7 @@ TEST(Instrument, LoweredModulesLinkAsElf) {
 
 TEST(Instrument, AnExistingProfileRuntimeHookIsKept) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M =
       test::parseHostIR(Ctx, std::string(ShapesIR) +
                                  "\n@__llvm_profile_runtime = global i32 7\n");
@@ -580,11 +590,10 @@ TEST(Instrument, AnExistingProfileRuntimeHookIsKept) {
   EXPECT_EQ(cast<ConstantInt>(Hook->getInitializer())->getZExtValue(), 7u);
 }
 
-TEST(Instrument, RunPgoGenReportsOptionSetupFailures) {
-  test::RequiredPositionalOption Positional;
+TEST(Instrument, RunPgoGenNeedsThePgoOptions) {
   LLVMContext Ctx;
   auto M = test::parseHostIR(Ctx, ShapesIR);
-  EXPECT_EQ(test::errorText(runPgoGen(*M)), Positional.ConfigureError);
+  EXPECT_EQ(test::errorText(runPgoGen(*M)), test::MissingPgoOptionsError);
 }
 
 std::string dataSection(const Module &M) {
@@ -594,6 +603,7 @@ std::string dataSection(const Module &M) {
 
 TEST(Instrument, LowerPgoRejectsUndecodableRecords) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = test::parseHostIR(Ctx, "@__profd_bogus = global i32 0");
   M->getGlobalVariable("__profd_bogus")->setSection(dataSection(*M));
   Expected<LoweredPgo> L = lowerPgo(*M);
@@ -619,6 +629,7 @@ std::unique_ptr<Module> withFakeRecord(LLVMContext &Ctx, uint64_t NameRef) {
 
 TEST(Instrument, LowerPgoRejectsRecordsWithUnknownNames) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = withFakeRecord(Ctx, 12345);
   ASSERT_EQ(test::errorText(runPgoGen(*M)), "");
   Expected<LoweredPgo> L = lowerPgo(*M);
@@ -627,6 +638,7 @@ TEST(Instrument, LowerPgoRejectsRecordsWithUnknownNames) {
 
 TEST(Instrument, LowerPgoRejectsRecordsWithoutCounters) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = withFakeRecord(Ctx, IndexedInstrProf::ComputeHash("leaf"));
   ASSERT_EQ(test::errorText(runPgoGen(*M)), "");
   Expected<LoweredPgo> L = lowerPgo(*M);

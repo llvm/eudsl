@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include "TestSupport.h"
+#include "orc-pgo/PgoOptions.h"
 #include "orc-pgo/ValueProfRuntime.h"
 
 #include "llvm/AsmParser/Parser.h"
@@ -11,6 +12,7 @@
 #include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/LibraryOptionsContext.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
@@ -39,6 +41,10 @@ std::unique_ptr<Module> parseIR(LLVMContext &Ctx, StringRef Text) {
     report_fatal_error("invalid test IR");
   }
   return M;
+}
+
+void setPgoOptions(LLVMContext &Ctx) {
+  cantFail(parsePgoOptions(Ctx.getLibraryOptions()));
 }
 
 std::unique_ptr<Module> parseIRFor(LLVMContext &Ctx, StringRef Text,
@@ -142,7 +148,7 @@ void runO2(Module &M) {
   FunctionAnalysisManager FAM;
   CGSCCAnalysisManager CGAM;
   ModuleAnalysisManager MAM;
-  PassBuilder PB;
+  PassBuilder PB(M.getContext());
   PB.registerModuleAnalyses(MAM);
   PB.registerCGSCCAnalyses(CGAM);
   PB.registerFunctionAnalyses(FAM);

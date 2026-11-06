@@ -22,6 +22,14 @@ namespace orc_pgo::test {
 std::unique_ptr<llvm::Module> parseIR(llvm::LLVMContext &Ctx,
                                       llvm::StringRef Text);
 
+/// checkPgoOptions's error for a context not given parsePgoOptions's options.
+inline constexpr const char *MissingPgoOptionsError =
+    "the module's LLVMContext was not given orc-pgo's LLVM options";
+
+/// Gives Ctx parsePgoOptions's options, as orc-pgo's build tool and runtime
+/// give the contexts they run PGO passes in.
+void setPgoOptions(llvm::LLVMContext &Ctx);
+
 /// parseIR, then sets the host triple and data layout, as instrumentation
 /// needs the object format the JIT will use.
 std::unique_ptr<llvm::Module> parseHostIR(llvm::LLVMContext &Ctx,
@@ -43,10 +51,6 @@ template <typename T>
 std::string errorText(llvm::Expected<T> &E) {
   return E ? std::string() : errorText(E.takeError());
 }
-
-/// checkPgoOptions's error for a context not given parsePgoOptions's options.
-inline constexpr const char *MissingPgoOptionsError =
-    "the module's LLVMContext was not given orc-pgo's LLVM options";
 
 /// A TargetMachine for the host, as the JIT compiles for.
 std::unique_ptr<llvm::TargetMachine> makeHostTargetMachine();

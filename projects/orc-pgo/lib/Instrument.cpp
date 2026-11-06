@@ -32,7 +32,7 @@ using namespace llvm;
 namespace orc_pgo {
 
 Error runPgoGen(Module &M) {
-  if (Error E = configurePgoOptions())
+  if (Error E = checkPgoOptions(M.getContext()))
     return E;
   PgoAnalysisManagers AM(M);
   ModulePassManager MPM;

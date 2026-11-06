@@ -14,8 +14,9 @@ class TargetMachine;
 
 namespace orc_pgo {
 
-/// configurePgoOptions(), then LLVM's PGOInstrumentationGen (FDO) under
-/// PgoAnalysisManagers. The llvm.instrprof.* intrinsics stay un-lowered.
+/// LLVM's PGOInstrumentationGen (FDO) under PgoAnalysisManagers. Fails unless
+/// M's context was given parsePgoOptions's options (checkPgoOptions). The
+/// llvm.instrprof.* intrinsics stay un-lowered.
 llvm::Error runPgoGen(llvm::Module &M);
 
 struct LoweredPgo {

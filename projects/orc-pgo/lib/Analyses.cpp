@@ -16,7 +16,7 @@ PgoAnalysisManagers::PgoAnalysisManagers(const Module &M, TargetMachine *TM)
   // Registered first, so PassBuilder's default TargetLibraryAnalysis is
   // ignored.
   FAM.registerPass([this] { return TargetLibraryAnalysis(*TLII); });
-  PassBuilder PB(TM);
+  PassBuilder PB(M.getContext(), TM);
   PB.registerModuleAnalyses(MAM);
   PB.registerCGSCCAnalyses(CGAM);
   PB.registerFunctionAnalyses(FAM);
