@@ -388,6 +388,9 @@ m:
 
 TEST(Instrument, GenPlacesCountersTheSameOnTheInferredModuleAndItsSnapshot) {
   LLVMContext C1, C2, C3;
+  test::setPgoOptions(C1);
+  test::setPgoOptions(C2);
+  test::setPgoOptions(C3);
   auto M1 = test::parseHostIR(C1, ColdCallIR);
   inferFunctionAttributes(*M1);
   ASSERT_TRUE(M1->getFunction("die")->doesNotReturn());

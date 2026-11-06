@@ -27,8 +27,8 @@ struct AotModule {
 
 /// Build steps 2-9 on M, the merged program. M itself only gets TM's triple
 /// and data layout, names for its unnamed globals, and inferred function
-/// attributes. The result is a
-/// re-parse of M's snapshot in a new context, then:
+/// attributes. The result is a re-parse of M's snapshot in a new context, which
+/// is given the library options of M's (see parsePgoOptions), then:
 /// - instrumented by Gen and lowered for TM, as clang -fprofile-generate does;
 /// - optimized at O2;
 /// - thunked;

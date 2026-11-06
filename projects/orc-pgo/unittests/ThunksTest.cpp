@@ -103,12 +103,14 @@ std::unique_ptr<Module> instrumented(LLVMContext &Ctx, StringRef IR) {
 
 TEST(Thunks, OnlyFunctionsGenInstrumentedAreEligible) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = test::parseHostIR(Ctx, ShapesIR);
   EXPECT_FALSE(isThunkEligible(*M->getFunction("plain")));
 }
 
 TEST(Thunks, EligibilityFollowsTheSpec) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = instrumented(Ctx, ShapesIR);
   for (StringRef Name : {"plain", "local", "attrs", "noret"})
     EXPECT_TRUE(isThunkEligible(*M->getFunction(Name))) << Name.str();
@@ -120,6 +122,7 @@ TEST(Thunks, EligibilityFollowsTheSpec) {
 
 TEST(Thunks, CandidatesCarryGensNameAndAreMarkedNoipa) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = instrumented(Ctx, ShapesIR);
   std::vector<ThunkCandidate> C = prepareThunkCandidates(*M);
   std::vector<std::string> Names;
@@ -181,6 +184,7 @@ std::unique_ptr<Module> inferredAndInstrumented(LLVMContext &Ctx) {
 
 TEST(Thunks, AttributesAreInferredBeforeNoipaHidesThem) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = inferredAndInstrumented(Ctx);
   std::vector<ThunkCandidate> C = prepareThunkCandidates(*M);
   EXPECT_EQ(C.size(), 6u);
@@ -200,6 +204,7 @@ TEST(Thunks, AttributesAreInferredBeforeNoipaHidesThem) {
 
 TEST(Thunks, GenInvalidatesInferredMemoryAndSync) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = test::parseHostIR(Ctx, InferenceIR);
   DeclaredAttributes Declared = inferFunctionAttributes(*M);
   // Inference finds @pureuser neither reading nor writing, and not
@@ -227,6 +232,7 @@ TEST(Thunks, GenInvalidatesInferredMemoryAndSync) {
 
 TEST(Thunks, InferredAttributesSurviveThunkifyExceptMemoryAndSync) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = inferredAndInstrumented(Ctx);
   thunkify(*M, prepareThunkCandidates(*M));
   ASSERT_FALSE(verifyModule(*M, &errs()));
@@ -244,6 +250,7 @@ TEST(Thunks, InferredAttributesSurviveThunkifyExceptMemoryAndSync) {
 TEST(Thunks, NoipaStillStopsDeadArgumentElimination) {
   for (bool Prepare : {false, true}) {
     LLVMContext Ctx;
+    test::setPgoOptions(Ctx);
     auto M = inferredAndInstrumented(Ctx);
     if (Prepare)
       prepareThunkCandidates(*M);
@@ -269,6 +276,7 @@ uint64_t slotIndex(const LoadInst &Load, const GlobalVariable &Dispatch) {
 
 TEST(Thunks, ThunksLoadTheirSlotAndMustTailCallIt) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = instrumented(Ctx, ShapesIR);
   ThunkTable T = thunkify(*M, prepareThunkCandidates(*M));
   ASSERT_FALSE(verifyModule(*M, &errs()));
@@ -301,6 +309,7 @@ TEST(Thunks, ThunksLoadTheirSlotAndMustTailCallIt) {
 
 TEST(Thunks, AbiAttributesStayOnTheThunkAndItsCall) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = instrumented(Ctx, ShapesIR);
   thunkify(*M, prepareThunkCandidates(*M));
   ASSERT_FALSE(verifyModule(*M, &errs()));
@@ -325,6 +334,7 @@ TEST(Thunks, AbiAttributesStayOnTheThunkAndItsCall) {
 
 TEST(Thunks, TheBodyKeepsTheDebugInfoAndArgumentNames) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = instrumented(Ctx, ShapesIR);
   DISubprogram *SP = M->getFunction("plain")->getSubprogram();
   ASSERT_NE(SP, nullptr);
@@ -338,6 +348,7 @@ TEST(Thunks, TheBodyKeepsTheDebugInfoAndArgumentNames) {
 
 TEST(Thunks, CandidatesDeletedBeforeThunkifyGetNoSlot) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = instrumented(Ctx, ShapesIR);
   std::vector<ThunkCandidate> C = prepareThunkCandidates(*M);
   ASSERT_EQ(C.size(), 4u); // plain, local, attrs, noret
@@ -359,6 +370,7 @@ TEST(Thunks, CandidatesDeletedBeforeThunkifyGetNoSlot) {
 
 TEST(Thunks, NoCandidatesGiveAnEmptyTable) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M =
       instrumented(Ctx, "define i32 @va(i32 %n, ...) {\n  ret i32 %n\n}\n");
   ThunkTable T = thunkify(*M, prepareThunkCandidates(*M));
@@ -384,6 +396,7 @@ int times100(int X) { return X * 100; }
 
 TEST(Thunks, CallsGoThroughTheSlot) {
   auto Ctx = std::make_unique<LLVMContext>();
+  test::setPgoOptions(*Ctx);
   auto M = instrumented(*Ctx, DispatchIR);
   // The AOT pipeline's order: candidates, lowering, then thunks.
   std::vector<ThunkCandidate> C = prepareThunkCandidates(*M);

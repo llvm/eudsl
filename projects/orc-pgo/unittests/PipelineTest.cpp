@@ -148,6 +148,7 @@ struct Built {
       : Built(IR, test::makeHostTargetMachine(Reloc::PIC_)) {}
   Built(StringRef IR, std::unique_ptr<TargetMachine> BuildTM)
       : Input(test::parseIR(InputCtx, IR)), TM(std::move(BuildTM)) {
+    test::setPgoOptions(InputCtx);
     Expected<AotModule> A = buildAotModule(*Input, *TM);
     if (!A)
       report_fatal_error(A.takeError());
@@ -175,6 +176,7 @@ TEST(Pipeline, TheEmbeddedSnapshotIsTheInputModule) {
   EXPECT_EQ(cast<ConstantInt>(Image->getOperand(3))->getZExtValue(),
             Bytes.size());
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto Parsed = parseSnapshot(Bytes, Ctx);
   ASSERT_EQ(test::errorText(Parsed), "");
   (*Parsed)->setModuleIdentifier(B.Input->getModuleIdentifier());
@@ -294,6 +296,7 @@ TEST(Pipeline, TheImageDescribesTheProgram) {
             Platform);
 
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto Snap = parseSnapshot(StringRef(I.Snapshot, I.SnapshotSize), Ctx);
   ASSERT_EQ(test::errorText(Snap), "");
   EXPECT_NE((*Snap)->getFunction("add1"), nullptr);
@@ -541,6 +544,7 @@ TEST(Pipeline, TierUpAnnotatesTheCountersGenPlacedDespiteInferredColdCalls) {
       buildIndexedProfile(ArrayRef(S.Image->Functions, S.Image->NumFunctions));
   ASSERT_EQ(test::errorText(Profile), "");
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M =
       parseSnapshot(StringRef(S.Image->Snapshot, S.Image->SnapshotSize), Ctx);
   ASSERT_EQ(test::errorText(M), "");
@@ -601,6 +605,7 @@ bool entryIsGuarded(const Function &F) {
 TEST(Pipeline, LoweringRotatesLoopsWithTheBuildsTarget) {
   // Lowered without a target, the loop is rotated.
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto Generic = test::parseHostIR(Ctx, WideHeaderIR);
   ASSERT_EQ(test::errorText(runPgoGen(*Generic)), "");
   ASSERT_EQ(test::errorText(lowerPgo(*Generic).takeError()), "");
@@ -684,6 +689,7 @@ define i32 @main() {
 
 TEST(Pipeline, CodegenFormsMemsetPattern16OnDarwin) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto Input = test::parseIR(Ctx, PatternIR);
   Triple Darwin(Twine(Triple::getArchTypeName(
                     Triple(sys::getProcessTriple()).getArch())) +
@@ -769,9 +775,9 @@ TEST(Pipeline, TuningOptionsMirrorClangs) {
     EXPECT_TRUE(PTO.LoopInterleaving);
     EXPECT_TRUE(PTO.LoopVectorization);
     EXPECT_TRUE(PTO.SLPVectorization);
-    EXPECT_TRUE(PTO.LoopInterchange);
+    EXPECT_EQ(PTO.LoopInterchange, true);
     EXPECT_FALSE(PTO.LoopFusion);
-    EXPECT_FALSE(PTO.MergeFunctions);
+    EXPECT_EQ(PTO.MergeFunctions, false);
     EXPECT_TRUE(PTO.CallGraphProfile);
   }
   // clang neither unrolls nor vectorizes at -O1.
@@ -784,6 +790,7 @@ TEST(Pipeline, TuningOptionsMirrorClangs) {
 
 TEST(Pipeline, EmitsANativeObject) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto Input = test::parseIR(Ctx, ProgramIR);
   auto TM = test::makeHostTargetMachine(Reloc::PIC_);
   Expected<SmallVector<char, 0>> Object = buildAotObject(*Input, *TM);
@@ -808,6 +815,7 @@ TEST(Pipeline, EmitsANativeObject) {
 
 TEST(Pipeline, TheSymbolTableHasWhatCodegenCallsWithoutADeclaration) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto Input = test::parseIR(Ctx, ProgramIR);
   auto TM = test::makeHostTargetMachine(Reloc::PIC_);
   Expected<AotModule> Aot = buildAotModule(*Input, *TM, {"__udivti3"});
@@ -830,6 +838,7 @@ TEST(Pipeline, TheSymbolTableHasWhatCodegenCallsWithoutADeclaration) {
 
 TEST(Pipeline, TheObjectReferencesThePlatformSymbols) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto Input = test::parseIR(Ctx, ProgramIR);
   auto TM = test::makeHostTargetMachine(Reloc::PIC_);
   Expected<SmallVector<char, 0>> Object = buildAotObject(*Input, *TM);
@@ -851,13 +860,12 @@ TEST(Pipeline, TheObjectReferencesThePlatformSymbols) {
     EXPECT_TRUE(Undefined.count(Name)) << Name;
 }
 
-TEST(Pipeline, AnOptionSetupFailureFailsTheBuild) {
-  test::RequiredPositionalOption Positional;
+TEST(Pipeline, AnInputWithoutThePgoOptionsFailsTheBuild) {
   LLVMContext Ctx;
   auto Input = test::parseIR(Ctx, ProgramIR);
   auto TM = test::makeHostTargetMachine(Reloc::PIC_);
   Expected<SmallVector<char, 0>> Object = buildAotObject(*Input, *TM);
-  EXPECT_EQ(test::errorText(Object), Positional.ConfigureError);
+  EXPECT_EQ(test::errorText(Object), test::MissingPgoOptionsError);
 }
 
 } // namespace

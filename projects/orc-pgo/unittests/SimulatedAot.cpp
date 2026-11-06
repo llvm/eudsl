@@ -51,6 +51,7 @@ const OrcPgoSymbol *SimulatedAot::symbol(StringRef Name) const {
 SimulatedAot simulateAot(StringRef IR, ArrayRef<std::string> ExtraSymbols,
                          ArrayRef<HostSymbol> HostSymbols) {
   LLVMContext InputCtx;
+  setPgoOptions(InputCtx);
   auto Input = parseIR(InputCtx, IR);
   auto TM = makeHostTargetMachine(Reloc::PIC_);
   Expected<AotModule> Aot = buildAotModule(*Input, *TM, ExtraSymbols);

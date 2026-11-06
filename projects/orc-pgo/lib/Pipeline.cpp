@@ -21,6 +21,7 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/ProfileData/InstrProf.h"
+#include "llvm/Support/LibraryOptionsContext.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
@@ -41,7 +42,8 @@ static void optimizeAot(Module &M, TargetMachine &TM) {
   FunctionAnalysisManager FAM;
   CGSCCAnalysisManager CGAM;
   ModuleAnalysisManager MAM;
-  PassBuilder PB(&TM, clangPipelineTuningOptions(OptimizationLevel::O2));
+  PassBuilder PB(M.getContext(), &TM,
+                 clangPipelineTuningOptions(OptimizationLevel::O2));
   PB.registerModuleAnalyses(MAM);
   PB.registerCGSCCAnalyses(CGAM);
   PB.registerFunctionAnalyses(FAM);
@@ -141,7 +143,7 @@ static void emitGlue(Module &M, StringRef Snapshot, uint64_t RawVersion,
   // link may run after the registration constructor. main runs after all of
   // them.
   if (Function *Main = M.getFunction("main"); Main && !Main->isDeclaration()) {
-    IRBuilder<> MB(Main->getEntryBlock().getFirstNonPHIOrDbgOrAlloca());
+    IRBuilder<> MB(Main->getEntryBlock().getFirstNonPHIOrAlloca());
     MB.CreateCall(M.getOrInsertFunction(StartName, VoidTy));
   }
 }
@@ -161,6 +163,9 @@ Expected<AotModule> buildAotModule(Module &Input, TargetMachine &TM,
   std::string Snapshot = writeSnapshot(Input);
   AotModule Aot;
   Aot.Ctx = std::make_unique<LLVMContext>();
+  // As clang's CodeGenAction gives its context the -mllvm values, so that the
+  // passes run under Input's library options.
+  Aot.Ctx->getLibraryOptions().assign(Input.getContext().getLibraryOptions());
   Expected<std::unique_ptr<Module>> Parsed = parseSnapshot(Snapshot, *Aot.Ctx);
   // The bytes writeSnapshot just wrote parse.
   if (!Parsed)
