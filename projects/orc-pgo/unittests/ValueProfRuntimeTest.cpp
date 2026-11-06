@@ -54,6 +54,7 @@ prof::ValueProfNode Pool[64];
 
 void usePool(unsigned NumNodes) {
   std::fill(std::begin(Pool), std::end(Pool), prof::ValueProfNode{});
+  resetValueNodePools();
   setValueNodePool(Pool, Pool + NumNodes);
 }
 
@@ -144,7 +145,7 @@ TEST(ValueProfRuntime, DropsAndFlagsNewValuesWhenBothPoolsRunOut) {
   EXPECT_FALSE(valueNodePoolExhausted());
 }
 
-TEST(ValueProfRuntime, SettingThePoolAgainRestartsTheRuntimePool) {
+TEST(ValueProfRuntime, ResettingThePoolsRestartsTheRuntimePool) {
   usePool(0);
   Fixture A({64, 0, 0});
   // 42 * 24 + 16 = 1024: every runtime node.
@@ -159,10 +160,33 @@ TEST(ValueProfRuntime, SettingThePoolAgainRestartsTheRuntimePool) {
 }
 
 TEST(ValueProfRuntime, ValuesAreRecordedWithoutAnImagePool) {
-  setValueNodePool(nullptr, nullptr);
+  resetValueNodePools();
   Fixture F({1, 0, 0});
   __orc_pgo_instrument_target(1, &F.D, 0);
   EXPECT_EQ(F.site(IPVK_IndirectCallTarget, 0), (Values{{1, 1}}));
+  EXPECT_FALSE(valueNodePoolExhausted());
+}
+
+TEST(ValueProfRuntime, ValuesRecordedBeforeTheImagePoolIsSetSurviveIt) {
+  // Static constructors run before __orc_pgo_start, which sets the image pool;
+  // the values they record are in the runtime pool and stay linked.
+  resetValueNodePools();
+  Fixture Early({1, 0, 0});
+  for (uint64_t V : {7, 7, 8})
+    __orc_pgo_instrument_target(V, &Early.D, 0);
+  std::fill(std::begin(Pool), std::end(Pool), prof::ValueProfNode{});
+  setValueNodePool(Pool, Pool + 2);
+  EXPECT_EQ(Early.site(IPVK_IndirectCallTarget, 0), (Values{{7, 2}, {8, 1}}));
+
+  // Fill the image pool, then take more nodes from the runtime pool: none of
+  // them may be a node the early values use.
+  Fixture Later({64, 0, 0});
+  for (uint32_t Site = 0; Site < 4; ++Site)
+    for (uint64_t V = 1; V <= 3; ++V)
+      __orc_pgo_instrument_target(100 * (Site + 1) + V, &Later.D, Site);
+  EXPECT_EQ(Early.site(IPVK_IndirectCallTarget, 0), (Values{{7, 2}, {8, 1}}));
+  for (uint32_t Site = 0; Site < 4; ++Site)
+    EXPECT_EQ(Later.site(IPVK_IndirectCallTarget, Site).size(), 3u);
   EXPECT_FALSE(valueNodePoolExhausted());
 }
 
