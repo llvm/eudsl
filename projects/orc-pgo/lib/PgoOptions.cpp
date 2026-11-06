@@ -7,12 +7,17 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/LibraryOptionsContext.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/xxhash.h"
 #include "llvm/Transforms/Instrumentation/PGOInstrumentation.h"
+
+#include <algorithm>
+#include <iterator>
 
 using namespace llvm;
 
@@ -32,13 +37,6 @@ static constexpr RequiredOption Required[] = {
     {"pgo-instr-memop", true},
 };
 
-// LLVM's instrumentation options are library options (InstrumentationOptions):
-// only cl::ParseCommandLineOptions sets them, and nothing reads them back. This
-// option is parsed along with them, so it records that they are set until
-// cl::ResetAllOptionOccurrences restores both to their defaults.
-static cl::opt<bool> Configured(StringRef(ReservedOptionName), cl::ReallyHidden,
-                                cl::desc("orc-pgo has set its LLVM options"));
-
 // The options are registered by a static initializer in the instrumentation
 // library, next to the pass that reads them. Referencing the pass from this
 // never-called function keeps both linked into static binaries.
@@ -53,27 +51,32 @@ static std::string requiredArg(const RequiredOption &R) {
   return ("-" + R.Name + "=" + (R.Value ? "true" : "false")).str();
 }
 
-Error configurePgoOptions() {
-  // Parsing again would write options that other threads' passes may be
-  // reading.
-  if (Configured)
-    return Error::success();
+Error parsePgoOptions(cl::LibraryOptionsContext &Opts) {
   SmallVector<std::string, 4> Args;
   for (const RequiredOption &R : Required)
     Args.push_back(requiredArg(R));
-  std::string Sentinel = ("-" + ReservedOptionName).str();
   SmallVector<const char *, 8> Argv{"orc-pgo"};
   for (const std::string &A : Args)
     Argv.push_back(A.c_str());
-  Argv.push_back(Sentinel.c_str());
   std::string Message;
   raw_string_ostream OS(Message);
-  if (!cl::ParseCommandLineOptions(Argv.size(), Argv.data(), "", &OS)) {
-    // The arguments are parsed in order, so this may have been set.
-    Configured.reset();
+  if (!cl::parseCommandLineOptions(Opts, Argv, "", &OS)) {
     return createStringError("cannot set orc-pgo's LLVM options: %s",
                              StringRef(Message).rtrim().str().c_str());
   }
+  return Error::success();
+}
+
+Error checkPgoOptions(const LLVMContext &Ctx) {
+  ArrayRef<const char *> Parsed = Ctx.getLibraryOptions().args();
+  auto IsRequired = [](const char *Arg, const RequiredOption &R) {
+    return Arg == requiredArg(R);
+  };
+  if (Parsed.size() < std::size(Required) ||
+      !std::equal(Parsed.end() - std::size(Required), Parsed.end(),
+                  std::begin(Required), IsRequired))
+    return createStringError("the module's LLVMContext was not given "
+                             "orc-pgo's LLVM options");
   return Error::success();
 }
 
@@ -85,9 +88,6 @@ Error checkPgoOptionConflicts(ArrayRef<std::string> LLVMArgs) {
       continue;
     Arg.consume_front("-");
     auto [Name, Value] = Arg.split('=');
-    if (Name == ReservedOptionName)
-      return createStringError("LLVM option -%s is reserved for orc-pgo",
-                               ReservedOptionName.data());
     // A bare bool option means true.
     Given[Name] = Arg.contains('=') ? Value : "true";
   }

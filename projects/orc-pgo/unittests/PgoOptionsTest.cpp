@@ -11,6 +11,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/ProfileData/InstrProf.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/LibraryOptionsContext.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/xxhash.h"
 #include "llvm/Transforms/Instrumentation/PGOInstrumentation.h"
@@ -21,7 +22,7 @@ using namespace orc_pgo;
 
 namespace {
 
-// One function per option configurePgoOptions sets.
+// One function per option parsePgoOptions sets.
 constexpr const char *IR = R"(
 define i32 @diamond(i32 %x) {
 entry:
@@ -59,14 +60,13 @@ struct Gen {
   unsigned MemOpSites = 0;
 };
 
-Gen runGen() {
-  LLVMContext Ctx;
+Gen runGen(LLVMContext &Ctx) {
   std::unique_ptr<Module> M = test::parseIR(Ctx, IR);
   LoopAnalysisManager LAM;
   FunctionAnalysisManager FAM;
   CGSCCAnalysisManager CGAM;
   ModuleAnalysisManager MAM;
-  PassBuilder PB;
+  PassBuilder PB(Ctx);
   PB.registerModuleAnalyses(MAM);
   PB.registerCGSCCAnalyses(CGAM);
   PB.registerFunctionAnalyses(FAM);
@@ -92,11 +92,12 @@ Gen runGen() {
   return G;
 }
 
-void parse(std::vector<const char *> Args) {
+void parse(LLVMContext &Ctx, std::vector<const char *> Args) {
   Args.insert(Args.begin(), "test");
   std::string Message;
   raw_string_ostream OS(Message);
-  ASSERT_TRUE(cl::ParseCommandLineOptions(Args.size(), Args.data(), "", &OS))
+  ASSERT_TRUE(
+      cl::parseCommandLineOptions(Ctx.getLibraryOptions(), Args, "", &OS))
       << Message;
 }
 
@@ -107,54 +108,72 @@ void expectConfigured(const Gen &G) {
   EXPECT_EQ(G.MemOpSites, 1u);
 }
 
-class PgoOptions : public ::testing::Test {
-protected:
-  void SetUp() override { cl::ResetAllOptionOccurrences(); }
-  void TearDown() override { cl::ResetAllOptionOccurrences(); }
-};
-
-TEST_F(PgoOptions, OverridesEarlierValues) {
-  parse({"-pgo-instrument-entry=false", "-pgo-instr-select=false",
-         "-disable-vp=true", "-pgo-instr-memop=false"});
-  Gen Before = runGen();
+TEST(PgoOptions, OverridesEarlierValues) {
+  LLVMContext Ctx;
+  parse(Ctx, {"-pgo-instrument-entry=false", "-pgo-instr-select=false",
+              "-disable-vp=true", "-pgo-instr-memop=false"});
+  Gen Before = runGen(Ctx);
   EXPECT_FALSE(Before.EntryCounted);
   EXPECT_FALSE(Before.SelectStepped);
   EXPECT_EQ(Before.IndirectCallSites, 0u);
   EXPECT_EQ(Before.MemOpSites, 0u);
 
-  ASSERT_EQ(test::errorText(configurePgoOptions()), "");
-  expectConfigured(runGen());
+  ASSERT_EQ(test::errorText(parsePgoOptions(Ctx.getLibraryOptions())), "");
+  expectConfigured(runGen(Ctx));
 }
 
-TEST_F(PgoOptions, TheEntryIsNotInstrumentedByDefault) {
+TEST(PgoOptions, TheEntryIsNotInstrumentedByDefault) {
   // Why orc-pgo sets pgo-instrument-entry: the diamond's spanning tree would
   // otherwise leave its entry block without a counter.
-  Gen G = runGen();
+  LLVMContext Ctx;
+  Gen G = runGen(Ctx);
   EXPECT_FALSE(G.EntryCounted);
   EXPECT_TRUE(G.SelectStepped);
 }
 
-TEST_F(PgoOptions, LaterCallsDoNothingUntilAReset) {
-  ASSERT_EQ(test::errorText(configurePgoOptions()), "");
-  parse({"-pgo-instr-select=false"});
-  ASSERT_EQ(test::errorText(configurePgoOptions()), "");
-  EXPECT_FALSE(runGen().SelectStepped);
-
-  cl::ResetAllOptionOccurrences();
-  ASSERT_EQ(test::errorText(configurePgoOptions()), "");
-  expectConfigured(runGen());
+TEST(PgoOptions, OnlyTheContextsGivenThemRunUnderThem) {
+  cl::LibraryOptionsContext Parsed;
+  ASSERT_EQ(test::errorText(parsePgoOptions(Parsed)), "");
+  LLVMContext Assigned;
+  Assigned.getLibraryOptions().assign(Parsed);
+  expectConfigured(runGen(Assigned));
+  LLVMContext Other;
+  EXPECT_FALSE(runGen(Other).EntryCounted);
 }
 
-TEST_F(PgoOptions, AFailedParseIsReportedEveryTime) {
+TEST(PgoOptions, AFailedParseIsReported) {
   {
     test::RequiredPositionalOption Positional;
-    EXPECT_EQ(test::errorText(configurePgoOptions()),
-              Positional.ConfigureError);
-    EXPECT_EQ(test::errorText(configurePgoOptions()),
-              Positional.ConfigureError);
+    LLVMContext Ctx;
+    EXPECT_EQ(test::errorText(parsePgoOptions(Ctx.getLibraryOptions())),
+              Positional.ParseError);
   }
-  ASSERT_EQ(test::errorText(configurePgoOptions()), "");
-  expectConfigured(runGen());
+  LLVMContext Ctx;
+  ASSERT_EQ(test::errorText(parsePgoOptions(Ctx.getLibraryOptions())), "");
+  expectConfigured(runGen(Ctx));
+}
+
+TEST(PgoOptions, CheckWantsThemParsedLast) {
+  LLVMContext Ctx;
+  EXPECT_EQ(test::errorText(checkPgoOptions(Ctx)),
+            test::MissingPgoOptionsError);
+  parse(Ctx, {"-pgo-function-size-threshold=4", "-disable-vp=true",
+              "-pgo-instr-memop=false", "-pgo-instr-select=false"});
+  EXPECT_EQ(test::errorText(checkPgoOptions(Ctx)),
+            test::MissingPgoOptionsError);
+  ASSERT_EQ(test::errorText(parsePgoOptions(Ctx.getLibraryOptions())), "");
+  EXPECT_EQ(test::errorText(checkPgoOptions(Ctx)), "");
+  parse(Ctx, {"-pgo-instr-select=false"});
+  EXPECT_EQ(test::errorText(checkPgoOptions(Ctx)),
+            test::MissingPgoOptionsError);
+
+  LLVMContext Assigned;
+  Assigned.getLibraryOptions().assign(Ctx.getLibraryOptions());
+  EXPECT_EQ(test::errorText(checkPgoOptions(Assigned)),
+            test::MissingPgoOptionsError);
+  ASSERT_EQ(test::errorText(parsePgoOptions(Ctx.getLibraryOptions())), "");
+  Assigned.getLibraryOptions().assign(Ctx.getLibraryOptions());
+  EXPECT_EQ(test::errorText(checkPgoOptions(Assigned)), "");
 }
 
 std::string conflicts(std::vector<std::string> Args) {
@@ -196,11 +215,6 @@ TEST(PgoOptionConflicts, TheLastOccurrenceWins) {
   EXPECT_EQ(
       conflicts({"-disable-vp=false", "-disable-vp"}),
       "LLVM option -disable-vp was set to true, but orc-pgo requires false");
-}
-
-TEST(PgoOptionConflicts, TheReservedOptionIsRejected) {
-  EXPECT_EQ(conflicts({"--orc-pgo-configured=false"}),
-            "LLVM option -orc-pgo-configured is reserved for orc-pgo");
 }
 
 TEST(PgoOptionsFingerprint, HashesTheParsedArguments) {

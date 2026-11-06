@@ -27,13 +27,17 @@ std::string errorText(llvm::Expected<T> &E) {
   return E ? std::string() : errorText(E.takeError());
 }
 
+/// checkPgoOptions's error for a context not given parsePgoOptions's options.
+inline constexpr const char *MissingPgoOptionsError =
+    "the module's LLVMContext was not given orc-pgo's LLVM options";
+
 /// While alive, the program has a required positional cl::opt, as many LLVM
-/// tools do, so cl::ParseCommandLineOptions and with it configurePgoOptions
-/// fail. Starts and ends with cl::ResetAllOptionOccurrences.
+/// tools do, so cl::ParseCommandLineOptions and with it parsePgoOptions fail.
+/// Starts and ends with cl::ResetAllOptionOccurrences.
 class RequiredPositionalOption {
 public:
-  /// configurePgoOptions's error meanwhile.
-  static constexpr const char *ConfigureError =
+  /// parsePgoOptions's error meanwhile.
+  static constexpr const char *ParseError =
       "cannot set orc-pgo's LLVM options: orc-pgo: Not enough positional "
       "command line arguments specified!\nMust specify at least 1 positional "
       "argument: See: orc-pgo --help";
