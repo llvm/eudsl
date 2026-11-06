@@ -105,6 +105,73 @@ def test_create_machine_function_rejects_other_definitions():
     assert_no_leaks()
 
 
+def test_add_machine_function_reuses_module_and_defaults():
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "f")
+        added = mmi.add_machine_function("g")
+        assert added is mmi.machine_function("g")
+        assert [mf.name for mf in mmi.machine_functions] == ["f", "g"]
+        assert len(added.blocks) == 1
+        assert added.blocks[0].instructions == []
+        assert added.function.function_type.return_type.is_void
+        assert added.function.function_type.num_params == 0
+        assert added.function.linkage == ir.Linkage.EXTERNAL
+    assert_no_leaks()
+
+
+def test_add_machine_function_honors_function_type_and_linkage():
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "f")
+        i32 = types.i32(ctx)
+        fn_ty = types.FunctionType.get(i32, [i32, i32], context=ctx)
+        added = mmi.add_machine_function(
+            "g", function_type=fn_ty, linkage=ir.Linkage.INTERNAL
+        )
+        assert added.function.function_type.return_type == i32
+        assert added.function.function_type.num_params == 2
+        assert added.function.linkage == ir.Linkage.INTERNAL
+        assert "ret i32 poison" in mmi.to_mir()
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize(
+    "name, message",
+    [
+        ("", "must not be empty"),
+        ("g\x00suffix", "must not contain NUL"),
+        ("f", "already has a function named"),
+        ("decl", "already has a function named"),
+        ("data", "already has a symbol named"),
+    ],
+)
+def test_add_machine_function_rejects_name_without_mutating_module(name, message):
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly(
+            "@data = global i32 0\ndeclare void @decl()\n", ctx, "m"
+        )
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(mod, tm, "f")
+        before = mmi.to_mir()
+        with pytest.raises(ValueError, match=message):
+            mmi.add_machine_function(name)
+        assert mmi.to_mir() == before
+        assert [mf.name for mf in mmi.machine_functions] == ["f"]
+        assert mmi.add_machine_function("g").name == "g"
+    assert_no_leaks()
+
+
+def test_create_machine_function_rejects_non_function_symbol():
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly("@data = global i32 0\n", ctx, "m")
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        with pytest.raises(ValueError, match="already has a symbol named"):
+            mir.create_machine_function(mod, tm, "data")
+        assert not mod._is_consumed
+    assert_no_leaks()
+
+
 def test_create_machine_function_allows_skipped_functions():
     # Codegen skips declarations and available_externally definitions.
     src = (
@@ -116,6 +183,90 @@ def test_create_machine_function_allows_skipped_functions():
         tm = jit.TargetMachine(triple=_TRIPLE)
         mmi = mir.create_machine_function(mod, tm, "f")
         assert [mf.name for mf in mmi.machine_functions] == ["f"]
+        mmi.add_machine_function("g")
+        assert [mf.name for mf in mmi.machine_functions] == ["f", "g"]
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize("append", [False, True])
+def test_machine_function_rejects_function_type_from_another_context(append):
+    with ir.Context() as ctx, ir.Context() as foreign:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        fn_ty = types.FunctionType.get(types.void(foreign), [], context=foreign)
+        if append:
+            mmi = mir.create_machine_function(mod, tm, "f")
+            with pytest.raises(ValueError, match="different context"):
+                mmi.add_machine_function("g", function_type=fn_ty)
+            assert [mf.name for mf in mmi.machine_functions] == ["f"]
+        else:
+            with pytest.raises(ValueError, match="different context"):
+                mir.create_machine_function(mod, tm, "f", function_type=fn_ty)
+            assert not mod._is_consumed
+    assert_no_leaks()
+
+
+def test_added_function_keeps_module_and_target_alive():
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "f")
+        added = mmi.add_machine_function("g")
+        del mmi, tm
+        gc.collect()
+        assert added.name == "g"
+        builder = mir.MachineIRBuilder(added)
+        assert builder.build_constant(mir.LLT.scalar(32), 5).is_virtual
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize("parsed", [False, True])
+def test_add_machine_function_rejects_non_build_paths(parsed):
+    with ir.Context() as ctx:
+        mod = ir.parse_assembly("define void @f() { ret void }", ctx, "m")
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.run_codegen_to_mir(mod, tm)
+        if parsed:
+            mmi = mir.parse_mir(mmi.to_mir(), ctx, tm)
+        with pytest.raises(RuntimeError, match="un-emitted"):
+            mmi.add_machine_function("g")
+        assert [mf.name for mf in mmi.machine_functions] == ["f"]
+    assert_no_leaks()
+
+
+def test_added_function_rejects_foreign_register_with_the_same_id():
+    with ir.Context() as ctx:
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        mmi = mir.create_machine_function(ir.Module("m", ctx), tm, "f")
+        first = mir.MachineIRBuilder(mmi.machine_function("f"))
+        second = mir.MachineIRBuilder(mmi.add_machine_function("g"))
+        s32 = mir.LLT.scalar(32)
+        foreign = first.build_constant(s32, 1)
+        local = second.build_constant(s32, 2)
+        assert foreign.id == local.id
+        with pytest.raises(ValueError, match="different MachineFunction"):
+            second.build_add(s32, foreign, local)
+    assert_no_leaks()
+
+
+@pytest.mark.parametrize("wrong_self", [None, object()])
+def test_machine_builder_exit_rejects_wrong_self(wrong_self):
+    with pytest.raises(TypeError):
+        mir.MachineIRBuilder.__exit__(wrong_self, None, None, None)
+
+
+@pytest.mark.parametrize("name", ["\x00", "f\x00suffix"])
+def test_create_machine_function_rejects_nul_without_mutating_module(name):
+    with ir.Context() as ctx:
+        mod = ir.Module("m", ctx)
+        tm = jit.TargetMachine(triple=_TRIPLE)
+        before = str(mod)
+        with pytest.raises(ValueError, match="must not contain NUL"):
+            mir.create_machine_function(mod, tm, name)
+        assert not mod._is_consumed
+        assert str(mod) == before
+        assert (
+            mir.create_machine_function(mod, tm, "f").machine_function("f").name == "f"
+        )
     assert_no_leaks()
 
 
