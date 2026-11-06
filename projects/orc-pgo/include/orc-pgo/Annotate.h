@@ -16,8 +16,9 @@ class Module;
 namespace orc_pgo {
 
 /// Runs LLVM's PGOInstrumentationUse on M with Profile (an indexed profile)
-/// served from memory (LLVM sets the profile summary itself). Fails on a
-/// profile error and on a diagnostic that the profile does not match the IR (a
+/// served from memory (LLVM sets the profile summary itself). Fails unless M's
+/// context was given parsePgoOptions's options (checkPgoOptions), on a profile
+/// error and on a diagnostic that the profile does not match the IR (a
 /// CFG hash or counter count mismatch), and if a function named in
 /// MustBeAnnotated ends up without an entry count: hash mismatches of
 /// functions in a comdat or with weak/available_externally linkage are not

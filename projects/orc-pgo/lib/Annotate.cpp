@@ -67,7 +67,7 @@ struct ProfileDiagnostics : DiagnosticHandler {
 
 Error annotateWithProfile(Module &M, const MemoryBuffer &Profile,
                           ArrayRef<StringRef> MustBeAnnotated) {
-  if (Error E = configurePgoOptions())
+  if (Error E = checkPgoOptions(M.getContext()))
     return E;
   auto FS = makeIntrusiveRefCnt<vfs::InMemoryFileSystem>();
   FS->addFile(ProfilePath, /*ModificationTime=*/0,

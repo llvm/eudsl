@@ -100,8 +100,10 @@ struct Profiled {
 
   explicit Profiled(StringRef IR) {
     LLVMContext Original;
+    test::setPgoOptions(Original);
     Snapshot = writeSnapshot(*test::parseHostIR(Original, IR));
     auto Ctx = std::make_unique<LLVMContext>();
+    test::setPgoOptions(*Ctx);
     auto M = cantFail(parseSnapshot(Snapshot, *Ctx));
     EXPECT_EQ(test::errorText(runPgoGen(*M)), "");
     Expected<LoweredPgo> L = lowerPgo(*M);
@@ -169,6 +171,7 @@ TEST(Annotate, BranchSwitchSelectAndLoopWeightsAreTheEdgeCounts) {
   P.fn<int(int)>("loop")(1);
 
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = P.annotate(Ctx);
   ASSERT_EQ(P.LastError, "");
   EXPECT_EQ(weights(terminatorOf(*M, "diamond", "entry")),
@@ -188,6 +191,7 @@ TEST(Annotate, EntryCountsAndColdFunctions) {
   for (int X : {5, 5, 5, -1})
     P.fn<int(int)>("diamond")(X);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = P.annotate(Ctx);
   ASSERT_EQ(P.LastError, "");
   EXPECT_EQ(M->getFunction("diamond")->getEntryCount(),
@@ -206,6 +210,7 @@ TEST(Annotate, IndirectCallTargetsBecomeValueProfileMetadata) {
   for (void (*T)() : {A, B, B, B})
     Dispatch(T);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = P.annotate(Ctx);
   ASSERT_EQ(P.LastError, "");
   const Instruction &Call = firstOf(*M, "dispatch", Instruction::Call);
@@ -333,6 +338,7 @@ TEST(Annotate, RandomDecisionTreesMatchTheOracle) {
     }
   }
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = P.annotate(Ctx);
   ASSERT_EQ(P.LastError, "");
   for (size_t T = 0; T < Trees.size(); ++T) {
@@ -374,6 +380,7 @@ TEST(Annotate, AHashMismatchIsAnError) {
     if (StringRef(R.Name) == "diamond")
       R.CfgHash ^= 1;
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   P.annotate(Ctx, {}, Records);
   EXPECT_NE(P.LastError.find("hash mismatch"), std::string::npos)
       << P.LastError;
@@ -387,6 +394,7 @@ TEST(Annotate, TheFirstMismatchIsTheOneReported) {
   for (OrcPgoFunctionRecord &R : Records)
     R.CfgHash ^= 1;
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   P.annotate(Ctx, {}, Records);
   EXPECT_NE(P.LastError.find("(hash mismatch) diamond "), std::string::npos)
       << P.LastError;
@@ -401,6 +409,7 @@ TEST(Annotate, ACounterCountMismatchIsAnError) {
     if (StringRef(R.Name) == "diamond")
       R.NumCounters -= 1;
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   P.annotate(Ctx, {}, Records);
   EXPECT_NE(P.LastError.find("Inconsistent number of counts"),
             std::string::npos)
@@ -414,6 +423,9 @@ TEST(Annotate, MustBeAnnotatedFunctionsNeedAProfile) {
     if (StringRef(R.Name) != "sw")
       WithoutSw.push_back(R);
   LLVMContext C1, C2, C3;
+  test::setPgoOptions(C1);
+  test::setPgoOptions(C2);
+  test::setPgoOptions(C3);
   P.annotate(C1, {"diamond"}, WithoutSw);
   EXPECT_EQ(P.LastError, "");
   P.annotate(C2, {"sw"}, WithoutSw);
@@ -424,23 +436,24 @@ TEST(Annotate, MustBeAnnotatedFunctionsNeedAProfile) {
 
 TEST(Annotate, AnInvalidProfileIsAnError) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = test::parseHostIR(Ctx, ProgramIR);
   auto Garbage = MemoryBuffer::getMemBuffer("not a profile", "garbage", false);
   EXPECT_NE(test::errorText(annotateWithProfile(*M, *Garbage)), "");
 }
 
-TEST(Annotate, OptionSetupFailuresAreAnError) {
-  test::RequiredPositionalOption Positional;
+TEST(Annotate, NeedsThePgoOptions) {
   LLVMContext Ctx;
   auto M = test::parseHostIR(Ctx, ProgramIR);
   auto Empty = MemoryBuffer::getMemBuffer("", "empty", false);
   EXPECT_EQ(test::errorText(annotateWithProfile(*M, *Empty)),
-            Positional.ConfigureError);
+            test::MissingPgoOptionsError);
 }
 
 TEST(Annotate, RestoresTheContextsDiagnosticHandler) {
   Profiled P(ProgramIR);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   bool Called = false;
   Ctx.setDiagnosticHandlerCallBack(
       [](const DiagnosticInfo *, void *Flag) {
@@ -545,6 +558,7 @@ TEST(Annotate, RotatedAndNestedLoopsMatchHandCounts) {
   EXPECT_EQ(P.fn<int(int)>("nest")(4), 3);
   EXPECT_EQ(P.fn<int(int)>("nest")(1), 1);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = P.annotate(Ctx);
   ASSERT_EQ(P.LastError, "");
   EXPECT_EQ(weights(terminatorOf(*M, "wh", "hdr")),
@@ -565,6 +579,7 @@ TEST(Annotate, InternalFunctionsAreFoundByTheirFilePrefixedName) {
   for (int X : {1, 1, -1})
     P.fn<int(int)>("useloc")(X);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = P.annotate(Ctx, {"loc"});
   ASSERT_EQ(P.LastError, "");
   EXPECT_EQ(weights(terminatorOf(*M, "loc", "entry")),
@@ -578,6 +593,8 @@ TEST(Annotate, AWeakFunctionsHashMismatchIsOnlyCaughtByMustBeAnnotated) {
     if (StringRef(R.Name) == "wk")
       R.CfgHash ^= 1;
   LLVMContext C1, C2;
+  test::setPgoOptions(C1);
+  test::setPgoOptions(C2);
   auto M = P.annotate(C1, {}, Records);
   EXPECT_EQ(P.LastError, "");
   EXPECT_FALSE(M->getFunction("wk")->getEntryCount());
@@ -593,6 +610,7 @@ TEST(Annotate, ALinkonceFunctionWithoutComdatHashMismatchIsDiagnosed) {
     if (StringRef(R.Name) == "lo")
       R.CfgHash ^= 1;
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   P.annotate(Ctx, {}, Records);
   EXPECT_NE(P.LastError.find("hash mismatch"), std::string::npos)
       << P.LastError;
@@ -624,6 +642,7 @@ TEST(Annotate, AProfilePartiallyIgnoredForLackOfAReturnPathIsNotAFailure) {
     R.Counters[2] = 0;
   }
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   testing::internal::CaptureStderr();
   auto M = P.annotate(Ctx, {"diverge"});
   EXPECT_EQ(testing::internal::GetCapturedStderr(), "");
@@ -637,6 +656,7 @@ TEST(Annotate, MemopSizesBecomeValueProfileMetadata) {
   for (uint64_t N : {8, 8, 100})
     P.fn<void(char *, char *, uint64_t)>("cp")(A, B, N);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = P.annotate(Ctx);
   ASSERT_EQ(P.LastError, "");
   const Instruction &Call = firstOf(*M, "cp", Instruction::Call);
@@ -661,6 +681,7 @@ TEST(Annotate, TornCountersAreAnnotatedWithoutFailing) {
     if (StringRef(R.Name) == "wh")
       R.Counters[2] += 100;
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = P.annotate(Ctx, {"wh"});
   EXPECT_EQ(P.LastError, "");
 }
