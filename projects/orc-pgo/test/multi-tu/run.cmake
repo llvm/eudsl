@@ -2,7 +2,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #
-# cmake -DORC_PGO=<orc-pgo> -DEXTRA_LINK_INPUT=<path or empty> -DORC_PGO_INCLUDE=<dir>
+# cmake -DORC_PGO=<orc-pgo> -DTOOLCHAIN=<OrcPgoToolchain.cmake> -DEXTRA_LINK_INPUT=<path or empty> -DORC_PGO_INCLUDE=<dir>
 #       -DSRC=<dir> -DBIN=<dir> -P run.cmake
 #
 # EXTRA_LINK_INPUT is Config.h's ORC_PGO_EXTRA_LINK_INPUT. It is non-empty only
@@ -18,7 +18,7 @@
 # dependencies, and the profile runtime on the link: none, or in coverage
 # builds only EXTRA_LINK_INPUT.
 
-foreach(var ORC_PGO EXTRA_LINK_INPUT ORC_PGO_INCLUDE SRC BIN)
+foreach(var ORC_PGO TOOLCHAIN EXTRA_LINK_INPUT ORC_PGO_INCLUDE SRC BIN)
   if(NOT DEFINED ${var})
     message(FATAL_ERROR "run.cmake: -D${var}=... is required")
   endif()
@@ -34,9 +34,9 @@ else()
   set(libc_pattern "libc\\.so")
 endif()
 find_program(NM_TOOL nm REQUIRED)
-file(READ "${SRC}/expected.txt" expected)
 
-function(run_variant variant)
+function(run_variant variant expected_file)
+  file(READ "${SRC}/${expected_file}" expected)
   set(bin "${BIN}/${variant}")
   set(app "${bin}/multi_tu")
   file(REMOVE_RECURSE "${bin}")
@@ -79,6 +79,12 @@ function(run_variant variant)
     endif()
   endif()
 
+  # Bitcode archives (including a whole-archive one) are orc-pgo's to link,
+  # never the system linker's.
+  if(variant MATCHES "^static" AND ld_line MATCHES "lib(shapes|stats)\\.a")
+    message(FATAL_ERROR "[static] a bitcode archive reached the native link:\n${ld_line}")
+  endif()
+
   # (d) Only system dylibs: no LLVM or clang shared library.
   execute_process(COMMAND "${DEPS_TOOL}" ${deps_args} "${app}"
                   OUTPUT_VARIABLE deps RESULT_VARIABLE rc)
@@ -119,4 +125,34 @@ function(run_variant variant)
   endforeach()
 endfunction()
 
-run_variant(object "-DCMAKE_CXX_COMPILER=${ORC_PGO}")
+run_variant(object expected.txt "-DCMAKE_CXX_COMPILER=${ORC_PGO}")
+
+# Static libraries go through the toolchain file's `orc-pgo --orc-pgo-ar`. The
+# stats library has a C source too, built by the toolchain's C compiler.
+run_variant(static expected.txt "-DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN}"
+            -DMULTI_TU_STATIC=ON)
+
+# CMake builds IPO static libraries with different rules (llvm-ar), and passes
+# -flto=thin.
+run_variant(static-ipo expected.txt "-DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN}"
+            -DMULTI_TU_STATIC=ON -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON)
+
+# CMake's LINK_LIBRARY:WHOLE_ARCHIVE (-Wl,-force_load,<lib> on macOS,
+# -Wl,--push-state,--whole-archive,<lib>,--pop-state on Linux): the member
+# nothing references is linked, so its static initializer prints a line.
+run_variant(static-whole expected-whole.txt
+            "-DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN}" -DMULTI_TU_STATIC=ON
+            -DMULTI_TU_WHOLE_ARCHIVE=ON)
+
+# The archive rules are shell commands: a driver path with a space must be
+# quoted in them.
+set(spaced "${BIN}/with space")
+file(REMOVE_RECURSE "${spaced}")
+file(MAKE_DIRECTORY "${spaced}")
+file(CREATE_LINK "${ORC_PGO}" "${spaced}/orc-pgo" SYMBOLIC)
+file(READ "${TOOLCHAIN}" toolchain)
+string(REPLACE "${ORC_PGO}" "${spaced}/orc-pgo" toolchain "${toolchain}")
+file(WRITE "${spaced}/toolchain.cmake" "${toolchain}")
+run_variant(static-space expected.txt
+            "-DCMAKE_TOOLCHAIN_FILE=${spaced}/toolchain.cmake"
+            -DMULTI_TU_STATIC=ON)

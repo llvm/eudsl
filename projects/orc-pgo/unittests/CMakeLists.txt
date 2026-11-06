@@ -34,6 +34,9 @@ orc_pgo_add_unittest(StatsTest StatsTest.cpp)
 # OrcPgoTestSupport.
 add_executable(DriverTest DriverTest.cpp)
 target_link_libraries(DriverTest PRIVATE OrcPgoDriver GTest::gtest)
+# yaml2obj, for a hand-made object with a broken symbol table.
+llvm_map_components_to_libnames(_driver_test_llvm_libs objectyaml)
+target_link_libraries(DriverTest PRIVATE ${_driver_test_llvm_libs})
 add_dependencies(DriverTest OrcPgoRuntime OrcPgoCommon)
 orc_pgo_add_coverage(DriverTest)
 orc_pgo_coverage_object(DriverTest)
