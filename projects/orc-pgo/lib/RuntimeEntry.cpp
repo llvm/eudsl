@@ -6,7 +6,6 @@
 // process-wide runtime state behind them.
 
 #include "orc-pgo/Image.h"
-#include "orc-pgo/PgoOptions.h"
 #include "orc-pgo/Runtime.h"
 #include "orc-pgo/ValueProfRuntime.h"
 
@@ -98,8 +97,6 @@ void start() {
   if (NumDropped)
     report(Twine(NumDropped) + " images beyond the first " + Twine(MaxImages) +
            " ignored");
-  if (Error E = configurePgoOptions())
-    return report(std::move(E));
   InitializeNativeTarget();
   InitializeNativeTargetAsmPrinter();
   InitializeNativeTargetAsmParser();

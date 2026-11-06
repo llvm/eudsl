@@ -66,7 +66,7 @@ unsigned pollPeriodMs(unsigned PollMs, std::chrono::milliseconds Elapsed) {
   return PollMs;
 }
 
-/// What runPgoGen produces once configurePgoOptions has run.
+/// What runPgoGen produces under parsePgoOptions's options.
 static constexpr uint64_t ExpectedRawProfileVersion =
     INSTR_PROF_RAW_VERSION | VARIANT_MASK_IR_PROF | VARIANT_MASK_INSTR_ENTRY;
 
@@ -182,6 +182,9 @@ Expected<std::unique_ptr<Runtime>> Runtime::create(const OrcPgoImage &Image,
     return J.takeError(); // LCOV_EXCL_LINE as above
 
   std::unique_ptr<Runtime> R(new Runtime(Image, Opts));
+  // Once, as clang parses the -mllvm values once per compilation.
+  if (Error E = parsePgoOptions(R->LibraryOptions))
+    return std::move(E);
   R->TM = std::move(*TM);
   R->J = std::move(*J);
   R->J->getExecutionSession().setErrorReporter(
@@ -277,6 +280,7 @@ Expected<unsigned> Runtime::tryTierUp(ArrayRef<unsigned> Slots) {
     return Profile.takeError();
 
   auto Ctx = std::make_unique<LLVMContext>();
+  Ctx->getLibraryOptions().assign(LibraryOptions);
   auto Diagnostics = std::make_shared<BatchDiagnostics::State>();
   Ctx->setDiagnosticHandler(
       std::make_unique<BatchDiagnostics>(Diagnostics, Opts.Verbose));

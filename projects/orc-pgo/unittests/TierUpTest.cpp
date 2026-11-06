@@ -162,6 +162,7 @@ TEST(TierUp, ShapesAnAnnotatedBatchModule) {
     ASSERT_EQ(Hot(-1), 8);
 
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   Expected<TierUpBatch> Batch =
       prepareTierUpModule(*M, *profileOf(S), {"hot"}, 2);
@@ -210,6 +211,7 @@ TEST(TierUp, DepthZeroCopiesNoCallees) {
   auto S = test::simulateAot(ProgramIR);
   S.sym<int(int)>("hot")(2);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   ASSERT_EQ(test::errorText(
                 prepareTierUpModule(*M, *profileOf(S), {"hot"}, 0).takeError()),
@@ -223,6 +225,7 @@ TEST(TierUp, LocalRootsAreFoundByTheirPgoName) {
   for (int I = 0; I < 5; ++I)
     ASSERT_EQ(S.sym<int(int)>("useshelper")(2), 6);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   Expected<TierUpBatch> Batch =
       prepareTierUpModule(*M, *profileOf(S), {"tierup.c;helper"}, 0);
@@ -236,6 +239,7 @@ TEST(TierUp, LocalRootsAreFoundByTheirPgoName) {
 TEST(TierUp, AnUnknownRootIsAnError) {
   auto S = test::simulateAot(ProgramIR);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   EXPECT_EQ(
       test::errorText(
@@ -252,6 +256,7 @@ TEST(TierUp, AnnotationErrorsFailTheBatch) {
     if (StringRef(R.Name) == "hot")
       R.CfgHash ^= 1;
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   std::string Error = test::errorText(
       prepareTierUpModule(*M, *profileOf(Records), {"hot"}, 2).takeError());
@@ -265,6 +270,7 @@ TEST(TierUp, AHotIndirectCallBecomesAGuardedDirectCall) {
   for (int I = 0; I < 2000; ++I)
     ASSERT_EQ(CallIt(Far, I), I + 1);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   Expected<TierUpBatch> Batch =
       prepareTierUpModule(*M, *profileOf(S), {"callit"}, 0);
@@ -309,6 +315,7 @@ TEST(TierUp, APromotedCompareIsAgainstTheProgramsAddressOfARootTarget) {
     ASSERT_EQ(CallIt(Far, I), I + 1);
   S.sym<void *()>("addr")();
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   Expected<TierUpBatch> Batch =
       prepareTierUpModule(*M, *profileOf(S), {"callit", "far", "addr"}, 0);
@@ -365,6 +372,7 @@ rec:
   auto S = test::simulateAot(RecursiveIR);
   S.sym<int(int)>("fact")(5);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   ASSERT_EQ(
       test::errorText(
@@ -385,6 +393,7 @@ TEST(TierUp, PromotionsOutsideTheBatchAreNotCounted) {
     ASSERT_EQ(CallIt(Far, I), I + 1);
   S.sym<int(int)>("hot")(2);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   Expected<TierUpBatch> Batch =
       prepareTierUpModule(*M, *profileOf(S), {"hot"}, 0);
@@ -415,6 +424,7 @@ TEST(TierUp, AStaleHashOfAWeakRootIsCaughtByMustBeAnnotated) {
   for (OrcPgoFunctionRecord &R : Records)
     R.CfgHash ^= 1;
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   std::string Error = test::errorText(
       prepareTierUpModule(*M, *profileOf(Records), {"wk"}, 0).takeError());
@@ -428,6 +438,7 @@ TEST(TierUp, AHotMemcpySizeIsSpecialized) {
   for (int I = 0; I < 2000; ++I)
     Copy(Dst, Src, 16);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   ASSERT_EQ(
       test::errorText(
@@ -483,6 +494,7 @@ TEST(TierUp, O3RunsTheSlpVectorizer) {
     Slp(A, B, C);
   EXPECT_EQ(A[3], 44);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   ASSERT_EQ(test::errorText(
                 prepareTierUpModule(*M, *profileOf(S), {"slp"}, 0).takeError()),
@@ -508,6 +520,7 @@ TEST(TierUp, O3LeavesNoCallGraphProfile) {
   for (int I = 0; I < 30; ++I)
     ASSERT_EQ(Hot(2), 9);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   ASSERT_EQ(test::errorText(
                 prepareTierUpModule(*M, *profileOf(S), {"hot"}, 0).takeError()),
@@ -555,6 +568,7 @@ TEST(TierUp, InterposableFunctionsAndConstantsStayDeclarations) {
   auto S = test::simulateAot(InterposableIR);
   ASSERT_EQ(S.sym<int(int)>("hot")(1), 1 + 1 + 2 + 3 + 7 + 8 + 9);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = snapshotOf(S, Ctx);
   ASSERT_EQ(test::errorText(
                 prepareTierUpModule(*M, *profileOf(S), {"hot"}, 2).takeError()),
@@ -590,6 +604,7 @@ TEST(TierUp, ModuleInlineAsmIsNotCopied) {
   // The program's object has assembled it already; assembling it again in
   // every batch would define its symbols twice.
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = test::parseIR(Ctx, R"(
 module asm ".globl orc_pgo_asm_symbol"
 module asm "orc_pgo_asm_symbol:"
@@ -642,6 +657,7 @@ bb:
 
 TEST(TierUp, GlobalsAreCopiedWhenConstantAndRecreatableAndImportedOtherwise) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   auto M = test::parseIR(Ctx, GlobalsIR);
   ASSERT_EQ(test::errorText(
                 prepareTierUpModule(
@@ -680,6 +696,7 @@ TEST(TierUp, GlobalsAreCopiedWhenConstantAndRecreatableAndImportedOtherwise) {
 
 TEST(TierUp, BindingRedirectsOnlyCallsToEarlierTieredFunctions) {
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   std::unique_ptr<Module> M = test::parseIR(Ctx, R"(
 declare i32 @tiered(i32)
 declare i32 @other(i32)
@@ -757,6 +774,7 @@ declare i32 @__gxx_personality_v0(...)
 TEST(TierUp, BindingAfterOptimizationKeepsInliningACopyAndRedirectsWhatIsLeft) {
   auto S = test::simulateAot(ProgramIR);
   LLVMContext Ctx;
+  test::setPgoOptions(Ctx);
   std::unique_ptr<Module> M = snapshotOf(S, Ctx);
   std::unique_ptr<MemoryBuffer> Profile = profileOf(S);
   // @far was tiered up by an earlier batch.

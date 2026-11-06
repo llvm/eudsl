@@ -11,6 +11,7 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/LibraryOptionsContext.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -123,6 +124,8 @@ private:
 
   OrcPgoImage Image;
   RuntimeOptions Opts;
+  /// parsePgoOptions's options, which every batch's context assigns.
+  llvm::cl::LibraryOptionsContext LibraryOptions;
   std::unique_ptr<llvm::TargetMachine> TM;
   std::unique_ptr<llvm::orc::LLJIT> J;
   std::vector<SlotState> States;

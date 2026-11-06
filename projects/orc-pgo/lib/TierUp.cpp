@@ -264,7 +264,7 @@ void optimizeTierUp(Module &M, TargetMachine &TM) {
   // ordering, which the JIT does not use. It is written with REL relocations,
   // which JITLink's x86-64 ELF reader rejects.
   PTO.CallGraphProfile = false;
-  PassBuilder PB(&TM, PTO);
+  PassBuilder PB(M.getContext(), &TM, PTO);
   PB.registerModuleAnalyses(MAM);
   PB.registerCGSCCAnalyses(CGAM);
   PB.registerFunctionAnalyses(FAM);
