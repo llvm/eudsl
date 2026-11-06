@@ -58,6 +58,7 @@
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/IOSandbox.h"
+#include "llvm/Support/LibraryOptionsContext.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -281,10 +282,10 @@ Expected<std::vector<std::string>> archiveGlobalSymbols(MemoryBufferRef Buf,
   return Names;
 }
 
-/// Applies the -mllvm options to orc-pgo's own pipeline, like clang's LTO.
-/// The pipeline's configurePgoOptions then overrides the PGO options orc-pgo
-/// needs, so -mllvm must not give them other values.
-static Error applyLinkTimeLLVMOptions(const Compilation &C) {
+/// Parses the -mllvm options into Ctx, in which orc-pgo's own pipeline runs, as
+/// clang's CompilerInstance::parseLLVMArgs does, then the PGO options orc-pgo
+/// needs, which override them, so -mllvm must not give them other values.
+static Error applyLinkTimeLLVMOptions(const Compilation &C, LLVMContext &Ctx) {
   // Start from defaults: an earlier cc1 or build may have set options.
   cl::ResetAllOptionOccurrences();
   std::vector<std::string> Values =
@@ -294,9 +295,11 @@ static Error applyLinkTimeLLVMOptions(const Compilation &C) {
     Argv.push_back(V.c_str());
   std::string Message;
   raw_string_ostream OS(Message);
-  if (!cl::ParseCommandLineOptions(Argv.size(), Argv.data(), "", &OS))
+  if (!cl::parseCommandLineOptions(Ctx.getLibraryOptions(), Argv, "", &OS))
     return createStringError("invalid -mllvm option: %s", Message.c_str());
-  return checkPgoOptionConflicts(Values);
+  if (Error E = checkPgoOptionConflicts(Values))
+    return E;
+  return parsePgoOptions(Ctx.getLibraryOptions());
 }
 
 static LinkInputs classifyLinkInputs(const Command &Link) {
@@ -352,12 +355,13 @@ static Expected<const char *> buildAot(Compilation &C,
   if (!ExtraSymbols)
     return ExtraSymbols.takeError();
 
-  if (Error E = applyLinkTimeLLVMOptions(C))
+  if (Error E = applyLinkTimeLLVMOptions(C, Ctx))
     return std::move(E);
   Expected<SmallVector<char, 0>> Object =
       buildAotObject(**M, **TM, *ExtraSymbols);
+  // Ctx has the PGO options, and the targets orc-pgo builds for emit objects.
   if (!Object)
-    return Object.takeError();
+    return Object.takeError(); // LCOV_EXCL_LINE
 
   SmallString<128> Path;
   int FD;

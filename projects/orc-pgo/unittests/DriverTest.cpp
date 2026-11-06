@@ -778,7 +778,7 @@ TEST_F(DriverTest, MatchingPgoOptionsAreAccepted) {
 TEST_F(DriverTest, PipelineErrorsFailTheBuild) {
   auto [Main, Lib] = bitcodeObjects();
   // A required positional cl::opt, as an embedder of the driver might have:
-  // the -mllvm value satisfies it, the pipeline's configurePgoOptions doesn't.
+  // the -mllvm value satisfies it, the driver's parsePgoOptions doesn't.
   cl::opt<std::string> Positional(cl::Positional, cl::Required);
   int Exit;
   std::string Err = driveCapturingStderr(
