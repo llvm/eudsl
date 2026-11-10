@@ -137,7 +137,7 @@ def transfer_read(
         raise ValueError("in_bounds cannot be None")
 
     return _transfer_read(
-        vector=vector_t,
+        result=vector_t,
         base=base,
         indices=indices,
         permutation_map=permutation_map,
@@ -196,9 +196,9 @@ def reduction(
     loc=None,
     ip=None,
 ):
-    dest = vector.type.element_type
+    result = vector.type.element_type
     return _reduction(
-        dest=dest,
+        result=result,
         kind=kind,
         vector=vector,
         acc=acc,
@@ -214,7 +214,7 @@ _broadcast = broadcast
 def broadcast(vector, source, *, loc=None, ip=None):
     if isinstance(source, (float, int, bool)):
         source = constant(source)
-    return _broadcast(vector=vector, source=source, loc=loc, ip=ip)
+    return _broadcast(result=vector, source=source, loc=loc, ip=ip)
 
 
 _extract_strided_slice = extract_strided_slice
