@@ -146,6 +146,10 @@ jobs:
       run:
         shell: bash
 
+    env:
+      # Secrets aren't available to PRs from forks; skip what needs the payload then.
+      HAS_PAYLOAD: ${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD != '' }}
+
     steps:
       - name: "Check out repository"
         uses: actions/checkout@v5.1.0
@@ -218,7 +222,7 @@ jobs:
           fi
 
       - name: "Test DXIL matmul"
-        if: matrix.runs-on == 'macos-15'
+        if: matrix.runs-on == 'macos-15' && env.HAS_PAYLOAD == 'true'
         run: |
           
           wget -q https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
