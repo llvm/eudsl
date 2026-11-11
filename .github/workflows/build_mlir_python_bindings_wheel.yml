@@ -106,6 +106,8 @@ jobs:
       contents: write
 
     env:
+      # Secrets aren't available to PRs from forks; skip what needs the payload then.
+      HAS_PAYLOAD: ${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD != '' }}
       # either the PR number or `branch-N` where N always increments
       cache-key: mlir_python_bindings_${{ matrix.name }}_clang_${{ format('{0}-{1}', github.ref_name, github.run_number) }}
 
@@ -221,10 +223,14 @@ jobs:
           fi
           if [[ "${{ matrix.os }}" == "macos" ]]; then
             brew install antlr boost libarchive
-            wget -q https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
-            unzip -qqP "${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD }}" Payload.zip
-            cat Payload | gunzip | cpio -i
-            sudo ditto usr /usr
+            # Secrets aren't available to PRs from forks; build without libmetalirconverter
+            # (and so without the DXIL extension) then.
+            if [[ "$HAS_PAYLOAD" == "true" ]]; then
+              wget -q https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
+              unzip -qqP "${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD }}" Payload.zip
+              cat Payload | gunzip | cpio -i
+              sudo ditto usr /usr
+            fi
           fi
           
           if [[ "${{ matrix.target-arch }}" == "wasm32" ]]; then
@@ -394,6 +400,10 @@ jobs:
       run:
         shell: bash
 
+    env:
+      # Secrets aren't available to PRs from forks; skip what needs the payload then.
+      HAS_PAYLOAD: ${{ secrets.MLIR_PYTHON_BINDINGS_PAYLOAD != '' }}
+
     steps:
       - name: "Check out repository"
         uses: actions/checkout@v5.1.0
@@ -444,7 +454,7 @@ jobs:
           python -W "error:The global interpreter lock (GIL) has been enabled:RuntimeWarning" multithreaded_tests.py
 
       - name: "Test DXIL matmul"
-        if: matrix.runs-on == 'macos-15'
+        if: matrix.runs-on == 'macos-15' && env.HAS_PAYLOAD == 'true'
         run: |
           
           wget -q https://github.com/llvm/eudsl/releases/download/mlir-python-bindings/Payload.zip
