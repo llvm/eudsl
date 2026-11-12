@@ -43,12 +43,25 @@ llvm_map_components_to_libnames(ORC_PGO_LLVM_LIBS
   orcjit jitlink lto native)
 
 add_library(OrcPgoCommon STATIC
+  lib/Analyses.cpp
   lib/PgoOptions.cpp
   lib/Snapshot.cpp
 )
 target_include_directories(OrcPgoCommon PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(OrcPgoCommon PUBLIC ${ORC_PGO_LLVM_LIBS})
 orc_pgo_add_coverage(OrcPgoCommon)
+
+add_library(OrcPgoRuntime STATIC
+  lib/ValueProfRuntime.cpp
+)
+target_link_libraries(OrcPgoRuntime PUBLIC OrcPgoCommon)
+orc_pgo_add_coverage(OrcPgoRuntime)
+
+add_library(OrcPgoBuild STATIC
+  lib/Instrument.cpp
+)
+target_link_libraries(OrcPgoBuild PUBLIC OrcPgoCommon)
+orc_pgo_add_coverage(OrcPgoBuild)
 
 include(CTest)
 if(BUILD_TESTING)
