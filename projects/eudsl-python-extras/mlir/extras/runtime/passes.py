@@ -2394,7 +2394,11 @@ class Pipeline(Pipeline):
         self.add_pass("convert-shard-to-mpi")
         return self
 
-    def convert_spirv_to_llvm(self, client_api: "::mlir::spirv::ClientAPI" = None):
+    def convert_spirv_to_llvm(
+        self,
+        client_api: "::mlir::spirv::ClientAPI" = None,
+        allow_pattern_rollback: bool = None,
+    ):
         """Convert SPIR-V dialect to LLVM dialect
 
         See https://mlir.llvm.org/docs/SPIRVToLLVMDialectConversion/
@@ -2402,8 +2406,15 @@ class Pipeline(Pipeline):
 
         Args:
             client_api: Derive StorageClass to address space mapping from the client API
+            allow_pattern_rollback: Experimental performance flag to disallow pattern rollback
         """
-        self.add_pass("convert-spirv-to-llvm", **{"client-api": client_api})
+        self.add_pass(
+            "convert-spirv-to-llvm",
+            **{
+                "client-api": client_api,
+                "allow-pattern-rollback": allow_pattern_rollback,
+            }
+        )
         return self
 
     def convert_tensor_to_linalg(self):
@@ -2517,12 +2528,9 @@ class Pipeline(Pipeline):
         self.add_pass("convert-vector-to-arm-sme")
         return self
 
-    def convert_vector_to_gpu(self, use_nvgpu: bool = None):
-        """Lower the operations from the vector dialect into the GPU dialect
-        Args:
-            use_nvgpu: convert to NvGPU ops instead of GPU dialect ops
-        """
-        self.add_pass("convert-vector-to-gpu", **{"use-nvgpu": use_nvgpu})
+    def convert_vector_to_gpu(self):
+        """Lower the operations from the vector dialect into the GPU dialect"""
+        self.add_pass("convert-vector-to-gpu")
         return self
 
     def convert_vector_to_llvm(
@@ -2579,6 +2587,11 @@ class Pipeline(Pipeline):
                 "vector-transpose-lowering": vector_transpose_lowering,
             }
         )
+        return self
+
+    def convert_vector_to_nvgpu(self):
+        """Lower the operations from the vector dialect into the NVGPU dialect"""
+        self.add_pass("convert-vector-to-nvgpu")
         return self
 
     def convert_vector_to_scf(

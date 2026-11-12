@@ -88,7 +88,7 @@ def test_memory_free_functions():
             I.ret(I.load(i32, slot, "ld"))
         # CHECK: %slot = alloca i32
         # CHECK: store i32 5, ptr %slot
-        # CHECK: %g = getelementptr i32, ptr %0, i64 2
+        # CHECK: %g = getelementptr i8, ptr %0, i64 8
         # CHECK: %ld = load i32, ptr %slot
         # CHECK: ret i32 %ld
         filecheck_with_comments(mod)
@@ -605,7 +605,7 @@ def test_python_int_gep_and_vector_indices():
             I.insert_element(v, I.i32_const(9), 0, "ie")
             I.ret(I.i32_const(0))
         p_ = str(mod)
-        assert "%g = getelementptr i32, ptr %0, i32 2" in p_
+        assert "%g = getelementptr i8, ptr %0, i64 8" in p_
         assert "%ee = extractelement <4 x i32> %1, i32 1" in p_
         assert "%ie = insertelement <4 x i32> %1, i32 9, i32 0" in p_
         del b, fn, mod
