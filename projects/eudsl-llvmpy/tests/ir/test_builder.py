@@ -191,7 +191,8 @@ def test_gep():
             result = b.gep(i32, fn.arg(0), [fn.arg(1)], "elem")
             b.ret(result)
         printed = str(mod)
-        assert "%elem = getelementptr i32, ptr %0, i32 %1" in printed
+        assert "%2 = sext i32 %1 to i64" in printed
+        assert "%elem = getelementptr [4 x i8], ptr %0, i64 %2" in printed
         assert isinstance(result, llvm.ir.GetElementPtrInst)
         del b, fn, bb, mod
     assert_no_leaks()

@@ -415,10 +415,10 @@ def test_gep_load_store_via_alloca():
             p[0] = llvm.ir.const_int(i32, 5)
             v = p[0]
             b.ret(v)
-        # CHECK: %[[P0:.*]] = getelementptr i32, ptr %slot, i64 0
-        # CHECK: store i32 5, ptr %[[P0]]
-        # CHECK: %[[P1:.*]] = getelementptr i32, ptr %slot, i64 0
-        # CHECK: %[[V:.*]] = load i32, ptr %[[P1]]
+        # IRBuilder folds a zero-index gep away to the base pointer.
+        # CHECK-NOT: getelementptr
+        # CHECK: store i32 5, ptr %slot
+        # CHECK: %[[V:.*]] = load i32, ptr %slot
         # CHECK: ret i32 %[[V]]
         filecheck_with_comments(mod)
         del b, fn, mod
@@ -439,7 +439,7 @@ def test_pointer_subscript_returns_arithvalue():
             v = p[2]
             assert isinstance(v, ArithValue)
             b.ret(v + 1)  # typed chaining works off the loaded value
-        # CHECK: %[[P:.*]] = getelementptr i32, ptr %0, i64 2
+        # CHECK: %[[P:.*]] = getelementptr i8, ptr %0, i64 8
         # CHECK: %[[V:.*]] = load i32, ptr %[[P]]
         # CHECK: %[[R:.*]] = add i32 %[[V]], 1
         # CHECK: ret i32 %[[R]]
@@ -465,7 +465,7 @@ def test_pointer_subscript_accepts_value_index():
             v = p[idx]
             assert isinstance(v, ArithValue)
             b.ret(v)
-        # CHECK: %[[P:.*]] = getelementptr i32, ptr %0, i64 2
+        # CHECK: %[[P:.*]] = getelementptr i8, ptr %0, i64 8
         # CHECK: %[[V:.*]] = load i32, ptr %[[P]]
         # CHECK: ret i32 %[[V]]
         filecheck_with_comments(mod)

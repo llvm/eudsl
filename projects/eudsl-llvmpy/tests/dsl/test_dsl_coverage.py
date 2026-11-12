@@ -165,8 +165,10 @@ def test_typed_pointer_setitem_with_value_index():
             idx = maybe_downcast(fn.arg(1), fn)
             tp[idx] = llvm.ir.const_int(i32, 9)  # Value index (not int)
             bld.ret(None)
-        # A Value (not python-int) index threads straight into the gep operand.
-        # CHECK: %[[P:.*]] = getelementptr i32, ptr %0, i32 %1
+        # A Value (not python-int) index threads straight into the gep operand,
+        # which IRBuilder canonicalizes to a byte-strided gep.
+        # CHECK: %[[I:.*]] = sext i32 %1 to i64
+        # CHECK: %[[P:.*]] = getelementptr [4 x i8], ptr %0, i64 %[[I]]
         # CHECK: store i32 9, ptr %[[P]]
         filecheck_with_comments(mod)
         del bld, fn, mod
