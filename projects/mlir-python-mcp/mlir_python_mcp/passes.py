@@ -6416,6 +6416,18 @@ class Pipeline(Pipeline):
         self.add_pass("tosa-optional-decompositions")
         return self
 
+    def tosa_reduce_reshapes(self):
+        """Reduce reshapes through elementwise operators and casts
+
+        Propagates statically shaped, rank-expanding TOSA reshapes backward through
+        single-use chains of elementwise operators and casts. This allows
+        consecutive reshapes to be composed and reshapes of constants to be folded
+        into their constant attributes.
+
+        """
+        self.add_pass("tosa-reduce-reshapes")
+        return self
+
     def tosa_reduce_transposes(self):
         """Reduce transposes through other operators
 
