@@ -464,7 +464,7 @@ def test_base_returns_cached_valid_assignment():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_add(mmi)
-        result = mmi.regalloc_assignments(regalloc="ilp-stub-valid")
+        result = mmi.regalloc_assignments(regalloc="ilp-stub-valid")["add"]
         assignments = dict(result.assignments)
         spilled = list(result.spilled)
     v0, v1, v2 = sorted(assignments)
@@ -531,7 +531,7 @@ def test_base_stub_routes_spill():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_add(mmi)
-        result = mmi.regalloc_assignments(regalloc="ilp-stub-spill")
+        result = mmi.regalloc_assignments(regalloc="ilp-stub-spill")["add"]
         spilled = list(result.spilled)
     assert len(spilled) >= 1
     assert_no_leaks()
@@ -545,7 +545,7 @@ def test_ilp_packing_pressure_free_valid():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_add(mmi)
-        result = mmi.regalloc_assignments(regalloc="ilp-pack-t")
+        result = mmi.regalloc_assignments(regalloc="ilp-pack-t")["add"]
         assignments = dict(result.assignments)
         spilled = list(result.spilled)
     v0, v1, v2 = sorted(assignments)
@@ -598,7 +598,7 @@ def test_ilp_assign_pressure_free_coalesces():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_add(mmi)
-        result = mmi.regalloc_assignments(regalloc="ilp-assign-t")
+        result = mmi.regalloc_assignments(regalloc="ilp-assign-t")["add"]
         asg = dict(result.assignments)
         spilled = list(result.spilled)
     v0, v1, v2 = sorted(asg)
@@ -634,7 +634,7 @@ def test_comparison_low_pressure_packing_valid_and_optimal():
             tm = jit.TargetMachine(triple=_AARCH64_LINUX)
             mmi = mir.create_machine_function(mod, tm, "add")
             _build_add(mmi)
-            result = mmi.regalloc_assignments(regalloc=alloc)
+            result = mmi.regalloc_assignments(regalloc=alloc)["add"]
             assignments = dict(result.assignments)
             spilled = list(result.spilled)
         assert spilled == [], f"{alloc} spilled on a pressure-free function"
@@ -699,7 +699,7 @@ def test_ilp_decomp_pressure_free_no_spill():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_add(mmi)
-        result = mmi.regalloc_assignments(regalloc="ilp-decomp-t")
+        result = mmi.regalloc_assignments(regalloc="ilp-decomp-t")["add"]
         assignments = dict(result.assignments)
         spilled = list(result.spilled)
     v0, v1, v2 = sorted(assignments)
@@ -719,7 +719,7 @@ def test_ilp_decomp_high_pressure_spills_and_is_valid():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "hp")
         _build_high_pressure(mmi)
-        result = mmi.regalloc_assignments(regalloc="ilp-decomp-hp")
+        result = mmi.regalloc_assignments(regalloc="ilp-decomp-hp")["hp"]
         assignments = dict(result.assignments)
         spilled = list(result.spilled)
     assert len(spilled) >= 1  # pressure forces real spilling
@@ -746,7 +746,7 @@ def test_ilp_decomp_multiblock_diamond_valid():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "diamond")
         _build_diamond(mmi, 2)
-        result = mmi.regalloc_assignments(regalloc="ilp-decomp-dia")
+        result = mmi.regalloc_assignments(regalloc="ilp-decomp-dia")["diamond"]
         assignments = dict(result.assignments)
         spilled = list(result.spilled)
     assert spilled == []
@@ -767,7 +767,7 @@ def test_ilp_decomp_multiblock_diamond_spills():
         tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "diamond")
         _build_diamond(mmi, 40)
-        result = mmi.regalloc_assignments(regalloc="ilp-decomp-dia-hp")
+        result = mmi.regalloc_assignments(regalloc="ilp-decomp-dia-hp")["diamond"]
         assignments = dict(result.assignments)
         spilled = list(result.spilled)
     assert len(spilled) >= 1
@@ -789,7 +789,7 @@ def test_comparison_low_pressure_all_valid_and_ilp_optimal():
             tm = jit.TargetMachine(triple=_AARCH64_LINUX)
             mmi = mir.create_machine_function(mod, tm, "add")
             _build_add(mmi)
-            result = mmi.regalloc_assignments(regalloc=alloc)
+            result = mmi.regalloc_assignments(regalloc=alloc)["add"]
             assignments = dict(result.assignments)
             spilled = list(result.spilled)
         assert spilled == [], f"{alloc} spilled on a pressure-free function"
