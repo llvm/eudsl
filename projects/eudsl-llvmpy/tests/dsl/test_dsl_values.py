@@ -415,10 +415,12 @@ def test_gep_load_store_via_alloca():
             p[0] = llvm.ir.const_int(i32, 5)
             v = p[0]
             b.ret(v)
-        # IRBuilder folds a zero-index gep away to the base pointer.
-        # CHECK-NOT: getelementptr
-        # CHECK: store i32 5, ptr %slot
-        # CHECK: %[[V:.*]] = load i32, ptr %slot
+        # IRBuilder always emits at least one gep, even for a zero index
+        # (llvm/llvm-project#241925), so each access gets a zero-offset ptradd.
+        # CHECK: %[[P0:.*]] = getelementptr i8, ptr %slot, i64 0
+        # CHECK: store i32 5, ptr %[[P0]]
+        # CHECK: %[[P1:.*]] = getelementptr i8, ptr %slot, i64 0
+        # CHECK: %[[V:.*]] = load i32, ptr %[[P1]]
         # CHECK: ret i32 %[[V]]
         filecheck_with_comments(mod)
         del b, fn, mod
