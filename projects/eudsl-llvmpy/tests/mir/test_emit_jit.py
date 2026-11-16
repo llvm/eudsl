@@ -175,12 +175,13 @@ def test_add_object_rejects_non_object_bytes():
 
 
 def test_start_after_is_restored_after_emit():
-    """emit_object mutates the process-global -start-after option and must
-    restore it, so a subsequent run_codegen_to_mir still runs full instruction
-    selection (rather than skipping to finalize-isel and producing empty MIR)."""
+    """emit_object points the target machine at library options carrying
+    -start-after and must restore them, so a subsequent run_codegen_to_mir on
+    the same target machine still runs full instruction selection (rather than
+    skipping to finalize-isel and producing empty MIR)."""
+    tm = jit.TargetMachine(triple=_AARCH64_LINUX)
     with ir.Context() as ctx:
         mod = ir.Module("m", ctx)
-        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.create_machine_function(mod, tm, "add")
         _build_selected_add(mmi)
         mmi.emit_object()
@@ -194,7 +195,6 @@ def test_start_after_is_restored_after_emit():
         """)
     with ir.Context() as ctx:
         mod = ir.parse_assembly(src, ctx, "m")
-        tm = jit.TargetMachine(triple=_AARCH64_LINUX)
         mmi = mir.run_codegen_to_mir(mod, tm)
         mf = mmi.machine_function("f")
         # Full ISel ran: the function has real selected instructions and

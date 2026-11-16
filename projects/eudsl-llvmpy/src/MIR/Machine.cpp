@@ -41,6 +41,7 @@
 #include <llvm/InitializePasses.h>
 #include <llvm/PassRegistry.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/LibraryOptionsContext.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
@@ -282,13 +283,25 @@ static std::vector<llvm::MachineIRBuilder *> &machineBuilderStack() {
   return stack;
 }
 
-// Errors go to a local stream so a bad value returns false instead of exiting.
-static bool setStartAfter(llvm::StringRef pass) {
+// A copy of `base` (or the defaults when null) with -start-after=<pass> set.
+// Library options such as -start-after are only recognized by the
+// context-taking cl::parseCommandLineOptions. Errors go to a local stream so a
+// bad value returns null instead of exiting.
+static std::unique_ptr<llvm::cl::LibraryOptionsContext>
+withStartAfter(const llvm::cl::LibraryOptionsContext *base,
+               llvm::StringRef pass) {
+  auto ctx = std::make_unique<llvm::cl::LibraryOptionsContext>();
+  // The target machines llvmpy creates carry no library options.
+  if (base)
+    ctx->assign(*base); // LCOV_EXCL_LINE
   std::string arg = ("-start-after=" + pass).str();
   const char *argv[] = {"eudsl-llvmpy", arg.c_str()};
   std::string errors;
   llvm::raw_string_ostream errorsOS(errors);
-  return llvm::cl::ParseCommandLineOptions(2, argv, /*Overview=*/"", &errorsOS);
+  if (!llvm::cl::parseCommandLineOptions(*ctx, argv, /*Overview=*/"",
+                                         &errorsOS))
+    return nullptr; // LCOV_EXCL_LINE -- start-after is always registered
+  return ctx;
 }
 
 // The llvm::MachineModuleInfo that owns the MachineFunctions is held one of
@@ -326,6 +339,10 @@ struct BuildOwned {
 // find a BuildOwned to re-run, and the old "both mmiwp and pm live" state is
 // unrepresentable.
 struct EmittedOwned {
+  // The library options emit_object ran codegen with. TargetPassConfig (in
+  // `pm`) keeps a reference into them, so they are declared first to be
+  // destroyed after `pm`. Null for the register-allocation-only pipeline.
+  std::unique_ptr<llvm::cl::LibraryOptionsContext> libraryOptions;
   std::unique_ptr<llvm::legacy::PassManager> pm;
   llvm::MachineModuleInfo *mmi;
   llvm::MachineModuleInfo *queryHandle() const { return mmi; }
@@ -533,20 +550,23 @@ public:
     // Run only the back half of codegen (regalloc, prologue/epilogue, object
     // emission) over the already-selected MachineFunctions:
     // -start-after=finalize-isel skips instruction selection so the hand-built
-    // MIR is used as-is. The option is process-global (read by the pass config
-    // addPassesToEmitFile builds), so set+restore it; there is no lock, so this
-    // relies on the GIL serializing callers (no concurrent/nested/free-threaded
-    // codegen). -start-after is a TableGen'd CodeGen library option rather than
-    // a cl::opt, so the only public way to set it is ParseCommandLineOptions,
-    // and there is no getter: "restore" resets it to its empty default, which
-    // is its value in an embedding that never parses LLVM flags.
+    // MIR is used as-is. The pass config addPassesToEmitFile builds reads it
+    // from the target machine's library options, so point the target machine
+    // at a context carrying it (on top of whatever it already had) for this
+    // emission, then restore the original: the target machine is shared with
+    // later run_codegen_to_mir calls, which must run full selection.
+    std::unique_ptr<llvm::cl::LibraryOptionsContext> libraryOptions =
+        withStartAfter(tm->Options.MCOptions.LibraryOptions, "finalize-isel");
     // LCOV_EXCL_START -- start-after is always registered by codegen
-    if (!setStartAfter("finalize-isel"))
+    if (!libraryOptions)
       throw std::runtime_error("could not set the -start-after option");
     // LCOV_EXCL_STOP
-    struct Restore {
-      ~Restore() { setStartAfter(""); }
-    } restore;
+    struct RestoreLibraryOptions {
+      llvm::TargetMachine *tm;
+      const llvm::cl::LibraryOptionsContext *prev;
+      ~RestoreLibraryOptions() { tm->Options.MCOptions.LibraryOptions = prev; }
+    } restoreLibraryOptions{tm, tm->Options.MCOptions.LibraryOptions};
+    tm->Options.MCOptions.LibraryOptions = libraryOptions.get();
 
     auto &opts = llvm::cl::getRegisteredOptions();
 
@@ -642,7 +662,7 @@ public:
       // mmiwp is now null. Consume it into EmittedOwned before throwing so `pm`
       // (and thus `info`) stays alive and a later query/retry reports a clean
       // error instead of dereferencing the released mmiwp.
-      state_ = EmittedOwned{std::move(pm), info};
+      state_ = EmittedOwned{std::move(libraryOptions), std::move(pm), info};
       throw std::runtime_error("target cannot emit an object file");
     }
     // LCOV_EXCL_STOP
@@ -668,13 +688,13 @@ public:
         // MMI wrapper already lives in `pm`, so consume into EmittedOwned (as
         // the success path does) before propagating -- otherwise `state_` keeps
         // a released (null) wrapper and `pm`/`info` would dangle.
-        state_ = EmittedOwned{std::move(pm), info};
+        state_ = EmittedOwned{std::move(libraryOptions), std::move(pm), info};
         throw;
       }
     }
     // Consume the BuildOwned into an EmittedOwned: the released wrapper now
     // lives in `pm`, and a second emit_object sees EmittedOwned and refuses.
-    state_ = EmittedOwned{std::move(pm), info};
+    state_ = EmittedOwned{std::move(libraryOptions), std::move(pm), info};
     // LCOV_EXCL_START -- eager verification makes a back-half failure or empty
     // emission unreachable from well-formed hand-built MIR.
     if (!diag.empty())
@@ -800,14 +820,14 @@ public:
       } catch (...) {
         // The wrapper already lives in `pm`; consume into EmittedOwned before
         // propagating so `state_` never keeps a released (null) wrapper.
-        state_ = EmittedOwned{std::move(pm), info};
+        state_ = EmittedOwned{nullptr, std::move(pm), info};
         throw;
       }
     }
     out = std::move(capturePass->getResult());
     // Consume the BuildOwned into an EmittedOwned so a later query keeps `info`
     // valid and a second run refuses cleanly.
-    state_ = EmittedOwned{std::move(pm), info};
+    state_ = EmittedOwned{nullptr, std::move(pm), info};
     // LCOV_EXCL_START -- eager verification makes a register-allocation failure
     // from well-formed hand-built MIR unreachable.
     if (!diag.empty())
