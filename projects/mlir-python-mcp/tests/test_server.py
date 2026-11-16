@@ -2,6 +2,9 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import io
+import sys
+
 from conftest import SIMPLE_MODULE, TWO_FUNC_MODULE
 
 
@@ -78,6 +81,21 @@ class TestExecutePython:
     async def test_multiline_trailing_expression(self, server):
         result = await server._dispatch("execute_python", {"code": "(1 +\n 2)"})
         assert result[0].text == "3"
+
+    async def test_exit_does_not_stop_the_server(self, server):
+        result = await server._dispatch("execute_python", {"code": "exit(3)"})
+        assert "SystemExit: 3" in result[0].text
+        result = await server._dispatch("execute_python", {"code": "1 + 1"})
+        assert result[0].text == "2"
+
+    async def test_user_code_gets_its_own_stdin(self, server, monkeypatch):
+        stdin = io.StringIO("protocol message\n")
+        monkeypatch.setattr(sys, "stdin", stdin)
+        result = await server._dispatch("execute_python", {"code": "input()"})
+        assert "EOFError" in result[0].text
+        await server._dispatch("execute_python", {"code": "exit(3)"})
+        assert sys.stdin is stdin and not stdin.closed
+        assert stdin.read() == "protocol message\n"
 
 
 class TestListVariables:

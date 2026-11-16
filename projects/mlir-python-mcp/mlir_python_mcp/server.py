@@ -8,8 +8,9 @@ import ast
 import difflib
 import io
 import pkgutil
+import sys
 import traceback
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,16 @@ def _wrap_pipeline(pipeline: str) -> str:
     if not pipeline.strip().startswith("builtin.module"):
         pipeline = f"builtin.module({pipeline})"
     return pipeline
+
+
+@contextmanager
+def _redirect_stdin(stream):
+    saved = sys.stdin
+    sys.stdin = stream
+    try:
+        yield
+    finally:
+        sys.stdin = saved
 
 
 _TOOLS: list[types.Tool] = [
@@ -663,7 +674,14 @@ class MLIRMCPServer:
             if tree.body and isinstance(tree.body[-1], ast.Expr):
                 last_expr = ast.Expression(tree.body.pop().value)
             val = None
-            with redirect_stdout(stdout), redirect_stderr(stderr):
+            # The stdio transport reads JSON-RPC from stdin: exit() closes
+            # sys.stdin before raising SystemExit, and input() would consume a
+            # protocol message. So user code gets an empty stdin of its own.
+            with (
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+                _redirect_stdin(io.StringIO()),
+            ):
                 with session.ctx, ir.Location.unknown():
                     exec(compile(tree, "<string>", "exec"), session.namespace)
                     if last_expr is not None:
@@ -685,7 +703,7 @@ class MLIRMCPServer:
                 else:
                     parts.append("Executed successfully (no output).")
             return [_text("\n".join(parts))]
-        except Exception:
+        except (Exception, SystemExit):  # exit() in user code must not stop the server
             return [_text(f"Error:\n{traceback.format_exc()}")]
 
     def _list_variables(self, session_name: str) -> list[types.TextContent]:
