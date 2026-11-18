@@ -18,13 +18,18 @@ namespace orc_pgo {
 /// is used up.
 inline constexpr uint32_t RuntimeValueNodePoolSize = 1024;
 
-/// Sets the value-node pool lowering emits (see VNodePoolName) and starts the
-/// runtime pool afresh. Values are recorded in the image's pool first, then
-/// in the runtime pool; with no image pool only the latter is used.
+/// Sets the value-node pool lowering emits (see VNodePoolName). Values are
+/// recorded in the image's pool first, then in the runtime pool; with no image
+/// pool only the latter is used. Values recorded before the call stay valid.
 void setValueNodePool(void *Begin, void *End);
 
+/// Forgets every value node handed out and the image pool, and clears the
+/// exhaustion flag. Only for a process that starts a new program (tests): no
+/// value list may be read or extended afterwards.
+void resetValueNodePools();
+
 /// Whether a new value was dropped for lack of nodes in both pools since the
-/// pool was set.
+/// pools were last reset.
 bool valueNodePoolExhausted();
 
 /// The values recorded at site Site of kind Kind, in insertion order.

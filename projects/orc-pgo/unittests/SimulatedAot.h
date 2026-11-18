@@ -8,6 +8,7 @@
 #include "orc-pgo/Image.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 
@@ -44,10 +45,19 @@ struct SimulatedAot {
 
 /// Runs buildAotModule on IR for the host, then JITs and initializes the
 /// result as described above. Installs the image's value-node pool with
-/// setValueNodePool, as __orc_pgo_start does.
+/// setValueNodePool (after resetValueNodePools), as __orc_pgo_start does.
 SimulatedAot simulateAot(llvm::StringRef IR,
                          llvm::ArrayRef<std::string> ExtraSymbols = {},
                          llvm::ArrayRef<HostSymbol> HostSymbols = {});
+
+/// The bitcode of Image's snapshot after Edit has changed the parsed module:
+/// what a runtime that tiers up from it sees, while the program's AOT code
+/// stays as built.
+std::string editedSnapshot(const OrcPgoImage &Image,
+                           llvm::function_ref<void(llvm::Module &)> Edit);
+
+/// Image with Bitcode, which must outlive it, as its snapshot.
+OrcPgoImage withSnapshot(const OrcPgoImage &Image, const std::string &Bitcode);
 
 /// How many times simulated programs have called __orc_pgo_start.
 unsigned simulatedStartCalls();
