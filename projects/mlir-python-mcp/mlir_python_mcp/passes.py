@@ -6514,7 +6514,7 @@ class Pipeline(Pipeline):
         Args:
             disable_tosa_decompositions: Disable tosa decompositions pass
             aggressive_reduce_constant: Always perform the reduce constant optimization
-            allow_non_finites: When enabled, float min/max reductions are seeded with the infinite identity mandated by the TOSA specification. When disabled, the largest finite value is used instead. This controls only compiler-generated identity values; NaN results required by nan_mode are unaffected.
+            allow_non_finites: When enabled, float min/max reductions are seeded with the infinite identity mandated by the TOSA specification. When disabled, the largest finite value is used instead. This controls only compiler-generated identity values; NaN results required by nan_mode are unaffected. Does not affect IGNORE-mode NaN seeds.
         """
         self.add_pass(
             "tosa-to-linalg",
