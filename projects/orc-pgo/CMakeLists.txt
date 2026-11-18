@@ -142,6 +142,7 @@ set(ORC_PGO_CLANG_LIBS
   clangOptions clangBasic)
 
 add_library(OrcPgoDriver STATIC
+  lib/Archive.cpp
   lib/Driver.cpp
 )
 target_include_directories(OrcPgoDriver
@@ -156,6 +157,12 @@ target_link_libraries(orc-pgo PRIVATE OrcPgoDriver)
 add_dependencies(orc-pgo OrcPgoRuntime OrcPgoCommon)
 orc_pgo_add_coverage(orc-pgo)
 orc_pgo_coverage_object(orc-pgo)
+
+set(ORC_PGO_DRIVER "$<TARGET_FILE:orc-pgo>")
+configure_file(cmake/OrcPgoToolchain.cmake.in
+               "${CMAKE_CURRENT_BINARY_DIR}/OrcPgoToolchain.cmake.in" @ONLY)
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/OrcPgoToolchain.cmake"
+     INPUT "${CMAKE_CURRENT_BINARY_DIR}/OrcPgoToolchain.cmake.in")
 
 include(CTest)
 if(BUILD_TESTING)
@@ -180,6 +187,7 @@ if(BUILD_TESTING)
   add_test(NAME multi-tu-e2e
            COMMAND ${CMAKE_COMMAND}
              -DORC_PGO=$<TARGET_FILE:orc-pgo>
+             -DTOOLCHAIN=${CMAKE_CURRENT_BINARY_DIR}/OrcPgoToolchain.cmake
              "-DEXTRA_LINK_INPUT=${ORC_PGO_EXTRA_LINK_INPUT}"
              -DORC_PGO_INCLUDE=${CMAKE_CURRENT_SOURCE_DIR}/include
              -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/test/multi-tu
