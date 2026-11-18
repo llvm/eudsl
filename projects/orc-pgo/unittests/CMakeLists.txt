@@ -28,3 +28,17 @@ orc_pgo_add_unittest(TierUpTest TierUpTest.cpp)
 orc_pgo_add_unittest(RuntimeTest RuntimeTest.cpp)
 target_compile_options(RuntimeTest PRIVATE -fexceptions)
 orc_pgo_add_unittest(RuntimeEntryTest RuntimeEntryTest.cpp)
+orc_pgo_add_unittest(StatsTest StatsTest.cpp)
+
+# DriverTest needs no JIT helpers, so it links only the driver, not
+# OrcPgoTestSupport.
+add_executable(DriverTest DriverTest.cpp)
+target_link_libraries(DriverTest PRIVATE OrcPgoDriver GTest::gtest)
+add_dependencies(DriverTest OrcPgoRuntime OrcPgoCommon)
+orc_pgo_add_coverage(DriverTest)
+orc_pgo_coverage_object(DriverTest)
+add_test(NAME DriverTest COMMAND DriverTest)
+set_tests_properties(DriverTest PROPERTIES
+                     TIMEOUT 300
+                     ENVIRONMENT "TMPDIR=${ORC_PGO_TEST_TMPDIR}"
+                     FIXTURES_REQUIRED orc_pgo_tmp)
