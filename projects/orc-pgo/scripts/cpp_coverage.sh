@@ -4,7 +4,7 @@
 #  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #
 # Build orc-pgo with source-based coverage, run ctest, and enforce 100%
-# line/function coverage over include/ and lib/.
+# line/function coverage over include/, lib/ and tools/.
 #
 # Env:
 #   LLVM_INSTALL_DIR          LLVM distro prefix (default: <repo>/mlir_wheel)
@@ -72,7 +72,7 @@ python3 "$REPO/scripts/check_coverage.py" \
   --llvm-cov "$LLVM_COV" \
   --profdata "$BUILD/coverage.profdata" \
   --objects "${OBJECTS[@]}" \
-  --sources "$PROJ/include" "$PROJ/lib" \
+  --sources "$PROJ/include" "$PROJ/lib" "$PROJ/tools" \
   --threshold 100 \
   --function-threshold 100 \
   --ignore-filename-regex '(unittests|_deps)'
