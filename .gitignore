@@ -51,3 +51,6 @@ docs/superpowers/
 
 # jupyter lite build state (written into --lite-dir)
 .jupyterlite.doit.db
+
+# Claude Code local settings
+/.claude/
