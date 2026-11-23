@@ -44,6 +44,7 @@ llvm_map_components_to_libnames(ORC_PGO_LLVM_LIBS
 
 add_library(OrcPgoCommon STATIC
   lib/Analyses.cpp
+  lib/Eligibility.cpp
   lib/PgoOptions.cpp
   lib/Snapshot.cpp
 )
@@ -61,6 +62,9 @@ orc_pgo_add_coverage(OrcPgoRuntime)
 
 add_library(OrcPgoBuild STATIC
   lib/Instrument.cpp
+  lib/Thunks.cpp
+  lib/SymbolTable.cpp
+  lib/Pipeline.cpp
 )
 target_link_libraries(OrcPgoBuild PUBLIC OrcPgoCommon)
 orc_pgo_add_coverage(OrcPgoBuild)
