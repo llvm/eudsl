@@ -6,6 +6,11 @@
 
 #include <stdexcept>
 
+#ifdef MULTI_TU_C_WEIGHT
+// weight.c, in the same static library as this file.
+extern "C" int cWeight(int Kind);
+static long weight(int Kind) { return cWeight(Kind); }
+#else
 static long weight(int Kind) {
   switch (Kind) {
   case 0:
@@ -16,6 +21,7 @@ static long weight(int Kind) {
     return 3;
   }
 }
+#endif
 
 // noinline keeps the hot functions real calls through their dispatch slots;
 // otherwise O2 would inline them into their only callers before thunking.

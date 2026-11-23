@@ -1,0 +1,28 @@
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#
+# Generated. Builds a CMake project with orc-pgo. Static libraries become
+# bitcode archives (orc-pgo --orc-pgo-ar), which orc-pgo links itself.
+# CMake only sets the CMAKE_<LANG>_ARCHIVE_* defaults when they're undefined,
+# so these stick. There is no ranlib step: bitcode archives have no
+# symbol table.
+#
+# C and C++ both go through orc-pgo, so that a library with sources in both
+# has bitcode members only. orc-pgo defaults to C++, hence the C compiler's
+# leading --driver-mode=gcc. The archive rules name the driver itself, not
+# <CMAKE_C_COMPILER>, which would put that argument before --orc-pgo-ar.
+
+set(CMAKE_C_COMPILER "@ORC_PGO_DRIVER@")
+set(CMAKE_C_COMPILER_ARG1 "--driver-mode=gcc")
+set(CMAKE_CXX_COMPILER "@ORC_PGO_DRIVER@")
+
+foreach(lang C CXX)
+  set(CMAKE_${lang}_ARCHIVE_CREATE "\"@ORC_PGO_DRIVER@\" --orc-pgo-ar create <TARGET> <OBJECTS>")
+  set(CMAKE_${lang}_ARCHIVE_APPEND "\"@ORC_PGO_DRIVER@\" --orc-pgo-ar append <TARGET> <OBJECTS>")
+  set(CMAKE_${lang}_ARCHIVE_FINISH "")
+  # With CMAKE_INTERPROCEDURAL_OPTIMIZATION, CMake uses the *_IPO variants
+  # (llvm-ar and llvm-ranlib, which can't read this LLVM's bitcode).
+  set(CMAKE_${lang}_CREATE_STATIC_LIBRARY_IPO
+      "\"@ORC_PGO_DRIVER@\" --orc-pgo-ar create <TARGET> <OBJECTS>")
+endforeach()
