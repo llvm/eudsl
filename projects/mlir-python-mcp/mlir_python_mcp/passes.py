@@ -338,6 +338,38 @@ class Pipeline(Pipeline):
         self.add_pass("acc-legalize-serial")
         return self
 
+    def acc_loop_collapse(self):
+        """Collapse multi-dimensional parallel loops
+
+        This pass collapses each multi-dimensional `scf.parallel` loop inside an
+        `acc.compute_region` into a one-dimensional `scf.parallel` loop whose
+        iteration space is the product of the original ones. Loops outside an
+        `acc.compute_region` are left unchanged. The original induction variables
+        are recovered from the collapsed one with remainder and division
+        operations. Reductions of the original loop are carried over to the
+        collapsed loop.
+
+        The number of collapsed dimensions is recorded in `acc.collapse_count`.
+
+        Example:
+        ```
+        // Before:
+        scf.parallel (%i, %j) = (%c0, %c0) to (%c10, %c20) step (%c1, %c1) {
+          ...
+        } {acc.par_dims = #acc<par_dims[block_x]>}
+
+        // After:
+        scf.parallel (%ij) = (%c0) to (%c200) step (%c1) {
+          %j = arith.remsi %ij, %c20 : index
+          %i = arith.divsi %ij, %c20 : index
+          ...
+        } {acc.collapse_count = 2 : i64, acc.par_dims = #acc<par_dims[block_x]>}
+        ```
+
+        """
+        self.add_pass("acc-loop-collapse")
+        return self
+
     def acc_loop_tiling(self, default_tile_size: int = None):
         """Tile OpenACC loops with tile clauses
 
@@ -2722,20 +2754,22 @@ class Pipeline(Pipeline):
         return self
 
     def eliminate_vector_masks(self, vscale_min: int = None, vscale_max: int = None):
-        """Replace masks that are provably all-true with constant masks
+        """Replace provably all-true or all-false masks with constant masks
 
-        Rewrites `vector.create_mask` operations that can be proven all-true into
-        `vector.constant_mask`. Canonicalization then folds those away, turning a
-        masked transfer into an unmasked one.
+        Rewrites `vector.create_mask` operations that can be proven all-true or
+        all-false into `vector.constant_mask`. Canonicalization then folds those
+        away, e.g. turning a masked transfer into an unmasked one.
 
         A mask dimension is all-true when its size is at least the size of the
         corresponding vector dimension. Sizes are bounded with
         `ValueBoundsOpInterface`, so sizes derived from a loop, such as
-        `%dim - %iv`, can be proven too.
+        `%dim - %iv`, can be proven too. A mask is all-false if any dimension has
+        a nonpositive upper bound.
 
-        Proving a scalable dimension needs the range of `vscale`: pass `vscale-min`
-        and `vscale-max` when it is known for the target (1 and 16 for SVE, say).
-        Without a range, only fixed-size dimensions can be proven.
+        Proving a scalable dimension all-true needs the range of `vscale`: pass
+        `vscale-min` and `vscale-max` when it is known for the target (1 and 16 for
+        SVE, say). Without a range, only fixed-size dimensions can be proven
+        all-true. All-false proofs do not use the range.
 
         Args:
             vscale_min: Minimum possible value of vscale, or 0 when unknown.
@@ -2955,6 +2989,27 @@ class Pipeline(Pipeline):
     def gpu_async_region(self):
         """Make GPU ops async"""
         self.add_pass("gpu-async-region")
+        return self
+
+    def gpu_attach_select_object(self, module: str = None, priority: int = None):
+        """Attaches a select object offloading handler to GPU modules.
+
+        This pass walks GPU modules and attaches a `#gpu.select_object` offloading
+        handler with the given `priority`, the priority of the global constructor
+        and destructor that load and unload the binary of the module.
+
+        Modules with no offloading handler get a handler selecting the first
+        object. Modules with a `#gpu.select_object` handler keep the target of the
+        handler. Modules with a handler that already specifies a priority, or with
+        any other offloading handler, are left unchanged.
+
+        Args:
+            module: Regex used to identify the modules to attach the handler to.
+            priority: Priority of the global constructor and destructor that load and unload the binary.
+        """
+        self.add_pass(
+            "gpu-attach-select-object", **{"module": module, "priority": priority}
+        )
         return self
 
     def gpu_decompose_memrefs(self):
